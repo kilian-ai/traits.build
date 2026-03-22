@@ -36,11 +36,13 @@ Polygrait/A. traits.build/
 │   │   ├── reload/       # Hot-reload registry from disk
 │   │   ├── serve/        # actix-web HTTP server, CORS, SSE streaming
 │   │   └── types/        # TraitValue, TraitType, type coercion
-│   ├── sys/              # 9 system traits (compiled as builtins)
+│   ├── sys/              # 11 system traits (compiled as builtins)
 │   │   ├── checksum/     # SHA-256 hashing
 │   │   ├── cli/          # Clap parsing, subcommand dispatch
 │   │   ├── info/         # Show detailed trait metadata
 │   │   ├── list/         # List all traits
+│   │   ├── mcp/          # MCP stdio server (JSON-RPC 2.0)
+│   │   ├── openapi/      # OpenAPI 3.0 spec generation
 │   │   ├── ps/           # List running background traits
 │   │   ├── registry/     # Registry read API (tree, namespaces, search)
 │   │   ├── snapshot/     # Snapshot trait versions
@@ -95,11 +97,17 @@ traits test_runner '*'
 
 # Health check (used by Fly.io)
 GET /health
+
+# MCP — stdio JSON-RPC 2.0
+traits mcp
+# Reads JSON-RPC from stdin, writes responses to stdout.
+# All traits are exposed as tools: dot paths → underscore names
+# e.g. sys.checksum → sys_checksum
 ```
 
 ---
 
-## Trait Inventory (25 traits)
+## Trait Inventory (29 traits)
 
 ### Kernel (11) — Core runtime
 
@@ -117,13 +125,15 @@ GET /health
 | `kernel.plugin_api` | C ABI export macro for cdylib plugins | `kernel/plugin_api` |
 | `kernel.reload` | Hot-reload registry from disk | — |
 
-### Sys (9) — System utilities
+### Sys (11) — System utilities
 
 | Trait | Description | Provides |
 |-------|-------------|----------|
 | `sys.cli` | Clap parsing, subcommand dispatch, pipe support | `sys/cli` |
 | `sys.registry` | Read API: list, info, tree, namespaces, search | `sys/registry` |
 | `sys.checksum` | SHA-256 checksums (values, I/O pairs, signatures) | `sys/checksum` |
+| `sys.mcp` | MCP stdio server — JSON-RPC 2.0 over stdin/stdout | `sys/mcp` |
+| `sys.openapi` | OpenAPI 3.0 spec generation from trait registry | `sys/openapi` |
 | `sys.version` | YYMMDD version string generation | `sys/version` |
 | `sys.snapshot` | Snapshot trait version to date format | `sys/snapshot` |
 | `sys.test_runner` | Run .features.json tests (dispatch + shell) | `sys/test_runner` |
@@ -131,13 +141,15 @@ GET /health
 | `sys.info` | Detailed trait metadata + signatures | `sys/info` |
 | `sys.ps` | List running background trait processes | — |
 
-### WWW (5) — Web interface
+### WWW (7) — Web interface
 
 | Trait | Description | Provides |
 |-------|-------------|----------|
 | `www.traits.build` | Landing page HTML | `www/webpage` |
+| `www.docs.api` | API documentation (Redoc) | `www/webpage` |
 | `www.admin` | Admin dashboard (Basic Auth) | `www/webpage` |
 | `www.admin.deploy` | Deploy to Fly.io | — |
+| `www.admin.fast_deploy` | Fast deploy via Docker + sftp | — |
 | `www.admin.scale` | Scale Fly.io machines (0=stop, 1+=start) | — |
 | `www.admin.destroy` | Destroy Fly.io machines | — |
 
@@ -230,7 +242,7 @@ Test types: `exit_code`, `contains`, `matches` (regex), `json_path`
 | JS/Python workers | Not present | Rust-only kernel |
 | GUI (app.js, Blockly, etc.) | Not present | API-only server |
 | Transpilers | Not present | No code generation |
-| MCP server | Not present | Future addition |
+| MCP server | **Present** | `sys.mcp` — native Rust, stdio transport, `traits mcp` |
 | Programs (saved JSON) | Not present | No program storage |
 | trait_defs/ (238 traits) | Not present | Replaced by 25 compiled traits |
 | Organization/Chat/Packages | Not present | Minimal core only |

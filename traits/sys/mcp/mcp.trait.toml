@@ -1,0 +1,21 @@
+[trait]
+description = "MCP stdio server — exposes all traits as MCP tools via JSON-RPC 2.0 over stdin/stdout"
+version = "v260322.163417"
+checksum = "6b8fcef4538dbd84ef16a6a25f5b567bad1eb1d00d5e76507e5851da72099f0b"
+epoch = 0
+author = "system"
+tags = ["system", "mcp", "ai", "protocol"]
+provides = ["sys/mcp"]
+background = false
+
+[signature]
+params = []
+
+[signature.returns]
+type = "null"
+description = "Runs MCP stdio loop (blocks until stdin closes)"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "mcp"

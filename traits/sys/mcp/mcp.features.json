@@ -1,0 +1,45 @@
+{
+  "trait": "sys.mcp",
+  "description": "MCP stdio server — JSON-RPC 2.0 over stdin/stdout",
+  "features": [
+    {
+      "name": "MCP initialize handshake",
+      "description": "Responds to initialize request with server info and capabilities",
+      "examples": [
+        {
+          "input": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}",
+          "checks": [
+            { "type": "contains", "value": "\"protocolVersion\"" },
+            { "type": "contains", "value": "\"serverInfo\"" },
+            { "type": "contains", "value": "traits-mcp-server" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MCP tools/list",
+      "description": "Lists all registered traits as MCP tools with JSON Schema input schemas",
+      "examples": [
+        {
+          "input": "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}",
+          "checks": [
+            { "type": "contains", "value": "\"tools\"" },
+            { "type": "contains", "value": "\"inputSchema\"" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MCP tools/call",
+      "description": "Calls a trait by tool name and returns the result",
+      "examples": [
+        {
+          "input": "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"sys_list\",\"arguments\":{}}}",
+          "checks": [
+            { "type": "contains", "value": "\"content\"" }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -53,7 +53,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::External(args)) => {
             let name = &args[0];
             let rest: Vec<String> = args[1..].to_vec();
-            if name.starts_with("__") && name.ends_with("__") {
+            if name == "mcp" {
+                // MCP stdio server — bootstrap registry then run blocking stdio loop
+                let _dispatcher = crate::bootstrap(&config)?;
+                crate::dispatcher::compiled::mcp::run_stdio();
+                return Ok(());
+            } else if name.starts_with("__") && name.ends_with("__") {
                 call_trait(&config, name, &rest).await?;
             } else if name == "stop" {
                 call_trait(&config, "__stop__", &rest).await?;
