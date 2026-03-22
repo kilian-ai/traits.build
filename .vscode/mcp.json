@@ -1,0 +1,9 @@
+{
+	"servers": {
+		"traits-build": {
+			"type": "stdio",
+			"command": "./target/release/traits",
+			"args": ["mcp"]
+		}
+	}
+}

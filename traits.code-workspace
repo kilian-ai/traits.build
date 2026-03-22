@@ -1,8 +1,7 @@
 {
 	"folders": [
 		{
-			"name": "traits",
-			"path": "../.."
+			"path": "."
 		}
 	],
 	"settings": {
@@ -70,14 +69,5 @@
 				"problemMatcher": []
 			}
 		]
-	},
-	"mcp": {
-		"servers": {
-			"traits": {
-				"type": "stdio",
-				"command": "./target/release/traits",
-				"args": ["mcp"]
-			}
-		}
 	}
 }
