@@ -1,17 +1,17 @@
 [trait]
 description = "Snapshot a trait version: sets version in its .trait.toml to YYMMDD, or YYMMDD.HHMMSS if today's date is already the current version"
-version = "v260320"
+version = "v260322"
 epoch = 0
-checksum = "23a1eaf9b7ca06de5a97fbacecd42245d5a388d1086b868c376048f620e81fee"
+checksum = "71a5dee8f450f1d1a560fffc3b441305946d377b08530689dcf99fd52f004a33"
 author = "system"
 tags = ["system", "versioning", "snapshot"]
 provides = ["sys/snapshot"]
 
 [requires]
-version = "sys/version"
+version = "v260322"
 
 [bindings]
-version = "sys.version"
+version = "v260322"
 
 [[signature.params]]
 name = "trait_path"

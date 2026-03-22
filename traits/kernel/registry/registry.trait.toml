@@ -1,8 +1,8 @@
 [trait]
 description = "Trait registry: loading, lookup, interface resolution, bindings, TraitEntry management"
-version = "v260321.114453"
+version = "v260322"
 epoch = 0
-checksum = "7b5f95b77eb03644fe50662315a1d150598775eb1b1dacce821afc35885ed14d"
+checksum = "6c0370d9a7461cd59c34cbee0030f3de768be9fe7e388d29105384b351b898f2"
 author = "kilian"
 tags = ["kernel", "registry"]
 provides = ["kernel/registry"]

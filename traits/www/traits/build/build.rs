@@ -85,13 +85,13 @@ footer a{color:var(--accent)}
   <p class="sub">Typed, composable function objects compiled into a single Rust binary. Define traits in TOML, call them via CLI or REST. The kernel is traits all the way down.</p>
   <div class="cta">
     <a href="/traits/sys/list" class="btn btn-primary">Explore Traits</a>
-    <a href="/traits/sys/info" class="btn btn-outline">API Docs</a>
+    <a href="https://github.com/kilian-ai/traits.build" class="btn btn-outline">GitHub</a>
   </div>
 </div>
 
 <!-- Stats -->
 <div class="stats">
-  <div class="stat"><div class="num">25</div><div class="label">compiled traits</div></div>
+  <div class="stat"><div class="num">26</div><div class="label">compiled traits</div></div>
   <div class="stat"><div class="num">3</div><div class="label">namespaces</div></div>
   <div class="stat"><div class="num">~2 MB</div><div class="label">binary size</div></div>
   <div class="stat"><div class="num">0</div><div class="label">runtime deps</div></div>
@@ -171,7 +171,7 @@ footer a{color:var(--accent)}
 
 <!-- Kernel traits -->
 <h2 class="section-title">Built-in traits</h2>
-<p class="section-sub">25 traits across kernel, sys, and www &mdash; all compiled in</p>
+<p class="section-sub">26 traits across kernel, sys, and www &mdash; all compiled in</p>
 
 <section>
 <table class="trait-table">
@@ -333,12 +333,12 @@ traits/sys/checksum/checksum.rs
 
 <span class="cm"># 4. Run it anywhere</span>
 <span class="kw">$</span> ./traits serve --port 8090
-<span class="cm">#    25 traits loaded, 0 workers, 0 dependencies</span></pre>
+<span class="cm">#    26 traits loaded, 0 workers, 0 dependencies</span></pre>
 </div>
 </section>
 
 <footer>
-  <p>traits.build &mdash; a pure Rust kernel, built with traits. &middot; <a href="/traits/kernel/main">kernel.main</a> &middot; <a href="/traits/sys/list">sys.list</a> &middot; <a href="/health">health</a></p>
+  <p>traits.build &mdash; a pure Rust kernel, built with traits. &middot; <a href="https://github.com/kilian-ai/traits.build">GitHub</a> &middot; <a href="/traits/kernel/main">kernel.main</a> &middot; <a href="/traits/sys/list">sys.list</a> &middot; <a href="/health">health</a></p>
 </footer>
 
 </body>
