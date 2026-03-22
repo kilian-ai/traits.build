@@ -287,6 +287,36 @@ fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
         let _ = fs::write(&toml_path, updated);
     }
 
+    // Sync version to Cargo.toml (strip 'v' prefix, use 0.YYMMDD.HHMMSS format)
+    let cargo_toml_path = manifest_dir.join("Cargo.toml");
+    if let Ok(cargo_content) = fs::read_to_string(&cargo_toml_path) {
+        let cargo_ver = new_ver.strip_prefix('v').unwrap_or(&new_ver);
+        let cargo_ver = format!("0.{}", cargo_ver);
+        // Only replace the version line in the [package] section (before any other section)
+        let mut in_package = false;
+        let mut replaced = false;
+        let updated: String = cargo_content
+            .lines()
+            .map(|line| {
+                if line.trim() == "[package]" {
+                    in_package = true;
+                } else if line.trim().starts_with('[') {
+                    in_package = false;
+                }
+                if in_package && !replaced && line.trim().starts_with("version") && line.contains('=') {
+                    replaced = true;
+                    format!("version = \"{}\"", cargo_ver)
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if updated != cargo_content {
+            let _ = fs::write(&cargo_toml_path, updated);
+        }
+    }
+
     new_ver
 }
 
