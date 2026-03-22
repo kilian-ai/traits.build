@@ -1,0 +1,28 @@
+[trait]
+description = "List all registered traits"
+version = "v260320.224553"
+epoch = 0
+checksum = "f1b35fbbbdbd02f284b45155fce466cf8160ec09f6d0db5f554df3b9473bb374"
+author = "system"
+tags = ["system", "meta", "discovery"]
+provides = ["sys/list"]
+
+[requires]
+registry = "sys/registry"
+
+[bindings]
+registry = "sys.registry"
+
+[signature]
+params = [
+  { name = "namespace", type = "string", description = "Filter by namespace prefix", optional = true }
+]
+
+[signature.returns]
+type = "list<object>"
+description = "Array of trait summaries"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "list"

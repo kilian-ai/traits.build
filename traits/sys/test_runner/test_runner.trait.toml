@@ -1,0 +1,42 @@
+[trait]
+description = "Generic test runner. Discovers .features.json files for traits matching a glob pattern, runs example-based tests (via internal dispatch) and shell command tests, reports structured pass/fail results."
+version = "v260322"
+epoch = 0
+checksum = "8efcaf1c7f044618cabc189a6bc048d186634fd5ec12f0b10ab8e549957c3e87"
+author = "system"
+tags = ["system", "testing", "ci"]
+provides = ["sys/test_runner"]
+
+[requires]
+globals = "kernel/globals"
+dispatcher = "kernel/dispatcher"
+
+[bindings]
+globals = "kernel.globals"
+dispatcher = "kernel.dispatcher"
+
+[[signature.params]]
+name = "pattern"
+type = "string"
+description = "Glob pattern: 'sys.*', '*', 'sys.checksum', etc."
+
+[[signature.params]]
+name = "verbose"
+type = "boolean"
+description = "If true, include full output/checks in results."
+optional = true
+
+[[signature.params]]
+name = "skip_commands"
+type = "boolean"
+description = "If true, skip shell command tests (avoids deadlock when called via HTTP)."
+optional = true
+
+[signature.returns]
+type = "object"
+description = "{ ok, pattern, summary: { traits, examples, commands, skipped, total_passed, total_failed }, results }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "test_runner"

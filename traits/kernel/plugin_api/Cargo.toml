@@ -1,0 +1,13 @@
+[package]
+name = "plugin_api"
+version = "0.260320.0"
+edition = "2021"
+description = "C ABI wrapper for trait cdylib plugins"
+authors = ["kilian"]
+license = "MIT"
+
+[lib]
+path = "plugin_api.rs"
+
+[dependencies]
+serde_json = "1"

@@ -1,0 +1,20 @@
+[trait]
+description = "Dynamic shared-library loader for trait cdylib plugins"
+version = "v260320.205918"
+epoch = 0
+checksum = "60796abcc6f01025feac002bf459d022f1223504a9d069a1d750ff8bbb5929b7"
+author = "kilian"
+tags = ["kernel", "dylib"]
+provides = ["kernel/dylib_loader"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "object"
+description = "Loaded dylib info: count, trait paths, search directories"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "dylib_loader"

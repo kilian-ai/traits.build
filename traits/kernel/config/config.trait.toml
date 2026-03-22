@@ -1,0 +1,22 @@
+[trait]
+description = "Configuration loader: traits.toml parsing, env var overrides, runtime config"
+version = "v260320.205918"
+epoch = 0
+checksum = "4cf78083872beba21e0d8416905ff708f2ae5ee5b5dc9682662b054f81ce8433"
+author = "kilian"
+tags = ["kernel", "config"]
+provides = ["kernel/config"]
+
+[signature]
+params = [
+  { name = "query", type = "string", description = "Optional: 'schema' to get field descriptions", optional = true }
+]
+
+[signature.returns]
+type = "object"
+description = "Current runtime configuration or schema description"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "config"

@@ -1,0 +1,42 @@
+{
+  "module": "traits/sys/list/list.rs",
+  "description": "Thin delegate to registry::list — list all registered traits with optional namespace filter",
+  "features": [
+    {
+      "name": "List all traits",
+      "description": "Delegates to registry::list, returns sorted array of all trait summaries",
+      "tests": [
+        {
+          "name": "list returns all traits",
+          "type": "command",
+          "command": "./target/release/traits call sys.list 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        }      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["sys.version", "\"description\":"]
+          }
+        }      ]
+    },
+    {
+      "name": "List with namespace filter",
+      "description": "Delegates to registry::list with namespace filter",
+      "tests": [
+        {
+          "name": "list sys returns only sys traits",
+          "type": "command",
+          "command": "./target/release/traits call sys.list sys 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        }
+      ]
+    }
+  ]
+}

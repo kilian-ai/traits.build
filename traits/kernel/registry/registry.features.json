@@ -1,0 +1,170 @@
+{
+  "module": "src/registry.rs",
+  "description": "Trait storage, TOML loading, interface resolution, and binding-aware dispatch",
+  "features": [
+    {
+      "name": "Trait loading from disk",
+      "description": "Registry loads .trait.toml files from a directory and registers them",
+      "tests": [
+        {
+          "name": "load_from_dir registers all traits in directory",
+          "type": "command",
+          "command": "./target/release/traits list 2>/dev/null | wc -l",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "count_gte", "expected": 11 }
+          ]
+        },
+        {
+          "name": "loaded traits are queryable by path",
+          "type": "command",
+          "command": "./target/release/traits call sys.info sys.checksum 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.checksum" },
+            { "type": "contains", "expected": "description" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Builtin trait embedding",
+      "description": "Compile-time builtins are loaded even without filesystem traits",
+      "tests": [
+        {
+          "name": "sys.version is always available",
+          "type": "command",
+          "command": "./target/release/traits call sys.version",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        },
+        {
+          "name": "sys.call is always available",
+          "type": "command",
+          "command": "./target/release/traits call sys.call sys.version",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Type parsing",
+      "description": "parse_type converts string representations to TraitType enum",
+      "tests": [
+        {
+          "name": "unit tests cover primitives, generics, and optionals",
+          "type": "command",
+          "command": "cd \"$PWD\" && cargo test --lib -- registry::tests::test_parse_type 2>&1 | tail -5",
+          "checks": [
+            { "type": "contains", "expected": "test result: ok" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Language parsing",
+      "description": "parse_language converts string names to Language enum with aliases",
+      "tests": [
+        {
+          "name": "unit tests cover all languages and unknown input",
+          "type": "command",
+          "command": "cd \"$PWD\" && cargo test --lib -- registry::tests::test_parse_language 2>&1 | tail -5",
+          "checks": [
+            { "type": "contains", "expected": "test result: ok" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Not-found returns None",
+      "description": "Registry.get returns None for unregistered paths",
+      "tests": [
+        {
+          "name": "unit test for empty registry",
+          "type": "command",
+          "command": "cd \"$PWD\" && cargo test --lib -- registry::tests::test_registry_basic 2>&1 | tail -5",
+          "checks": [
+            { "type": "contains", "expected": "test result: ok" }
+          ]
+        },
+        {
+          "name": "CLI returns error for nonexistent trait",
+          "type": "command",
+          "command": "./target/release/traits call nonexistent.trait",
+          "checks": [
+            { "type": "exit_code", "expected": 1 },
+            { "type": "contains", "expected": "not found" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Namespace filtering (via sys.registry trait)",
+      "description": "Traits can be filtered by namespace prefix",
+      "tests": [
+        {
+          "name": "sys namespace returns all sys.* traits",
+          "type": "command",
+          "command": "./target/release/traits call sys.list sys 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.checksum" },
+            { "type": "contains", "expected": "sys.version" }
+          ]
+        },
+        {
+          "name": "sys.list filters by namespace",
+          "type": "command",
+          "command": "./target/release/traits call sys.list sys",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.checksum" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Search (via sys.registry trait)",
+      "description": "Traits can be searched by path or description substring",
+      "tests": [
+        {
+          "name": "search finds traits by path substring",
+          "type": "command",
+          "command": "./target/release/traits list 2>/dev/null | grep version",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.version" }
+          ]
+        },
+        {
+          "name": "search finds traits by description substring",
+          "type": "command",
+          "command": "./target/release/traits list 2>/dev/null | grep checksum",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.checksum" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reload",
+      "description": "Registry can be reloaded from disk at runtime",
+      "tests": [
+        {
+          "name": "sys.reload reloads without error",
+          "type": "command",
+          "command": "./target/release/traits call sys.reload",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "ok" }
+          ]
+        }
+      ]
+    }
+  ]
+}

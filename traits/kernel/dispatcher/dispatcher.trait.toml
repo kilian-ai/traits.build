@@ -1,0 +1,30 @@
+[trait]
+description = "Core trait execution engine: path resolution, arg validation, dispatch, handle management"
+version = "v260321"
+epoch = 0
+checksum = "ac7d6712adabdc5d71a2727d9febd5e73d9e1dcc39cf17d335b91f902bc80edc"
+author = "kilian"
+tags = ["kernel", "dispatcher"]
+provides = ["kernel/dispatcher"]
+
+[requires]
+registry = "kernel/registry"
+globals = "kernel/globals"
+types = "kernel/types"
+
+[bindings]
+registry = "kernel.registry"
+globals = "kernel.globals"
+types = "kernel.types"
+
+[signature]
+params = []
+
+[signature.returns]
+type = "object"
+description = "Dispatcher status: dispatch layers, dylib info, features"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "dispatcher"

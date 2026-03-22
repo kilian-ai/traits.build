@@ -1,0 +1,29 @@
+[trait]
+description = "Call another trait by dot-notation path"
+version = "v260320"
+epoch = 0
+checksum = "25ff1c88cf20359de2a805b760ec3bb36434d3be1e4c32c48d35cf12d28d68dd"
+author = "system"
+tags = ["kernel", "dispatch"]
+provides = ["kernel/call"]
+
+[requires]
+dispatcher = "kernel/dispatcher"
+
+[bindings]
+dispatcher = "kernel.dispatcher"
+
+[signature]
+params = [
+  { name = "trait_path", type = "string", description = "Dot-notation trait path, e.g. sys.checksum" },
+  { name = "args", type = "list<any>", description = "Arguments forwarded to the target trait", optional = true }
+]
+
+[signature.returns]
+type = "any"
+description = "Result from the called trait"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "call"

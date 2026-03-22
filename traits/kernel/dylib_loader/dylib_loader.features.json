@@ -1,0 +1,93 @@
+{
+  "module": "traits/kernel/dylib_loader/dylib_loader.rs",
+  "description": "Dynamic shared-library loader for trait dylibs: TOML discovery, filename convention, FFI dispatch, reload",
+  "features": [
+    {
+      "name": "dylib_name_to_trait_path conversion",
+      "description": "Converts dylib filenames to trait dot-notation paths; first underscore becomes dot separator",
+      "tests": [
+        {
+          "name": "cargo unit test dylib_name_to_trait_path",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test test_dylib_name_to_trait_path -- --nocapture 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "test_dylib_name_to_trait_path ... ok" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TOML-based dylib discovery",
+      "description": "Discovers cdylib plugins by reading .trait.toml files with source = \"dylib\" and loading companion .dylib/.so files. Derives trait path from filesystem structure.",
+      "tests": [
+        {
+          "name": "www.traits.build loads via TOML discovery",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits call www.traits.build 2>/dev/null | head -1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "<!DOCTYPE html>" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "DylibLoader load_all scans directories",
+      "description": "load_all scans search directories recursively for dylib plugins using both TOML and filename discovery",
+      "tests": [
+        {
+          "name": "list includes dylib-loaded traits",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits list 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "DylibLoader dispatch",
+      "description": "Dispatches calls to loaded dylib traits by path, serializing args as JSON",
+      "tests": [
+        {
+          "name": "dispatch to non-existent dylib returns gracefully",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits call sys.nonexistent_dylib_test 2>&1",
+          "checks": [
+            { "type": "contains", "expected": "Error" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "is_dylib file extension check",
+      "description": "Recognizes .dylib and .so extensions as shared libraries",
+      "tests": [
+        {
+          "name": "cargo unit test covers is_dylib via dylib_name_to_trait_path test",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test dylib_loader -- --nocapture 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "test result: ok" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TOML-first scan ordering",
+      "description": "TOML discovery runs before filename convention so dylibs already loaded via TOML are not double-loaded",
+      "tests": [
+        {
+          "name": "no duplicate load warnings in clean startup",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits call www.traits.build 2>&1 | grep -c 'Failed to load'",
+          "checks": [
+            { "type": "contains", "expected": "0" }
+          ]
+        }
+      ]
+    }
+  ]
+}

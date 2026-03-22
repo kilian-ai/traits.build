@@ -1,0 +1,35 @@
+{
+  "module": "traits/kernel/plugin_api/plugin_api.rs",
+  "description": "C ABI export macro for cdylib trait plugins",
+  "features": [
+    {
+      "name": "export_trait! macro generates C ABI",
+      "description": "Generates trait_call and trait_free C ABI functions wrapping a Rust handler",
+      "tests": [
+        {
+          "name": "www.traits.build loads and returns HTML via export_trait! macro",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits call www.traits.build 2>/dev/null | head -1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "<!DOCTYPE html>" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "plugin_api compiles as dependency",
+      "description": "plugin_api crate compiles and is usable as a path dependency for cdylib plugins",
+      "tests": [
+        {
+          "name": "cargo build plugin_api",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo build --release -p plugin_api 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 }
+          ]
+        }
+      ]
+    }
+  ]
+}

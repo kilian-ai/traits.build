@@ -1,0 +1,427 @@
+{
+  "module": "traits/kernel/cli/cli.rs",
+  "description": "CLI entry points: dispatch, call, stdin pipe, usage display. Bootstrap moved to main.rs",
+  "features": [
+    {
+      "name": "Parse CLI args inline",
+      "description": "parse_cli_args does inline positional + flag parsing using registry signature lookup",
+      "tests": [
+        {
+          "name": "string arg passed through",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash test 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            },
+            {
+              "type": "contains",
+              "expected": "ok"
+            }
+          ]
+        },
+        {
+          "name": "multiple args parsed correctly",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash test 2>/dev/null | grep -c checksum",
+          "checks": [
+            {
+              "type": "count_gte",
+              "expected": 1
+            }
+          ]
+        },
+        {
+          "name": "no args produces valid result for zero-param trait",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "version"
+            }
+          ]
+        },
+        {
+          "name": "flag-style args parsed correctly",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum --action hash --data hello 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Usage on argument mismatch",
+      "description": "When a trait call fails with argument count mismatch, print usage info",
+      "tests": [
+        {
+          "name": "missing all args shows usage",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 1
+            },
+            {
+              "type": "contains",
+              "expected": "Usage:"
+            }
+          ]
+        },
+        {
+          "name": "usage shows parameter names",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum 2>&1",
+          "checks": [
+            {
+              "type": "contains",
+              "expected": "action"
+            },
+            {
+              "type": "contains",
+              "expected": "data"
+            }
+          ]
+        },
+        {
+          "name": "usage shows required/optional status",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum 2>&1",
+          "checks": [
+            {
+              "type": "contains",
+              "expected": "required"
+            }
+          ]
+        },
+        {
+          "name": "usage shows trait description",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum 2>&1",
+          "checks": [
+            {
+              "type": "contains",
+              "expected": "checksum"
+            }
+          ]
+        },
+        {
+          "name": "usage shows pipe hint for pipe params",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum 2>&1",
+          "checks": [
+            {
+              "type": "contains",
+              "expected": "(accepts stdin)"
+            }
+          ]
+        },
+        {
+          "name": "no usage printed on non-mismatch errors",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash '{}' 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "not_contains",
+              "expected": "Usage:"
+            }
+          ]
+        },
+        {
+          "name": "too many args shows usage",
+          "type": "command",
+          "command": "./target/release/traits call sys.version x y 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Stdin pipe \u2014 explicit pipe=true",
+      "description": "When a param has pipe=true and the arg is missing, read from piped stdin",
+      "tests": [
+        {
+          "name": "pipe fills missing arg from stdin",
+          "type": "command",
+          "command": "echo test | ./target/release/traits call sys.checksum hash 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            }
+          ]
+        },
+        {
+          "name": "pipe result matches direct arg",
+          "type": "command",
+          "command": "echo test | ./target/release/traits call sys.checksum hash 2>/dev/null > /tmp/_pipe.json && ./target/release/traits call sys.checksum hash test 2>/dev/null > /tmp/_direct.json && diff /tmp/_pipe.json /tmp/_direct.json",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            }
+          ]
+        },
+        {
+          "name": "pipe=true on non-first param (index 1)",
+          "type": "command",
+          "command": "echo test | ./target/release/traits call sys.checksum hash 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "\"ok\": true"
+            }
+          ]
+        },
+        {
+          "name": "pipe ignored when arg already provided",
+          "type": "command",
+          "command": "echo IGNORED | ./target/release/traits call sys.checksum hash test 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Stdin pipe \u2014 implicit first param",
+      "description": "When no param has pipe=true, stdin defaults to filling the first parameter",
+      "tests": [
+        {
+          "name": "implicit pipe fills first param",
+          "type": "command",
+          "command": "echo sys.checksum | ./target/release/traits call sys.info 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "sys.checksum"
+            }
+          ]
+        },
+        {
+          "name": "implicit pipe on single-param trait",
+          "type": "command",
+          "command": "echo sys.version | ./target/release/traits call sys.info 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "sys.version"
+            }
+          ]
+        },
+        {
+          "name": "no pipe when stdin is terminal",
+          "type": "command",
+          "command": "./target/release/traits call sys.info 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Stdin pipe \u2014 edge cases",
+      "description": "Edge cases: empty pipe, trailing newlines, multiline",
+      "tests": [
+        {
+          "name": "empty stdin not injected",
+          "type": "command",
+          "command": "printf '' | ./target/release/traits call sys.info 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 1
+            }
+          ]
+        },
+        {
+          "name": "trailing newlines stripped",
+          "type": "command",
+          "command": "printf 'sys.checksum\\n\\n' | ./target/release/traits call sys.info 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "sys.checksum"
+            }
+          ]
+        },
+        {
+          "name": "multiline stdin passed as single value",
+          "type": "command",
+          "command": "printf 'line1\\nline2' | ./target/release/traits call sys.checksum hash 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dispatch_trait entry point",
+      "description": "dispatch_trait converts args, injects stdin, calls dispatcher, prints JSON",
+      "tests": [
+        {
+          "name": "dispatch prints valid JSON to stdout",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>/dev/null | python3 -m json.tool > /dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            }
+          ]
+        },
+        {
+          "name": "dispatch returns error on unknown trait",
+          "type": "command",
+          "command": "./target/release/traits call nonexistent.trait 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 1
+            },
+            {
+              "type": "contains",
+              "expected": "not found"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "call_trait entry point",
+      "description": "call_trait handles the traits call <path> [args...] subcommand",
+      "tests": [
+        {
+          "name": "call with positional args",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash hello 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            },
+            {
+              "type": "contains",
+              "expected": "ok"
+            }
+          ]
+        },
+        {
+          "name": "call shuts down workers cleanly",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "not_contains",
+              "expected": "shutdown"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pipe param TOML field",
+      "description": "The pipe boolean in [[signature.params]] marks which param receives stdin",
+      "tests": [
+        {
+          "name": "pipe=true parsed from TOML",
+          "type": "command",
+          "command": "grep 'pipe = true' traits/sys/checksum/checksum.trait.toml",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "pipe = true"
+            }
+          ]
+        },
+        {
+          "name": "pipe defaults to false when omitted",
+          "type": "command",
+          "command": "./target/release/traits call sys.info sys.version 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

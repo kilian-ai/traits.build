@@ -1,0 +1,28 @@
+[trait]
+description = "Show detailed info about a specific trait"
+version = "v260320.224553"
+epoch = 0
+checksum = "d7a449bd6bd62fd68c94cf795a1753bb0b0d8d7f0066b03c3a1c063efa3cde18"
+author = "system"
+tags = ["system", "meta", "discovery"]
+provides = ["sys/info"]
+
+[requires]
+registry = "sys/registry"
+
+[bindings]
+registry = "sys.registry"
+
+[signature]
+params = [
+  { name = "path", pipe = true, type = "string", description = "Dot-notation trait path, e.g. sys.checksum" }
+]
+
+[signature.returns]
+type = "object"
+description = "Full trait metadata including signature"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "info"

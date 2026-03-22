@@ -1,0 +1,109 @@
+{
+  "module": "src/types.rs",
+  "description": "Cross-language type system, runtime values, signatures, wire protocol, API types, Language enum",
+  "features": [
+    {
+      "name": "TraitType type matching",
+      "description": "TraitValue::matches_type validates runtime values against declared types with coercion rules",
+      "tests": [
+        {
+          "name": "cargo unit test type_matching",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test test_type_matching -- --nocapture 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "test_type_matching ... ok" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TraitValue type_name",
+      "description": "Returns human-readable type names for error messages",
+      "tests": [
+        {
+          "name": "cargo unit test type_name",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test test_type_name -- --nocapture 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "test_type_name ... ok" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TraitValue JSON round-trip",
+      "description": "to_json and from_json preserve value semantics across serialization",
+      "tests": [
+        {
+          "name": "trait call with JSON args round-trips correctly",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Handle detection",
+      "description": "is_handle, handle_id, handle_language detect and parse handle references",
+      "tests": [
+        {
+          "name": "all types unit tests pass",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test types:: -- --nocapture 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "test result: ok" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "WorkerRequest/WorkerResponse wire protocol",
+      "description": "Serialization of worker messages supports regular, streaming chunk, and stream end modes",
+      "tests": [
+        {
+          "name": "worker protocol used in trait calls",
+          "type": "command",
+          "command": "./target/release/traits call sys.list 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CallRequest/CallResponse API types",
+      "description": "HTTP API request/response types support positional and named args",
+      "tests": [
+        {
+          "name": "API types used for CLI call dispatch",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash hello 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Language enum",
+      "description": "Supported languages with lowercase serialization and Display impl",
+      "tests": [
+        {
+          "name": "info shows language field",
+          "type": "command",
+          "command": "./target/release/traits info sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "rust" }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,505 @@
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+use sha2::{Sha256, Digest};
+
+// Shared SHA-256 helpers (same code used by sys.checksum trait)
+include!("traits/sys/checksum/checksum.sha256.rs");
+
+/// Represents a discovered builtin trait with its source .rs file.
+struct TraitModule {
+    /// Trait path: "sys.checksum", "kernel.serve", etc.
+    trait_path: String,
+    /// Module name for Rust: "checksum", "serve", etc.
+    mod_name: String,
+    /// Entry function name from .trait.toml
+    entry: String,
+    /// Relative path to .rs source from manifest dir: "traits/sys/checksum/checksum.rs"
+    rs_rel_path: String,
+    /// Whether this is a background (async) trait
+    background: bool,
+    /// Whether this is a kernel module promoted to builtin (dispatch via crate:: prefix)
+    is_kernel_builtin: bool,
+}
+
+/// A kernel module (crate-level mod) discovered from traits/kernel/.
+struct KernelModule {
+    /// Module name: "types", "config", "dispatcher", etc.
+    mod_name: String,
+    /// Absolute path to the .rs source file.
+    abs_path: String,
+}
+
+/// A discovered *_cli.rs companion providing format_cli(result) -> String.
+struct CliFormatter {
+    trait_path: String,
+    mod_name: String,
+    rs_rel_path: String,
+}
+
+fn main() {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+
+    // Tell rustc this is the kernel binary, so #[cfg(kernel)] code compiles
+    println!("cargo:rustc-cfg=kernel");
+    println!("cargo::rustc-check-cfg=cfg(kernel)");
+
+    // ── Compute build version: vYYMMDD or vYYMMDD.HHMMSS if same day ──
+    let build_version = compute_build_version(&manifest_dir);
+    println!("cargo:rustc-env=TRAITS_BUILD_VERSION={}", build_version);
+
+    let traits_dir = manifest_dir.join("traits");
+
+    // Watch the traits directory tree so new trait files trigger a rebuild
+    watch_dirs_recursive(&traits_dir);
+
+    let mut entries: Vec<(String, String)> = Vec::new();
+    let mut modules: Vec<TraitModule> = Vec::new();
+    let mut cli_formatters: Vec<CliFormatter> = Vec::new();
+    let mut kernel_modules: Vec<KernelModule> = Vec::new();
+
+    visit_traits(&traits_dir, &manifest_dir, &traits_dir, &mut entries, &mut modules, &mut cli_formatters, &mut kernel_modules);
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    modules.sort_by(|a, b| a.trait_path.cmp(&b.trait_path));
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    // ── Generate builtin_traits.rs (TOML definitions for registry) ──
+    let out_path = out_dir.join("builtin_traits.rs");
+    let mut output = String::new();
+    output.push_str("pub const BUILTIN_TRAIT_DEFS: &[BuiltinTraitDef] = &[\n");
+    for (path, rel_path) in entries {
+        output.push_str(&format!(
+            "    BuiltinTraitDef {{ path: {:?}, rel_path: {:?}, toml: include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{}\")) }},\n",
+            path,
+            rel_path,
+            rel_path
+        ));
+    }
+    output.push_str("];\n");
+    fs::write(out_path, output).expect("Failed to write builtin_traits.rs");
+
+    // ── Generate compiled_traits.rs (module declarations + dispatch) ──
+    let compiled_path = out_dir.join("compiled_traits.rs");
+    let mut ct = String::new();
+
+    // Module declarations (skip kernel builtins — they're declared at crate root via kernel_modules.rs)
+    for m in &modules {
+        if m.is_kernel_builtin { continue; }
+        let abs_path = manifest_dir.join(&m.rs_rel_path);
+        ct.push_str(&format!(
+            "#[path = {:?}]\npub mod {};\n\n",
+            abs_path.to_string_lossy(), m.mod_name
+        ));
+        println!("cargo:rerun-if-changed={}", abs_path.display());
+    }
+
+    // Dispatch function
+    ct.push_str("/// Auto-generated dispatch to compiled Rust trait modules.\n");
+    ct.push_str("pub fn dispatch_compiled(trait_path: &str, args: &[serde_json::Value]) -> Option<serde_json::Value> {\n");
+    ct.push_str("    match trait_path {\n");
+    for m in &modules {
+        let func = if m.entry == "checksum" {
+            format!("{}::checksum_dispatch", m.mod_name)
+        } else if m.is_kernel_builtin && m.mod_name == "main" {
+            // main.rs IS the crate root — no module prefix
+            format!("crate::{}", m.entry)
+        } else if m.is_kernel_builtin {
+            format!("crate::{}::{}", m.mod_name, m.entry)
+        } else {
+            format!("{}::{}", m.mod_name, m.entry)
+        };
+        ct.push_str(&format!(
+            "        {:?} => Some({}(args)),\n",
+            m.trait_path, func
+        ));
+    }
+    ct.push_str("        _ => None,\n");
+    ct.push_str("    }\n");
+    ct.push_str("}\n\n");
+
+    // dispatch_trait_value: TraitValue interface for worker
+    ct.push_str("/// Dispatch with TraitValue args/result (for worker integration).\n");
+    ct.push_str("pub fn dispatch_trait_value(trait_path: &str, args: &[crate::types::TraitValue]) -> Option<crate::types::TraitValue> {\n");
+    ct.push_str("    let json_args: Vec<serde_json::Value> = args.iter().map(|a| a.to_json()).collect();\n");
+    ct.push_str("    dispatch(trait_path, &json_args).map(|v| crate::types::TraitValue::from_json(&v))\n");
+    ct.push_str("}\n\n");
+
+    // Unified dispatch: dylib first, then compiled
+    ct.push_str("/// Unified dispatch: tries dylib loader first, then compiled-in modules.\n");
+    ct.push_str("pub fn dispatch(trait_path: &str, args: &[serde_json::Value]) -> Option<serde_json::Value> {\n");
+    ct.push_str("    if let Some(loader) = crate::dylib_loader::LOADER.get() {\n");
+    ct.push_str("        if let Some(result) = loader.dispatch(trait_path, args) {\n");
+    ct.push_str("            return Some(result);\n");
+    ct.push_str("        }\n");
+    ct.push_str("    }\n");
+    ct.push_str("    dispatch_compiled(trait_path, args)\n");
+    ct.push_str("}\n\n");
+
+    // dispatch_async: async dispatch for background traits
+    let bg_modules: Vec<&TraitModule> = modules.iter().filter(|m| m.background).collect();
+    ct.push_str("/// Async dispatch for background traits (background = true in trait.toml).\n");
+    ct.push_str("pub async fn dispatch_async(trait_path: &str, args: &[crate::types::TraitValue]) -> Option<Result<crate::types::TraitValue, Box<dyn std::error::Error + Send + Sync>>> {\n");
+    ct.push_str("    match trait_path {\n");
+    for m in &bg_modules {
+        let prefix = if m.is_kernel_builtin { "crate::" } else { "" };
+        ct.push_str(&format!(
+            "        {:?} => Some({}{}::start(args).await),\n",
+            m.trait_path, prefix, m.mod_name
+        ));
+    }
+    ct.push_str("        _ => None,\n");
+    ct.push_str("    }\n");
+    ct.push_str("}\n\n");
+
+    // list_compiled: returns trait paths of all compiled modules
+    ct.push_str("/// Returns the list of all compiled trait paths.\n");
+    ct.push_str("pub fn list_compiled() -> Vec<&'static str> {\n");
+    ct.push_str("    vec![\n");
+    for m in &modules {
+        ct.push_str(&format!("        {:?},\n", m.trait_path));
+    }
+    ct.push_str("    ]\n");
+    ct.push_str("}\n");
+
+    fs::write(compiled_path, ct).expect("Failed to write compiled_traits.rs");
+
+    // ── Generate cli_formatters.rs (optional CLI output formatters) ──
+    cli_formatters.sort_by(|a, b| a.trait_path.cmp(&b.trait_path));
+    let cli_path = out_dir.join("cli_formatters.rs");
+    let mut cf = String::new();
+    for f in &cli_formatters {
+        let abs_path = manifest_dir.join(&f.rs_rel_path);
+        cf.push_str(&format!(
+            "#[path = {:?}]\npub mod {};\n\n",
+            abs_path.to_string_lossy(), f.mod_name
+        ));
+        println!("cargo:rerun-if-changed={}", abs_path.display());
+    }
+    cf.push_str("/// Look up a CLI formatter for the given trait path.\n");
+    cf.push_str("pub fn format_cli(trait_path: &str, result: &serde_json::Value) -> Option<String> {\n");
+    cf.push_str("    match trait_path {\n");
+    for f in &cli_formatters {
+        cf.push_str(&format!(
+            "        {:?} => Some({}::format_cli(result)),\n",
+            f.trait_path, f.mod_name
+        ));
+    }
+    cf.push_str("        _ => None,\n");
+    cf.push_str("    }\n");
+    cf.push_str("}\n");
+    fs::write(cli_path, cf).expect("Failed to write cli_formatters.rs");
+
+    // ── Generate kernel_modules.rs (crate-level mod declarations for kernel/) ──
+    let kernel_path = out_dir.join("kernel_modules.rs");
+    let mut km = String::new();
+    km.push_str("// Auto-generated by build.rs — kernel module declarations\n");
+    for k in &kernel_modules {
+        km.push_str(&format!(
+            "#[path = {:?}]\npub mod {};\n\n",
+            k.abs_path, k.mod_name
+        ));
+        println!("cargo:rerun-if-changed={}", k.abs_path);
+    }
+    fs::write(kernel_path, km).expect("Failed to write kernel_modules.rs");
+}
+
+/// Compute YYMMDD from current UTC time (no chrono dependency).
+fn yymmdd_build() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let days = secs / 86400;
+    let d = days as i64 + 719468;
+    let era = if d >= 0 { d } else { d - 146096 } / 146097;
+    let doe = (d - era * 146097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { y + 1 } else { y };
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    format!("{:02}{:02}{:02}", year % 100, month, day)
+}
+
+/// Compute HHMMSS from current UTC time.
+fn hhmmss_build() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let tod = secs % 86400;
+    let h = tod / 3600;
+    let m = (tod % 3600) / 60;
+    let s = tod % 60;
+    format!("{:02}{:02}{:02}", h, m, s)
+}
+
+/// Read current version from version.trait.toml, bump with dot notation if
+/// same day, write back, and return the new version string (with "v" prefix).
+fn compute_build_version(manifest_dir: &Path) -> String {
+    let toml_path = manifest_dir.join("traits/sys/version/version.trait.toml");
+    let today = yymmdd_build();
+
+    // Read current version from the toml
+    let current = fs::read_to_string(&toml_path)
+        .ok()
+        .and_then(|content| {
+            content.lines().find_map(|line| {
+                let trimmed = line.trim();
+                if trimmed.starts_with("version") && trimmed.contains('=') {
+                    let val = trimmed.split('=').nth(1)?;
+                    let v = val.trim().trim_matches('"').trim();
+                    // Strip leading "v" for comparison
+                    let v = v.strip_prefix('v').unwrap_or(v);
+                    if !v.is_empty() { Some(v.to_string()) } else { None }
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_default();
+
+    // If current version already starts with today's date, use dot notation
+    let new_ver = if current.starts_with(&today) {
+        format!("v{}.{}", today, hhmmss_build())
+    } else {
+        format!("v{}", today)
+    };
+
+    // Write back to version.trait.toml
+    if let Ok(content) = fs::read_to_string(&toml_path) {
+        let updated: String = content
+            .lines()
+            .map(|line| {
+                if line.trim().starts_with("version") && line.contains('=') {
+                    format!("version = \"{}\"", new_ver)
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let _ = fs::write(&toml_path, updated);
+    }
+
+    new_ver
+}
+
+/// Compute SHA-256 hex digest of a file's contents.
+fn compute_file_checksum(path: &Path) -> Option<String> {
+    let content = fs::read(path).ok()?;
+    Some(sha256_bytes(&content))
+}
+
+/// Compare computed checksum with stored one in .trait.toml.
+/// If different (or missing), bump the version and write the new checksum.
+fn update_trait_checksum(toml_path: &Path, rs_path: &Path) {
+    let new_checksum = match compute_file_checksum(rs_path) {
+        Some(c) => c,
+        None => return,
+    };
+
+    let content = match fs::read_to_string(toml_path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    // Extract existing checksum
+    let existing_checksum = content.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.starts_with("checksum") && trimmed.contains('=') {
+            trimmed.split('=').nth(1).map(|v| v.trim().trim_matches('"').to_string())
+        } else {
+            None
+        }
+    });
+
+    // If checksum matches, no changes needed
+    if existing_checksum.as_deref() == Some(new_checksum.as_str()) {
+        return;
+    }
+
+    // Checksum changed (or missing) — bump version and update checksum
+    let today = yymmdd_build();
+
+    let current_version = content.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.starts_with("version") && trimmed.contains('=') {
+            trimmed.split('=').nth(1).map(|v| v.trim().trim_matches('"').to_string())
+        } else {
+            None
+        }
+    }).unwrap_or_default();
+
+    let current_no_v = current_version.strip_prefix('v').unwrap_or(&current_version);
+    let new_ver = if current_no_v.starts_with(&today) {
+        format!("v{}.{}", today, hhmmss_build())
+    } else {
+        format!("v{}", today)
+    };
+
+    // Rewrite the toml: update version, update or insert checksum after version
+    let has_checksum = content.lines().any(|l| l.trim().starts_with("checksum") && l.contains('='));
+    let mut updated_lines: Vec<String> = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("version") && trimmed.contains('=') {
+            updated_lines.push(format!("version = \"{}\"", new_ver));
+            if !has_checksum {
+                updated_lines.push(format!("checksum = \"{}\"", new_checksum));
+            }
+        } else if trimmed.starts_with("checksum") && trimmed.contains('=') {
+            updated_lines.push(format!("checksum = \"{}\"", new_checksum));
+        } else {
+            updated_lines.push(line.to_string());
+        }
+    }
+
+    let _ = fs::write(toml_path, updated_lines.join("\n"));
+}
+
+/// Recursively emit cargo:rerun-if-changed for all directories under a path.
+/// This ensures new trait files (added to any subdirectory) trigger a build.rs re-run.
+fn watch_dirs_recursive(dir: &Path) {
+    println!("cargo:rerun-if-changed={}", dir.display());
+    if let Ok(rd) = fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            if entry.path().is_dir() {
+                watch_dirs_recursive(&entry.path());
+            }
+        }
+    }
+}
+
+fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mut Vec<(String, String)>, modules: &mut Vec<TraitModule>, cli_formatters: &mut Vec<CliFormatter>, kernel_modules: &mut Vec<KernelModule>) {
+    // Watch directories so cargo re-runs build.rs when traits are added/removed
+    println!("cargo:rerun-if-changed={}", dir.display());
+
+    let read_dir = match fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            visit_traits(&path, manifest_dir, traits_dir, entries, modules, cli_formatters, kernel_modules);
+            continue;
+        }
+        if !path.to_string_lossy().ends_with(".trait.toml") {
+            continue;
+        }
+
+        println!("cargo:rerun-if-changed={}", path.display());
+
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let mut is_builtin = false;
+        let mut is_background = false;
+        let mut is_not_callable = false;
+        let mut entry_name = String::new();
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("source") && (trimmed.contains("\"builtin\"") || trimmed.contains("\"kernel\"")) {
+                is_builtin = true;
+            }
+            if trimmed.starts_with("callable") && trimmed.contains("false") {
+                is_not_callable = true;
+            }
+            if trimmed.starts_with("background") && trimmed.contains("true") {
+                is_background = true;
+            }
+            if trimmed.starts_with("entry") {
+                // Parse entry = "function_name"
+                if let Some(val) = trimmed.split('=').nth(1) {
+                    entry_name = val.trim().trim_matches('"').to_string();
+                }
+            }
+        }
+
+        if is_builtin {
+            let rel_path = path.strip_prefix(manifest_dir)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            // Derive trait path from filesystem
+            let trait_path = path.strip_prefix(traits_dir)
+                    .ok()
+                    .and_then(|p| p.to_str())
+                    .and_then(|s| s.strip_suffix(".trait.toml")
+                        .or_else(|| s.strip_suffix(".strait.toml")))
+                    .map(|s| {
+                        let result = s.replace('/', ".").replace('\\', ".");
+                        // Collapse trailing duplicate: sys.checksum.checksum -> sys.checksum
+                        let parts: Vec<&str> = result.split('.').collect();
+                        if parts.len() >= 2 && parts[parts.len() - 1] == parts[parts.len() - 2] {
+                            parts[..parts.len() - 1].join(".")
+                        } else {
+                            result
+                        }
+                    });
+            if let Some(tp) = trait_path.clone() {
+                entries.push((tp, rel_path.clone()));
+            }
+
+            // Check for sibling .rs file for module generation
+            if let Some(tp) = trait_path {
+                let toml_dir = path.parent().unwrap();
+                let dir_name = toml_dir.file_name().unwrap().to_string_lossy();
+
+                // Check for companion _cli.rs file (CLI output formatter)
+                let cli_file = toml_dir.join(format!("{}_cli.rs", dir_name));
+                if cli_file.exists() {
+                    let cli_rel = cli_file.strip_prefix(manifest_dir)
+                        .unwrap_or(&cli_file)
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    let cli_mod = format!("{}_cli", tp.rsplit('.').next().unwrap_or(&tp));
+                    cli_formatters.push(CliFormatter {
+                        trait_path: tp.clone(),
+                        mod_name: cli_mod,
+                        rs_rel_path: cli_rel,
+                    });
+                }
+
+                let rs_file = toml_dir.join(format!("{}.rs", dir_name));
+                if rs_file.exists() {
+                    // Update checksum in .trait.toml (bumps version if source changed)
+                    update_trait_checksum(&path, &rs_file);
+
+                    let rs_rel = rs_file.strip_prefix(manifest_dir)
+                        .unwrap_or(&rs_file)
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    // Module name: last segment of trait path (e.g., "sys.checksum" -> "checksum")
+                    let mod_name = tp.rsplit('.').next().unwrap_or(&tp).to_string();
+                    let entry = if entry_name.is_empty() { mod_name.clone() } else { entry_name.clone() };
+                    let is_kb = tp.starts_with("kernel.");
+                    // Kernel traits need crate-level module declarations too
+                    // Skip "main" — it IS the crate root, not a child module
+                    if is_kb && mod_name != "main" {
+                        kernel_modules.push(KernelModule {
+                            mod_name: mod_name.clone(),
+                            abs_path: rs_file.to_string_lossy().to_string(),
+                        });
+                    }
+                    // Add to dispatch unless explicitly non-callable (e.g. main, plugin_api)
+                    if !is_not_callable {
+                        modules.push(TraitModule {
+                            trait_path: tp,
+                            mod_name,
+                            entry,
+                            rs_rel_path: rs_rel,
+                            background: is_background,
+                            is_kernel_builtin: is_kb,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}

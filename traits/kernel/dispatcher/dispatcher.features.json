@@ -1,0 +1,152 @@
+{
+  "module": "src/dispatcher.rs",
+  "description": "Core dispatcher — trait resolution, arg validation, type coercion, direct execution",
+  "features": [
+    {
+      "name": "Trait resolution and dispatch",
+      "description": "Dispatcher resolves trait path through registry and executes directly via compiled modules",
+      "tests": [
+        {
+          "name": "successful dispatch returns trait result",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash hello",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "checksum" },
+            { "type": "contains", "expected": "ok" }
+          ]
+        },
+        {
+          "name": "dispatch with no required args",
+          "type": "command",
+          "command": "./target/release/traits call sys.version",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Not-found error",
+      "description": "Dispatcher returns NotFound when trait path is not in registry",
+      "tests": [
+        {
+          "name": "unknown trait path",
+          "type": "command",
+          "command": "./target/release/traits call nonexistent.trait",
+          "checks": [
+            { "type": "exit_code", "expected": 1 },
+            { "type": "contains", "expected": "not found" }
+          ]
+        },
+        {
+          "name": "error includes the missing path",
+          "type": "command",
+          "command": "./target/release/traits call nonexistent.trait",
+          "checks": [
+            { "type": "contains", "expected": "nonexistent.trait" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Argument count validation",
+      "description": "Dispatcher rejects calls with wrong number of arguments",
+      "tests": [
+        {
+          "name": "too few args for required params",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum",
+          "checks": [
+            { "type": "exit_code", "expected": 1 },
+            { "type": "contains", "expected": "Argument count mismatch" }
+          ]
+        },
+        {
+          "name": "optional params can be omitted",
+          "type": "command",
+          "command": "./target/release/traits call sys.version",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Type coercion",
+      "description": "Dispatcher coerces argument types to match trait signature (string↔bool, int→string, etc.)",
+      "tests": [
+        {
+          "name": "string true coerced to bool for boolean param",
+          "type": "command",
+          "command": "./target/release/traits call sys.test_runner sys.checksum true",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "ok" },
+            { "type": "contains", "expected": "details" }
+          ]
+        },
+        {
+          "name": "integer coerced to string for string param",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash 12345",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "checksum" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Meta-dispatch via sys.call",
+      "description": "Dispatcher handles indirect dispatch (call → call) through sys.call trait",
+      "tests": [
+        {
+          "name": "sys.call dispatches to another trait",
+          "type": "command",
+          "command": "./target/release/traits call sys.call sys.version",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        },
+        {
+          "name": "sys.call returns not-found for missing trait",
+          "type": "command",
+          "command": "./target/release/traits call sys.call nonexistent.trait",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "not found" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Direct execution (no WorkerManager)",
+      "description": "Dispatcher executes Rust traits directly through compiled::dispatch_trait_value without intermediary",
+      "tests": [
+        {
+          "name": "compiled dispatch returns correct result",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash 'test data'",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "checksum" },
+            { "type": "contains", "expected": "ok" }
+          ]
+        },
+        {
+          "name": "list trait works through dispatcher",
+          "type": "command",
+          "command": "./target/release/traits list",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys" }
+          ]
+        }
+      ]
+    }
+  ]
+}

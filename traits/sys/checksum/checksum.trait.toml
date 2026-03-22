@@ -1,0 +1,28 @@
+[trait]
+description = "Compute deterministic SHA-256 checksums: hash values, I/O pairs, or trait signatures"
+version = "v260320.125221"
+epoch = 0
+checksum = "a446ffcb783f992affc75445103067ceb4c58c252fdb8b8b35c219e651456c8b"
+author = "kilian"
+tags = ["sys", "checksum", "hash"]
+provides = ["sys/checksum"]
+
+[[signature.params]]
+name = "action"
+type = "string"
+description = "Action: hash | io | signature | update"
+
+[[signature.params]]
+name = "data"
+type = "any"
+pipe = true
+description = "Data to checksum: any value (hash), features array (io), TOML text (signature), release object (update)"
+
+[signature.returns]
+type = "object"
+description = "Object with ok and checksum fields"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "checksum"

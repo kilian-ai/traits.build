@@ -1,0 +1,130 @@
+{
+  "trait": "sys.checksum",
+  "description": "Compute deterministic SHA-256 checksums for values and signatures",
+  "features": [
+    {
+      "name": "Hash deterministic value",
+      "description": "SHA-256 hash of a string returns a known deterministic hex digest",
+      "tests": [
+        {
+          "name": "hash hello returns known digest",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash hello 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "\"ok\": true"
+            },
+            {
+              "type": "contains",
+              "expected": "5aa762ae383fbb727af3c7a36d4940a5b8c40a989452d2304fc958ff3f354e7a"
+            }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": [
+            "hash",
+            "hello"
+          ],
+          "output": {
+            "contains": [
+              "\"ok\":true",
+              "\"checksum\":\"5aa762ae383fbb727af3c7a36d4940a5b8c40a989452d2304fc958ff3f354e7a\""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hash second value differs",
+      "description": "Different inputs produce different digests",
+      "tests": [
+        {
+          "name": "hash world returns different digest",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum hash world 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "\"ok\": true"
+            },
+            {
+              "type": "contains",
+              "expected": "09bf524dc6f5272161e2c2fc597da23610dbd1af8411226b5f5dae77658237cc"
+            }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": [
+            "hash",
+            "world"
+          ],
+          "output": {
+            "contains": [
+              "\"ok\":true",
+              "\"checksum\":\"09bf524dc6f5272161e2c2fc597da23610dbd1af8411226b5f5dae77658237cc\""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Signature checksum",
+      "description": "Computes checksum over trait signature from TOML text",
+      "tests": [
+        {
+          "name": "signature action returns deterministic hash",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum signature '[trait]\\npath=\"test.x\"\\n[[signature.params]]\\nname=\"a\"\\ntype=\"string\"\\n[signature.returns]\\ntype=\"string\"' 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "\"ok\": true"
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Unknown action error",
+      "description": "Returns error listing valid actions when action is unknown",
+      "tests": [
+        {
+          "name": "nonexistent action returns error",
+          "type": "command",
+          "command": "./target/release/traits call sys.checksum nonexistent anything 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "Unknown action: nonexistent"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

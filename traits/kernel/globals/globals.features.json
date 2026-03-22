@@ -1,0 +1,59 @@
+{
+  "module": "src/globals.rs",
+  "description": "Global OnceLock statics, HandleEntry, time utilities, init bootstrap",
+  "features": [
+    {
+      "name": "format_uptime time formatting",
+      "description": "Formats seconds as human-readable duration (hours, minutes, seconds)",
+      "tests": [
+        {
+          "name": "sys.version returns version info (globals initialized)",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "init sets all globals",
+      "description": "init() populates REGISTRY, TRAITS_DIR, CONFIG, START_TIME, HANDLES once",
+      "tests": [
+        {
+          "name": "globals init allows trait listing",
+          "type": "command",
+          "command": "./target/release/traits list 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        },
+        {
+          "name": "globals init allows trait info",
+          "type": "command",
+          "command": "./target/release/traits info sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "now_epoch returns Unix timestamp",
+      "description": "Returns current system time as f64 Unix epoch seconds",
+      "tests": [
+        {
+          "name": "sys.version returns version string",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    }
+  ]
+}

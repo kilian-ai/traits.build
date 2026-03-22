@@ -1,0 +1,33 @@
+[trait]
+path = "kernel.main"
+description = "Binary entry point, system bootstrap, and trait-exists probe"
+version = "v260321"
+checksum = "dd02fd368ecf818141a4404a03a77b2c55c8fed4e9004c5d87628c367b44e5f3"
+epoch = 0
+author = "system"
+tags = ["kernel", "bootstrap", "entry"]
+
+[signature]
+
+[signature.returns]
+type = "object"
+description = "Binary metadata, compiled modules, bootstrap status"
+
+[requires]
+dispatcher = "kernel/dispatcher"
+registry = "kernel/registry"
+config = "kernel/config"
+globals = "kernel/globals"
+dylib_loader = "kernel/dylib_loader"
+
+[bindings]
+dispatcher = "kernel.dispatcher"
+registry = "kernel.registry"
+config = "kernel.config"
+globals = "kernel.globals"
+dylib_loader = "kernel.dylib_loader"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "main_info"

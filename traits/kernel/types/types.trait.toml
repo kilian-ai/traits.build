@@ -1,0 +1,20 @@
+[trait]
+description = "Cross-language type system: TraitType, TraitValue, ParamDef, wire protocol types"
+version = "v260320.205918"
+epoch = 0
+checksum = "ca62f0e0c823e2d95145b5ce4419399d8b6a2091227fad093a80d3c4a7c678d7"
+author = "kilian"
+tags = ["kernel", "types"]
+provides = ["kernel/types"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "object"
+description = "Type system documentation: trait types, languages, wire protocol"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "types"

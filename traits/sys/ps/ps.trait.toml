@@ -1,0 +1,20 @@
+[trait]
+description = "List running background traits with process details"
+version = "v260320.162258"
+epoch = 0
+checksum = "b94645feaaaaea7ed69baa9b2242c9825cbb9afabc5c04e9a6bd0c967282b800"
+author = "system"
+tags = ["system", "process", "background"]
+provides = ["sys/ps"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "object"
+description = "{ ok, processes: [{ trait_path, pid, alive, uptime, memory_mb, pid_file }] }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "ps"

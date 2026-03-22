@@ -1,0 +1,18 @@
+[trait]
+description = "Destroy all Fly.io machines for the app"
+version = "v260321.120132"
+checksum = "4a64818dbecb60567f109dfc736b3f62a291f494049b1706bf0675c40624a590"
+epoch = 0
+author = "system"
+tags = ["www", "admin", "deployment"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "Destroy operation result"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "destroy"

@@ -1,0 +1,26 @@
+[trait]
+description = "Reload trait registry from disk"
+version = "v260320"
+epoch = 0
+checksum = "4fafbe9c45fd038e11e1389c88f5860896c408f054789fba22971f52c0fd8630"
+author = "system"
+tags = ["kernel", "admin"]
+provides = ["kernel/reload"]
+
+[requires]
+globals = "kernel/globals"
+
+[bindings]
+globals = "kernel.globals"
+
+[signature]
+params = []
+
+[signature.returns]
+type = "object"
+description = "Reload status with trait count"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "reload"

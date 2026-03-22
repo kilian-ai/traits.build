@@ -1,0 +1,28 @@
+[trait]
+description = "Global OnceLock statics: REGISTRY, CONFIG, TRAITS_DIR, HANDLES, START_TIME"
+version = "v260320.220232"
+epoch = 0
+checksum = "f4f9bc46617196ad2d4916a279bfea01657ddd17504769d7004b0ec4f68da180"
+author = "kilian"
+tags = ["kernel", "globals"]
+provides = ["kernel/globals"]
+
+[requires]
+config = "kernel/config"
+registry = "kernel/registry"
+
+[bindings]
+config = "kernel.config"
+registry = "kernel.registry"
+
+[signature]
+params = []
+
+[signature.returns]
+type = "object"
+description = "Global state summary: initialization status, uptime, epoch"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "globals"

@@ -1,0 +1,22 @@
+[trait]
+description = "Run fast-deploy.sh locally: build amd64 binary in Docker + upload via sftp + restart. Only works from local dev machine."
+version = "v260321.202512"
+checksum = "0bd6739fde12a5bd8abeced504f33f558375b28f2b40232a4791335dd1283472"
+epoch = 0
+author = "system"
+tags = ["www", "admin", "deploy"]
+
+[[signature.params]]
+name = "mode"
+type = "string"
+description = "Mode: 'build' (full build+upload+restart), 'upload' (re-upload last binary+restart)"
+required = false
+
+[signature.returns]
+type = "object"
+description = "{ ok, output, exit_code }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "fast_deploy"

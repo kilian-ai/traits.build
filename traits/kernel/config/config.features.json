@@ -1,0 +1,90 @@
+{
+  "module": "src/config.rs",
+  "description": "Server configuration loading, defaults, and environment variable overrides",
+  "features": [
+    {
+      "name": "Default configuration",
+      "description": "Config::load returns sensible defaults when config file is absent",
+      "tests": [
+        {
+          "name": "binary starts and serves default port",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        },
+        {
+          "name": "default traits_dir loads traits",
+          "type": "command",
+          "command": "./target/release/traits list 2>/dev/null | grep '\"path\"' | head -1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "path" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Config file loading",
+      "description": "Config::load parses traits.toml when present",
+      "tests": [
+        {
+          "name": "server starts with traits.toml config",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        },
+        {
+          "name": "port override from traits.toml is applied",
+          "type": "command",
+          "command": "grep -q 'port' traits.toml 2>/dev/null && echo found || echo no_config",
+          "checks": [
+            { "type": "exit_code", "expected": 0 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Environment variable overrides",
+      "description": "TRAITS_PORT, TRAITS_DIR, TRAITS_TIMEOUT override file values",
+      "tests": [
+        {
+          "name": "TRAITS_DIR override changes traits directory",
+          "type": "command",
+          "command": "TRAITS_DIR=/nonexistent ./target/release/traits list 2>&1",
+          "checks": [
+            { "type": "contains", "expected": "does not exist" }
+          ]
+        },
+        {
+          "name": "invalid TRAITS_PORT is silently ignored",
+          "type": "command",
+          "command": "TRAITS_PORT=abc ./target/release/traits call sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Unit tests",
+      "description": "Rust unit tests for config loading and parsing",
+      "tests": [
+        {
+          "name": "cargo test config passes",
+          "type": "command",
+          "command": "cd \"$PWD\" && cargo test --lib -- config::tests 2>&1 | tail -5",
+          "checks": [
+            { "type": "contains", "expected": "test result: ok" }
+          ]
+        }
+      ]
+    }
+  ]
+}

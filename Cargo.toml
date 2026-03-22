@@ -1,0 +1,55 @@
+[package]
+name = "traits"
+version = "0.260320.174429"
+edition = "2021"
+description = "Trait plugin system — polyglot composable function objects"
+authors = ["kilian"]
+license = "MIT"
+readme = "README.md"
+exclude = [
+    "programs/",
+    "target/",
+    "gui/",
+    "scripts/",
+    "*.bak",
+]
+
+[workspace]
+members = [
+    ".",
+    "traits/kernel/plugin_api",
+    "traits/www/traits/build",
+]
+
+[[bin]]
+name = "traits"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = "4"
+actix-rt = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tokio = { version = "1", features = ["full"] }
+glob = "0.3"
+clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+dashmap = "5"
+thiserror = "1"
+regex = "1"
+actix-cors = "0.7"
+libloading = "0.8"
+tokio-stream = "0.1"
+futures = "0.3"
+sha2 = "0.10"
+libc = "0.2"
+
+[build-dependencies]
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+assert_cmd = "2"

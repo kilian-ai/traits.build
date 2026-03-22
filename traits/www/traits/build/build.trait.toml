@@ -1,0 +1,19 @@
+[trait]
+description = "Landing page for traits.build"
+version = "v260321"
+epoch = 0
+checksum = "3be5265d46a82f1c450be54a9d01be47fdde2b836c78ad04773def094a51ecee"
+author = "system"
+tags = ["www", "webpage"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML landing page"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "website"

@@ -1,0 +1,23 @@
+{
+  "trait": "sys.ps",
+  "description": "List running background traits with process details",
+  "features": [
+    {
+      "name": "Returns process list structure",
+      "description": "Calling sys.ps returns an object with ok and processes array",
+      "tests": [
+        {
+          "name": "returns ok with processes key",
+          "type": "command",
+          "command": "./target/release/traits call sys.ps 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

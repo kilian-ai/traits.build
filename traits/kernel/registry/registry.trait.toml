@@ -1,0 +1,22 @@
+[trait]
+description = "Trait registry: loading, lookup, interface resolution, bindings, TraitEntry management"
+version = "v260321.114453"
+epoch = 0
+checksum = "7b5f95b77eb03644fe50662315a1d150598775eb1b1dacce821afc35885ed14d"
+author = "kilian"
+tags = ["kernel", "registry"]
+provides = ["kernel/registry"]
+
+[signature]
+params = [
+  { name = "filter", type = "string", description = "Optional namespace or path prefix to filter by", optional = true }
+]
+
+[signature.returns]
+type = "object"
+description = "Registry stats and trait listing"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "registry"

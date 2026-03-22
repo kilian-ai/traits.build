@@ -1,0 +1,41 @@
+{
+  "module": "traits/sys/snapshot/snapshot.rs",
+  "description": "Version-stamp a trait TOML file with YYMMDD date-based version",
+  "features": [
+    {
+      "name": "Snapshot a trait version",
+      "description": "Bumps the version field in a trait's .trait.toml to today's YYMMDD",
+      "tests": [
+        {
+          "name": "snapshot requires trait_path",
+          "type": "command",
+          "command": "./target/release/traits call sys.snapshot 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 1 },
+            { "type": "contains", "expected": "Usage" }
+          ]
+        },
+        {
+          "name": "snapshot nonexistent trait returns error",
+          "type": "command",
+          "command": "./target/release/traits call sys.snapshot nonexistent.trait 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "error" },
+            { "type": "contains", "expected": "not found" }
+          ]
+        },
+        {
+          "name": "snapshot valid trait succeeds",
+          "type": "command",
+          "command": "./target/release/traits call sys.snapshot sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "new_version" }
+          ]
+        }
+      ]
+    }
+  ]
+}

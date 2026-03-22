@@ -1,0 +1,93 @@
+{
+  "trait": "sys.call",
+  "description": "Meta-dispatch trait — calls another trait by dot-notation path",
+  "features": [
+    {
+      "name": "Dispatch to existing trait",
+      "description": "Forwards call to a known trait and returns its result",
+      "tests": [
+        {
+          "name": "call sys.version with no args",
+          "type": "command",
+          "command": "./target/release/traits call sys.call sys.version",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        },
+        {
+          "name": "call sys.checksum with forwarded args",
+          "type": "command",
+          "command": "./target/release/traits call sys.call sys.checksum '[\"hash\",\"hello\"]'",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "checksum" },
+            { "type": "contains", "expected": "ok" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Missing trait_path error",
+      "description": "Returns error when trait_path is empty or missing",
+      "tests": [
+        {
+          "name": "empty string trait_path",
+          "type": "command",
+          "command": "./target/release/traits call sys.call ''",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "trait_path is required" }
+          ]
+        },
+        {
+          "name": "no args at all triggers usage",
+          "type": "command",
+          "command": "./target/release/traits call sys.call",
+          "checks": [
+            { "type": "exit_code", "expected": 1 },
+            { "type": "contains", "expected": "trait_path" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Unknown trait error",
+      "description": "Returns error when dispatching to a nonexistent trait",
+      "tests": [
+        {
+          "name": "nonexistent trait path",
+          "type": "command",
+          "command": "./target/release/traits call sys.call nonexistent.trait",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "not found" }
+          ]
+        },
+        {
+          "name": "error includes the trait path",
+          "type": "command",
+          "command": "./target/release/traits call sys.call nonexistent.trait",
+          "checks": [
+            { "type": "contains", "expected": "nonexistent.trait" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Default args when omitted",
+      "description": "Omitting args array forwards empty array to target trait",
+      "tests": [
+        {
+          "name": "call sys.list with no forwarded args",
+          "type": "command",
+          "command": "./target/release/traits call sys.call sys.list",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.call" }
+          ]
+        }
+      ]
+    }
+  ]
+}

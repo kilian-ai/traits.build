@@ -1,0 +1,21 @@
+[trait]
+description = "Scale Fly.io machines (0 = stop all, 1+ = start)"
+version = "v260322.003611"
+checksum = "3f251103798cf9b0610553c4037d893125391bd83d2f2b57a13aa9508bcb491e"
+epoch = 0
+author = "system"
+tags = ["www", "admin", "deployment"]
+
+[signature]
+params = [
+  { name = "count", type = "int", description = "Target machine count (0 to stop, 1 to start)" }
+]
+
+[signature.returns]
+type = "string"
+description = "Scale operation result"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "scale"

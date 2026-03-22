@@ -1,0 +1,78 @@
+{
+  "module": "traits/sys/version/version.rs",
+  "description": "Show trait system version or generate YYMMDD version strings",
+  "features": [
+    {
+      "name": "System version (default)",
+      "description": "Returns system info: name, build version, trait count",
+      "tests": [
+        {
+          "name": "version default returns system info",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "traits" },
+            { "type": "contains", "expected": "version" }
+          ]
+        },
+        {
+          "name": "version date action returns date mode",
+          "type": "command",
+          "command": "./target/release/traits call sys.version date 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"mode\": \"date\"" }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": ["date"],
+          "output": {
+            "contains": ["\"mode\":\"date\"", "\"version\":\""]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Intraday version (hhmmss)",
+      "description": "Returns YYMMDD.HHMMSS version with suffix and mode hhmmss",
+      "tests": [
+        {
+          "name": "version hhmmss returns intraday mode",
+          "type": "command",
+          "command": "./target/release/traits call sys.version hhmmss 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "hhmmss" },
+            { "type": "contains", "expected": "suffix" }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": ["hhmmss"],
+          "output": {
+            "contains": ["\"mode\":\"hhmmss\"", "\"suffix\":"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Unknown action fallback",
+      "description": "Unknown actions fall back to date mode",
+      "tests": [
+        {
+          "name": "version unknown action returns date mode",
+          "type": "command",
+          "command": "./target/release/traits call sys.version bogus 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "date" }
+          ]
+        }
+      ]
+    }
+  ]
+}

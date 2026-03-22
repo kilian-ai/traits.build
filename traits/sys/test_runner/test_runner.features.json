@@ -1,0 +1,98 @@
+{
+  "trait": "sys.test_runner",
+  "description": "Discovers and runs feature tests from .features.json files",
+  "features": [
+    {
+      "name": "Specific trait test",
+      "description": "Runs tests for a single trait by exact path",
+      "tests": [
+        {
+          "name": "test sys.checksum",
+          "type": "command",
+          "command": "./target/release/traits call sys.test_runner sys.checksum 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "\"ok\": true"
+            },
+            {
+              "type": "contains",
+              "expected": "sys.checksum"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Verbose output",
+      "description": "Verbose mode includes full details with checks array",
+      "tests": [
+        {
+          "name": "verbose sys.checksum",
+          "type": "command",
+          "command": "./target/release/traits call sys.test_runner sys.checksum true 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "details"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Filesystem path discovery",
+      "description": "Discovers features.json files from filesystem paths",
+      "tests": [
+        {
+          "name": "directory path discovers all features",
+          "type": "command",
+          "command": "./target/release/traits call sys.test_runner './traits/kernel/config' 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "total_passed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "No matches",
+      "description": "Returns error when no traits match the pattern",
+      "tests": [
+        {
+          "name": "nonexistent pattern",
+          "type": "command",
+          "command": "./target/release/traits call sys.test_runner nonexistent.trait 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "\"ok\": false"
+            },
+            {
+              "type": "contains",
+              "expected": "No traits with features.json match pattern"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

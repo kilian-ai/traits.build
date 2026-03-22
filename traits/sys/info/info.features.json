@@ -1,0 +1,76 @@
+{
+  "module": "traits/sys/info/info.rs",
+  "description": "Thin delegate to registry::info — show detailed trait info or list traits in a namespace",
+  "features": [
+    {
+      "name": "Exact trait info",
+      "description": "Delegates to registry::info, returns full trait details for a specific path",
+      "tests": [
+        {
+          "name": "info sys.version returns trait details",
+          "type": "command",
+          "command": "./target/release/traits call sys.info sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.version" },
+            { "type": "contains", "expected": "description" }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": ["sys.version"],
+          "output": {
+            "contains": ["\"path\":\"sys.version\"", "\"description\":"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Namespace listing",
+      "description": "Delegates to registry::info, returns list of traits when path is a namespace",
+      "tests": [
+        {
+          "name": "info sys returns namespace listing",
+          "type": "command",
+          "command": "./target/release/traits call sys.info sys 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Not found error",
+      "description": "Delegates to registry::info which returns error for nonexistent trait/namespace",
+      "tests": [
+        {
+          "name": "info nonexistent returns error",
+          "type": "command",
+          "command": "./target/release/traits call sys.info nonexistent 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "error" },
+            { "type": "contains", "expected": "not found" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Missing path error",
+      "description": "CLI shows usage when no path provided",
+      "tests": [
+        {
+          "name": "info no args shows usage",
+          "type": "command",
+          "command": "./target/release/traits call sys.info 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 1 },
+            { "type": "contains", "expected": "Usage" }
+          ]
+        }
+      ]
+    }
+  ]
+}

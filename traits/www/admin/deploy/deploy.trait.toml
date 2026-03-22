@@ -1,0 +1,21 @@
+[trait]
+description = "Deploy latest version to Fly.io"
+version = "v260322"
+checksum = "6d6df96a08821371f5e7471a2495e28a9d5a55d03cb355e126dbec866ac38ad5"
+epoch = 0
+author = "system"
+tags = ["www", "admin", "deployment"]
+
+[signature]
+params = [
+  { name = "mode", type = "string", description = "Pass 'status' to query machines without changing them", optional = true },
+]
+
+[signature.returns]
+type = "string"
+description = "Deployment result"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "deploy"

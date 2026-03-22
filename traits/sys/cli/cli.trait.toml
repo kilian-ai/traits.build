@@ -1,0 +1,30 @@
+[trait]
+description = "CLI bootstrap, trait dispatch, stdin injection, arg parsing, result formatting"
+version = "v260320.224553"
+epoch = 0
+checksum = "d14432c19bdfc0ac2fa4ee5e97f814891fa107af06d7e54288347b3ed37e4d9e"
+author = "kilian"
+tags = ["system", "cli"]
+provides = ["sys/cli"]
+
+[requires]
+config = "kernel/config"
+call = "kernel/call"
+serve = "kernel/serve"
+
+[bindings]
+config = "kernel.config"
+call = "kernel.call"
+serve = "kernel.serve"
+
+[signature]
+params = []
+
+[signature.returns]
+type = "object"
+description = "CLI capabilities: features, dispatch flow, formatter status"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "cli"

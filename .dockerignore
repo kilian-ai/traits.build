@@ -1,0 +1,15 @@
+target/
+.git/
+node_modules/
+*.md
+evidence/
+docs/
+programs/
+gui/
+site/
+sdk/
+tests/
+bot/
+scripts/
+opencode-dev/
+graitcloud/

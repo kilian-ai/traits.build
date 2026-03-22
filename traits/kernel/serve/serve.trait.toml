@@ -1,0 +1,35 @@
+[trait]
+description = "Start the HTTP API server"
+version = "v260321.222758"
+epoch = 0
+checksum = "cc174639cdd1bd8444e19b7dcf8194ec43ccf64cbf8908bfbe30ad2e89931e4b"
+author = "system"
+tags = ["system", "server"]
+background = true
+provides = ["kernel/serve"]
+
+[requires]
+"/" = "www/webpage"
+"/copy" = "www/webpage"
+"/admin" = "www/webpage"
+dispatcher = "kernel/dispatcher"
+
+[bindings]
+"/" = "www.traits.build"
+"/copy" = "www.traits.build"
+"/admin" = "www.admin"
+dispatcher = "kernel.dispatcher"
+
+[signature]
+params = [
+  { name = "port", type = "int", description = "Port to listen on (default: from config)", optional = true }
+]
+
+[signature.returns]
+type = "object"
+description = "Server status (never returns while running)"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "serve"

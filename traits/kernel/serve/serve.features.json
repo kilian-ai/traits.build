@@ -1,0 +1,129 @@
+{
+  "module": "traits/kernel/serve/serve.rs",
+  "description": "HTTP server: REST API for traits platform with actix-web, CORS, SSE streaming, and keyed interface page routing",
+  "features": [
+    {
+      "name": "Health endpoint",
+      "description": "GET /health returns healthy status with version",
+      "tests": [
+        {
+          "name": "health check returns healthy status",
+          "type": "command",
+          "command": "PORT=18090; ADHOC=0; curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 || { ./target/release/traits serve $PORT &>/dev/null & SPID=$!; ADHOC=1; for i in $(seq 1 20); do curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 && break; sleep 0.2; done; }; OUT=$(curl -sf http://127.0.0.1:$PORT/health 2>/dev/null); [ $ADHOC -eq 1 ] && kill $SPID 2>/dev/null; echo \"$OUT\"",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "healthy" },
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "List traits endpoint",
+      "description": "GET /traits returns trait tree",
+      "tests": [
+        {
+          "name": "GET /traits returns trait list",
+          "type": "command",
+          "command": "PORT=18090; ADHOC=0; curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 || { ./target/release/traits serve $PORT &>/dev/null & SPID=$!; ADHOC=1; for i in $(seq 1 20); do curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 && break; sleep 0.2; done; }; OUT=$(curl -s http://127.0.0.1:$PORT/traits 2>/dev/null); [ $ADHOC -eq 1 ] && kill $SPID 2>/dev/null; echo \"$OUT\"",
+          "checks": [
+            { "type": "contains", "expected": "sys" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Call trait endpoint",
+      "description": "POST /traits/{path} calls a trait with JSON body",
+      "tests": [
+        {
+          "name": "POST call to sys.version works",
+          "type": "command",
+          "command": "PORT=18090; ADHOC=0; curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 || { ./target/release/traits serve $PORT &>/dev/null & SPID=$!; ADHOC=1; for i in $(seq 1 20); do curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 && break; sleep 0.2; done; }; OUT=$(curl -s -X POST http://127.0.0.1:$PORT/traits/sys.version -H 'Content-Type: application/json' -d '{\"args\":[]}' 2>/dev/null); [ $ADHOC -eq 1 ] && kill $SPID 2>/dev/null; echo \"$OUT\"",
+          "checks": [
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Trait info endpoint",
+      "description": "GET /traits/{path} returns trait details",
+      "tests": [
+        {
+          "name": "GET trait info returns details",
+          "type": "command",
+          "command": "PORT=18090; ADHOC=0; curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 || { ./target/release/traits serve $PORT &>/dev/null & SPID=$!; ADHOC=1; for i in $(seq 1 20); do curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 && break; sleep 0.2; done; }; OUT=$(curl -s http://127.0.0.1:$PORT/traits/sys.version 2>/dev/null); [ $ADHOC -eq 1 ] && kill $SPID 2>/dev/null; echo \"$OUT\"",
+          "checks": [
+            { "type": "contains", "expected": "sys.version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Metrics endpoint",
+      "description": "GET /metrics returns Prometheus-format trait count",
+      "tests": [
+        {
+          "name": "metrics returns trait count",
+          "type": "command",
+          "command": "PORT=18090; ADHOC=0; curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 || { ./target/release/traits serve $PORT &>/dev/null & SPID=$!; ADHOC=1; for i in $(seq 1 20); do curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 && break; sleep 0.2; done; }; OUT=$(curl -s http://127.0.0.1:$PORT/metrics 2>/dev/null); [ $ADHOC -eq 1 ] && kill $SPID 2>/dev/null; echo \"$OUT\"",
+          "checks": [
+            { "type": "contains", "expected": "traits_total" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Keyed page routing via serve_page",
+      "description": "Non-API routes resolved via dispatcher.resolve_keyed using kernel.serve [requires]/[bindings]",
+      "tests": [
+        {
+          "name": "root path serves page from keyed binding",
+          "type": "command",
+          "command": "PORT=18090; ADHOC=0; curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 || { ./target/release/traits serve $PORT &>/dev/null & SPID=$!; ADHOC=1; for i in $(seq 1 20); do curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 && break; sleep 0.2; done; }; OUT=$(curl -s http://127.0.0.1:$PORT/ 2>/dev/null); [ $ADHOC -eq 1 ] && kill $SPID 2>/dev/null; echo \"$OUT\"",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "<html" }
+          ]
+        },
+        {
+          "name": "unbound path returns 404",
+          "type": "command",
+          "command": "PORT=18090; ADHOC=0; curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 || { ./target/release/traits serve $PORT &>/dev/null & SPID=$!; ADHOC=1; for i in $(seq 1 20); do curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 && break; sleep 0.2; done; }; STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$PORT/nonexistent-path-xyz 2>/dev/null); [ $ADHOC -eq 1 ] && kill $SPID 2>/dev/null; echo \"$STATUS\"",
+          "checks": [
+            { "type": "contains", "expected": "404" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Async start entry point",
+      "description": "start() extracts port from args and delegates to start_server using globals",
+      "tests": [
+        {
+          "name": "sync serve stub returns error",
+          "type": "command",
+          "command": "PORT=18090; ADHOC=0; curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 || { ./target/release/traits serve $PORT &>/dev/null & SPID=$!; ADHOC=1; for i in $(seq 1 20); do curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 && break; sleep 0.2; done; }; OUT=$(curl -s -X POST http://127.0.0.1:$PORT/traits/kernel.serve -H 'Content-Type: application/json' -d '{\"args\":[]}' 2>/dev/null); [ $ADHOC -eq 1 ] && kill $SPID 2>/dev/null; echo \"$OUT\"",
+          "checks": [
+            { "type": "contains", "expected": "background" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Default service routing",
+      "description": "Non-API routes handled by default_service via serve_page instead of returning 404",
+      "tests": [
+        {
+          "name": "bound path /copy serves page content",
+          "type": "command",
+          "command": "PORT=18090; ADHOC=0; curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 || { ./target/release/traits serve $PORT &>/dev/null & SPID=$!; ADHOC=1; for i in $(seq 1 20); do curl -sf http://127.0.0.1:$PORT/health >/dev/null 2>&1 && break; sleep 0.2; done; }; STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$PORT/copy 2>/dev/null); [ $ADHOC -eq 1 ] && kill $SPID 2>/dev/null; echo \"$STATUS\"",
+          "checks": [
+            { "type": "contains", "expected": "200" }
+          ]
+        }
+      ]
+    }
+  ]
+}

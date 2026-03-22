@@ -1,0 +1,195 @@
+{
+  "module": "traits/sys/registry/registry.rs",
+  "description": "Registry query API: list, info, tree, namespaces, count, get, search, namespace filter",
+  "features": [
+    {
+      "name": "List action",
+      "description": "Returns sorted array of trait summaries with optional namespace filter",
+      "tests": [
+        {
+          "name": "registry list returns all traits",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry list 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        },
+        {
+          "name": "registry list with namespace filter",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry list sys 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Info action",
+      "description": "Returns full trait details for exact path or namespace listing",
+      "tests": [
+        {
+          "name": "registry info exact trait",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry info sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.version" },
+            { "type": "contains", "expected": "description" }
+          ]
+        },
+        {
+          "name": "registry info namespace listing",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry info sys 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        },
+        {
+          "name": "registry info not found",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry info nonexistent 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "error" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Tree action",
+      "description": "Returns nested JSON tree of all traits",
+      "tests": [
+        {
+          "name": "registry tree returns nested structure",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry tree 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys" }
+          ]
+        },
+        {
+          "name": "registry default is tree",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Namespaces action",
+      "description": "Returns sorted array of unique namespaces",
+      "tests": [
+        {
+          "name": "registry namespaces returns array with sys",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry namespaces 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys" }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": ["namespaces"],
+          "output": {
+            "contains": ["\"sys\""]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Count action",
+      "description": "Returns total number of registered traits",
+      "tests": [
+        {
+          "name": "registry count returns positive number",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry count 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "count_gte", "expected": 5 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Get action",
+      "description": "Returns full trait info for a specific path",
+      "tests": [
+        {
+          "name": "registry get sys.version returns trait info",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry get sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.version" }
+          ]
+        },
+        {
+          "name": "registry get missing path returns error",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry get 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "error" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Search action",
+      "description": "Case-insensitive search across trait paths and descriptions",
+      "tests": [
+        {
+          "name": "registry search version finds results",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry search version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Namespace action",
+      "description": "Filter traits by namespace prefix",
+      "tests": [
+        {
+          "name": "registry namespace sys returns sys traits",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry namespace sys 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Unknown action error",
+      "description": "Returns error for unknown actions",
+      "tests": [
+        {
+          "name": "registry unknown action returns error",
+          "type": "command",
+          "command": "./target/release/traits call sys.registry bogus 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "error" }
+          ]
+        }
+      ]
+    }
+  ]
+}

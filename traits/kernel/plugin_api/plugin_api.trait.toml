@@ -1,0 +1,20 @@
+[trait]
+path = "kernel.plugin_api"
+description = "C ABI export macro for cdylib trait plugins"
+version = "v260321.024324"
+epoch = 0
+checksum = "7a52985d31d01ec8d0ec1b39ba53227d6db9918f7691ec4760b38f632fbd7d10"
+author = "system"
+tags = ["kernel", "dylib", "ffi", "macro"]
+provides = ["kernel/plugin_api"]
+
+[signature]
+
+[signature.returns]
+type = "object"
+description = "Plugin ABI contract and installed plugins"
+
+[implementation]
+language = "rust"
+source = "kernel"
+entry = "plugin_api"

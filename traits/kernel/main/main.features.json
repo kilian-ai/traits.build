@@ -1,0 +1,113 @@
+{
+  "module": "traits/kernel/main/main.rs",
+  "description": "Binary entry point, system bootstrap, trait-exists probe. src/ is a symlink to traits/kernel/main/",
+  "features": [
+    {
+      "name": "bootstrap",
+      "description": "Initialize trait runtime: registry + dylibs + globals + dispatcher",
+      "tests": [
+        {
+          "name": "bootstrap produces working dispatcher",
+          "type": "command",
+          "command": "./target/release/traits call kernel.globals 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "registry_initialized" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "trait_exists",
+      "description": "Lightweight probe for trait TOML existence without bootstrapping",
+      "tests": [
+        {
+          "name": "sys.list routes correctly (uses trait_exists to pick sys vs kernel)",
+          "type": "command",
+          "command": "./target/release/traits list 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Call subcommand",
+      "description": "Calls a trait by full dot-notation path with positional args",
+      "tests": [
+        {
+          "name": "call sys.version returns version info",
+          "type": "command",
+          "command": "./target/release/traits call sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        },
+        {
+          "name": "call nonexistent trait shows error",
+          "type": "command",
+          "command": "./target/release/traits call nonexistent.trait 2>&1",
+          "checks": [
+            { "type": "contains", "expected": "Error" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "External subcommand routing",
+      "description": "Any unrecognized subcommand is dispatched as sys.<name>",
+      "tests": [
+        {
+          "name": "list routes to sys.list",
+          "type": "command",
+          "command": "./target/release/traits list 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys." }
+          ]
+        },
+        {
+          "name": "version routes to sys.version",
+          "type": "command",
+          "command": "./target/release/traits version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "version" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Default subcommand (no args)",
+      "description": "No subcommand defaults to sys.serve with config port",
+      "tests": [
+        {
+          "name": "help text shows call and external subcommand info",
+          "type": "command",
+          "command": "./target/release/traits --help 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "call" },
+            { "type": "contains", "expected": "sys." }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Kernel module inclusion",
+      "description": "All kernel modules are included via build.rs-generated kernel_modules.rs",
+      "tests": [
+        {
+          "name": "binary compiles with kernel modules",
+          "type": "command",
+          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo check 2>&1 | tail -3",
+          "checks": [
+            { "type": "contains", "expected": "Finished" }
+          ]
+        }
+      ]
+    }
+  ]
+}
