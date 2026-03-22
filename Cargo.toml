@@ -6,6 +6,8 @@ description = "Trait plugin system — polyglot composable function objects"
 authors = ["kilian"]
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/kilian-ai/traits.build"
+homepage = "https://traits.build/"
 exclude = [
     "programs/",
     "target/",

@@ -1,6 +1,9 @@
 # traits.build — Agent Instructions
 
 > Pure Rust kernel for the Traits platform. Deployed at traits.build via Fly.io.
+>
+> - **Repository:** https://github.com/kilian-ai/traits.build
+> - **Homepage:** https://traits.build/
 
 ---
 
