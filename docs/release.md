@@ -8,6 +8,8 @@ traits.build uses YYMMDD versioning (e.g. `v260322`). The version is computed au
 
 The canonical version lives in `traits/sys/version/version.trait.toml` and is updated by `build.rs` on each build.
 
+**Release goal:** each release should use the clean `vYYMMDD` tag (no intraday suffix). To get this, do the release build as the first build of the day — shortly after midnight UTC. That way `build.rs` sees a new date and produces `vYYMMDD` without appending `.HHMMSS`.
+
 ### Steps
 
 ```sh
