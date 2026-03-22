@@ -17,7 +17,8 @@ pub struct FlyApi {
 impl FlyApi {
     pub fn new() -> Result<Self, String> {
         let token = std::env::var("FLY_API_TOKEN")
-            .map_err(|_| "FLY_API_TOKEN not set".to_string())?;
+            .or_else(|_| std::env::var("FLY_ACCESS_TOKEN"))
+            .map_err(|_| "FLY_API_TOKEN not set (also checked FLY_ACCESS_TOKEN)".to_string())?;
         if token.is_empty() {
             return Err("FLY_API_TOKEN is empty".to_string());
         }

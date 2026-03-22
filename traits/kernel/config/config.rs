@@ -24,7 +24,7 @@ fn default_fly_app() -> String {
 }
 
 fn default_fly_region() -> String {
-    "iad".into()
+    std::env::var("FLY_REGION").unwrap_or_else(|_| "iad".into())
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -98,6 +98,11 @@ impl Config {
             if let Ok(app) = std::env::var("FLY_APP") {
                 if !app.is_empty() {
                     config.deploy.fly_app = app;
+                }
+            }
+            if let Ok(region) = std::env::var("FLY_REGION") {
+                if !region.is_empty() {
+                    config.deploy.fly_region = region;
                 }
             }
 
