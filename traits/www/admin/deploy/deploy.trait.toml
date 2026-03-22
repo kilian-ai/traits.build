@@ -1,7 +1,7 @@
 [trait]
 description = "Deploy latest version to Fly.io"
-version = "v260322"
-checksum = "6d6df96a08821371f5e7471a2495e28a9d5a55d03cb355e126dbec866ac38ad5"
+version = "v260322.181651"
+checksum = "0e6db6450b8bb489694249ff3439dcd055ef312ba1f8198dd9acb4027087c05a"
 epoch = 0
 author = "system"
 tags = ["www", "admin", "deployment"]

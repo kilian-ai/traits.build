@@ -2,7 +2,7 @@
 name = "traits"
 version = "0.260320.174429"
 edition = "2021"
-description = "Trait plugin system — polyglot composable function objects"
+description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
 license = "MIT"
 readme = "README.md"
@@ -14,6 +14,11 @@ exclude = [
     "gui/",
     "scripts/",
     "*.bak",
+    "fly.toml",
+    "Dockerfile",
+    ".github/",
+    "site/",
+    "docs/",
 ]
 
 [workspace]

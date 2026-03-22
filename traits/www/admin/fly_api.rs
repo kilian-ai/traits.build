@@ -4,7 +4,9 @@
 use std::process::Command;
 
 const FLY_API_BASE: &str = "https://api.machines.dev/v1";
-const FLY_APP: &str = "polygrait-api";
+fn fly_app() -> String {
+    std::env::var("FLY_APP").unwrap_or_else(|_| "polygrait-api".into())
+}
 
 pub struct FlyApi {
     token: String,
@@ -33,7 +35,7 @@ impl FlyApi {
 
     /// GET request to Fly Machines API.
     pub fn get(&self, path: &str) -> Result<String, String> {
-        let url = format!("{}/apps/{}{}", FLY_API_BASE, FLY_APP, path);
+        let url = format!("{}/apps/{}{}", FLY_API_BASE, fly_app(), path);
         let auth = self.auth_header();
         let output = Command::new("curl")
             .args(["-s", "-X", "GET", &url,
@@ -50,7 +52,7 @@ impl FlyApi {
 
     /// POST request to Fly Machines API.
     pub fn post(&self, path: &str, body: &str) -> Result<String, String> {
-        let url = format!("{}/apps/{}{}", FLY_API_BASE, FLY_APP, path);
+        let url = format!("{}/apps/{}{}", FLY_API_BASE, fly_app(), path);
         let auth = self.auth_header();
         let output = Command::new("curl")
             .args(["-s", "-X", "POST", &url,
@@ -68,7 +70,7 @@ impl FlyApi {
 
     /// DELETE request to Fly Machines API.
     pub fn delete(&self, path: &str) -> Result<String, String> {
-        let url = format!("{}/apps/{}{}", FLY_API_BASE, FLY_APP, path);
+        let url = format!("{}/apps/{}{}", FLY_API_BASE, fly_app(), path);
         let auth = self.auth_header();
         let output = Command::new("curl")
             .args(["-s", "-X", "DELETE", &url,

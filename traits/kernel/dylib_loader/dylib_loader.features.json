@@ -9,7 +9,7 @@
         {
           "name": "cargo unit test dylib_name_to_trait_path",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test test_dylib_name_to_trait_path -- --nocapture 2>&1",
+          "command": "cargo test test_dylib_name_to_trait_path -- --nocapture 2>&1",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "test_dylib_name_to_trait_path ... ok" }
@@ -32,7 +32,7 @@
         {
           "name": "www.traits.build loads via TOML discovery",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits call www.traits.build 2>/dev/null | head -1",
+          "command": "./target/release/traits call www.traits.build 2>/dev/null | head -1",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "<!DOCTYPE html>" }
@@ -47,7 +47,7 @@
         {
           "name": "list includes dylib-loaded traits",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits list 2>/dev/null",
+          "command": "./target/release/traits list 2>/dev/null",
           "checks": [
             { "type": "exit_code", "expected": 0 }
           ]
@@ -61,7 +61,7 @@
         {
           "name": "dispatch to non-existent dylib returns gracefully",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits call sys.nonexistent_dylib_test 2>&1",
+          "command": "./target/release/traits call sys.nonexistent_dylib_test 2>&1",
           "checks": [
             { "type": "contains", "expected": "Error" }
           ]
@@ -75,7 +75,7 @@
         {
           "name": "cargo unit test covers is_dylib via dylib_name_to_trait_path test",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test dylib_loader -- --nocapture 2>&1",
+          "command": "cargo test dylib_loader -- --nocapture 2>&1",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "test result: ok" }
@@ -90,7 +90,7 @@
         {
           "name": "no duplicate load warnings in clean startup",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits call www.traits.build 2>&1 | grep -c 'Failed to load'",
+          "command": "./target/release/traits call www.traits.build 2>&1 | grep -c 'Failed to load'",
           "checks": [
             { "type": "contains", "expected": "0" }
           ]

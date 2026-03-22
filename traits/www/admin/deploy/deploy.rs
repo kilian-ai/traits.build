@@ -83,7 +83,7 @@ pub fn deploy(args: &[Value]) -> Value {
 
 /// Create the first machine for the app using Fly Machines API.
 fn create_first_machine(api: &FlyApi) -> Value {
-    let image = format!("registry.fly.io/{}:deployment-latest", FLY_APP);
+    let image = format!("registry.fly.io/{}:deployment-latest", fly_app());
     let body = serde_json::json!({
         "region": "iad",
         "config": {

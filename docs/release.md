@@ -13,7 +13,7 @@ The canonical version lives in `traits/sys/version/version.trait.toml` and is up
 ### Steps
 
 ```sh
-cd "/Users/kilian/.ai/traits/Polygrait/A. traits.build"
+cd path/to/traits.build
 
 # 1. Get the current version
 grep 'version =' traits/sys/version/version.trait.toml

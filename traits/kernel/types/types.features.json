@@ -9,7 +9,7 @@
         {
           "name": "cargo unit test type_matching",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test test_type_matching -- --nocapture 2>&1",
+          "command": "cargo test test_type_matching -- --nocapture 2>&1",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "test_type_matching ... ok" }
@@ -32,7 +32,7 @@
         {
           "name": "cargo unit test type_name",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test test_type_name -- --nocapture 2>&1",
+          "command": "cargo test test_type_name -- --nocapture 2>&1",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "test_type_name ... ok" }
@@ -61,7 +61,7 @@
         {
           "name": "all types unit tests pass",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo test types:: -- --nocapture 2>&1",
+          "command": "cargo test types:: -- --nocapture 2>&1",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "test result: ok" }

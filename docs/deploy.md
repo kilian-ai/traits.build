@@ -1,7 +1,7 @@
 ## Deploy to Fly
 Based on the project setup, here are the steps to deploy from local to polygrait-api.fly.dev:
 ```sh
-cd "/Users/kilian/.ai/traits/Polygrait/A. traits.build"
+cd path/to/traits.build
 
 # 1. Build the Docker image for amd64 (Fly runs amd64, Mac is aarch64)
 docker buildx build --platform linux/amd64 -t registry.fly.io/polygrait-api:latest .

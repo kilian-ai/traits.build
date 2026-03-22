@@ -110,7 +110,7 @@
         {
           "name": "binary compiles with kernel modules",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo check 2>&1 | tail -3",
+          "command": "cargo check 2>&1 | tail -3",
           "checks": [
             { "type": "contains", "expected": "Finished" }
           ]

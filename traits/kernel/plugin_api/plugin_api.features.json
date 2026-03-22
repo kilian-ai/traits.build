@@ -9,7 +9,7 @@
         {
           "name": "www.traits.build loads and returns HTML via export_trait! macro",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && ./target/release/traits call www.traits.build 2>/dev/null | head -1",
+          "command": "./target/release/traits call www.traits.build 2>/dev/null | head -1",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "<!DOCTYPE html>" }
@@ -32,7 +32,7 @@
         {
           "name": "cargo build plugin_api",
           "type": "command",
-          "command": "cd /Users/kilian/.ai/traits/Polygrait/AB.\\ Traits && cargo build --release -p plugin_api 2>&1",
+          "command": "cargo build --release -p plugin_api 2>&1",
           "checks": [
             { "type": "exit_code", "expected": 0 }
           ]
