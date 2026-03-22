@@ -1,3 +1,4 @@
+## Deploy to Fly
 Based on the project setup, here are the steps to deploy from local to polygrait-api.fly.dev:
 ```sh
 cd "/Users/kilian/.ai/traits/Polygrait/A. traits.build"

@@ -104,7 +104,7 @@ Hierarchical tree of all traits:
 }
 ```
 
-### GET /traits/{path}
+### GET /traits/\{path\}
 
 Detailed info for a specific trait:
 
