@@ -12,9 +12,15 @@ pub fn website(_args: &[Value]) -> Value {
         }
         None => (0, 0),
     };
+    let binary_size = std::env::current_exe()
+        .ok()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| format!("{:.1} MB", m.len() as f64 / 1_048_576.0))
+        .unwrap_or_else(|| "? MB".to_string());
     let html = HTML
         .replace("{{TRAIT_COUNT}}", &trait_count.to_string())
-        .replace("{{NS_COUNT}}", &ns_count.to_string());
+        .replace("{{NS_COUNT}}", &ns_count.to_string())
+        .replace("{{BINARY_SIZE}}", &binary_size);
     Value::String(html)
 }
 
@@ -109,7 +115,7 @@ footer a{color:var(--accent)}
 <div class="stats">
   <div class="stat"><div class="num">{{TRAIT_COUNT}}</div><div class="label">compiled traits</div></div>
   <div class="stat"><div class="num">{{NS_COUNT}}</div><div class="label">namespaces</div></div>
-  <div class="stat"><div class="num">~2 MB</div><div class="label">binary size</div></div>
+  <div class="stat"><div class="num">{{BINARY_SIZE}}</div><div class="label">binary size</div></div>
   <div class="stat"><div class="num">0</div><div class="label">runtime deps</div></div>
 </div>
 
@@ -155,7 +161,7 @@ footer a{color:var(--accent)}
   <div class="card">
     <div class="icon">&#x1f680;</div>
     <h3>Single binary, zero runtime</h3>
-    <p>Every trait compiles directly into the binary via build.rs. No containers, no workers, no runtime dependencies. One ~2 MB executable does everything.</p>
+    <p>Every trait compiles directly into the binary via build.rs. No containers, no workers, no runtime dependencies. One executable does everything.</p>
   </div>
   <div class="card">
     <div class="icon">&#x2699;&#xfe0f;</div>
@@ -166,6 +172,11 @@ footer a{color:var(--accent)}
     <div class="icon">&#x1f50c;</div>
     <h3>CLI + REST + MCP</h3>
     <p>Every trait is callable via REST API (<code>POST /traits/ns/name</code>), CLI (<code>traits name args</code>), or MCP tool protocol. One trait, three surfaces.</p>
+  </div>
+  <div class="card">
+    <div class="icon">&#x1f310;</div>
+    <h3>Built-in web server</h3>
+    <p>The binary hosts its own landing page, admin dashboard, and documentation &mdash; all as traits. No nginx, no static files, no separate frontend. <code>kernel.serve</code> runs actix-web; www.* traits generate HTML.</p>
   </div>
   <div class="card">
     <div class="icon">&#x1f517;</div>
@@ -252,15 +263,16 @@ footer a{color:var(--accent)}
 <tr><td>sys.info</td><td>Show detailed trait metadata and signatures</td></tr>
 <tr><td>sys.ps</td><td>List running background traits with process details</td></tr>
 <tr><td>sys.openapi</td><td>Generate OpenAPI 3.0 spec with live examples from the registry</td></tr>
-<tr><td>www.traits.build</td><td>This landing page</td></tr>
+<tr><td>sys.mcp</td><td>MCP stdio server &mdash; JSON-RPC 2.0 over stdin/stdout</td></tr>
+<tr><td>www.traits.build</td><td>This landing page &mdash; stats pulled live from registry</td></tr>
+<tr><td>www.docs</td><td>Single-page documentation with all guides rendered from markdown</td></tr>
+<tr><td>www.docs.api</td><td>Serve Redoc API documentation page (OpenAPI + Redoc)</td></tr>
 <tr><td>www.admin</td><td>Admin dashboard with deployment controls (Basic Auth)</td></tr>
 <tr><td>www.admin.deploy</td><td>Deploy to Fly.io</td></tr>
+<tr><td>www.admin.fast_deploy</td><td>Fast deploy: Docker build + sftp upload + restart</td></tr>
 <tr><td>www.admin.scale</td><td>Scale Fly.io machines up or down</td></tr>
 <tr><td>www.admin.destroy</td><td>Destroy Fly.io machines</td></tr>
-<tr><td>www.admin.fast_deploy</td><td>Fast deploy: Docker build + sftp upload + restart</td></tr>
-<tr><td>www.docs.api</td><td>Serve Redoc API documentation page</td></tr>
-<tr><td>www.docs</td><td>Single-page documentation with all guides rendered from markdown</td></tr>
-<tr><td>sys.mcp</td><td>MCP stdio server &mdash; JSON-RPC 2.0 over stdin/stdout</td></tr>
+<tr><td>www.admin.save_config</td><td>Save deploy configuration to traits.toml</td></tr>
 </table>
 </section>
 
@@ -389,7 +401,7 @@ traits/sys/checksum/checksum.rs
 
 <span class="cm"># 3. cargo build produces a single binary</span>
 <span class="kw">$</span> cargo build --release
-<span class="cm">#    target/release/traits (~2 MB)</span>
+<span class="cm">#    target/release/traits ({{BINARY_SIZE}})</span>
 
 <span class="cm"># 4. Run it anywhere</span>
 <span class="kw">$</span> ./traits serve --port 8090
