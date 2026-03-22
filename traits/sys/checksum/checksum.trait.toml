@@ -3,7 +3,7 @@ description = "Compute deterministic SHA-256 checksums: hash values, I/O pairs, 
 version = "v260320.125221"
 epoch = 0
 checksum = "a446ffcb783f992affc75445103067ceb4c58c252fdb8b8b35c219e651456c8b"
-author = "kilian"
+author = "kilian-ai"
 tags = ["sys", "checksum", "hash"]
 provides = ["sys/checksum"]
 

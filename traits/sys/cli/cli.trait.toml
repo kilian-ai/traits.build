@@ -3,7 +3,7 @@ description = "CLI bootstrap, trait dispatch, stdin injection, arg parsing, resu
 version = "v260322"
 epoch = 0
 checksum = "e466fa4cb55c0e2a41526b2c423f9a77eac2b6ab32ea4719a570f5f7ac64662b"
-author = "kilian"
+author = "kilian-ai"
 tags = ["system", "cli"]
 provides = ["sys/cli"]
 

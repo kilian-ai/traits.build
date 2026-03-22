@@ -83,6 +83,248 @@ cargo build --release
 ./target/release/traits   # reads TRAITS_PORT env var
 ```
 
+### build.rs Deep Internals
+
+#### Trait Detection (visit_traits function)
+
+**Builtin traits** (source = "builtin" or "kernel"):
+- Must have a `.rs` sibling (e.g., `traits/sys/checksum/checksum.rs`)
+- Are compiled directly into the kernel binary
+- Trait path derived from directory structure: `traits/sys/checksum/checksum.trait.toml` → `sys.checksum`
+
+**Dylib traits** (source = "dylib"):
+- Have a `.rs` file + compiled to cdylib (`lib<name>.dylib`)
+- Loaded at runtime by dylib_loader
+- Must match C ABI from plugin_api
+
+Key logic:
+1. Walks traits/ recursively
+2. For each `.trait.toml`:
+   - Parses `source`, `entry`, `background`, `callable` fields
+   - If builtin: checks for sibling `.rs` file
+   - If sibling exists: registers as TraitModule
+   - Updates `.trait.toml` checksum (bumps version if .rs changed)
+3. **Kernel traits**: if path starts with "kernel." AND mod_name != "main", also register as KernelModule (crate-level mod)
+4. **CLI formatters**: discovers `<name>_cli.rs` companion files for CLI output formatting
+
+#### Generated Code Examples
+
+**builtin_traits.rs** — Array of BuiltinTraitDef structs:
+```rust
+pub const BUILTIN_TRAIT_DEFS: &[BuiltinTraitDef] = &[
+    BuiltinTraitDef { 
+        path: "sys.checksum", 
+        rel_path: "traits/sys/checksum/checksum.trait.toml",
+        toml: include_str!(...)  // Full TOML content
+    },
+    ...
+];
+```
+
+**compiled_traits.rs** — Module declarations + dispatch functions:
+```rust
+#[path = "/absolute/path/traits/sys/checksum/checksum.rs"]
+pub mod checksum;
+
+pub fn dispatch_compiled(trait_path: &str, args: &[Value]) -> Option<Value> {
+    match trait_path {
+        "sys.checksum" => Some(checksum::checksum_dispatch(args)),
+        ...
+    }
+}
+
+// dispatch: unified - tries dylib_loader first, then compiled
+pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
+    if let Some(loader) = dylib_loader::LOADER.get() {
+        if let Some(result) = loader.dispatch(trait_path, args) {
+            return Some(result);
+        }
+    }
+    dispatch_compiled(trait_path, args)
+}
+
+// dispatch_async: for background = true traits (async entry points)
+pub async fn dispatch_async(trait_path: &str, args: &[TraitValue]) -> Option<Result<TraitValue>> { ... }
+```
+
+**kernel_modules.rs** — Crate-level mod declarations:
+```rust
+#[path = "/absolute/path/traits/kernel/types/types.rs"]
+pub mod types;
+#[path = "/absolute/path/traits/kernel/dispatcher/dispatcher.rs"]
+pub mod dispatcher;
+```
+Allows kernel/ code to be accessed as `crate::types`, `crate::dispatcher`, etc.
+
+#### Build Version Management
+
+- Reads/writes `traits/sys/version/version.trait.toml`
+- Format: `vYYMMDD` or `vYYMMDD.HHMMSS` if multiple builds on same day
+- Syncs to Cargo.toml as `0.YYMMDD.HHMMSS`
+- Re-run detection: watches entire traits/ tree for changes
+
+---
+
+## plugin_api Crate: C ABI Contract
+
+**Path**: `traits/kernel/plugin_api/`
+**Type**: Library (not cdylib)
+**Purpose**: Provides the `export_trait!` macro for cdylib plugins
+
+### The export_trait! Macro
+
+```rust
+plugin_api::export_trait!(build::website);
+```
+
+Generates two C ABI functions in the dylib:
+
+#### `trait_call(json_ptr: *const u8, json_len: usize, out_len: *mut usize) -> *mut u8`
+
+**Caller** (dylib_loader in kernel):
+1. Serialize args to JSON bytes
+2. Pass pointer + length to trait_call
+3. Receive result pointer + length written to out_len
+4. Read result bytes, deserialize
+5. Call trait_free to release memory
+
+**Implementation**:
+1. Deserialize JSON bytes → Vec<Value>
+2. Call the target function with &[Value]
+3. Serialize result to JSON bytes
+4. Allocate Vec, forget it to leak the pointer
+5. Return pointer, set out_len
+
+#### `trait_free(ptr: *mut u8, len: usize)`
+
+Reconstructs Vec from raw parts and drops it (deallocates).
+
+---
+
+## dylib_loader: Runtime Trait Loading
+
+**Path**: `traits/kernel/dylib_loader/`
+
+### Key Structures
+
+```rust
+struct LoadedTrait {
+    _lib: libloading::Library,  // Keeps the library in memory
+    call: TraitCallFn,           // unsafe extern "C" fn(...)
+    free: TraitFreeFn,           // unsafe extern "C" fn(...)
+    path: String,                // Trait path, e.g. "www.traits.build"
+    dylib_path: PathBuf,         // Where loaded from
+}
+
+pub struct DylibLoader {
+    traits: Arc<RwLock<HashMap<String, LoadedTrait>>>,
+    search_dirs: Vec<PathBuf>,
+}
+```
+
+### Discovery: Two Modes
+
+**Mode 1: Filename Convention** — `libsys_checksum.dylib` → `sys.checksum` (convert first underscore to dot)
+
+**Mode 2: TOML Discovery (Preferred)** — Find `.trait.toml` with `source = "dylib"`, look for companion `lib<dir_name>.dylib`. Priority: TOML processed first; Mode 1 skipped if .trait.toml governance exists.
+
+### Loading Process
+
+1. Load shared library via libloading
+2. Verify symbols exist: trait_call, trait_free
+3. Optionally call trait_init(server_dispatch) if exported
+4. Store LoadedTrait in HashMap[trait_path]
+
+### Cross-Trait Dispatch
+
+Dylibs can call other traits via optional trait_init:
+- Kernel passes server_dispatch callback
+- Dylib calls server_dispatch(json_dispatch_request) → result bytes
+- Request format: `{"path": "sys.checksum", "args": [...]}`
+- server_dispatch tries LOADER first, falls back to dispatch_compiled
+
+### Global LOADER
+
+```rust
+pub static LOADER: OnceLock<Arc<DylibLoader>> = OnceLock::new();
+```
+
+Set once at startup; accessed by dispatch callbacks and kernel plugins.
+
+---
+
+## Dispatch Flow (Unified)
+
+### From External Call
+
+1. **Caller** → kernel dispatcher
+2. **Dispatcher** calls dispatch(trait_path, args)
+3. **dispatch()** (from compiled_traits.rs):
+   - Checks LOADER.dispatch() first (dylib loader)
+   - Falls back to dispatch_compiled() if not found
+4. **Dylib dispatch**: loads trait, calls trait_call
+5. **Compiled dispatch**: direct Rust function call
+
+### From Dylib Cross-Trait
+
+1. **Dylib** calls server_dispatch(request_json)
+2. **server_dispatch** parses `{"path": "...", "args": [...]}`
+3. Tries LOADER.dispatch() first, falls back to dispatch_compiled()
+
+---
+
+## Example cdylib Trait: www.traits.build
+
+**Path**: `traits/www/traits/build/`
+
+```toml
+# Cargo.toml
+[package]
+name = "trait-www-traits-build"
+crate-type = ["cdylib"]
+[dependencies]
+plugin_api = { path = "../../../kernel/plugin_api" }
+serde_json = "1"
+```
+
+```rust
+// lib.rs
+#[path = "website.rs"]
+mod build;
+plugin_api::export_trait!(build::website);
+```
+
+```toml
+# build.trait.toml
+source = "dylib"   # Triggers dylib_loader scanning
+entry = "website"   # Name of exported function
+```
+
+---
+
+## Key Design Principles
+
+1. **Builtin first, dylib second**: compiled Rust traits for speed, dylib for hot-reloading
+2. **C ABI bridge**: trait_call/trait_free allow any language to export traits
+3. **JSON serialization**: universal interface between kernel and plugins
+4. **Trait path hierarchy**: namespace.name (sys.checksum, www.traits.build, kernel.serve)
+5. **Async support**: background = true traits get dispatch_async entry point
+6. **Version tracking**: .trait.toml versioning + checksum bumping on source change
+7. **Hot-reload ready**: dylib_loader supports reload, all traits via dispatch()
+
+### Component Summary
+
+| Component | Location | Purpose | Role |
+|-----------|----------|---------|------|
+| build.rs | root | Discovers traits, gen code | Compile-time |
+| plugin_api | kernel/plugin_api | C ABI export macro | Library (shared) |
+| dylib_loader.rs | kernel/dylib_loader | Runtime .dylib loading | Kernel module |
+| compiled_traits.rs | OUT_DIR (gen) | Dispatch to compiled traits | Dispatch router |
+| builtin_traits.rs | OUT_DIR (gen) | TOML registry data | Registry seed |
+| cli_formatters.rs | OUT_DIR (gen) | CLI output formatting | Optional |
+| kernel_modules.rs | OUT_DIR (gen) | Crate-level kernel/ mods | Module tree |
+| www.traits.build | traits/www/traits/build | Example cdylib trait | Template (cdylib) |
+
 ---
 
 ## API Convention
@@ -300,3 +542,5 @@ dep = "namespace.concrete_trait"
 - Always commit to git after making changes to the codebase, with a clear and concise commit message describing the changes made.
 - Always run the build script (`build.sh`) after making changes to ensure that the code compiles correctly and that any generated files are updated.
 - Always rebuild the binary and restart the local server after making changes to the codebase to ensure that the changes take effect and to test that everything is working correctly.
+- Always store memory files you are creating in .github/memories so we can save them for future use.
+- Never forget to create a features.json file for any new trait you create, and to add example-based tests in that file to ensure the trait works as expected.

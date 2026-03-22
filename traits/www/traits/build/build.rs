@@ -232,6 +232,11 @@ footer a{color:var(--accent)}
     <h3>Workspace-ready</h3>
     <p>VS Code workspace ships with build/test/serve tasks, MCP server config, and editor settings. Open and go.</p>
   </div>
+  <div class="card">
+    <div class="icon">&#x1f4dd;</div>
+    <h3>SKILL.md generation</h3>
+    <p>Run <code>sys.docs.skills</code> to auto-generate a <code>SKILL.md</code> from the live OpenAPI spec. Teach any AI agent every available trait, its parameters, and how to call it &mdash; as MCP tools or REST.</p>
+  </div>
 </div>
 </section>
 
@@ -264,6 +269,7 @@ footer a{color:var(--accent)}
 <tr><td>sys.ps</td><td>List running background traits with process details</td></tr>
 <tr><td>sys.openapi</td><td>Generate OpenAPI 3.0 spec with live examples from the registry</td></tr>
 <tr><td>sys.mcp</td><td>MCP stdio server &mdash; JSON-RPC 2.0 over stdin/stdout</td></tr>
+<tr><td>sys.docs.skills</td><td>Generate SKILL.md from OpenAPI &mdash; teach AI agents every trait</td></tr>
 <tr><td>www.traits.build</td><td>This landing page &mdash; stats pulled live from registry</td></tr>
 <tr><td>www.docs</td><td>Single-page documentation with all guides rendered from markdown</td></tr>
 <tr><td>www.docs.api</td><td>Serve Redoc API documentation page (OpenAPI + Redoc)</td></tr>

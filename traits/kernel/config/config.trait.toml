@@ -3,7 +3,7 @@ description = "Configuration loader: traits.toml parsing, env var overrides, run
 version = "v260322.205220"
 epoch = 0
 checksum = "ccfc0e6d56f880e7c4bce977fd538dc78a974649b68bb0c6c359dc6c0baac6c4"
-author = "kilian"
+author = "kilian-ai"
 tags = ["kernel", "config"]
 provides = ["kernel/config"]
 

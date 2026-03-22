@@ -3,7 +3,7 @@ description = "Global OnceLock statics: REGISTRY, CONFIG, TRAITS_DIR, HANDLES, S
 version = "v260320.220232"
 epoch = 0
 checksum = "f4f9bc46617196ad2d4916a279bfea01657ddd17504769d7004b0ec4f68da180"
-author = "kilian"
+author = "kilian-ai"
 tags = ["kernel", "globals"]
 provides = ["kernel/globals"]
 

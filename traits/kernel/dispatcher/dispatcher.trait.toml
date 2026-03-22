@@ -3,7 +3,7 @@ description = "Core trait execution engine: path resolution, arg validation, dis
 version = "v260321"
 epoch = 0
 checksum = "ac7d6712adabdc5d71a2727d9febd5e73d9e1dcc39cf17d335b91f902bc80edc"
-author = "kilian"
+author = "kilian-ai"
 tags = ["kernel", "dispatcher"]
 provides = ["kernel/dispatcher"]
 

@@ -139,7 +139,15 @@ fn discover_traits(pattern: &str) -> Vec<(String, String, Vec<(String, String)>)
             None => continue,
         };
         let features_path = toml_dir.join(format!("{}.features.json", name));
-        if !features_path.exists() { continue; }
+        // For nested traits like sys.docs.skills, try the leaf name (skills.features.json)
+        let features_path = if features_path.exists() {
+            features_path
+        } else if let Some(leaf) = name.rsplit('.').next() {
+            let leaf_path = toml_dir.join(format!("{}.features.json", leaf));
+            if leaf_path.exists() { leaf_path } else { continue; }
+        } else {
+            continue;
+        };
 
         let params: Vec<(String, String)> = entry.signature.params.iter()
             .map(|p| (p.name.clone(), format!("{:?}", p.param_type)))

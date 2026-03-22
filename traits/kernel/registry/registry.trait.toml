@@ -3,7 +3,7 @@ description = "Trait registry: loading, lookup, interface resolution, bindings, 
 version = "v260322"
 epoch = 0
 checksum = "6c0370d9a7461cd59c34cbee0030f3de768be9fe7e388d29105384b351b898f2"
-author = "kilian"
+author = "kilian-ai"
 tags = ["kernel", "registry"]
 provides = ["kernel/registry"]
 

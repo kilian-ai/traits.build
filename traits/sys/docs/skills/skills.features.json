@@ -1,0 +1,35 @@
+{
+  "trait": "sys.docs.skills",
+  "features": [
+    {
+      "name": "generate SKILL.md from live OpenAPI",
+      "description": "Generates a complete SKILL.md markdown file from the live OpenAPI spec",
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": [
+              "# traits.build Skills",
+              "MCP Tool",
+              "sys.checksum"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "generate action explicit",
+      "description": "Explicitly passing 'generate' action returns markdown",
+      "examples": [
+        {
+          "input": ["generate"],
+          "output": {
+            "contains": [
+              "# traits.build Skills"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

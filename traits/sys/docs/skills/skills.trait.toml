@@ -1,0 +1,28 @@
+[trait]
+description = "Generate a SKILL.md file from the OpenAPI spec — teaches AI agents to use traits as MCP tools"
+version = "v260322.215420"
+checksum = "9d952ee56ce5f0a2b84d42a30dd2814fe0d0799e6be5934aa1c513c89e6594a9"
+author = "system"
+tags = ["sys", "docs", "skills", "ai", "mcp"]
+provides = ["sys/docs"]
+
+[[signature.params]]
+name = "action"
+type = "string"
+description = "Action: generate (default) | write"
+optional = true
+
+[[signature.params]]
+name = "openapi_json"
+type = "any"
+description = "OpenAPI spec JSON object (omit to use live sys.openapi)"
+optional = true
+
+[signature.returns]
+type = "string"
+description = "Generated SKILL.md markdown content"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "skills"
