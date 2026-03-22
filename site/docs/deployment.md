@@ -8,9 +8,9 @@ traits.build is deployed to [Fly.io](https://fly.io) as a single Docker image.
 
 ## Live instance
 
-- **URL:** [https://polygrait-api.fly.dev](https://polygrait-api.fly.dev)
-- **API docs:** [https://polygrait-api.fly.dev/docs/api](https://polygrait-api.fly.dev/docs/api)
-- **Health:** [https://polygrait-api.fly.dev/health](https://polygrait-api.fly.dev/health)
+- **URL:** [https://traits.build](https://traits.build)
+- **API docs:** [https://traits.build/docs/api](https://traits.build/docs/api)
+- **Health:** [https://traits.build/health](https://traits.build/health)
 - **Region:** `iad` (Ashburn, Virginia)
 - **Resources:** shared CPU, 1 vCPU, 512 MB RAM
 
@@ -84,7 +84,7 @@ The `/admin` endpoint provides deploy, scale, and destroy controls protected by 
 fly secrets set ADMIN_PASSWORD="your-password"
 ```
 
-Access at `https://polygrait-api.fly.dev/admin` with username `admin`.
+Access at `https://traits.build/admin` with username `admin`.
 
 ## Auto-scaling
 

@@ -18,7 +18,7 @@ function HomepageHeader() {
           <Link className="button button--secondary button--lg" to="/docs">
             Get Started
           </Link>
-          <Link className="button button--outline button--lg" style={{color: 'white', borderColor: 'white'}} href="https://polygrait-api.fly.dev/docs/api">
+          <Link className="button button--outline button--lg" style={{color: 'white', borderColor: 'white'}} href="https://traits.build/docs/api">
             API Reference
           </Link>
           <Link className="button button--outline button--lg" style={{color: 'white', borderColor: 'white'}} href="https://github.com/kilian-ai/traits.build">

@@ -2,7 +2,7 @@
 
 A Rust-native trait platform. Traits are typed, composable function objects defined in `.trait.toml` files with companion Rust source. All 26 traits compile directly into a single `traits` binary — zero worker processes, zero HTTP overhead for inter-trait calls. Every trait is callable via CLI, REST API, or internal dispatch.
 
-**Live:** [polygrait-api.fly.dev](https://polygrait-api.fly.dev)  
+**Live:** [polygrait-api.fly.dev](https://traits.build)  
 **Repo:** [github.com/kilian-ai/traits.build](https://github.com/kilian-ai/traits.build)
 
 ## Traits (26)

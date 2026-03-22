@@ -127,7 +127,7 @@ const ADMIN_HTML: &str = r##"<!DOCTYPE html>
       <h3>Build &amp; Deploy (from local machine)</h3>
       <div class="step"><span class="step-num">1.</span><span class="step-text">Build amd64 image: <code>docker buildx build --platform linux/amd64 -t registry.fly.io/polygrait-api:deployment-vN .</code></span></div>
       <div class="step"><span class="step-num">2.</span><span class="step-text">Deploy to Fly: <code>fly deploy --now --local-only --image registry.fly.io/polygrait-api:deployment-vN</code></span></div>
-      <div class="step"><span class="step-num">3.</span><span class="step-text">Verify: <code>curl https://polygrait-api.fly.dev/health</code></span></div>
+      <div class="step"><span class="step-num">3.</span><span class="step-text">Verify: <code>curl https://traits.build/health</code></span></div>
     </div>
     <div class="section">
       <h3>Architecture Notes</h3>

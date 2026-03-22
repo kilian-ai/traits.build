@@ -63,7 +63,7 @@ fly machines restart "$MACHINE_ID" -a "$APP"
 echo "==> Waiting for health..."
 sleep 5
 for i in 1 2 3 4 5; do
-    H=$(curl -sf "https://polygrait-api.fly.dev/health" 2>/dev/null || true)
+    H=$(curl -sf "https://traits.build/health" 2>/dev/null || true)
     if [ -n "$H" ]; then
         echo "==> Healthy!"
         echo "$H" | python3 -m json.tool

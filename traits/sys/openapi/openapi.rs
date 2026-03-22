@@ -334,7 +334,7 @@ pub fn openapi(_args: &[Value]) -> Value {
         "openapi": "3.0.3",
         "info": {
             "title": "traits.build API",
-            "description": "REST API for the traits.build composable function kernel.\n\nEvery trait is callable via `POST /traits/{namespace}/{name}` with a JSON body `{\"args\": [...]}`. Arguments can be passed as a positional array or as a named object.\n\n**Live instance:** [https://polygrait-api.fly.dev](https://polygrait-api.fly.dev)",
+            "description": "REST API for the traits.build composable function kernel.\n\nEvery trait is callable via `POST /traits/{namespace}/{name}` with a JSON body `{\"args\": [...]}`. Arguments can be passed as a positional array or as a named object.\n\n**Live instance:** [https://traits.build](https://traits.build)",
             "version": env!("TRAITS_BUILD_VERSION"),
             "contact": {
                 "name": "GitHub",
@@ -346,7 +346,7 @@ pub fn openapi(_args: &[Value]) -> Value {
         },
         "servers": [
             {
-                "url": "https://polygrait-api.fly.dev",
+                "url": "https://traits.build",
                 "description": "Production (Fly.io)"
             },
             {

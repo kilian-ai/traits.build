@@ -6,7 +6,7 @@ sidebar_position: 7
 
 Every trait is callable via HTTP. The server runs on port 8090 by default.
 
-For the full interactive reference with all endpoints, schemas, and examples, see the [API Reference (Redoc)](https://polygrait-api.fly.dev/docs/api).
+For the full interactive reference with all endpoints, schemas, and examples, see the [API Reference (Redoc)](https://traits.build/docs/api).
 
 ## Calling traits
 
@@ -76,4 +76,4 @@ Static HTML pages are served via keyed interface bindings:
 
 ## OpenAPI spec
 
-The OpenAPI 3.0 specification is generated dynamically by the `sys.openapi` trait. The [interactive API reference](https://polygrait-api.fly.dev/docs/api) renders this spec via Redoc and is the authoritative endpoint reference — it always reflects the currently deployed traits and their signatures.
+The OpenAPI 3.0 specification is generated dynamically by the `sys.openapi` trait. The [interactive API reference](https://traits.build/docs/api) renders this spec via Redoc and is the authoritative endpoint reference — it always reflects the currently deployed traits and their signatures.
