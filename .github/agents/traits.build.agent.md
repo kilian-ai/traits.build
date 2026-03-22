@@ -284,4 +284,4 @@ dep = "namespace.concrete_trait"
 ##AGENT RULSE:
 - Always commit to git after making changes to the codebase, with a clear and concise commit message describing the changes made.
 - Always run the build script (`build.sh`) after making changes to ensure that the code compiles correctly and that any generated files are updated.
-- Always restart the local server after making changes to the codebase to ensure that the changes take effect and to test that everything is working correctly.
+- Always rebuild the binary and restart the local server after making changes to the codebase to ensure that the changes take effect and to test that everything is working correctly.
