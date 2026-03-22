@@ -1,7 +1,7 @@
 [trait]
 description = "MCP stdio server — exposes all traits as MCP tools via JSON-RPC 2.0 over stdin/stdout"
-version = "v260322.163417"
-checksum = "6b8fcef4538dbd84ef16a6a25f5b567bad1eb1d00d5e76507e5851da72099f0b"
+version = "v260322.170033"
+checksum = "a6294e65e131c3b06c83ad2bcd99e778ed30b924361121dd15fa8eca2ca9d526"
 epoch = 0
 author = "system"
 tags = ["system", "mcp", "ai", "protocol"]

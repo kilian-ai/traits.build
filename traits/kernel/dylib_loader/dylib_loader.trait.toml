@@ -1,8 +1,8 @@
 [trait]
 description = "Dynamic shared-library loader for trait cdylib plugins"
-version = "v260320.205918"
+version = "v260322"
 epoch = 0
-checksum = "60796abcc6f01025feac002bf459d022f1223504a9d069a1d750ff8bbb5929b7"
+checksum = "ee21dce07ab764e64d064ef35966faa268206388cf1969e397064abd67d306e6"
 author = "kilian"
 tags = ["kernel", "dylib"]
 provides = ["kernel/dylib_loader"]

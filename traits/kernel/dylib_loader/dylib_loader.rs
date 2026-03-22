@@ -116,6 +116,19 @@ impl DylibLoader {
                     continue;
                 }
             }
+            // Skip if a .trait.toml exists in the same directory — the TOML
+            // governs how this trait is loaded; if it wanted dylib, Mode 2
+            // would have handled it already.
+            if let Some(parent) = dylib_path.parent() {
+                let has_toml = std::fs::read_dir(parent)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .any(|e| e.path().to_string_lossy().ends_with(".trait.toml"));
+                if has_toml {
+                    continue;
+                }
+            }
             match self.load_dylib(&dylib_path) {
                 Ok(trait_path) => {
                     info!("Loaded dylib trait: {} from {}", trait_path, dylib_path.display());

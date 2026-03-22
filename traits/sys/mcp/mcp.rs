@@ -169,8 +169,10 @@ fn build_input_schema(sig: &crate::types::TraitSignature) -> Value {
     let mut required: Vec<Value> = Vec::new();
 
     for param in &sig.params {
-        let mut prop = Map::new();
-        prop.insert("type".to_string(), json!(trait_type_to_json_schema(&param.param_type)));
+        let mut prop = match trait_type_to_json_schema(&param.param_type) {
+            Value::Object(m) => m,
+            _ => Map::new(),
+        };
         if !param.description.is_empty() {
             prop.insert("description".to_string(), json!(param.description));
         }
@@ -189,20 +191,26 @@ fn build_input_schema(sig: &crate::types::TraitSignature) -> Value {
     Value::Object(schema)
 }
 
-/// Map TraitType to JSON Schema type string.
-fn trait_type_to_json_schema(tt: &crate::types::TraitType) -> &'static str {
+/// Map TraitType to a JSON Schema value (not just a type string).
+fn trait_type_to_json_schema(tt: &crate::types::TraitType) -> Value {
     match tt {
-        crate::types::TraitType::Int => "integer",
-        crate::types::TraitType::Float => "number",
-        crate::types::TraitType::String => "string",
-        crate::types::TraitType::Bool => "boolean",
-        crate::types::TraitType::Bytes => "string",
-        crate::types::TraitType::List(_) => "array",
-        crate::types::TraitType::Map(_, _) => "object",
+        crate::types::TraitType::Int => json!({"type": "integer"}),
+        crate::types::TraitType::Float => json!({"type": "number"}),
+        crate::types::TraitType::String => json!({"type": "string"}),
+        crate::types::TraitType::Bool => json!({"type": "boolean"}),
+        crate::types::TraitType::Bytes => json!({"type": "string"}),
+        crate::types::TraitType::List(inner) => json!({
+            "type": "array",
+            "items": trait_type_to_json_schema(inner)
+        }),
+        crate::types::TraitType::Map(k, v) => json!({
+            "type": "object",
+            "additionalProperties": trait_type_to_json_schema(v)
+        }),
         crate::types::TraitType::Optional(inner) => trait_type_to_json_schema(inner),
-        crate::types::TraitType::Any => "string",
-        crate::types::TraitType::Handle => "string",
-        crate::types::TraitType::Null => "string",
+        crate::types::TraitType::Any => json!({"type": "string"}),
+        crate::types::TraitType::Handle => json!({"type": "string"}),
+        crate::types::TraitType::Null => json!({"type": "string"}),
     }
 }
 
