@@ -1,7 +1,21 @@
 use serde_json::Value;
+use std::collections::HashSet;
 
 pub fn website(_args: &[Value]) -> Value {
-    Value::String(HTML.to_string())
+    let (trait_count, ns_count) = match crate::globals::REGISTRY.get() {
+        Some(reg) => {
+            let all = reg.all();
+            let namespaces: HashSet<&str> = all.iter()
+                .filter_map(|e| e.path.split('.').next())
+                .collect();
+            (all.len(), namespaces.len())
+        }
+        None => (0, 0),
+    };
+    let html = HTML
+        .replace("{{TRAIT_COUNT}}", &trait_count.to_string())
+        .replace("{{NS_COUNT}}", &ns_count.to_string());
+    Value::String(html)
 }
 
 const HTML: &str = r##"<!DOCTYPE html>
@@ -84,7 +98,7 @@ footer a{color:var(--accent)}
   <h1><span>traits</span>.build</h1>
   <p class="sub">Typed, composable function objects, ready for AI development, compiled into a single Rust binary. Define traits in TOML, call them via CLI, REST, or MCP. The kernel is traits all the way down.</p>
   <div class="cta">
-    <a href="/traits/sys/list" class="btn btn-primary">Explore Traits</a>
+    <a href="#built-in-traits" class="btn btn-primary">Explore Traits</a>
     <a href="/docs" class="btn btn-outline">Documentation</a>
     <a href="/docs/api" class="btn btn-outline">API Docs</a>
     <a href="https://github.com/kilian-ai/traits.build" class="btn btn-outline">GitHub</a>
@@ -93,8 +107,8 @@ footer a{color:var(--accent)}
 
 <!-- Stats -->
 <div class="stats">
-  <div class="stat"><div class="num">28</div><div class="label">compiled traits</div></div>
-  <div class="stat"><div class="num">3</div><div class="label">namespaces</div></div>
+  <div class="stat"><div class="num">{{TRAIT_COUNT}}</div><div class="label">compiled traits</div></div>
+  <div class="stat"><div class="num">{{NS_COUNT}}</div><div class="label">namespaces</div></div>
   <div class="stat"><div class="num">~2 MB</div><div class="label">binary size</div></div>
   <div class="stat"><div class="num">0</div><div class="label">runtime deps</div></div>
 </div>
@@ -211,8 +225,8 @@ footer a{color:var(--accent)}
 </section>
 
 <!-- Kernel traits -->
-<h2 class="section-title">Built-in traits</h2>
-<p class="section-sub">28 traits across kernel, sys, and www &mdash; all compiled in</p>
+<h2 class="section-title" id="built-in-traits">Built-in traits</h2>
+<p class="section-sub">{{TRAIT_COUNT}} traits across kernel, sys, and www &mdash; all compiled in</p>
 
 <section>
 <table class="trait-table">
@@ -245,6 +259,8 @@ footer a{color:var(--accent)}
 <tr><td>www.admin.destroy</td><td>Destroy Fly.io machines</td></tr>
 <tr><td>www.admin.fast_deploy</td><td>Fast deploy: Docker build + sftp upload + restart</td></tr>
 <tr><td>www.docs.api</td><td>Serve Redoc API documentation page</td></tr>
+<tr><td>www.docs</td><td>Single-page documentation with all guides rendered from markdown</td></tr>
+<tr><td>sys.mcp</td><td>MCP stdio server &mdash; JSON-RPC 2.0 over stdin/stdout</td></tr>
 </table>
 </section>
 
@@ -377,7 +393,7 @@ traits/sys/checksum/checksum.rs
 
 <span class="cm"># 4. Run it anywhere</span>
 <span class="kw">$</span> ./traits serve --port 8090
-<span class="cm">#    28 traits loaded, 0 workers, 0 dependencies</span></pre>
+<span class="cm">#    {{TRAIT_COUNT}} traits loaded, 0 workers, 0 dependencies</span></pre>
 </div>
 </section>
 

@@ -5,4 +5,4 @@ timeout = 30
 
 # [deploy]
 # fly_app and fly_region are read from FLY_APP / FLY_REGION env vars.
-# Set them here to override, or pass via env / the ./t launcher script.
+# Set them here to override, or pass via env.
