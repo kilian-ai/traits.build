@@ -1,0 +1,19 @@
+[trait]
+description = "Serve the documentation site — all docs rendered from markdown"
+version = "v260322.193357"
+checksum = "d31014debac389d48761a4c4dfadea88bf25eee2ab3391c3c7fb0ddc6adfcc8b"
+author = "system"
+tags = ["www", "docs"]
+provides = ["www/webpage"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "string"
+description = "HTML documentation page with all docs and sidebar navigation"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "docs"

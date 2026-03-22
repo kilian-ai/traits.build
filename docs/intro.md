@@ -43,4 +43,4 @@ curl -X POST http://127.0.0.1:8090/traits/sys/checksum \
          ↕ interface bindings ↕
 ```
 
-Ready to get started? Head to [Getting Started](/docs/getting-started).
+Ready to get started? Head to [Getting Started](#getting-started).

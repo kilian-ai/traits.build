@@ -85,6 +85,7 @@ footer a{color:var(--accent)}
   <p class="sub">Typed, composable function objects, ready for AI development, compiled into a single Rust binary. Define traits in TOML, call them via CLI, REST, or MCP. The kernel is traits all the way down.</p>
   <div class="cta">
     <a href="/traits/sys/list" class="btn btn-primary">Explore Traits</a>
+    <a href="/docs" class="btn btn-outline">Documentation</a>
     <a href="/docs/api" class="btn btn-outline">API Docs</a>
     <a href="https://github.com/kilian-ai/traits.build" class="btn btn-outline">GitHub</a>
   </div>
@@ -381,7 +382,7 @@ traits/sys/checksum/checksum.rs
 </section>
 
 <footer>
-  <p>traits.build &mdash; a pure Rust kernel, AI-ready by default. &middot; <a href="/docs/api">API Docs</a> &middot; <a href="https://github.com/kilian-ai/traits.build">GitHub</a> &middot; <a href="/traits/kernel/main">kernel.main</a> &middot; <a href="/traits/sys/list">sys.list</a> &middot; <a href="/health">health</a></p>
+  <p>traits.build &mdash; a pure Rust kernel, AI-ready by default. &middot; <a href="/docs">Docs</a> &middot; <a href="/docs/api">API Docs</a> &middot; <a href="https://github.com/kilian-ai/traits.build">GitHub</a> &middot; <a href="/traits/kernel/main">kernel.main</a> &middot; <a href="/traits/sys/list">sys.list</a> &middot; <a href="/health">health</a></p>
 </footer>
 
 </body>

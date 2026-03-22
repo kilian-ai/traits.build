@@ -1,8 +1,8 @@
 [trait]
 description = "Landing page for traits.build"
-version = "v260322.161414"
+version = "v260322.193853"
 epoch = 0
-checksum = "891be47be05a86d158269eeca325d96bfbb73146ff151a03c140376e86431cfb"
+checksum = "c96512208262c4f62a5cfed16abddbf2741bc9b0090efd46d7d51164312eaeb3"
 author = "system"
 tags = ["www", "webpage"]
 provides = ["www/webpage"]

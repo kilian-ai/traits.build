@@ -3,6 +3,3 @@
 *.dylib
 *.so
 /t
-/site/node_modules/
-/site/build/
-/site/.docusaurus/

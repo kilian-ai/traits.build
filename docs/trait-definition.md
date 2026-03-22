@@ -92,7 +92,7 @@ Each parameter is an object with:
 
 ### `[requires]` and `[bindings]`
 
-See [Interfaces](./interfaces) for details on the dependency system.
+See [Interfaces](#interfaces) for details on the dependency system.
 
 ## Types
 

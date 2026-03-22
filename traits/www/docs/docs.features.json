@@ -1,0 +1,62 @@
+{
+  "trait": "www.docs",
+  "description": "Documentation site rendered from embedded markdown",
+  "features": [
+    {
+      "name": "Returns valid HTML documentation page",
+      "description": "The docs trait returns a complete HTML page with all 10 documentation sections",
+      "tests": [
+        {
+          "name": "returns HTML with doctype",
+          "type": "command",
+          "command": "./target/release/traits call www.docs 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "<!DOCTYPE html>" }
+          ]
+        },
+        {
+          "name": "has page title",
+          "type": "command",
+          "command": "./target/release/traits call www.docs 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "Documentation" }
+          ]
+        },
+        {
+          "name": "contains all sidebar sections",
+          "type": "command",
+          "command": "./target/release/traits call www.docs 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "Getting Started" },
+            { "type": "contains", "expected": "Architecture" },
+            { "type": "contains", "expected": "Trait Definition" },
+            { "type": "contains", "expected": "Type System" },
+            { "type": "contains", "expected": "REST API" },
+            { "type": "contains", "expected": "CLI Reference" },
+            { "type": "contains", "expected": "Deployment" }
+          ]
+        },
+        {
+          "name": "contains rendered markdown content",
+          "type": "command",
+          "command": "./target/release/traits call www.docs 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "composable function kernel" },
+            { "type": "contains", "expected": "page-architecture" },
+            { "type": "contains", "expected": "TraitValue" },
+            { "type": "contains", "expected": "showPage" }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["<!DOCTYPE html>", "traits.build", "sidebar"]
+          }
+        }
+      ]
+    }
+  ]
+}

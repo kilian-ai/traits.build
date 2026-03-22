@@ -72,6 +72,7 @@ Static HTML pages are served via keyed interface bindings:
 |-----|-------|-------------|
 | `/` | `www.traits.build` | Landing page |
 | `/admin` | `www.admin` | Admin dashboard (Basic Auth) |
+| `/docs` | `www.docs` | Documentation |
 | `/docs/api` | `www.docs.api` | API documentation (Redoc) |
 
 ## OpenAPI spec

@@ -83,6 +83,6 @@ curl http://127.0.0.1:8090/traits/sys/checksum
 
 ## Next steps
 
-- [Architecture](./architecture) — understand how the kernel works
-- [Trait Definition](./trait-definition) — learn the `.trait.toml` format
-- [Creating Traits](./creating-traits) — add your own traits
+- [Architecture](#architecture) — understand how the kernel works
+- [Trait Definition](#trait-definition) — learn the `.trait.toml` format
+- [Creating Traits](#creating-traits) — add your own traits

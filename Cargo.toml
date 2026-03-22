@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260322.192039"
+version = "0.260322.193952"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -17,8 +17,6 @@ exclude = [
     "fly.toml",
     "Dockerfile",
     ".github/",
-    "site/",
-    "docs/",
 ]
 
 [workspace]
@@ -53,6 +51,7 @@ tokio-stream = "0.1"
 futures = "0.3"
 sha2 = "0.10"
 libc = "0.2"
+pulldown-cmark = "0.12"
 
 [build-dependencies]
 sha2 = "0.10"

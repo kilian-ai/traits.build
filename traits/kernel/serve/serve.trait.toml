@@ -12,6 +12,7 @@ provides = ["kernel/serve"]
 "/" = "www/webpage"
 "/copy" = "www/webpage"
 "/admin" = "www/webpage"
+"/docs" = "www/webpage"
 "/docs/api" = "www/webpage"
 dispatcher = "kernel/dispatcher"
 
@@ -19,6 +20,7 @@ dispatcher = "kernel/dispatcher"
 "/" = "www.traits.build"
 "/copy" = "www.traits.build"
 "/admin" = "www.admin"
+"/docs" = "www.docs"
 "/docs/api" = "www.docs.api"
 dispatcher = "kernel.dispatcher"
 
