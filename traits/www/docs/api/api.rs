@@ -43,6 +43,14 @@ const HTML: &str = r##"<!DOCTYPE html>
   /* Nested schema backgrounds */
   .redoc-wrap [kind="field"] { border-color: #30363d !important; }
   .redoc-wrap button { color: #c9d1d9 !important; }
+  /* Buttons/tabs with light backgrounds need dark text */
+  .redoc-wrap button[class*="tab"], .redoc-wrap [role="tab"] { color: #0d1117 !important; }
+  .redoc-wrap ul[role="tablist"] button { color: #0d1117 !important; }
+  .redoc-wrap ul[role="tablist"] li { color: #0d1117 !important; }
+  /* Example selector dropdown */
+  .redoc-wrap select, .redoc-wrap option { color: #0d1117 !important; background: #f0f6fc !important; }
+  /* White-background containers in middle panel */
+  .redoc-wrap div[class*="dropdown"] { color: #0d1117 !important; }
   .redoc-wrap code { background: #161b22 !important; }
 </style>
 </head>
