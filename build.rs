@@ -40,12 +40,15 @@ struct CliFormatter {
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
+    // Detect cargo publish verification sandbox (read-only source tree)
+    let is_publish = manifest_dir.to_string_lossy().contains("target/package/");
+
     // Tell rustc this is the kernel binary, so #[cfg(kernel)] code compiles
     println!("cargo:rustc-cfg=kernel");
     println!("cargo::rustc-check-cfg=cfg(kernel)");
 
     // ── Compute build version: vYYMMDD or vYYMMDD.HHMMSS if same day ──
-    let build_version = compute_build_version(&manifest_dir);
+    let build_version = compute_build_version(&manifest_dir, is_publish);
     println!("cargo:rustc-env=TRAITS_BUILD_VERSION={}", build_version);
 
     let traits_dir = manifest_dir.join("traits");
@@ -58,7 +61,7 @@ fn main() {
     let mut cli_formatters: Vec<CliFormatter> = Vec::new();
     let mut kernel_modules: Vec<KernelModule> = Vec::new();
 
-    visit_traits(&traits_dir, &manifest_dir, &traits_dir, &mut entries, &mut modules, &mut cli_formatters, &mut kernel_modules);
+    visit_traits(&traits_dir, &manifest_dir, &traits_dir, &mut entries, &mut modules, &mut cli_formatters, &mut kernel_modules, is_publish);
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     modules.sort_by(|a, b| a.trait_path.cmp(&b.trait_path));
 
@@ -235,7 +238,7 @@ fn hhmmss_build() -> String {
 
 /// Read current version from version.trait.toml, bump with dot notation if
 /// same day, write back, and return the new version string (with "v" prefix).
-fn compute_build_version(manifest_dir: &Path) -> String {
+fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
     let toml_path = manifest_dir.join("traits/sys/version/version.trait.toml");
     let today = yymmdd_build();
 
@@ -266,7 +269,7 @@ fn compute_build_version(manifest_dir: &Path) -> String {
     };
 
     // Write back to version.trait.toml (skip if read-only, e.g. during cargo publish)
-    if toml_path.metadata().map(|m| m.permissions().readonly()).unwrap_or(true) {
+    if is_publish {
         return new_ver;
     }
     if let Ok(content) = fs::read_to_string(&toml_path) {
@@ -295,7 +298,7 @@ fn compute_file_checksum(path: &Path) -> Option<String> {
 
 /// Compare computed checksum with stored one in .trait.toml.
 /// If different (or missing), bump the version and write the new checksum.
-fn update_trait_checksum(toml_path: &Path, rs_path: &Path) {
+fn update_trait_checksum(toml_path: &Path, rs_path: &Path, is_publish: bool) {
     let new_checksum = match compute_file_checksum(rs_path) {
         Some(c) => c,
         None => return,
@@ -322,7 +325,7 @@ fn update_trait_checksum(toml_path: &Path, rs_path: &Path) {
     }
 
     // Skip writes if file is read-only (e.g. during cargo publish)
-    if toml_path.metadata().map(|m| m.permissions().readonly()).unwrap_or(true) {
+    if is_publish {
         return;
     }
 
@@ -379,7 +382,7 @@ fn watch_dirs_recursive(dir: &Path) {
     }
 }
 
-fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mut Vec<(String, String)>, modules: &mut Vec<TraitModule>, cli_formatters: &mut Vec<CliFormatter>, kernel_modules: &mut Vec<KernelModule>) {
+fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mut Vec<(String, String)>, modules: &mut Vec<TraitModule>, cli_formatters: &mut Vec<CliFormatter>, kernel_modules: &mut Vec<KernelModule>, is_publish: bool) {
     // Watch directories so cargo re-runs build.rs when traits are added/removed
     println!("cargo:rerun-if-changed={}", dir.display());
 
@@ -391,7 +394,7 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
     for entry in read_dir.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            visit_traits(&path, manifest_dir, traits_dir, entries, modules, cli_formatters, kernel_modules);
+            visit_traits(&path, manifest_dir, traits_dir, entries, modules, cli_formatters, kernel_modules, is_publish);
             continue;
         }
         if !path.to_string_lossy().ends_with(".trait.toml") {
@@ -477,7 +480,7 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
                 let rs_file = toml_dir.join(format!("{}.rs", dir_name));
                 if rs_file.exists() {
                     // Update checksum in .trait.toml (bumps version if source changed)
-                    update_trait_checksum(&path, &rs_file);
+                    update_trait_checksum(&path, &rs_file, is_publish);
 
                     let rs_rel = rs_file.strip_prefix(manifest_dir)
                         .unwrap_or(&rs_file)
