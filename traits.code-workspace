@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"name": "traits",
+			"path": "../.."
+		}
+	],
+	"settings": {
+		"git.ignoreLimitWarning": true
+	}
+}

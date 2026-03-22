@@ -1,0 +1,19 @@
+[trait]
+description = "Generate OpenAPI 3.0 specification from the trait registry"
+version = "v260322.143412"
+checksum = "8f921b71401c8caec472c709896947db2c9d3daa1342dabe645914f2544e374d"
+author = "system"
+tags = ["system", "docs", "api"]
+provides = ["sys/openapi"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "any"
+description = "OpenAPI 3.0 JSON specification object"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "openapi"

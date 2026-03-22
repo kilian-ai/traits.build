@@ -1,0 +1,31 @@
+{
+  "feature": "sys.openapi generates OpenAPI 3.0 spec",
+  "tests": [
+    {
+      "name": "openapi returns valid spec",
+      "command": "traits call sys.openapi",
+      "assertions": [
+        { "type": "exit_code", "expected": 0 },
+        { "type": "contains", "expected": "openapi" },
+        { "type": "contains", "expected": "3.0.3" },
+        { "type": "contains", "expected": "traits.build API" }
+      ]
+    },
+    {
+      "name": "openapi contains trait paths",
+      "command": "traits call sys.openapi",
+      "assertions": [
+        { "type": "contains", "expected": "/traits/sys/checksum" },
+        { "type": "contains", "expected": "/traits/sys/list" }
+      ]
+    },
+    {
+      "name": "openapi has servers",
+      "command": "traits call sys.openapi",
+      "assertions": [
+        { "type": "contains", "expected": "polygrait-api.fly.dev" },
+        { "type": "contains", "expected": "127.0.0.1:8090" }
+      ]
+    }
+  ]
+}

@@ -12,12 +12,14 @@ provides = ["kernel/serve"]
 "/" = "www/webpage"
 "/copy" = "www/webpage"
 "/admin" = "www/webpage"
+"/docs/api" = "www/webpage"
 dispatcher = "kernel/dispatcher"
 
 [bindings]
 "/" = "www.traits.build"
 "/copy" = "www.traits.build"
 "/admin" = "www.admin"
+"/docs/api" = "www.docs.api"
 dispatcher = "kernel.dispatcher"
 
 [signature]
