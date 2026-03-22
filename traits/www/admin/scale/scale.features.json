@@ -1,0 +1,19 @@
+{
+  "trait": "www.admin.scale",
+  "description": "Scale Fly.io machines (0 = stop all, 1+ = start)",
+  "features": [
+    {
+      "name": "Accepts machine count parameter",
+      "description": "Accepts an integer count to set the target number of machines",
+      "tests": [],
+      "examples": [
+        {
+          "input": [1],
+          "output": {
+            "contains": ["ok"]
+          }
+        }
+      ]
+    }
+  ]
+}

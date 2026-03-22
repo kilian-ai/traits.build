@@ -1,0 +1,19 @@
+{
+  "trait": "www.admin.destroy",
+  "description": "Destroy all Fly.io machines for the app",
+  "features": [
+    {
+      "name": "Destroys all machines",
+      "description": "Removes all Fly.io machines for the polygrait-api app",
+      "tests": [],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["ok"]
+          }
+        }
+      ]
+    }
+  ]
+}

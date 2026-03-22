@@ -80,9 +80,9 @@ footer a{color:var(--accent)}
 
 <!-- Hero -->
 <div class="hero">
-  <div class="pill">open source &middot; pure Rust &middot; single binary</div>
+  <div class="pill">open source &middot; pure Rust &middot; AI-ready</div>
   <h1><span>traits</span>.build</h1>
-  <p class="sub">Typed, composable function objects compiled into a single Rust binary. Define traits in TOML, call them via CLI or REST. The kernel is traits all the way down.</p>
+  <p class="sub">Typed, composable function objects compiled into a single Rust binary. Define traits in TOML, call them via CLI, REST, or MCP. The kernel is traits all the way down.</p>
   <div class="cta">
     <a href="/traits/sys/list" class="btn btn-primary">Explore Traits</a>
     <a href="/docs/api" class="btn btn-outline">API Docs</a>
@@ -149,8 +149,8 @@ footer a{color:var(--accent)}
   </div>
   <div class="card">
     <div class="icon">&#x1f50c;</div>
-    <h3>CLI + REST, one trait</h3>
-    <p>Every trait is callable via REST API (<code>POST /traits/ns/name</code>) and CLI (<code>traits name args</code>). No glue code needed.</p>
+    <h3>CLI + REST + MCP</h3>
+    <p>Every trait is callable via REST API (<code>POST /traits/ns/name</code>), CLI (<code>traits name args</code>), or MCP tool protocol. One trait, three surfaces.</p>
   </div>
   <div class="card">
     <div class="icon">&#x1f517;</div>
@@ -166,6 +166,45 @@ footer a{color:var(--accent)}
     <div class="icon">&#x1f4e6;</div>
     <h3>cdylib plugins</h3>
     <p>Extend at runtime with .dylib shared libraries. The kernel discovers and loads them at startup via kernel.dylib_loader.</p>
+  </div>
+</div>
+</section>
+
+<!-- AI-Ready -->
+<h2 class="section-title">AI-Ready by default</h2>
+<p class="section-sub">Every trait is a tool an AI agent can discover, call, and test</p>
+
+<section>
+<div class="features">
+  <div class="card">
+    <div class="icon">&#x1f916;</div>
+    <h3>MCP server export</h3>
+    <p>Every compiled trait can be exported as an MCP tool. Agents discover traits via the registry, read signatures from TOML, and call them over stdio.</p>
+  </div>
+  <div class="card">
+    <div class="icon">&#x1f9e0;</div>
+    <h3>Agent file included</h3>
+    <p>The repo ships with a <code>.github/agents/</code> file that teaches AI agents the project structure, build system, conventions, and how to add new traits.</p>
+  </div>
+  <div class="card">
+    <div class="icon">&#x1f4cb;</div>
+    <h3>Self-testing traits</h3>
+    <p>Every trait has a <code>.features.json</code> with features, examples, and test commands. Agents can run <code>traits test_runner '*'</code> to validate changes.</p>
+  </div>
+  <div class="card">
+    <div class="icon">&#x1f4d6;</div>
+    <h3>Auto-generated docs</h3>
+    <p>OpenAPI spec is generated live from the trait registry with real response examples. No hand-written API docs &mdash; the kernel documents itself.</p>
+  </div>
+  <div class="card">
+    <div class="icon">&#x2699;&#xfe0f;</div>
+    <h3>TOML is the spec</h3>
+    <p>Each <code>.trait.toml</code> declares the full contract: signature, types, interfaces, dependencies, and wiring. Machine-readable by design.</p>
+  </div>
+  <div class="card">
+    <div class="icon">&#x1f6e0;&#xfe0f;</div>
+    <h3>Workspace-ready</h3>
+    <p>VS Code workspace ships with build/test/serve tasks, MCP server config, and editor settings. Open and go.</p>
   </div>
 </div>
 </section>
@@ -197,11 +236,14 @@ footer a{color:var(--accent)}
 <tr><td>sys.list</td><td>List all registered traits</td></tr>
 <tr><td>sys.info</td><td>Show detailed trait metadata and signatures</td></tr>
 <tr><td>sys.ps</td><td>List running background traits with process details</td></tr>
+<tr><td>sys.openapi</td><td>Generate OpenAPI 3.0 spec with live examples from the registry</td></tr>
 <tr><td>www.traits.build</td><td>This landing page</td></tr>
 <tr><td>www.admin</td><td>Admin dashboard with deployment controls (Basic Auth)</td></tr>
 <tr><td>www.admin.deploy</td><td>Deploy to Fly.io</td></tr>
 <tr><td>www.admin.scale</td><td>Scale Fly.io machines up or down</td></tr>
 <tr><td>www.admin.destroy</td><td>Destroy Fly.io machines</td></tr>
+<tr><td>www.admin.fast_deploy</td><td>Fast deploy: Docker build + sftp upload + restart</td></tr>
+<tr><td>www.docs.api</td><td>Serve Redoc API documentation page</td></tr>
 </table>
 </section>
 
@@ -339,7 +381,7 @@ traits/sys/checksum/checksum.rs
 </section>
 
 <footer>
-  <p>traits.build &mdash; a pure Rust kernel, built with traits. &middot; <a href="/docs/api">API Docs</a> &middot; <a href="https://github.com/kilian-ai/traits.build">GitHub</a> &middot; <a href="/traits/kernel/main">kernel.main</a> &middot; <a href="/traits/sys/list">sys.list</a> &middot; <a href="/health">health</a></p>
+  <p>traits.build &mdash; a pure Rust kernel, AI-ready by default. &middot; <a href="/docs/api">API Docs</a> &middot; <a href="https://github.com/kilian-ai/traits.build">GitHub</a> &middot; <a href="/traits/kernel/main">kernel.main</a> &middot; <a href="/traits/sys/list">sys.list</a> &middot; <a href="/health">health</a></p>
 </footer>
 
 </body>

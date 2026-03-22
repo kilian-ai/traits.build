@@ -6,6 +6,78 @@
 		}
 	],
 	"settings": {
-		"git.ignoreLimitWarning": true
+		"git.ignoreLimitWarning": true,
+		"rust-analyzer.cargo.buildScripts.enable": true,
+		"rust-analyzer.check.command": "build",
+		"files.associations": {
+			"*.trait.toml": "toml",
+			"*.features.json": "json"
+		},
+		"search.exclude": {
+			"**/target": true
+		}
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "build",
+				"type": "shell",
+				"command": "cargo build --release",
+				"group": { "kind": "build", "isDefault": true },
+				"problemMatcher": ["$rustc"],
+				"detail": "Build the traits binary (release mode)"
+			},
+			{
+				"label": "serve",
+				"type": "shell",
+				"command": "./target/release/traits serve -p 8092",
+				"group": "none",
+				"isBackground": true,
+				"detail": "Start local dev server on port 8092",
+				"problemMatcher": []
+			},
+			{
+				"label": "test",
+				"type": "shell",
+				"command": "./target/release/traits test_runner '*'",
+				"group": { "kind": "test", "isDefault": true },
+				"detail": "Run all .features.json tests",
+				"problemMatcher": []
+			},
+			{
+				"label": "test:sys",
+				"type": "shell",
+				"command": "./target/release/traits test_runner 'sys.*'",
+				"group": "test",
+				"detail": "Run sys namespace tests only",
+				"problemMatcher": []
+			},
+			{
+				"label": "list",
+				"type": "shell",
+				"command": "./target/release/traits list",
+				"group": "none",
+				"detail": "List all registered traits",
+				"problemMatcher": []
+			},
+			{
+				"label": "deploy",
+				"type": "shell",
+				"command": "./target/release/traits call www.admin.fast_deploy build",
+				"group": "none",
+				"detail": "Fast deploy: build amd64 + upload + restart",
+				"problemMatcher": []
+			}
+		]
+	},
+	"mcp": {
+		"servers": {
+			"traits": {
+				"type": "stdio",
+				"command": "./target/release/traits",
+				"args": ["mcp"]
+			}
+		}
 	}
 }

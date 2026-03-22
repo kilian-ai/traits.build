@@ -1,0 +1,38 @@
+{
+  "trait": "www.docs.api",
+  "description": "Serve the API documentation page (Redoc)",
+  "features": [
+    {
+      "name": "Returns Redoc HTML page",
+      "description": "Returns an HTML page that loads the Redoc API documentation viewer",
+      "tests": [
+        {
+          "name": "returns HTML with doctype",
+          "type": "command",
+          "command": "./target/release/traits call www.docs.api 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "<!DOCTYPE html>" }
+          ]
+        },
+        {
+          "name": "contains Redoc script",
+          "type": "command",
+          "command": "./target/release/traits call www.docs.api 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "redoc" }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["<!DOCTYPE html>", "redoc"]
+          }
+        }
+      ]
+    }
+  ]
+}

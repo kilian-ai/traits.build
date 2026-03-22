@@ -8,10 +8,10 @@ tags = ["system", "versioning", "snapshot"]
 provides = ["sys/snapshot"]
 
 [requires]
-version = "v260322"
+version = "sys/version"
 
 [bindings]
-version = "v260322"
+version = "sys.version"
 
 [[signature.params]]
 name = "trait_path"

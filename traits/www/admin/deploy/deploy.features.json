@@ -1,0 +1,28 @@
+{
+  "trait": "www.admin.deploy",
+  "description": "Deploy latest version to Fly.io",
+  "features": [
+    {
+      "name": "Status mode returns machine info",
+      "description": "Calling deploy with 'status' queries Fly.io machines without deploying",
+      "tests": [
+        {
+          "name": "status mode does not error",
+          "type": "command",
+          "command": "./target/release/traits call www.admin.deploy status 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": ["status"],
+          "output": {
+            "contains": ["ok"]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "trait": "www.admin",
+  "description": "Admin dashboard for traits.build deployment",
+  "features": [
+    {
+      "name": "Returns admin dashboard HTML",
+      "description": "Calling www.admin returns an HTML admin page (requires Basic Auth in production)",
+      "tests": [
+        {
+          "name": "returns HTML with doctype",
+          "type": "command",
+          "command": "./target/release/traits call www.admin 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "<!DOCTYPE html>" }
+          ]
+        },
+        {
+          "name": "contains admin branding",
+          "type": "command",
+          "command": "./target/release/traits call www.admin 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "admin" }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["<!DOCTYPE html>", "admin"]
+          }
+        }
+      ]
+    }
+  ]
+}

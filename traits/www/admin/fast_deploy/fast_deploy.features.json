@@ -1,0 +1,25 @@
+{
+  "trait": "www.admin.fast_deploy",
+  "description": "Fast deploy: build amd64 binary in Docker, upload via sftp, restart",
+  "features": [
+    {
+      "name": "Supports build and upload modes",
+      "description": "Mode 'build' does full build+upload+restart, 'upload' re-uploads last binary",
+      "tests": [],
+      "examples": [
+        {
+          "input": ["build"],
+          "output": {
+            "contains": ["ok"]
+          }
+        },
+        {
+          "input": ["upload"],
+          "output": {
+            "contains": ["ok"]
+          }
+        }
+      ]
+    }
+  ]
+}

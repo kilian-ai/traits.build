@@ -6,33 +6,36 @@
       "name": "Generates OpenAPI 3.0 spec",
       "description": "Returns a complete OpenAPI specification with all trait endpoints",
       "tests": [
-    {
-      "name": "openapi returns valid spec",
-      "command": "traits call sys.openapi",
-      "assertions": [
-        { "type": "exit_code", "expected": 0 },
-        { "type": "contains", "expected": "openapi" },
-        { "type": "contains", "expected": "3.0.3" },
-        { "type": "contains", "expected": "traits.build API" }
-      ]
-    },
-    {
-      "name": "openapi contains trait paths",
-      "command": "traits call sys.openapi",
-      "assertions": [
-        { "type": "contains", "expected": "/traits/sys/checksum" },
-        { "type": "contains", "expected": "/traits/sys/list" }
-      ]
-    },
-    {
-      "name": "openapi has servers",
-      "command": "traits call sys.openapi",
-      "assertions": [
-        { "type": "contains", "expected": "polygrait-api.fly.dev" },
-        { "type": "contains", "expected": "127.0.0.1:8090" }
-      ]
-    }
-  ],
+        {
+          "name": "openapi returns valid spec",
+          "type": "command",
+          "command": "./target/release/traits call sys.openapi 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "openapi" },
+            { "type": "contains", "expected": "3.0.3" },
+            { "type": "contains", "expected": "traits.build API" }
+          ]
+        },
+        {
+          "name": "openapi contains trait paths",
+          "type": "command",
+          "command": "./target/release/traits call sys.openapi 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "/traits/sys/checksum" },
+            { "type": "contains", "expected": "/traits/sys/list" }
+          ]
+        },
+        {
+          "name": "openapi has servers",
+          "type": "command",
+          "command": "./target/release/traits call sys.openapi 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "polygrait-api.fly.dev" },
+            { "type": "contains", "expected": "127.0.0.1:8090" }
+          ]
+        }
+      ],
       "examples": [
         {
           "input": [],
