@@ -17,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP="polygrait-api"
+APP="${FLY_APP:-polygrait-api}"
 REMOTE_BIN="/data/traits"
 TMP_BIN="/tmp/traits-linux-amd64"
 BUILD_VOL="traits-cargo-target"

@@ -1,0 +1,22 @@
+[trait]
+description = "Save deploy configuration to traits.toml"
+version = "v260322.191849"
+checksum = "49186f1ad2a250e00d4565d9a856c17ac8e7da1cc228dc369ce0fad0ed5d824f"
+epoch = 0
+author = "system"
+tags = ["www", "admin", "config"]
+
+[signature]
+params = [
+  { name = "fly_app", type = "string", description = "Fly.io app name", required = true },
+  { name = "fly_region", type = "string", description = "Fly.io region code", required = true },
+]
+
+[signature.returns]
+type = "object"
+description = "Save result with ok status"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "save_config"

@@ -4,10 +4,10 @@ Based on the project setup, here are the steps to deploy from local to your-fly-
 cd path/to/traits.build
 
 # 1. Build the Docker image for amd64 (Fly runs amd64, Mac is aarch64)
-docker buildx build --platform linux/amd64 -t registry.fly.io/your-fly-app:latest .
+docker buildx build --platform linux/amd64 -t registry.fly.io/<your-fly-app>:latest .
 
 # 2. Deploy to Fly.io
-fly deploy --now --local-only --image registry.fly.io/your-fly-app:latest
+fly deploy --now --local-only --image registry.fly.io/<your-fly-app>:latest
 
 # 3. If machine auto-stops, start it
 fly machines start 683039db395208

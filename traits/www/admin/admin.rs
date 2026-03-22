@@ -1,7 +1,14 @@
 use serde_json::Value;
 
 pub fn admin(_args: &[Value]) -> Value {
-    Value::String(ADMIN_HTML.to_string())
+    let (fly_app, fly_region) = match crate::globals::CONFIG.get() {
+        Some(cfg) => (cfg.deploy.fly_app.clone(), cfg.deploy.fly_region.clone()),
+        None => ("your-fly-app".into(), "iad".into()),
+    };
+    let html = ADMIN_HTML
+        .replace("{{FLY_APP}}", &fly_app)
+        .replace("{{FLY_REGION}}", &fly_region);
+    Value::String(html)
 }
 
 const ADMIN_HTML: &str = r##"<!DOCTYPE html>
@@ -83,8 +90,8 @@ const ADMIN_HTML: &str = r##"<!DOCTYPE html>
     </div>
     <div class="infra">
       <table>
-        <tr><td>App</td><td><code>polygrait-api</code></td></tr>
-        <tr><td>Region</td><td><code>iad</code> (Ashburn, Virginia)</td></tr>
+        <tr><td>App</td><td><code id="cfgFlyApp">{{FLY_APP}}</code></td></tr>
+        <tr><td>Region</td><td><code id="cfgFlyRegion">{{FLY_REGION}}</code></td></tr>
         <tr><td>Machine</td><td id="machineId">—</td></tr>
         <tr><td>State</td><td id="machineState">—</td></tr>
         <tr><td>Image</td><td id="machineImage" style="word-break:break-all;">—</td></tr>
@@ -125,8 +132,8 @@ const ADMIN_HTML: &str = r##"<!DOCTYPE html>
     <p class="note">Full redeployment requires a local build + push (the buttons above only restart/stop existing machines).</p>
     <div class="section">
       <h3>Build &amp; Deploy (from local machine)</h3>
-      <div class="step"><span class="step-num">1.</span><span class="step-text">Build amd64 image: <code>docker buildx build --platform linux/amd64 -t registry.fly.io/polygrait-api:deployment-vN .</code></span></div>
-      <div class="step"><span class="step-num">2.</span><span class="step-text">Deploy to Fly: <code>fly deploy --now --local-only --image registry.fly.io/polygrait-api:deployment-vN</code></span></div>
+      <div class="step"><span class="step-num">1.</span><span class="step-text">Build amd64 image: <code>docker buildx build --platform linux/amd64 -t registry.fly.io/{{FLY_APP}}:deployment-vN .</code></span></div>
+      <div class="step"><span class="step-num">2.</span><span class="step-text">Deploy to Fly: <code>fly deploy --now --local-only --image registry.fly.io/{{FLY_APP}}:deployment-vN</code></span></div>
       <div class="step"><span class="step-num">3.</span><span class="step-text">Verify: <code>curl https://traits.build/health</code></span></div>
     </div>
     <div class="section">
@@ -136,6 +143,25 @@ const ADMIN_HTML: &str = r##"<!DOCTYPE html>
       <div class="step"><span class="step-num">&bull;</span><span class="step-text">Dockerfile CMD must be <code>["traits"]</code> (no args). It reads <code>TRAITS_PORT</code> env and dispatches <code>kernel.serve</code>.</span></div>
       <div class="step"><span class="step-num">&bull;</span><span class="step-text">Must build with <code>--platform linux/amd64</code> (Fly runs x86_64, Mac builds arm64 by default).</span></div>
       <div class="step"><span class="step-num">&bull;</span><span class="step-text">Secrets: <code>ADMIN_PASSWORD</code>, <code>FLY_API_TOKEN</code>, <code>CLOUDFLARE_API_TOKEN</code> set via <code>fly secrets set</code>.</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Deploy Config</h2>
+    <p class="note">Edit deploy settings. Saved to <code>traits.toml</code> — changes take effect after server restart.</p>
+    <table style="margin-top: 1rem;">
+      <tr>
+        <td>Fly App</td>
+        <td><input id="cfgFlyAppInput" type="text" value="{{FLY_APP}}" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:100%;" /></td>
+      </tr>
+      <tr>
+        <td>Fly Region</td>
+        <td><input id="cfgFlyRegionInput" type="text" value="{{FLY_REGION}}" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:100%;" /></td>
+      </tr>
+    </table>
+    <div class="actions" style="margin-top: 1rem;">
+      <button class="primary" id="btnSaveConfig" onclick="saveConfig()">Save</button>
+      <span id="cfgSaveStatus" style="color:#888;font-size:0.85rem;align-self:center;"></span>
     </div>
   </div>
 
@@ -392,6 +418,29 @@ async function destroy() {
     }
   } catch(e) { log('Destroy error: ' + e.message, 'error'); }
   setTimeout(checkFlyMachine, 3000);
+}
+
+async function saveConfig() {
+  const app = document.getElementById('cfgFlyAppInput').value.trim();
+  const region = document.getElementById('cfgFlyRegionInput').value.trim();
+  const status = document.getElementById('cfgSaveStatus');
+  if (!app || !region) { status.textContent = 'Both fields are required'; status.style.color = '#e55'; return; }
+  document.getElementById('btnSaveConfig').disabled = true;
+  status.textContent = 'Saving...'; status.style.color = '#888';
+  try {
+    const r = await callTrait('www.admin.save_config', [app, region]);
+    const d = r.result || r;
+    if (d && d.ok) {
+      status.textContent = 'Saved — restart to apply'; status.style.color = '#6b9';
+      document.getElementById('cfgFlyApp').textContent = app;
+      document.getElementById('cfgFlyRegion').textContent = region;
+      log('Config saved: fly_app=' + app + ', fly_region=' + region);
+    } else {
+      status.textContent = 'Error: ' + (d.error || JSON.stringify(d)); status.style.color = '#e55';
+      log('Config save failed: ' + (d.error || JSON.stringify(d)), 'error');
+    }
+  } catch(e) { status.textContent = 'Error: ' + e.message; status.style.color = '#e55'; log('Config save error: ' + e.message, 'error'); }
+  document.getElementById('btnSaveConfig').disabled = false;
 }
 
 checkStatus();

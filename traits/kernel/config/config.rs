@@ -6,7 +6,25 @@ use std::path::Path;
 pub struct Config {
     pub traits: TraitsConfig,
     #[serde(default)]
+    pub deploy: DeployConfig,
+    #[serde(default)]
     pub workers: HashMap<String, WorkerConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct DeployConfig {
+    #[serde(default = "default_fly_app")]
+    pub fly_app: String,
+    #[serde(default = "default_fly_region")]
+    pub fly_region: String,
+}
+
+fn default_fly_app() -> String {
+    std::env::var("FLY_APP").unwrap_or_else(|_| "your-fly-app".into())
+}
+
+fn default_fly_region() -> String {
+    "iad".into()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -76,6 +94,12 @@ impl Config {
                     config.traits.timeout = t;
                 }
             }
+            // Deploy overrides
+            if let Ok(app) = std::env::var("FLY_APP") {
+                if !app.is_empty() {
+                    config.deploy.fly_app = app;
+                }
+            }
 
             Ok(config)
         } else {
@@ -87,6 +111,7 @@ impl Config {
                     timeout: default_timeout(),
                     bindings_file: default_bindings_file(),
                 },
+                deploy: DeployConfig::default(),
                 workers: HashMap::new(),
             })
         }
@@ -116,6 +141,10 @@ pub fn config(args: &[serde_json::Value]) -> serde_json::Value {
             "port": cfg.traits.port,
             "timeout": cfg.traits.timeout,
             "bindings_file": cfg.traits.bindings_file,
+            "deploy": {
+                "fly_app": cfg.deploy.fly_app,
+                "fly_region": cfg.deploy.fly_region,
+            },
             "workers": cfg.workers.keys().collect::<Vec<_>>()
         }),
         None => serde_json::json!({"error": "config not initialized"}),

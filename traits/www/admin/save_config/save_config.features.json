@@ -1,0 +1,11 @@
+{
+  "trait": "www.admin.save_config",
+  "description": "Save deploy configuration to traits.toml",
+  "features": [
+    {
+      "name": "Save deploy config",
+      "description": "Saves fly_app and fly_region to traits.toml [deploy] section",
+      "tests": []
+    }
+  ]
+}

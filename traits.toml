@@ -2,3 +2,7 @@
 traits_dir = "./traits"
 port = 8090
 timeout = 30
+
+[deploy]
+fly_app = "polygrait-api"
+fly_region = "iad"
