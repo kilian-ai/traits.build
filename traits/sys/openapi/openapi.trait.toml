@@ -1,7 +1,7 @@
 [trait]
 description = "Generate OpenAPI 3.0 specification from the trait registry"
-version = "v260322.143412"
-checksum = "8f921b71401c8caec472c709896947db2c9d3daa1342dabe645914f2544e374d"
+version = "v260322.151641"
+checksum = "0e4d20b0f02b2cb3af9d1eedf67d1d1a43835d36dfbaad4e31bc7a8e3b49a8fc"
 author = "system"
 tags = ["system", "docs", "api"]
 provides = ["sys/openapi"]

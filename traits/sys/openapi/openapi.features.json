@@ -1,6 +1,11 @@
 {
-  "feature": "sys.openapi generates OpenAPI 3.0 spec",
-  "tests": [
+  "trait": "sys.openapi",
+  "description": "Generate OpenAPI 3.0 specification from the trait registry",
+  "features": [
+    {
+      "name": "Generates OpenAPI 3.0 spec",
+      "description": "Returns a complete OpenAPI specification with all trait endpoints",
+      "tests": [
     {
       "name": "openapi returns valid spec",
       "command": "traits call sys.openapi",
@@ -25,6 +30,16 @@
       "assertions": [
         { "type": "contains", "expected": "polygrait-api.fly.dev" },
         { "type": "contains", "expected": "127.0.0.1:8090" }
+      ]
+    }
+  ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["\"openapi\":\"3.0.3\"", "\"paths\""]
+          }
+        }
       ]
     }
   ]

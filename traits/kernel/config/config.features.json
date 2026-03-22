@@ -24,6 +24,14 @@
             { "type": "contains", "expected": "path" }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["version"]
+          }
+        }
       ]
     },
     {

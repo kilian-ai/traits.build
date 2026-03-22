@@ -66,6 +66,14 @@
             }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": ["sys.checksum", "hash", "hello"],
+          "output": {
+            "contains": ["\"ok\"", "checksum"]
+          }
+        }
       ]
     },
     {

@@ -25,6 +25,14 @@
             }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": ["sys.checksum"],
+          "output": {
+            "contains": ["\"ok\": true", "sys.checksum"]
+          }
+        }
       ]
     },
     {

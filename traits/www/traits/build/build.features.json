@@ -55,6 +55,14 @@
             }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["<!DOCTYPE html>", "traits.build"]
+          }
+        }
       ]
     }
   ]

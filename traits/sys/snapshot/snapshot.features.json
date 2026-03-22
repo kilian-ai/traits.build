@@ -35,6 +35,14 @@
             { "type": "contains", "expected": "new_version" }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": ["sys.version"],
+          "output": {
+            "contains": ["\"ok\": true", "new_version"]
+          }
+        }
       ]
     }
   ]

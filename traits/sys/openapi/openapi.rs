@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 /// sys.openapi — Generate an OpenAPI 3.0 specification from the trait registry.
 ///
@@ -13,6 +14,9 @@ pub fn openapi(_args: &[Value]) -> Value {
     let all = reg.all();
     let mut paths = serde_json::Map::new();
     let mut tag_set = std::collections::BTreeSet::new();
+
+    // Pre-load examples from .features.json files
+    let examples_map = load_features_examples(&all);
 
     for entry in &all {
         // Skip kernel internals from the public API docs
@@ -93,12 +97,17 @@ pub fn openapi(_args: &[Value]) -> Value {
                     .join(", ")
             );
 
-            let positional_example: Vec<Value> = entry.signature.params.iter()
-                .map(|p| example_value(&p.param_type))
-                .collect();
+            let positional_example: Vec<Value> = if let Some(real) = examples_map.get(&entry.path) {
+                real.clone()
+            } else {
+                entry.signature.params.iter()
+                    .map(|p| example_value(&p.param_type))
+                    .collect()
+            };
 
             let named_example: serde_json::Map<String, Value> = entry.signature.params.iter()
-                .map(|p| (p.name.clone(), example_value(&p.param_type)))
+                .zip(positional_example.iter())
+                .map(|(p, v)| (p.name.clone(), v.clone()))
                 .collect();
 
             json!({
@@ -134,7 +143,8 @@ pub fn openapi(_args: &[Value]) -> Value {
         let return_schema = trait_type_to_schema(&entry.signature.returns.return_type);
 
         let mut operation = json!({
-            "summary": entry.description,
+            "summary": format!("POST {}", api_path),
+            "description": entry.description,
             "operationId": entry.path.replace('.', "_"),
             "tags": [namespace],
             "requestBody": request_body,
@@ -185,7 +195,7 @@ pub fn openapi(_args: &[Value]) -> Value {
                 desc.push_str(" *(supports `?stream=1` for SSE)*");
             }
             operation.as_object_mut().unwrap()
-                .insert("summary".into(), Value::String(desc));
+                .insert("description".into(), Value::String(desc));
         }
 
         paths.insert(api_path, json!({ "post": operation }));
@@ -392,4 +402,43 @@ fn example_value(t: &crate::types::TraitType) -> Value {
         TraitType::Any => json!("value"),
         TraitType::Handle => json!("hdl:example"),
     }
+}
+
+/// Load real examples from .features.json files for each trait.
+/// Returns a map from trait path to the first example's input array.
+fn load_features_examples(all: &[crate::registry::TraitEntry]) -> HashMap<String, Vec<Value>> {
+    let mut map = HashMap::new();
+    for entry in all {
+        if entry.path.starts_with("kernel.") { continue; }
+        let toml_dir = match entry.toml_path.parent() {
+            Some(d) => d,
+            None => continue,
+        };
+        let name = entry.path.split('.').last().unwrap_or("");
+        let features_path = toml_dir.join(format!("{}.features.json", name));
+        if !features_path.exists() { continue; }
+        let content = match std::fs::read_to_string(&features_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let doc: Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        // Walk features[].examples[] and take the first one with an "input" array
+        if let Some(features) = doc.get("features").and_then(|f| f.as_array()) {
+            for feature in features {
+                if let Some(examples) = feature.get("examples").and_then(|e| e.as_array()) {
+                    for example in examples {
+                        if let Some(input) = example.get("input").and_then(|i| i.as_array()) {
+                            map.insert(entry.path.clone(), input.clone());
+                            break;
+                        }
+                    }
+                }
+                if map.contains_key(&entry.path) { break; }
+            }
+        }
+    }
+    map
 }

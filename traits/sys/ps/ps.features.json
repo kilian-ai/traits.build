@@ -17,6 +17,14 @@
             }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["\"ok\""]
+          }
+        }
       ]
     }
   ]

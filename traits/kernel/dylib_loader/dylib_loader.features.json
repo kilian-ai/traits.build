@@ -15,6 +15,14 @@
             { "type": "contains", "expected": "test_dylib_name_to_trait_path ... ok" }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["ok"]
+          }
+        }
       ]
     },
     {

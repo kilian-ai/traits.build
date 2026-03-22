@@ -25,6 +25,14 @@
             { "type": "contains", "expected": "version" }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": ["sys.checksum", "hash", "hello"],
+          "output": {
+            "contains": ["checksum", "ok"]
+          }
+        }
       ]
     },
     {

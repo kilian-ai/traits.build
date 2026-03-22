@@ -15,6 +15,14 @@
             { "type": "contains", "expected": "<!DOCTYPE html>" }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["<!DOCTYPE html>"]
+          }
+        }
       ]
     },
     {

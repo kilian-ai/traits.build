@@ -15,6 +15,14 @@
             { "type": "contains", "expected": "test_type_matching ... ok" }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["ok"]
+          }
+        }
       ]
     },
     {

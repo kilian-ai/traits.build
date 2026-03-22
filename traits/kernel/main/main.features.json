@@ -15,6 +15,14 @@
             { "type": "contains", "expected": "registry_initialized" }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["registry_initialized"]
+          }
+        }
       ]
     },
     {

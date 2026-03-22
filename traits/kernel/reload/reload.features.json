@@ -16,6 +16,14 @@
             { "type": "contains", "expected": "count" }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["\"ok\": true", "count"]
+          }
+        }
       ]
     }
   ]

@@ -15,6 +15,14 @@
             { "type": "contains", "expected": "version" }
           ]
         }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["version"]
+          }
+        }
       ]
     },
     {
