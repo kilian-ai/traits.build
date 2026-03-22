@@ -265,7 +265,10 @@ fn compute_build_version(manifest_dir: &Path) -> String {
         format!("v{}", today)
     };
 
-    // Write back to version.trait.toml
+    // Write back to version.trait.toml (skip if read-only, e.g. during cargo publish)
+    if toml_path.metadata().map(|m| m.permissions().readonly()).unwrap_or(true) {
+        return new_ver;
+    }
     if let Ok(content) = fs::read_to_string(&toml_path) {
         let updated: String = content
             .lines()
@@ -315,6 +318,11 @@ fn update_trait_checksum(toml_path: &Path, rs_path: &Path) {
 
     // If checksum matches, no changes needed
     if existing_checksum.as_deref() == Some(new_checksum.as_str()) {
+        return;
+    }
+
+    // Skip writes if file is read-only (e.g. during cargo publish)
+    if toml_path.metadata().map(|m| m.permissions().readonly()).unwrap_or(true) {
         return;
     }
 

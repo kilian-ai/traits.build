@@ -203,7 +203,7 @@ fn trait_type_to_json_schema(tt: &crate::types::TraitType) -> Value {
             "type": "array",
             "items": trait_type_to_json_schema(inner)
         }),
-        crate::types::TraitType::Map(k, v) => json!({
+        crate::types::TraitType::Map(_k, v) => json!({
             "type": "object",
             "additionalProperties": trait_type_to_json_schema(v)
         }),
