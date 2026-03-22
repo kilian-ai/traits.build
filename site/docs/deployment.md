@@ -41,7 +41,7 @@ No Node.js, Python, or other runtimes — just the Rust binary, trait definition
 
 ```toml
 # fly.toml
-app = "polygrait-api"
+app = "your-fly-app"
 
 [build]
 
@@ -68,11 +68,11 @@ path = "/health"
 ```bash
 # Build for amd64 (Fly runs Linux/amd64)
 docker buildx build --platform linux/amd64 \
-  -t registry.fly.io/polygrait-api:latest .
+  -t registry.fly.io/your-fly-app:latest .
 
 # Deploy
 fly deploy --now --local-only \
-  --image registry.fly.io/polygrait-api:latest
+  --image registry.fly.io/your-fly-app:latest
 ```
 
 ## Admin dashboard
