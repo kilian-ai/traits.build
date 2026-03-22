@@ -26,7 +26,7 @@ pub fn snapshot(args: &[Value]) -> Value {
     };
 
     // Extract current version
-    let old_version = extract_version(&toml_str).unwrap_or_else(|| "0.1.0".to_string());
+    let old_version = extract_version(&toml_str).unwrap_or_else(|| "v000000".to_string());
 
     // Decide new version
     let today = yymmdd_now();

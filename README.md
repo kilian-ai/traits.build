@@ -137,7 +137,7 @@ Example `call.trait.toml`:
 ```toml
 [trait]
 description = "Call another trait by dot-notation path"
-version = "0.1.0"
+version = "v260322"
 author = "system"
 tags = ["system", "meta", "dispatch"]
 

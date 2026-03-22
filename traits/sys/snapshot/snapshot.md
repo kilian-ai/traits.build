@@ -49,7 +49,7 @@ writes:
 2. Get REGISTRY; error if not initialized
 3. Look up trait entry; error if not found
 4. Read toml_path content; error if unreadable
-5. Extract current version via `extract_version()`, default "0.1.0"
+5. Extract current version via `extract_version()`, default "v000000"
 6. Compute today's YYMMDD string
 7. If old version already starts with today's date → new version = "YYMMDD.HHMMSS"
 8. Otherwise → new version = "YYMMDD"
@@ -64,14 +64,14 @@ writes:
 * Trait not found: returns error
 * File unreadable: returns error
 * File unwritable: returns error
-* No version line in TOML: defaults old_version to "0.1.0"
+* No version line in TOML: defaults old_version to "v000000"
 * Already versioned today: appends HHMMSS suffix for uniqueness
 
 ### Example
 
 ```
 sys.snapshot "sys.checksum"
-=> {"ok":true,"trait_path":"sys.checksum","old_version":"0.1.0","new_version":"260319","toml_path":"./traits/sys/checksum/checksum.trait.toml"}
+=> {"ok":true,"trait_path":"sys.checksum","old_version":"v260319","new_version":"v260322","toml_path":"./traits/sys/checksum/checksum.trait.toml"}
 ```
 
 ---

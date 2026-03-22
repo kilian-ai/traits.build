@@ -228,7 +228,7 @@ struct ImplementationToml {
 }
 
 fn default_version() -> String {
-    "0.1.0".into()
+    "v260322".into()
 }
 
 fn default_http_method() -> String {
