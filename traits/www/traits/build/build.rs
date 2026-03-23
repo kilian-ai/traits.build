@@ -240,6 +240,46 @@ footer a{color:var(--accent)}
 </div>
 </section>
 
+<!-- Secrets -->
+<h2 class="section-title">Secure Secrets Handling</h2>
+<p class="section-sub">Protect sensitive data with a clean, developer-friendly design</p>
+
+<section>
+<div class="features" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+  <div class="card">
+    <div class="icon">&#x1f512;</div>
+    <h3>Separation</h3>
+    <p>Data vs secrets are fully isolated. Secrets live in an encrypted store, never in config files or source code.</p>
+  </div>
+  <div class="card">
+    <div class="icon">&#x1f3af;</div>
+    <h3>Explicit Access</h3>
+    <p>No hidden flows. Traits declare which secrets they need via <code>SecretContext::resolve()</code>. Access is intentional and auditable.</p>
+  </div>
+  <div class="card">
+    <div class="icon">&#x23f3;</div>
+    <h3>Short Lifetime</h3>
+    <p>Secrets exist in memory only during execution. <code>zeroize-on-drop</code> clears values immediately, masked <code>Debug</code> prevents logging.</p>
+  </div>
+  <div class="card">
+    <div class="icon">&#x1f510;</div>
+    <h3>Encrypted at Rest</h3>
+    <p>AES-GCM encryption with OS-backed key storage. Double encryption: individual values + entire store file.</p>
+  </div>
+</div>
+<div class="code-block" style="max-width:100%;padding:0;margin-top:1.5rem">
+<pre><span class="cm"># CLI &mdash; manage secrets from the command line</span>
+<span class="kw">$</span> traits secrets set fly_api_token <span class="s">"FlyV1 ..."</span>
+<span class="kw">$</span> traits secrets list
+<span class="cm"># [&quot;admin_password&quot;, &quot;fly_api_token&quot;]  &mdash; values never exposed</span>
+
+<span class="cm"># Rust &mdash; scoped access in your trait</span>
+<span class="kw">let</span> ctx = SecretContext::resolve(&amp;[<span class="s">"fly_api_token"</span>]);
+<span class="kw">let</span> token = ctx.get(<span class="s">"fly_api_token"</span>).unwrap();
+<span class="cm">// token is zeroized when ctx drops</span></pre>
+</div>
+</section>
+
 <!-- Kernel traits -->
 <h2 class="section-title" id="built-in-traits">Built-in traits</h2>
 <p class="section-sub">{{TRAIT_COUNT}} traits across kernel, sys, and www &mdash; all compiled in</p>
@@ -269,6 +309,7 @@ footer a{color:var(--accent)}
 <tr><td>sys.ps</td><td>List running background traits with process details</td></tr>
 <tr><td>sys.openapi</td><td>Generate OpenAPI 3.0 spec with live examples from the registry</td></tr>
 <tr><td>sys.mcp</td><td>MCP stdio server &mdash; JSON-RPC 2.0 over stdin/stdout</td></tr>
+<tr><td>sys.secrets</td><td>Encrypted secrets store &mdash; set, get, delete, list with SecretContext isolation</td></tr>
 <tr><td>sys.docs.skills</td><td>Generate SKILL.md from OpenAPI &mdash; teach AI agents every trait</td></tr>
 <tr><td>www.traits.build</td><td>This landing page &mdash; stats pulled live from registry</td></tr>
 <tr><td>www.docs</td><td>Single-page documentation with all guides rendered from markdown</td></tr>
