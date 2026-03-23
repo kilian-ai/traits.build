@@ -1,7 +1,9 @@
-You are generating a **1:1 mapped documentation file** for a single source code file.
+---
+name: src2doc
+description: |
+  You are generating a **1:1 mapped documentation file** for a single source code file.
 
-Your goal is to produce a Markdown document that mirrors the code’s structure, naming, and behavior precisely.
-
+  Your goal is to produce a Markdown document that mirrors the code’s structure, naming, and behavior precisely.
 ---
 
 ## Rules
