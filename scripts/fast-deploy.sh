@@ -42,9 +42,8 @@ if [ "${1:-}" != "--upload" ]; then
         -v "$REG_VOL:/usr/local/cargo/registry" \
         -v "/tmp:/out" \
         -e CARGO_TARGET_DIR=/cargo-target \
-        -w /src \
         rust:latest \
-        sh -c 'cargo build --release --locked && cp /cargo-target/release/traits /out/traits-linux-amd64'
+        sh -c 'cp -a /src /build && cd /build && cargo build --release && cp /cargo-target/release/traits /out/traits-linux-amd64'
 
     echo "==> Built: $(du -h "$TMP_BIN" | cut -f1)"
 fi
