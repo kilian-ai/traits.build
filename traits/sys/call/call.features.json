@@ -1,0 +1,84 @@
+{
+  "features": [
+    {
+      "name": "GET request to public API",
+      "examples": [
+        {
+          "input": ["https://httpbin.org/get"],
+          "output": {
+            "contains": ["\"ok\":true", "\"status\":200"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST request with JSON body",
+      "examples": [
+        {
+          "input": ["https://httpbin.org/post", {"hello": "world"}],
+          "output": {
+            "contains": ["\"ok\":true", "\"status\":200", "hello"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Missing URL returns error",
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["\"ok\":false", "url is required"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invalid URL scheme returns error",
+      "examples": [
+        {
+          "input": ["ftp://example.com"],
+          "output": {
+            "contains": ["\"ok\":false", "url must start with https://"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Custom method (PUT)",
+      "examples": [
+        {
+          "input": ["https://httpbin.org/put", {"data": 1}, null, "PUT"],
+          "output": {
+            "contains": ["\"ok\":true", "\"status\":200"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Custom headers",
+      "examples": [
+        {
+          "input": ["https://httpbin.org/headers", null, null, "GET", {"X-Custom-Test": "traits-build"}],
+          "output": {
+            "contains": ["\"ok\":true", "traits-build"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "CLI dry run",
+      "tests": [
+        {
+          "name": "CLI output for GET",
+          "type": "command",
+          "command": "./target/release/traits call sys.call https://httpbin.org/get '' '' GET ''",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "httpbin.org" }
+          ]
+        }
+      ]
+    }
+  ]
+}
