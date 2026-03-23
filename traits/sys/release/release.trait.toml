@@ -1,0 +1,44 @@
+[trait]
+description = "Configurable release pipeline: build → test → commit → push → tag → publish → deploy"
+version = "v260323.152654"
+checksum = "4a77664b1b00463878b8c3222e87152f3d03aaeeac09c696059de39c922c8fcf"
+epoch = 0
+author = "system"
+tags = ["system", "release", "ci", "deploy", "pipeline"]
+
+[[signature.params]]
+name = "steps"
+type = "string"
+description = "Comma-separated steps to run: build,test,commit,push,tag,publish,deploy. Use 'all' for the full pipeline, 'ci' for commit+push+tag, 'ship' for ci+deploy."
+required = false
+
+[[signature.params]]
+name = "message"
+type = "string"
+description = "Git commit message (default: 'release: vYYMMDD')"
+required = false
+
+[[signature.params]]
+name = "dry_run"
+type = "bool"
+description = "If true, show what would happen without executing"
+required = false
+
+[signature.returns]
+type = "object"
+description = "{ ok, version, steps: [{name, ok, output?, error?, skipped?}] }"
+
+[requires]
+globals = "kernel/globals"
+version = "v260323.152654"
+checksum = "4a77664b1b00463878b8c3222e87152f3d03aaeeac09c696059de39c922c8fcf"
+
+[bindings]
+globals = "kernel.globals"
+version = "v260323.152654"
+checksum = "4a77664b1b00463878b8c3222e87152f3d03aaeeac09c696059de39c922c8fcf"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "release"

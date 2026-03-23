@@ -128,6 +128,27 @@ const ADMIN_HTML: &str = r##"<!DOCTYPE html>
   </div>
 
   <div class="card">
+    <h2>Release Pipeline</h2>
+    <p class="note">Run <code>sys.release</code> — configurable pipeline: build, test, commit, push, tag, publish, deploy.</p>
+    <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end;">
+      <div>
+        <label style="font-size:0.75rem;color:#666;display:block;margin-bottom:0.25rem;">Commit Message</label>
+        <input id="releaseMsg" type="text" placeholder="release: vYYMMDD" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:280px;" />
+      </div>
+      <label style="font-size:0.82rem;color:#888;display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+        <input type="checkbox" id="releaseDry" /> Dry run
+      </label>
+    </div>
+    <div class="actions" style="margin-top: 1rem;">
+      <button class="primary" onclick="releasePipeline('all')">Full Release</button>
+      <button onclick="releasePipeline('ci')">CI (commit+push+tag)</button>
+      <button onclick="releasePipeline('ship')">Ship (CI+deploy)</button>
+      <button onclick="releasePipeline('commit,push')">Commit + Push</button>
+    </div>
+    <div class="log" id="releaseLog" style="display:none; margin-top: 1rem;"><span class="entry"><span class="time">[--:--:--]</span> Ready</span></div>
+  </div>
+
+  <div class="card">
     <h2>Deploy Process</h2>
     <p class="note">Full redeployment requires a local build + push (the buttons above only restart/stop existing machines).</p>
     <div class="section">
@@ -369,6 +390,49 @@ async function fastDeploy(mode) {
   btn.textContent = label;
   setTimeout(checkStatus, 8000);
   setTimeout(checkFlyMachine, 10000);
+}
+
+function releaseLog(msg, type) {
+  const el = document.getElementById('releaseLog');
+  el.style.display = 'block';
+  const t = new Date().toTimeString().slice(0,8);
+  const cls = type || 'info';
+  el.innerHTML += '\n<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function releasePipeline(steps) {
+  var msg = document.getElementById('releaseMsg').value.trim() || '';
+  var dry = document.getElementById('releaseDry').checked;
+  var btns = document.querySelectorAll('.card:nth-of-type(5) button');
+  btns.forEach(function(b) { b.disabled = true; });
+  releaseLog((dry ? '[DRY RUN] ' : '') + 'Starting release pipeline: ' + steps + (msg ? ' — "' + msg + '"' : ''));
+  var startTime = Date.now();
+  var timer = setInterval(function() {
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
+    btns[0].textContent = 'Running... ' + elapsed + 's';
+  }, 1000);
+  try {
+    const r = await callTrait('sys.release', [steps, msg, dry]);
+    clearInterval(timer);
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const d = r.result || r;
+    if (d && d.steps) {
+      d.steps.forEach(function(s) {
+        if (s.skipped) { releaseLog('  ○ ' + s.name + ' — skipped'); }
+        else if (s.dry_run || s.would_run) { releaseLog('  ◇ ' + s.name + ' — would run'); }
+        else if (s.ok) { releaseLog('  ✓ ' + s.name + (s.output ? ' — ' + s.output.split('\n')[0] : '')); }
+        else { releaseLog('  ✗ ' + s.name + ' — ' + (s.output || 'failed'), 'error'); }
+      });
+      var ok = d.ok !== false;
+      releaseLog((ok ? 'Pipeline completed' : 'Pipeline failed') + ' in ' + elapsed + 's' + (d.version ? ' — ' + d.version : ''), ok ? 'info' : 'error');
+    } else {
+      releaseLog('Result: ' + JSON.stringify(d, null, 2));
+    }
+  } catch(e) { clearInterval(timer); releaseLog('Error: ' + e.message, 'error'); }
+  btns.forEach(function(b) { b.disabled = false; });
+  btns[0].textContent = 'Full Release';
+  setTimeout(checkStatus, 5000);
 }
 
 async function checkFlyMachine() {

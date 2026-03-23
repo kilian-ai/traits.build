@@ -538,8 +538,9 @@ dep = "namespace.concrete_trait"
 ```
 
 
-##AGENT RULSE:
+## AGENT RULES:
 - Always commit to git after making changes to the codebase, with a clear and concise commit message describing the changes made.
+- Always include build-generated files in your commits — `build.rs` auto-bumps versions in `.trait.toml` files, `Cargo.toml`, and `Cargo.lock` on every build. Run `git add -A` (not just the files you edited) to capture all version bumps, checksum updates, and generated TOML changes.
 - Always run the build script (`build.sh`) after making changes to ensure that the code compiles correctly and that any generated files are updated.
 - Always rebuild the binary and restart the local server after making changes to the codebase to ensure that the changes take effect and to test that everything is working correctly.
 - Always store memory files you are creating in .github/memories so we can save them for future use.

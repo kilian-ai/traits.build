@@ -1,0 +1,114 @@
+{
+  "trait": "sys.release",
+  "description": "Configurable release pipeline tests",
+  "features": [
+    {
+      "name": "Dry run full pipeline",
+      "description": "Dry run of full pipeline shows all 7 steps without executing",
+      "examples": [
+        {
+          "input": ["all", "", true],
+          "output": {
+            "contains": [
+              "\"ok\":true",
+              "\"dry_run\":true",
+              "\"name\":\"build\"",
+              "\"name\":\"deploy\""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "CI preset",
+      "description": "CI preset only includes commit, push, tag — build/test/publish/deploy are skipped",
+      "examples": [
+        {
+          "input": ["ci", "", true],
+          "output": {
+            "contains": [
+              "\"ok\":true",
+              "\"dry_run\":true",
+              "\"name\":\"commit\""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ship preset",
+      "description": "Ship preset includes commit, push, tag, deploy",
+      "examples": [
+        {
+          "input": ["ship", "", true],
+          "output": {
+            "contains": [
+              "\"ok\":true",
+              "\"name\":\"deploy\""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Custom steps",
+      "description": "Comma-separated custom steps are respected",
+      "examples": [
+        {
+          "input": ["build,test", "", true],
+          "output": {
+            "contains": [
+              "\"ok\":true",
+              "\"name\":\"build\"",
+              "\"name\":\"test\""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Custom commit message",
+      "description": "Custom commit message is used in dry run",
+      "examples": [
+        {
+          "input": ["commit", "feat: my custom message", true],
+          "output": {
+            "contains": [
+              "\"ok\":true",
+              "feat: my custom message"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Version is always present",
+      "description": "Response always includes current version string",
+      "examples": [
+        {
+          "input": ["ci", "", true],
+          "output": {
+            "contains": [
+              "\"version\":"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "CLI dry run",
+      "description": "CLI invocation with dry_run=true shows pipeline plan",
+      "tests": [
+        {
+          "name": "cli dry run",
+          "type": "command",
+          "command": "./target/release/traits call sys.release all '' true 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "dry_run" }
+          ]
+        }
+      ]
+    }
+  ]
+}
