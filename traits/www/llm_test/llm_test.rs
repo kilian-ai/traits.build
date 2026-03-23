@@ -169,6 +169,14 @@ const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
     <label>WebGPU Engine</label>
     <span id="webgpuBadge" class="webgpu-badge"><span class="dot"></span>Checking...</span>
   </div>
+  <div class="control-group" id="ctxWindowGroup" style="display:none;">
+    <label>Context Window</label>
+    <input type="number" id="ctxWindow" value="8192" min="512" max="131072" step="512" style="padding:0.5rem 0.75rem; border-radius:6px; border:1px solid #333; background:#151515; color:#e0e0e0; font-size:0.85rem; width:100px;">
+  </div>
+  <div class="control-group" id="maxTokensGroup" style="display:none;">
+    <label>Max Output Tokens</label>
+    <input type="number" id="maxTokens" value="1024" min="64" max="16384" step="64" style="padding:0.5rem 0.75rem; border-radius:6px; border:1px solid #333; background:#151515; color:#e0e0e0; font-size:0.85rem; width:100px;">
+  </div>
   <div class="context-toggle">
     <label for="ctxToggle">Include docs context</label>
     <div class="toggle">
@@ -220,13 +228,13 @@ const MODELS = {
     { value: 'o3-mini',      label: 'o3-mini' },
   ],
   webgpu: [
-    { value: 'SmolLM2-135M-Instruct-q4f16_1-MLC',   label: 'SmolLM2 135M (tiny, fast)' },
-    { value: 'SmolLM2-360M-Instruct-q4f16_1-MLC',   label: 'SmolLM2 360M (small)' },
-    { value: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',   label: 'Qwen2.5 0.5B' },
-    { value: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC',   label: 'Qwen2.5 1.5B' },
-    { value: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',    label: 'Llama 3.2 1B' },
-    { value: 'Phi-3.5-mini-instruct-q4f16_1-MLC',    label: 'Phi 3.5 Mini (3.8B)' },
-    { value: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',    label: 'Llama 3.2 3B' },
+    { value: 'SmolLM2-135M-Instruct-q4f16_1-MLC',   label: 'SmolLM2 135M (tiny, fast)', ctx: 8192 },
+    { value: 'SmolLM2-360M-Instruct-q4f16_1-MLC',   label: 'SmolLM2 360M (small)', ctx: 8192 },
+    { value: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',   label: 'Qwen2.5 0.5B', ctx: 32768 },
+    { value: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC',   label: 'Qwen2.5 1.5B', ctx: 32768 },
+    { value: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',    label: 'Llama 3.2 1B', ctx: 32768 },
+    { value: 'Phi-3.5-mini-instruct-q4f16_1-MLC',    label: 'Phi 3.5 Mini (3.8B)', ctx: 32768 },
+    { value: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',    label: 'Llama 3.2 3B', ctx: 32768 },
   ],
   local: [
     { value: 'default',  label: 'Default (server model)' },
@@ -245,6 +253,7 @@ let webllm = null;
 let webgpuEngine = null;
 let webgpuReady = false;
 let webgpuLoadedModel = null;
+let webgpuLoadedCtxWindow = null;
 let webgpuSupported = false;
 let cachedModelSet = new Set();
 
@@ -488,12 +497,14 @@ async function ensureWebGPUEngine(modelId) {
 
   await loadWebLLM();
 
-  // Already loaded with this model
-  if (webgpuEngine && webgpuLoadedModel === modelId) {
+  const ctxWindow = parseInt(document.getElementById('ctxWindow').value) || 8192;
+
+  // Already loaded with this model and same context window
+  if (webgpuEngine && webgpuLoadedModel === modelId && webgpuLoadedCtxWindow === ctxWindow) {
     return true;
   }
 
-  // Need to load or switch model
+  // Need to load or switch model (or context window changed)
   webgpuReady = false;
   updateWebGPUBadge('loading', 'Loading...');
 
@@ -505,24 +516,25 @@ async function ensureWebGPUEngine(modelId) {
       updateWebGPUBadge('loading', pct + '%');
     };
 
+    // Override context_window_size so small models can handle larger prompts
+    const chatOpts = { context_window_size: ctxWindow };
+
     if (webgpuEngine) {
-      // Reload with new model
-      showProgress('Switching model to ' + modelId + '...', 0);
+      showProgress('Loading ' + modelId + ' (ctx: ' + ctxWindow + ')...', 0);
       webgpuEngine.setInitProgressCallback(initProgressCallback);
-      await webgpuEngine.reload(modelId);
+      await webgpuEngine.reload(modelId, chatOpts);
     } else {
-      showProgress('Initializing WebGPU engine...', 0);
-      // Use explicit instantiation + reload instead of CreateMLCEngine
-      // for more reliable model loading via CDN
+      showProgress('Initializing WebGPU engine (ctx: ' + ctxWindow + ')...', 0);
       webgpuEngine = new webllm.MLCEngine();
       webgpuEngine.setInitProgressCallback(initProgressCallback);
-      await webgpuEngine.reload(modelId);
+      await webgpuEngine.reload(modelId, chatOpts);
     }
 
     webgpuLoadedModel = modelId;
+    webgpuLoadedCtxWindow = ctxWindow;
     webgpuReady = true;
     hideProgress();
-    updateWebGPUBadge('ok', 'Ready');
+    updateWebGPUBadge('ok', 'Ready · ctx ' + ctxWindow);
     // Refresh cache card after model download/load
     refreshCacheCard();
     return true;
@@ -542,6 +554,8 @@ function onProviderChange() {
 
   localGroup.style.display = prov === 'local' ? 'flex' : 'none';
   webgpuGroup.style.display = prov === 'webgpu' ? 'flex' : 'none';
+  document.getElementById('ctxWindowGroup').style.display = prov === 'webgpu' ? 'flex' : 'none';
+  document.getElementById('maxTokensGroup').style.display = prov === 'webgpu' ? 'flex' : 'none';
 
   modelSel.innerHTML = '';
   for (const m of MODELS[prov] || []) {
@@ -549,6 +563,12 @@ function onProviderChange() {
     opt.value = m.value;
     opt.textContent = m.label;
     modelSel.appendChild(opt);
+  }
+
+  // Set default context window from model config
+  if (prov === 'webgpu' && MODELS.webgpu.length > 0) {
+    const first = MODELS.webgpu[0];
+    document.getElementById('ctxWindow').value = first.ctx || 8192;
   }
 
   if (prov === 'webgpu') {
@@ -569,8 +589,14 @@ function onModelChange() {
   const prov = document.getElementById('provider').value;
   if (prov === 'webgpu') {
     const modelId = document.getElementById('model').value;
-    if (webgpuReady && webgpuLoadedModel === modelId) {
-      updateWebGPUBadge('ok', 'Ready');
+    // Update context window default for selected model
+    const known = MODELS.webgpu.find(m => m.value === modelId);
+    if (known && known.ctx) {
+      document.getElementById('ctxWindow').value = known.ctx;
+    }
+    const ctxWindow = parseInt(document.getElementById('ctxWindow').value) || 8192;
+    if (webgpuReady && webgpuLoadedModel === modelId && webgpuLoadedCtxWindow === ctxWindow) {
+      updateWebGPUBadge('ok', 'Ready · ctx ' + ctxWindow);
     } else {
       updateWebGPUBadge('loading', 'Not loaded');
     }
@@ -676,10 +702,11 @@ async function sendWebGPU(text, modelId, useContext) {
   chatMessages.push({ role: 'user', content: text });
 
   // Use streaming for real-time output
+  const maxTokens = parseInt(document.getElementById('maxTokens').value) || 1024;
   const chunks = await webgpuEngine.chat.completions.create({
     messages: chatMessages,
     temperature: 0.7,
-    max_tokens: 2048,
+    max_tokens: maxTokens,
     stream: true,
     stream_options: { include_usage: true },
   });
