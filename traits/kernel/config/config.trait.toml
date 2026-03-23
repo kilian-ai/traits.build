@@ -1,8 +1,8 @@
 [trait]
 description = "Configuration loader: traits.toml parsing, env var overrides, runtime config"
-version = "v260323.204807"
+version = "v260323.235556"
 epoch = 0
-checksum = "57cbb82ce832935093922c14f406a7f902278437b60544fc9e7112bfda51b835"
+checksum = "dbe515386555c3fb87ca2ab50a074205a8c809e9348a9a9a7afe7780a803586a"
 author = "kilian-ai"
 tags = ["kernel", "config"]
 provides = ["kernel/config"]

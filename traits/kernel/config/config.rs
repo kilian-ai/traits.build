@@ -20,7 +20,9 @@ pub struct DeployConfig {
 }
 
 fn default_fly_app() -> String {
-    std::env::var("FLY_APP").unwrap_or_else(|_| "your-fly-app".into())
+    std::env::var("FLY_APP")
+        .or_else(|_| std::env::var("FLY_APP_NAME"))
+        .unwrap_or_else(|_| "your-fly-app".into())
 }
 
 fn default_fly_region() -> String {
@@ -119,8 +121,10 @@ impl Config {
                     }
                 }
             }
-            // Env vars override everything
-            if let Ok(app) = std::env::var("FLY_APP") {
+            // Env vars override everything (FLY_APP_NAME is set automatically by Fly.io)
+            let fly_app_env = std::env::var("FLY_APP")
+                .or_else(|_| std::env::var("FLY_APP_NAME"));
+            if let Ok(app) = fly_app_env {
                 if !app.is_empty() {
                     config.deploy.fly_app = app;
                 }
