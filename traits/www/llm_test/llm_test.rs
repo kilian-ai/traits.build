@@ -308,9 +308,11 @@ async function ensureWebGPUEngine(modelId) {
       await webgpuEngine.reload(modelId);
     } else {
       showProgress('Initializing WebGPU engine...', 0);
-      webgpuEngine = await webllm.CreateMLCEngine(modelId, {
-        initProgressCallback: initProgressCallback,
-      });
+      // Use explicit instantiation + reload instead of CreateMLCEngine
+      // for more reliable model loading via CDN
+      webgpuEngine = new webllm.MLCEngine();
+      webgpuEngine.setInitProgressCallback(initProgressCallback);
+      await webgpuEngine.reload(modelId);
     }
 
     webgpuLoadedModel = modelId;
