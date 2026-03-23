@@ -1898,7 +1898,7 @@ dependencies = [
 
 [[package]]
 name = "traits"
-version = "0.260323.213032"
+version = "0.260323.213627"
 dependencies = [
  "actix-cors",
  "actix-rt",

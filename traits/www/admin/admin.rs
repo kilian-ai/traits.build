@@ -471,7 +471,7 @@ async function checkFlyMachine() {
     const d = r.result || r;
     if (typeof d === 'string') {
       document.getElementById('flyDot').className = 'dot red';
-      document.getElementById('flyText').textContent = d.startsWith('Error') ? 'Token missing' : 'API error';
+      document.getElementById('flyText').textContent = d.length > 60 ? d.slice(0, 60) + '...' : d;
       log('Fly API: ' + d, 'error');
       return;
     }
@@ -501,8 +501,9 @@ async function checkFlyMachine() {
       log('Fly API: unexpected response: ' + JSON.stringify(d), 'warn');
     }
   } catch(e) {
-    document.getElementById('flyDot').className = 'dot gray';
-    document.getElementById('flyText').textContent = 'Could not query Fly API';
+    document.getElementById('flyDot').className = 'dot red';
+    document.getElementById('flyText').textContent = 'Error: ' + e.message;
+    log('Fly check error: ' + e.message, 'error');
   }
 }
 

@@ -42,56 +42,66 @@ impl FlyApi {
         }
     }
 
-    /// GET request to Fly Machines API.
-    pub fn get(&self, path: &str) -> Result<String, String> {
+    /// Execute a curl request and return (http_status, body).
+    fn curl(&self, method: &str, path: &str, body: Option<&str>) -> Result<(u16, String), String> {
         let url = format!("{}/apps/{}{}", FLY_API_BASE, fly_app(), path);
         let auth = self.auth_header();
-        let output = Command::new("curl")
-            .args(["-s", "-X", "GET", &url,
-                   "-H", &format!("Authorization: {}", auth),
-                   "-H", "Content-Type: application/json"])
-            .output()
-            .map_err(|e| format!("curl failed: {}", e))?;
+        let mut cmd = Command::new("curl");
+        cmd.args(["-s", "-L", "-X", method, &url,
+                  "-H", &format!("Authorization: {}", auth),
+                  "-H", "Content-Type: application/json",
+                  "-w", "\n__HTTP_STATUS__%{http_code}"]);
+        if let Some(b) = body {
+            cmd.args(["-d", b]);
+        }
+        let output = cmd.output().map_err(|e| format!("curl failed: {}", e))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("curl error: {}", stderr));
+            return Err(format!("curl process error: {}", stderr));
         }
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        let raw = String::from_utf8_lossy(&output.stdout).to_string();
+        // Split response body from status code suffix
+        if let Some(pos) = raw.rfind("__HTTP_STATUS__") {
+            let response_body = raw[..pos].trim_end().to_string();
+            let status_str = &raw[pos + 15..];
+            let status: u16 = status_str.trim().parse().unwrap_or(0);
+            Ok((status, response_body))
+        } else {
+            Ok((0, raw))
+        }
+    }
+
+    /// Check HTTP status and return body, or Err with diagnostic info.
+    fn check_response(&self, method: &str, path: &str, status: u16, body: &str) -> Result<String, String> {
+        if status == 0 {
+            return Err(format!("{} {} — no HTTP status (network error?)", method, path));
+        }
+        if status >= 400 {
+            let detail = if body.is_empty() { "(empty body)" } else { body };
+            return Err(format!("{} {} — HTTP {} — {}", method, path, status, &detail[..detail.len().min(300)]));
+        }
+        if body.is_empty() {
+            return Err(format!("{} {} — HTTP {} but empty body", method, path, status));
+        }
+        Ok(body.to_string())
+    }
+
+    /// GET request to Fly Machines API.
+    pub fn get(&self, path: &str) -> Result<String, String> {
+        let (status, body) = self.curl("GET", path, None)?;
+        self.check_response("GET", path, status, &body)
     }
 
     /// POST request to Fly Machines API.
     pub fn post(&self, path: &str, body: &str) -> Result<String, String> {
-        let url = format!("{}/apps/{}{}", FLY_API_BASE, fly_app(), path);
-        let auth = self.auth_header();
-        let output = Command::new("curl")
-            .args(["-s", "-X", "POST", &url,
-                   "-H", &format!("Authorization: {}", auth),
-                   "-H", "Content-Type: application/json",
-                   "-d", body])
-            .output()
-            .map_err(|e| format!("curl failed: {}", e))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("curl error: {}", stderr));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        let (status, resp) = self.curl("POST", path, Some(body))?;
+        self.check_response("POST", path, status, &resp)
     }
 
     /// DELETE request to Fly Machines API.
     pub fn delete(&self, path: &str) -> Result<String, String> {
-        let url = format!("{}/apps/{}{}", FLY_API_BASE, fly_app(), path);
-        let auth = self.auth_header();
-        let output = Command::new("curl")
-            .args(["-s", "-X", "DELETE", &url,
-                   "-H", &format!("Authorization: {}", auth),
-                   "-H", "Content-Type: application/json"])
-            .output()
-            .map_err(|e| format!("curl failed: {}", e))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("curl error: {}", stderr));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        let (status, body) = self.curl("DELETE", path, None)?;
+        self.check_response("DELETE", path, status, &body)
     }
 
     /// List all machines for the app.
