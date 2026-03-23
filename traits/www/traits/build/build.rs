@@ -1,5 +1,6 @@
 use serde_json::Value;
 use std::collections::HashSet;
+use maud::{html, DOCTYPE, PreEscaped};
 
 pub fn website(_args: &[Value]) -> Value {
     let (trait_count, ns_count) = match crate::globals::REGISTRY.get() {
@@ -17,20 +18,240 @@ pub fn website(_args: &[Value]) -> Value {
         .and_then(|p| std::fs::metadata(p).ok())
         .map(|m| format!("{:.1} MB", m.len() as f64 / 1_048_576.0))
         .unwrap_or_else(|| "? MB".to_string());
-    let html = HTML
-        .replace("{{TRAIT_COUNT}}", &trait_count.to_string())
-        .replace("{{NS_COUNT}}", &ns_count.to_string())
-        .replace("{{BINARY_SIZE}}", &binary_size);
-    Value::String(html)
+
+    let code_how_it_works = format!(r##"<span class="cm"># 1. Define a trait (TOML + Rust source)</span>
+traits/sys/checksum/checksum.trait.toml
+traits/sys/checksum/checksum.rs
+
+<span class="cm"># 2. build.rs discovers it automatically</span>
+<span class="cm">#    - Embeds the TOML via include_str!</span>
+<span class="cm">#    - Generates mod declarations</span>
+<span class="cm">#    - Creates dispatch_compiled() match arms</span>
+<span class="cm">#    - Validates checksums, bumps versions</span>
+
+<span class="cm"># 3. cargo build produces a single binary</span>
+<span class="kw">$</span> cargo build --release
+<span class="cm">#    target/release/traits ({binary_size})</span>
+
+<span class="cm"># 4. Run it anywhere</span>
+<span class="kw">$</span> ./traits serve --port 8090
+<span class="cm">#    {trait_count} traits loaded, 0 workers, 0 dependencies</span>"##);
+
+    let markup = html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
+                title { "traits.build \u{2014} composable function kernel" }
+                style { (PreEscaped(CSS)) }
+            }
+            body {
+                // Hero
+                div.hero {
+                    div.pill { "open source \u{00B7} pure Rust \u{00B7} encrypted secrets \u{00B7} AI-ready" }
+                    h1 { span { "traits" } ".build" }
+                    p.sub { "Typed, composable functions compiled into a single Rust binary with encrypted secrets, zero-trust auth, and first-class AI integration. Define traits in TOML, call them via CLI, REST, or MCP." }
+                    div.cta {
+                        a.btn.btn-primary href="#built-in-traits" { "Explore Traits" }
+                        a.btn.btn-outline href="/docs" { "Documentation" }
+                        a.btn.btn-outline href="/docs/api" { "API Docs" }
+                        a.btn.btn-outline href="https://github.com/kilian-ai/traits.build" { "GitHub" }
+                    }
+                }
+
+                // Stats
+                div.stats {
+                    div.stat { div.num { (trait_count) } div.label { "compiled traits" } }
+                    div.stat { div.num { (ns_count) } div.label { "namespaces" } }
+                    div.stat { div.num { (&binary_size) } div.label { "binary size" } }
+                    div.stat { div.num { "0" } div.label { "runtime deps" } }
+                }
+
+                // Architecture
+                h2.section-title { "Architecture" }
+                p.section-sub { "The kernel is traits all the way down" }
+                section {
+                    div.arch {
+                        div.arch-box { h4 { "CLI & HTTP" } p { "sys.cli parses args, kernel.serve starts actix-web. Every sys.* trait is a direct subcommand." } }
+                        div.arch-box { h4 { "Dispatcher" } p { "Resolves paths, validates & coerces arguments, dispatches to compiled Rust trait functions." } }
+                        div.arch-box { h4 { "Registry" } p { "Concurrent DashMap of .trait.toml definitions. Loads from disk + compiled builtins. Hot-reloadable." } }
+                        div.arch-box { h4 { "Interface System" } p { "provides / requires / bindings. Per-call overrides, global bindings, or auto-discovery." } }
+                        div.arch-box { h4 { "Plugin Loader" } p { "kernel.dylib_loader discovers cdylib .dylib plugins at startup for dynamic trait extensions." } }
+                        div.arch-box { h4 { "Type System" } p { "int, float, string, bool, bytes, any, list<T>, map<K,V>, T? \u{2014} validated at dispatch time." } }
+                    }
+                }
+
+                // Features
+                h2.section-title { "Why Traits?" }
+                p.section-sub { "Functions as the universal building block" }
+                section {
+                    div.features {
+                        div.card { div.icon { "\u{1F680}" } h3 { "Single binary, zero runtime" } p { "Every trait compiles directly into the binary via build.rs. No containers, no workers, no runtime dependencies. One executable does everything." } }
+                        div.card { div.icon { "\u{2699}\u{FE0F}" } h3 { "Self-describing kernel" } p { "Registry, dispatcher, config, CLI, and HTTP server are all traits. Call " code { "kernel.main" } " to see every module, interface, and bootstrap step." } }
+                        div.card { div.icon { "\u{1F50C}" } h3 { "CLI + REST + MCP" } p { "Every trait is callable via REST API (" code { "POST /traits/ns/name" } "), CLI (" code { "traits name args" } "), or MCP tool protocol. One trait, three surfaces." } }
+                        div.card { div.icon { "\u{1F310}" } h3 { "Built-in web server" } p { "The binary hosts its own landing page, admin dashboard, and documentation \u{2014} all as traits. No nginx, no static files, no separate frontend. " code { "kernel.serve" } " runs actix-web; www.* traits generate HTML." } }
+                        div.card { div.icon { "\u{1F517}" } h3 { "Interface wiring" } p { "Traits declare " code { "provides" } ", " code { "requires" } ", and " code { "bindings" } " in TOML. Resolution: per-call overrides \u{2192} global bindings \u{2192} auto-discover." } }
+                        div.card { div.icon { "\u{1F9E9}" } h3 { "Build-time codegen" } p { "build.rs discovers all .trait.toml files, generates dispatch tables, embeds definitions, auto-bumps versions and checksums." } }
+                        div.card { div.icon { "\u{1F4E6}" } h3 { "cdylib plugins" } p { "Extend at runtime with .dylib shared libraries. The kernel discovers and loads them at startup via kernel.dylib_loader." } }
+                    }
+                }
+
+                // AI-Ready
+                h2.section-title { "AI-Ready by default" }
+                p.section-sub { "Every trait is a tool an AI agent can discover, call, and test" }
+                section {
+                    div.features {
+                        div.card { div.icon { "\u{1F916}" } h3 { "MCP server export" } p { "Every compiled trait can be exported as an MCP tool. Agents discover traits via the registry, read signatures from TOML, and call them over stdio." } }
+                        div.card { div.icon { "\u{1F9E0}" } h3 { "Agent file included" } p { "The repo ships with a " code { ".github/agents/" } " file that teaches AI agents the project structure, build system, conventions, and how to add new traits." } }
+                        div.card { div.icon { "\u{1F4CB}" } h3 { "Self-testing traits" } p { "Every trait has a " code { ".features.json" } " with features, examples, and test commands. Agents can run " code { "traits test_runner '*'" } " to validate changes." } }
+                        div.card { div.icon { "\u{1F4D6}" } h3 { "Auto-generated docs" } p { "OpenAPI spec is generated live from the trait registry with real response examples. No hand-written API docs \u{2014} the kernel documents itself." } }
+                        div.card { div.icon { "\u{2699}\u{FE0F}" } h3 { "TOML is the spec" } p { "Each " code { ".trait.toml" } " declares the full contract: signature, types, interfaces, dependencies, and wiring. Machine-readable by design." } }
+                        div.card { div.icon { "\u{1F6E0}\u{FE0F}" } h3 { "Workspace-ready" } p { "VS Code workspace ships with build/test/serve tasks, MCP server config, and editor settings. Open and go." } }
+                        div.card { div.icon { "\u{1F4DD}" } h3 { "SKILL.md generation" } p { "Run " code { "sys.docs.skills" } " to auto-generate a " code { "SKILL.md" } " from the live OpenAPI spec. Teach any AI agent every available trait, its parameters, and how to call it \u{2014} as MCP tools or REST." } }
+                    }
+                }
+
+                // Secrets
+                h2.section-title { "Secure Secrets Handling" }
+                p.section-sub { "Protect sensitive data with a clean, developer-friendly design" }
+                section {
+                    div.features style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))" {
+                        div.card { div.icon { "\u{1F512}" } h3 { "Separation" } p { "Data vs secrets are fully isolated. Secrets live in an encrypted store, never in config files or source code." } }
+                        div.card { div.icon { "\u{1F3AF}" } h3 { "Explicit Access" } p { "No hidden flows. Traits declare which secrets they need via " code { "SecretContext::resolve()" } ". Access is intentional and auditable." } }
+                        div.card { div.icon { "\u{23F3}" } h3 { "Short Lifetime" } p { "Secrets exist in memory only during execution. " code { "zeroize-on-drop" } " clears values immediately, masked " code { "Debug" } " prevents logging." } }
+                        div.card { div.icon { "\u{1F510}" } h3 { "Encrypted at Rest" } p { "AES-GCM encryption with OS-backed key storage. Double encryption: individual values + entire store file." } }
+                    }
+                    div.code-block style="max-width:100%;padding:0;margin-top:1.5rem" {
+                        pre { (PreEscaped(CODE_SECRETS)) }
+                    }
+                }
+
+                // Built-in traits
+                h2.section-title id="built-in-traits" { "Built-in traits" }
+                p.section-sub { (trait_count) " traits across kernel, sys, and www \u{2014} all compiled in" }
+                section {
+                    table.trait-table {
+                        tr { th { "Trait" } th { "What it does" } }
+                        @for &(path, desc) in TRAITS {
+                            tr { td { (path) } td { (desc) } }
+                        }
+                    }
+                }
+
+                // Interface system
+                h2.section-title { "Interface system" }
+                p.section-sub { "Declare dependencies as typed contracts, not hard-coded paths" }
+                section {
+                    div.code-block style="max-width:100%;padding:0" {
+                        pre { (PreEscaped(CODE_INTERFACES)) }
+                    }
+                    p style="text-align:center;color:var(--muted);margin:1.5rem 0 0.5rem" { "Resolution chain" }
+                    div.iface-flow {
+                        span.iface-step { "per-call overrides" }
+                        span.iface-arrow { "\u{2192}" }
+                        span.iface-step { "global bindings" }
+                        span.iface-arrow { "\u{2192}" }
+                        span.iface-step { "caller [bindings]" }
+                        span.iface-arrow { "\u{2192}" }
+                        span.iface-step { "auto-discover" }
+                    }
+                }
+
+                // Trait definition format
+                h2.section-title { "Trait definition format" }
+                p.section-sub { ".trait.toml \u{2014} one file defines everything" }
+                section {
+                    div.code-block style="max-width:100%;padding:0" {
+                        pre { (PreEscaped(CODE_TRAIT_DEF)) }
+                    }
+                    div.type-grid {
+                        @for ty in TYPES {
+                            div.type-chip { (ty) }
+                        }
+                    }
+                }
+
+                // Quick start
+                h2.section-title { "Quick start" }
+                p.section-sub { "Two ways to talk to every trait" }
+                section {
+                    div.code-block style="max-width:100%;padding:0;margin-bottom:2rem" {
+                        pre { (PreEscaped(CODE_CLI)) }
+                    }
+                    div.code-block style="max-width:100%;padding:0" {
+                        pre { (PreEscaped(CODE_REST)) }
+                    }
+                }
+
+                // How it works
+                h2.section-title { "How it works" }
+                p.section-sub { "build.rs discovers traits, generates dispatch, compiles everything in" }
+                section {
+                    div.code-block style="max-width:100%;padding:0" {
+                        pre { (PreEscaped(&code_how_it_works)) }
+                    }
+                }
+
+                footer {
+                    p {
+                        "traits.build \u{2014} a pure Rust kernel, AI-ready by default. \u{00B7} "
+                        a href="/docs" { "Docs" } " \u{00B7} "
+                        a href="/docs/api" { "API Docs" } " \u{00B7} "
+                        a href="https://github.com/kilian-ai/traits.build" { "GitHub" } " \u{00B7} "
+                        a href="/traits/kernel/main" { "kernel.main" } " \u{00B7} "
+                        a href="/traits/sys/list" { "sys.list" } " \u{00B7} "
+                        a href="/health" { "health" }
+                    }
+                }
+            }
+        }
+    };
+    Value::String(markup.into_string())
 }
 
-const HTML: &str = r##"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>traits.build — composable function kernel</title>
-<style>
+const TRAITS: &[(&str, &str)] = &[
+    ("kernel.main", "Entry point, bootstrap, compiled module list, interface introspection"),
+    ("kernel.dispatcher", "Path resolution, argument validation & coercion, compiled dispatch"),
+    ("kernel.registry", "Load .trait.toml definitions, DashMap lookup, interface resolution"),
+    ("kernel.config", "traits.toml parsing, env var overrides, runtime config"),
+    ("kernel.serve", "Start the actix-web HTTP server with CORS & SSE streaming"),
+    ("kernel.dylib_loader", "Discover and load cdylib .dylib plugins at startup"),
+    ("kernel.types", "TraitValue, TraitType, type parsing (list<map<string,int>>)"),
+    ("kernel.globals", "OnceLock statics: REGISTRY, CONFIG, TRAITS_DIR, HANDLES"),
+    ("kernel.call", "Call any trait by dot-notation path (inter-trait dispatch)"),
+    ("kernel.plugin_api", "C ABI export macro for cdylib trait plugins"),
+    ("kernel.reload", "Hot-reload the trait registry from disk"),
+    ("sys.cli", "Clap parsing, subcommand dispatch, arg coercion, pipe support"),
+    ("sys.registry", "Read API: list, info, tree, namespaces, count, search"),
+    ("sys.checksum", "SHA-256 checksums for strings, I/O pairs, and signatures"),
+    ("sys.version", "Generate YYMMDD date-format versions"),
+    ("sys.snapshot", "Snapshot a trait version (YYMMDD or YYMMDD.HHMMSS)"),
+    ("sys.test_runner", "Run .features.json tests \u{2014} dispatch examples + shell commands"),
+    ("sys.list", "List all registered traits"),
+    ("sys.info", "Show detailed trait metadata and signatures"),
+    ("sys.ps", "List running background traits with process details"),
+    ("sys.openapi", "Generate OpenAPI 3.0 spec with live examples from the registry"),
+    ("sys.mcp", "MCP stdio server \u{2014} JSON-RPC 2.0 over stdin/stdout"),
+    ("sys.secrets", "Encrypted secrets store \u{2014} set, get, delete, list with SecretContext isolation"),
+    ("sys.docs.skills", "Generate SKILL.md from OpenAPI \u{2014} teach AI agents every trait"),
+    ("www.traits.build", "This landing page \u{2014} stats pulled live from registry"),
+    ("www.docs", "Single-page documentation with all guides rendered from markdown"),
+    ("www.docs.api", "Serve Redoc API documentation page (OpenAPI + Redoc)"),
+    ("www.admin", "Admin dashboard with deployment controls (Basic Auth)"),
+    ("www.admin.deploy", "Deploy to Fly.io"),
+    ("www.admin.fast_deploy", "Fast deploy: Docker build + sftp upload + restart"),
+    ("www.admin.scale", "Scale Fly.io machines up or down"),
+    ("www.admin.destroy", "Destroy Fly.io machines"),
+    ("www.admin.save_config", "Save deploy configuration to traits.toml"),
+];
+
+const TYPES: &[&str] = &[
+    "int", "float", "string", "bool", "bytes",
+    "any", "list<T>", "map<K,V>", "T? (optional)", "handle",
+];
+
+const CSS: &str = r##"
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#0a0a0f;--fg:#e8e6e3;--accent:#6c63ff;--accent2:#00d4aa;--muted:#6b7280;--card:#12121a;--border:#1e1e2e}
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;overflow-x:hidden}
@@ -94,181 +315,9 @@ section{max-width:1100px;margin:0 auto;padding:4rem 2rem}
 
 footer{text-align:center;padding:3rem 2rem;color:var(--muted);font-size:0.9rem;border-top:1px solid var(--border)}
 footer a{color:var(--accent)}
-</style>
-</head>
-<body>
+"##;
 
-<!-- Hero -->
-<div class="hero">
-  <div class="pill">open source &middot; pure Rust &middot; encrypted secrets &middot; AI-ready</div>
-  <h1><span>traits</span>.build</h1>
-  <p class="sub">Typed, composable functions compiled into a single Rust binary with encrypted secrets, zero-trust auth, and first-class AI integration. Define traits in TOML, call them via CLI, REST, or MCP.</p>
-  <div class="cta">
-    <a href="#built-in-traits" class="btn btn-primary">Explore Traits</a>
-    <a href="/docs" class="btn btn-outline">Documentation</a>
-    <a href="/docs/api" class="btn btn-outline">API Docs</a>
-    <a href="https://github.com/kilian-ai/traits.build" class="btn btn-outline">GitHub</a>
-  </div>
-</div>
-
-<!-- Stats -->
-<div class="stats">
-  <div class="stat"><div class="num">{{TRAIT_COUNT}}</div><div class="label">compiled traits</div></div>
-  <div class="stat"><div class="num">{{NS_COUNT}}</div><div class="label">namespaces</div></div>
-  <div class="stat"><div class="num">{{BINARY_SIZE}}</div><div class="label">binary size</div></div>
-  <div class="stat"><div class="num">0</div><div class="label">runtime deps</div></div>
-</div>
-
-<!-- Architecture -->
-<h2 class="section-title">Architecture</h2>
-<p class="section-sub">The kernel is traits all the way down</p>
-
-<section>
-<div class="arch">
-  <div class="arch-box">
-    <h4>CLI &amp; HTTP</h4>
-    <p>sys.cli parses args, kernel.serve starts actix-web. Every sys.* trait is a direct subcommand.</p>
-  </div>
-  <div class="arch-box">
-    <h4>Dispatcher</h4>
-    <p>Resolves paths, validates &amp; coerces arguments, dispatches to compiled Rust trait functions.</p>
-  </div>
-  <div class="arch-box">
-    <h4>Registry</h4>
-    <p>Concurrent DashMap of .trait.toml definitions. Loads from disk + compiled builtins. Hot-reloadable.</p>
-  </div>
-  <div class="arch-box">
-    <h4>Interface System</h4>
-    <p>provides / requires / bindings. Per-call overrides, global bindings, or auto-discovery.</p>
-  </div>
-  <div class="arch-box">
-    <h4>Plugin Loader</h4>
-    <p>kernel.dylib_loader discovers cdylib .dylib plugins at startup for dynamic trait extensions.</p>
-  </div>
-  <div class="arch-box">
-    <h4>Type System</h4>
-    <p>int, float, string, bool, bytes, any, list&lt;T&gt;, map&lt;K,V&gt;, T? &mdash; validated at dispatch time.</p>
-  </div>
-</div>
-</section>
-
-<!-- Features -->
-<h2 class="section-title">Why Traits?</h2>
-<p class="section-sub">Functions as the universal building block</p>
-
-<section>
-<div class="features">
-  <div class="card">
-    <div class="icon">&#x1f680;</div>
-    <h3>Single binary, zero runtime</h3>
-    <p>Every trait compiles directly into the binary via build.rs. No containers, no workers, no runtime dependencies. One executable does everything.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x2699;&#xfe0f;</div>
-    <h3>Self-describing kernel</h3>
-    <p>Registry, dispatcher, config, CLI, and HTTP server are all traits. Call <code>kernel.main</code> to see every module, interface, and bootstrap step.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f50c;</div>
-    <h3>CLI + REST + MCP</h3>
-    <p>Every trait is callable via REST API (<code>POST /traits/ns/name</code>), CLI (<code>traits name args</code>), or MCP tool protocol. One trait, three surfaces.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f310;</div>
-    <h3>Built-in web server</h3>
-    <p>The binary hosts its own landing page, admin dashboard, and documentation &mdash; all as traits. No nginx, no static files, no separate frontend. <code>kernel.serve</code> runs actix-web; www.* traits generate HTML.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f517;</div>
-    <h3>Interface wiring</h3>
-    <p>Traits declare <code>provides</code>, <code>requires</code>, and <code>bindings</code> in TOML. Resolution: per-call overrides &rarr; global bindings &rarr; auto-discover.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f9e9;</div>
-    <h3>Build-time codegen</h3>
-    <p>build.rs discovers all .trait.toml files, generates dispatch tables, embeds definitions, auto-bumps versions and checksums.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f4e6;</div>
-    <h3>cdylib plugins</h3>
-    <p>Extend at runtime with .dylib shared libraries. The kernel discovers and loads them at startup via kernel.dylib_loader.</p>
-  </div>
-</div>
-</section>
-
-<!-- AI-Ready -->
-<h2 class="section-title">AI-Ready by default</h2>
-<p class="section-sub">Every trait is a tool an AI agent can discover, call, and test</p>
-
-<section>
-<div class="features">
-  <div class="card">
-    <div class="icon">&#x1f916;</div>
-    <h3>MCP server export</h3>
-    <p>Every compiled trait can be exported as an MCP tool. Agents discover traits via the registry, read signatures from TOML, and call them over stdio.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f9e0;</div>
-    <h3>Agent file included</h3>
-    <p>The repo ships with a <code>.github/agents/</code> file that teaches AI agents the project structure, build system, conventions, and how to add new traits.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f4cb;</div>
-    <h3>Self-testing traits</h3>
-    <p>Every trait has a <code>.features.json</code> with features, examples, and test commands. Agents can run <code>traits test_runner '*'</code> to validate changes.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f4d6;</div>
-    <h3>Auto-generated docs</h3>
-    <p>OpenAPI spec is generated live from the trait registry with real response examples. No hand-written API docs &mdash; the kernel documents itself.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x2699;&#xfe0f;</div>
-    <h3>TOML is the spec</h3>
-    <p>Each <code>.trait.toml</code> declares the full contract: signature, types, interfaces, dependencies, and wiring. Machine-readable by design.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f6e0;&#xfe0f;</div>
-    <h3>Workspace-ready</h3>
-    <p>VS Code workspace ships with build/test/serve tasks, MCP server config, and editor settings. Open and go.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f4dd;</div>
-    <h3>SKILL.md generation</h3>
-    <p>Run <code>sys.docs.skills</code> to auto-generate a <code>SKILL.md</code> from the live OpenAPI spec. Teach any AI agent every available trait, its parameters, and how to call it &mdash; as MCP tools or REST.</p>
-  </div>
-</div>
-</section>
-
-<!-- Secrets -->
-<h2 class="section-title">Secure Secrets Handling</h2>
-<p class="section-sub">Protect sensitive data with a clean, developer-friendly design</p>
-
-<section>
-<div class="features" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
-  <div class="card">
-    <div class="icon">&#x1f512;</div>
-    <h3>Separation</h3>
-    <p>Data vs secrets are fully isolated. Secrets live in an encrypted store, never in config files or source code.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f3af;</div>
-    <h3>Explicit Access</h3>
-    <p>No hidden flows. Traits declare which secrets they need via <code>SecretContext::resolve()</code>. Access is intentional and auditable.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x23f3;</div>
-    <h3>Short Lifetime</h3>
-    <p>Secrets exist in memory only during execution. <code>zeroize-on-drop</code> clears values immediately, masked <code>Debug</code> prevents logging.</p>
-  </div>
-  <div class="card">
-    <div class="icon">&#x1f510;</div>
-    <h3>Encrypted at Rest</h3>
-    <p>AES-GCM encryption with OS-backed key storage. Double encryption: individual values + entire store file.</p>
-  </div>
-</div>
-<div class="code-block" style="max-width:100%;padding:0;margin-top:1.5rem">
-<pre><span class="cm"># CLI &mdash; manage secrets from the command line</span>
+const CODE_SECRETS: &str = r##"<span class="cm"># CLI &mdash; manage secrets from the command line</span>
 <span class="kw">$</span> traits secrets set fly_api_token <span class="s">"FlyV1 ..."</span>
 <span class="kw">$</span> traits secrets list
 <span class="cm"># [&quot;admin_password&quot;, &quot;fly_api_token&quot;]  &mdash; values never exposed</span>
@@ -276,60 +325,9 @@ footer a{color:var(--accent)}
 <span class="cm"># Rust &mdash; scoped access in your trait</span>
 <span class="kw">let</span> ctx = SecretContext::resolve(&amp;[<span class="s">"fly_api_token"</span>]);
 <span class="kw">let</span> token = ctx.get(<span class="s">"fly_api_token"</span>).unwrap();
-<span class="cm">// token is zeroized when ctx drops</span></pre>
-</div>
-</section>
+<span class="cm">// token is zeroized when ctx drops</span>"##;
 
-<!-- Kernel traits -->
-<h2 class="section-title" id="built-in-traits">Built-in traits</h2>
-<p class="section-sub">{{TRAIT_COUNT}} traits across kernel, sys, and www &mdash; all compiled in</p>
-
-<section>
-<table class="trait-table">
-<tr><th>Trait</th><th>What it does</th></tr>
-<tr><td>kernel.main</td><td>Entry point, bootstrap, compiled module list, interface introspection</td></tr>
-<tr><td>kernel.dispatcher</td><td>Path resolution, argument validation &amp; coercion, compiled dispatch</td></tr>
-<tr><td>kernel.registry</td><td>Load .trait.toml definitions, DashMap lookup, interface resolution</td></tr>
-<tr><td>kernel.config</td><td>traits.toml parsing, env var overrides, runtime config</td></tr>
-<tr><td>kernel.serve</td><td>Start the actix-web HTTP server with CORS &amp; SSE streaming</td></tr>
-<tr><td>kernel.dylib_loader</td><td>Discover and load cdylib .dylib plugins at startup</td></tr>
-<tr><td>kernel.types</td><td>TraitValue, TraitType, type parsing (list&lt;map&lt;string,int&gt;&gt;)</td></tr>
-<tr><td>kernel.globals</td><td>OnceLock statics: REGISTRY, CONFIG, TRAITS_DIR, HANDLES</td></tr>
-<tr><td>kernel.call</td><td>Call any trait by dot-notation path (inter-trait dispatch)</td></tr>
-<tr><td>kernel.plugin_api</td><td>C ABI export macro for cdylib trait plugins</td></tr>
-<tr><td>kernel.reload</td><td>Hot-reload the trait registry from disk</td></tr>
-<tr><td>sys.cli</td><td>Clap parsing, subcommand dispatch, arg coercion, pipe support</td></tr>
-<tr><td>sys.registry</td><td>Read API: list, info, tree, namespaces, count, search</td></tr>
-<tr><td>sys.checksum</td><td>SHA-256 checksums for strings, I/O pairs, and signatures</td></tr>
-<tr><td>sys.version</td><td>Generate YYMMDD date-format versions</td></tr>
-<tr><td>sys.snapshot</td><td>Snapshot a trait version (YYMMDD or YYMMDD.HHMMSS)</td></tr>
-<tr><td>sys.test_runner</td><td>Run .features.json tests &mdash; dispatch examples + shell commands</td></tr>
-<tr><td>sys.list</td><td>List all registered traits</td></tr>
-<tr><td>sys.info</td><td>Show detailed trait metadata and signatures</td></tr>
-<tr><td>sys.ps</td><td>List running background traits with process details</td></tr>
-<tr><td>sys.openapi</td><td>Generate OpenAPI 3.0 spec with live examples from the registry</td></tr>
-<tr><td>sys.mcp</td><td>MCP stdio server &mdash; JSON-RPC 2.0 over stdin/stdout</td></tr>
-<tr><td>sys.secrets</td><td>Encrypted secrets store &mdash; set, get, delete, list with SecretContext isolation</td></tr>
-<tr><td>sys.docs.skills</td><td>Generate SKILL.md from OpenAPI &mdash; teach AI agents every trait</td></tr>
-<tr><td>www.traits.build</td><td>This landing page &mdash; stats pulled live from registry</td></tr>
-<tr><td>www.docs</td><td>Single-page documentation with all guides rendered from markdown</td></tr>
-<tr><td>www.docs.api</td><td>Serve Redoc API documentation page (OpenAPI + Redoc)</td></tr>
-<tr><td>www.admin</td><td>Admin dashboard with deployment controls (Basic Auth)</td></tr>
-<tr><td>www.admin.deploy</td><td>Deploy to Fly.io</td></tr>
-<tr><td>www.admin.fast_deploy</td><td>Fast deploy: Docker build + sftp upload + restart</td></tr>
-<tr><td>www.admin.scale</td><td>Scale Fly.io machines up or down</td></tr>
-<tr><td>www.admin.destroy</td><td>Destroy Fly.io machines</td></tr>
-<tr><td>www.admin.save_config</td><td>Save deploy configuration to traits.toml</td></tr>
-</table>
-</section>
-
-<!-- Interface system -->
-<h2 class="section-title">Interface system</h2>
-<p class="section-sub">Declare dependencies as typed contracts, not hard-coded paths</p>
-
-<section>
-<div class="code-block" style="max-width:100%;padding:0">
-<pre><span class="cm"># kernel/main/main.trait.toml</span>
+const CODE_INTERFACES: &str = r##"<span class="cm"># kernel/main/main.trait.toml</span>
 [trait]
 description = <span class="s">"Binary entry point"</span>
 
@@ -343,27 +341,9 @@ config     = <span class="s">"kernel/config"</span>
 [bindings]
 dispatcher = <span class="s">"kernel.dispatcher"</span>
 registry   = <span class="s">"kernel.registry"</span>
-config     = <span class="s">"kernel.config"</span></pre>
-</div>
-<p style="text-align:center;color:var(--muted);margin:1.5rem 0 0.5rem">Resolution chain</p>
-<div class="iface-flow">
-  <span class="iface-step">per-call overrides</span>
-  <span class="iface-arrow">&rarr;</span>
-  <span class="iface-step">global bindings</span>
-  <span class="iface-arrow">&rarr;</span>
-  <span class="iface-step">caller [bindings]</span>
-  <span class="iface-arrow">&rarr;</span>
-  <span class="iface-step">auto-discover</span>
-</div>
-</section>
+config     = <span class="s">"kernel.config"</span>"##;
 
-<!-- Trait definition format -->
-<h2 class="section-title">Trait definition format</h2>
-<p class="section-sub">.trait.toml &mdash; one file defines everything</p>
-
-<section>
-<div class="code-block" style="max-width:100%;padding:0">
-<pre><span class="cm"># traits/sys/checksum/checksum.trait.toml</span>
+const CODE_TRAIT_DEF: &str = r##"<span class="cm"># traits/sys/checksum/checksum.trait.toml</span>
 [trait]
 description = <span class="s">"SHA-256 checksums"</span>
 version     = <span class="s">"v260320.142947"</span>
@@ -384,40 +364,18 @@ description = <span class="s">"Hex-encoded SHA-256 hash"</span>
 [<span class="kw">implementation</span>]
 language = <span class="s">"rust"</span>
 source   = <span class="s">"builtin"</span>    <span class="cm"># compiled directly into the binary</span>
-entry    = <span class="s">"checksum"</span></pre>
-</div>
-<div class="type-grid">
-  <div class="type-chip">int</div>
-  <div class="type-chip">float</div>
-  <div class="type-chip">string</div>
-  <div class="type-chip">bool</div>
-  <div class="type-chip">bytes</div>
-  <div class="type-chip">any</div>
-  <div class="type-chip">list&lt;T&gt;</div>
-  <div class="type-chip">map&lt;K,V&gt;</div>
-  <div class="type-chip">T? (optional)</div>
-  <div class="type-chip">handle</div>
-</div>
-</section>
+entry    = <span class="s">"checksum"</span>"##;
 
-<!-- Quick start -->
-<h2 class="section-title">Quick start</h2>
-<p class="section-sub">Two ways to talk to every trait</p>
-
-<section>
-<div class="code-block" style="max-width:100%;padding:0;margin-bottom:2rem">
-<pre><span class="cm"># CLI &mdash; every sys.* trait is a direct subcommand</span>
+const CODE_CLI: &str = r##"<span class="cm"># CLI &mdash; every sys.* trait is a direct subcommand</span>
 <span class="kw">$</span> traits serve <span class="dim">--port 8090</span>
 <span class="kw">$</span> traits list
 <span class="kw">$</span> traits checksum hash <span class="s">"hello"</span>
 <span class="s">"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"</span>
 <span class="kw">$</span> traits info sys.checksum
 <span class="kw">$</span> traits test_runner <span class="s">'*'</span>       <span class="cm"># run all .features.json tests</span>
-<span class="kw">$</span> echo hello | traits checksum hash  <span class="cm"># pipe support</span></pre>
-</div>
+<span class="kw">$</span> echo hello | traits checksum hash  <span class="cm"># pipe support</span>"##;
 
-<div class="code-block" style="max-width:100%;padding:0">
-<pre><span class="cm"># REST API &mdash; POST /traits/{namespace}/{name}</span>
+const CODE_REST: &str = r##"<span class="cm"># REST API &mdash; POST /traits/{namespace}/{name}</span>
 <span class="kw">$</span> curl -X POST https://traits.build/traits/sys/checksum \
     -H <span class="s">'Content-Type: application/json'</span> \
     -d <span class="s">'{"args": ["hash", "hello"]}'</span>
@@ -426,39 +384,4 @@ entry    = <span class="s">"checksum"</span></pre>
 <span class="kw">$</span> curl https://traits.build/traits/sys/list
 
 <span class="cm"># Health check</span>
-<span class="kw">$</span> curl https://traits.build/health</pre>
-</div>
-</section>
-
-<!-- How it's built -->
-<h2 class="section-title">How it works</h2>
-<p class="section-sub">build.rs discovers traits, generates dispatch, compiles everything in</p>
-
-<section>
-<div class="code-block" style="max-width:100%;padding:0">
-<pre><span class="cm"># 1. Define a trait (TOML + Rust source)</span>
-traits/sys/checksum/checksum.trait.toml
-traits/sys/checksum/checksum.rs
-
-<span class="cm"># 2. build.rs discovers it automatically</span>
-<span class="cm">#    - Embeds the TOML via include_str!</span>
-<span class="cm">#    - Generates mod declarations</span>
-<span class="cm">#    - Creates dispatch_compiled() match arms</span>
-<span class="cm">#    - Validates checksums, bumps versions</span>
-
-<span class="cm"># 3. cargo build produces a single binary</span>
-<span class="kw">$</span> cargo build --release
-<span class="cm">#    target/release/traits ({{BINARY_SIZE}})</span>
-
-<span class="cm"># 4. Run it anywhere</span>
-<span class="kw">$</span> ./traits serve --port 8090
-<span class="cm">#    {{TRAIT_COUNT}} traits loaded, 0 workers, 0 dependencies</span></pre>
-</div>
-</section>
-
-<footer>
-  <p>traits.build &mdash; a pure Rust kernel, AI-ready by default. &middot; <a href="/docs">Docs</a> &middot; <a href="/docs/api">API Docs</a> &middot; <a href="https://github.com/kilian-ai/traits.build">GitHub</a> &middot; <a href="/traits/kernel/main">kernel.main</a> &middot; <a href="/traits/sys/list">sys.list</a> &middot; <a href="/health">health</a></p>
-</footer>
-
-</body>
-</html>"##;
+<span class="kw">$</span> curl https://traits.build/health</pre>"##;

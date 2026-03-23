@@ -1,23 +1,196 @@
 use serde_json::Value;
+use maud::{html, DOCTYPE, PreEscaped};
 
 pub fn admin(_args: &[Value]) -> Value {
     let (fly_app, fly_region) = match crate::globals::CONFIG.get() {
         Some(cfg) => (cfg.deploy.fly_app.clone(), cfg.deploy.fly_region.clone()),
         None => ("your-fly-app".into(), "iad".into()),
     };
-    let html = ADMIN_HTML
-        .replace("{{FLY_APP}}", &fly_app)
-        .replace("{{FLY_REGION}}", &fly_region);
-    Value::String(html)
+
+    let markup = html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="UTF-8";
+                meta name="viewport" content="width=device-width, initial-scale=1.0";
+                title { "traits.build \u{2014} Admin" }
+                style { (PreEscaped(CSS)) }
+            }
+            body {
+                div.container {
+                    h1 { "traits.build " span { "admin" } }
+                    p.subtitle { "Deployment control panel \u{2014} Fly.io \u{00B7} iad region" }
+
+                    // Server Status
+                    div.card {
+                        h2 { "Server Status" }
+                        div.status {
+                            div.dot.gray id="statusDot" {}
+                            span.status-text id="statusText" { "Checking..." }
+                        }
+                        table id="statusTable" {
+                            tr { td { "Traits" } td id="traitCount" { "\u{2014}" } }
+                            tr { td { "Namespaces" } td id="nsCount" { "\u{2014}" } }
+                            tr { td { "Uptime" } td id="uptime" { "\u{2014}" } }
+                            tr { td { "Version" } td id="version" { "\u{2014}" } }
+                        }
+                    }
+
+                    // Fly.io Machine
+                    div.card {
+                        h2 { "Fly.io Machine" }
+                        div.status {
+                            div.dot.gray id="flyDot" {}
+                            span.status-text id="flyText" { "Checking..." }
+                        }
+                        div.infra {
+                            table {
+                                tr { td { "App" } td { code id="cfgFlyApp" { (&fly_app) } } }
+                                tr { td { "Region" } td { code id="cfgFlyRegion" { (&fly_region) } } }
+                                tr { td { "Machine" } td id="machineId" { "\u{2014}" } }
+                                tr { td { "State" } td id="machineState" { "\u{2014}" } }
+                                tr { td { "Image" } td id="machineImage" style="word-break:break-all;" { "\u{2014}" } }
+                            }
+                        }
+                        div.actions style="margin-top: 1rem;" {
+                            button.primary id="btnDeploy" onclick="deploy()" { "Restart Machine" }
+                            button id="btnScale0" onclick="scale(0)" { "Stop (offline)" }
+                            button id="btnScale1" onclick="scale(1)" { "Start" }
+                            button.danger id="btnDestroy" onclick="if(confirm('Destroy all machines? You will need to fly deploy again.'))destroy()" { "Destroy" }
+                        }
+                    }
+
+                    // System Tools
+                    div.card {
+                        h2 { "System Tools" }
+                        div.actions {
+                            button onclick="listTraits()" { "List Traits" }
+                            button onclick="runTests()" { "Run Tests" }
+                            button onclick="reloadRegistry()" { "Reload Registry" }
+                            button onclick="showVersion()" { "Version" }
+                            button onclick="showProcesses()" { "Processes" }
+                        }
+                        div.log id="sysLog" style="display:none; margin-top: 1rem;" {
+                            span.entry { span.time { "[--:--:--]" } " Ready" }
+                        }
+                    }
+
+                    // Fast Deploy
+                    div.card {
+                        h2 { "Fast Deploy" }
+                        p.note { "Builds amd64 binary in Docker with cached deps, uploads via sftp, restarts machine. Only works from local dev server." }
+                        div.actions style="margin-top: 1rem;" {
+                            button.primary id="btnFastDeploy" onclick="fastDeploy('build')" { "Build + Deploy" }
+                            button id="btnFastUpload" onclick="fastDeploy('upload')" { "Re-upload Last Binary" }
+                        }
+                        div.log id="deployLog" style="display:none; margin-top: 1rem;" {
+                            span.entry { span.time { "[--:--:--]" } " Ready" }
+                        }
+                    }
+
+                    // Release Pipeline
+                    div.card {
+                        h2 { "Release Pipeline" }
+                        p.note { "Run " code { "sys.release" } " \u{2014} configurable pipeline: build, test, commit, push, tag, publish, deploy." }
+                        div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end;" {
+                            div {
+                                label style="font-size:0.75rem;color:#666;display:block;margin-bottom:0.25rem;" { "Commit Message" }
+                                input id="releaseMsg" type="text" placeholder="release: vYYMMDD" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:280px;" {}
+                            }
+                            label style="font-size:0.82rem;color:#888;display:flex;align-items:center;gap:0.4rem;cursor:pointer;" {
+                                input type="checkbox" id="releaseDry" {} " Dry run"
+                            }
+                        }
+                        div.actions style="margin-top: 1rem;" {
+                            button.primary onclick="releasePipeline('all')" { "Full Release" }
+                            button onclick="releasePipeline('ci')" { "CI (commit+push+tag)" }
+                            button onclick="releasePipeline('ship')" { "Ship (CI+deploy)" }
+                            button onclick="releasePipeline('commit,push')" { "Commit + Push" }
+                        }
+                        div.log id="releaseLog" style="display:none; margin-top: 1rem;" {
+                            span.entry { span.time { "[--:--:--]" } " Ready" }
+                        }
+                    }
+
+                    // Deploy Process
+                    div.card {
+                        h2 { "Deploy Process" }
+                        p.note { "Full redeployment requires a local build + push (the buttons above only restart/stop existing machines)." }
+                        div.section {
+                            h3 { "Build & Deploy (from local machine)" }
+                            div.step { span.step-num { "1." } span.step-text { "Build amd64 image: " code { "docker buildx build --platform linux/amd64 -t registry.fly.io/" (&fly_app) ":deployment-vN ." } } }
+                            div.step { span.step-num { "2." } span.step-text { "Deploy to Fly: " code { "fly deploy --now --local-only --image registry.fly.io/" (&fly_app) ":deployment-vN" } } }
+                            div.step { span.step-num { "3." } span.step-text { "Verify: " code { "curl https://traits.build/health" } } }
+                        }
+                        div.section {
+                            h3 { "Architecture Notes" }
+                            div.step { span.step-num { "\u{2022}" } span.step-text { "Binary is Rust-only. All traits compile into the binary via " code { "build.rs" } " (no filesystem needed)." } }
+                            div.step { span.step-num { "\u{2022}" } span.step-text { "Traits using " code { "source = \"dylib\"" } " won't work in Docker. Use " code { "source = \"builtin\"" } " instead." } }
+                            div.step { span.step-num { "\u{2022}" } span.step-text { "Dockerfile CMD must be " code { "[\"traits\"]" } " (no args). It reads " code { "TRAITS_PORT" } " env and dispatches " code { "kernel.serve" } "." } }
+                            div.step { span.step-num { "\u{2022}" } span.step-text { "Must build with " code { "--platform linux/amd64" } " (Fly runs x86_64, Mac builds arm64 by default)." } }
+                            div.step { span.step-num { "\u{2022}" } span.step-text { "Secrets: " code { "admin_password" } ", " code { "fly_api_token" } ", " code { "cloudflare_api_token" } " managed via the Secrets card above (encrypted, persisted to disk). Env vars (" code { "ADMIN_PASSWORD" } ", " code { "FLY_API_TOKEN" } ") still work as fallback." } }
+                        }
+                    }
+
+                    // Deploy Config
+                    div.card {
+                        h2 { "Deploy Config" }
+                        p.note { "Edit deploy settings. Persisted across deploys \u{2014} changes take effect after server restart." }
+                        table style="margin-top: 1rem;" {
+                            tr {
+                                td { "Fly App" }
+                                td { input id="cfgFlyAppInput" type="text" value=(&fly_app) style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:100%;" {} }
+                            }
+                            tr {
+                                td { "Fly Region" }
+                                td { input id="cfgFlyRegionInput" type="text" value=(&fly_region) style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:100%;" {} }
+                            }
+                        }
+                        div.actions style="margin-top: 1rem;" {
+                            button.primary id="btnSaveConfig" onclick="saveConfig()" { "Save" }
+                            span id="cfgSaveStatus" style="color:#888;font-size:0.85rem;align-self:center;" {}
+                        }
+                    }
+
+                    // Secrets
+                    div.card {
+                        h2 { "Secrets" }
+                        p.note { "Manage encrypted secrets via " code { "sys.secrets" } ". Values are encrypted at rest and never returned by the API." }
+                        div style="margin-top: 1rem;" {
+                            table id="secretsTable" { tr { td colspan="3" style="color:#555;" { "Loading..." } } }
+                        }
+                        div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end;" {
+                            div {
+                                label style="font-size:0.75rem;color:#666;display:block;margin-bottom:0.25rem;" { "ID" }
+                                input id="secretId" type="text" placeholder="e.g. fly_api_token" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:180px;" {}
+                            }
+                            div {
+                                label style="font-size:0.75rem;color:#666;display:block;margin-bottom:0.25rem;" { "Value" }
+                                input id="secretValue" type="password" placeholder="secret value" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:220px;" {}
+                            }
+                            button.primary onclick="setSecret()" { "Set Secret" }
+                            span id="secretStatus" style="color:#888;font-size:0.82rem;align-self:center;" {}
+                        }
+                        p.note style="margin-top:0.75rem;" { "Known IDs: " code { "admin_password" } ", " code { "fly_api_token" } ", " code { "cloudflare_api_token" } ". Secrets override matching env vars." }
+                    }
+
+                    // Activity Log
+                    div.card {
+                        h2 { "Activity Log" }
+                        div.log id="log" {
+                            span.entry { span.time { "[--:--:--]" } " Waiting for commands..." }
+                        }
+                    }
+                }
+
+                script { (PreEscaped(JS)) }
+            }
+        }
+    };
+    Value::String(markup.into_string())
 }
 
-const ADMIN_HTML: &str = r##"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>traits.build — Admin</title>
-<style>
+const CSS: &str = r##"
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
   .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
@@ -61,159 +234,9 @@ const ADMIN_HTML: &str = r##"<!DOCTYPE html>
   .step-text { color: #bbb; }
   .step-text code { font-size: 0.82rem; }
   .note { color: #888; font-size: 0.82rem; font-style: italic; margin-top: 0.5rem; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>traits.build <span>admin</span></h1>
-  <p class="subtitle">Deployment control panel &mdash; Fly.io &middot; iad region</p>
+"##;
 
-  <div class="card">
-    <h2>Server Status</h2>
-    <div class="status">
-      <div class="dot gray" id="statusDot"></div>
-      <span class="status-text" id="statusText">Checking...</span>
-    </div>
-    <table id="statusTable">
-      <tr><td>Traits</td><td id="traitCount">—</td></tr>
-      <tr><td>Namespaces</td><td id="nsCount">—</td></tr>
-      <tr><td>Uptime</td><td id="uptime">—</td></tr>
-      <tr><td>Version</td><td id="version">—</td></tr>
-    </table>
-  </div>
-
-  <div class="card">
-    <h2>Fly.io Machine</h2>
-    <div class="status">
-      <div class="dot gray" id="flyDot"></div>
-      <span class="status-text" id="flyText">Checking...</span>
-    </div>
-    <div class="infra">
-      <table>
-        <tr><td>App</td><td><code id="cfgFlyApp">{{FLY_APP}}</code></td></tr>
-        <tr><td>Region</td><td><code id="cfgFlyRegion">{{FLY_REGION}}</code></td></tr>
-        <tr><td>Machine</td><td id="machineId">—</td></tr>
-        <tr><td>State</td><td id="machineState">—</td></tr>
-        <tr><td>Image</td><td id="machineImage" style="word-break:break-all;">—</td></tr>
-      </table>
-    </div>
-    <div class="actions" style="margin-top: 1rem;">
-      <button class="primary" id="btnDeploy" onclick="deploy()">Restart Machine</button>
-      <button id="btnScale0" onclick="scale(0)">Stop (offline)</button>
-      <button id="btnScale1" onclick="scale(1)">Start</button>
-      <button class="danger" id="btnDestroy" onclick="if(confirm('Destroy all machines? You will need to fly deploy again.'))destroy()">Destroy</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>System Tools</h2>
-    <div class="actions">
-      <button onclick="listTraits()">List Traits</button>
-      <button onclick="runTests()">Run Tests</button>
-      <button onclick="reloadRegistry()">Reload Registry</button>
-      <button onclick="showVersion()">Version</button>
-      <button onclick="showProcesses()">Processes</button>
-    </div>
-    <div class="log" id="sysLog" style="display:none; margin-top: 1rem;"><span class="entry"><span class="time">[--:--:--]</span> Ready</span></div>
-  </div>
-
-  <div class="card">
-    <h2>Fast Deploy</h2>
-    <p class="note">Builds amd64 binary in Docker with cached deps, uploads via sftp, restarts machine. Only works from local dev server.</p>
-    <div class="actions" style="margin-top: 1rem;">
-      <button class="primary" id="btnFastDeploy" onclick="fastDeploy('build')">Build + Deploy</button>
-      <button id="btnFastUpload" onclick="fastDeploy('upload')">Re-upload Last Binary</button>
-    </div>
-    <div class="log" id="deployLog" style="display:none; margin-top: 1rem;"><span class="entry"><span class="time">[--:--:--]</span> Ready</span></div>
-  </div>
-
-  <div class="card">
-    <h2>Release Pipeline</h2>
-    <p class="note">Run <code>sys.release</code> — configurable pipeline: build, test, commit, push, tag, publish, deploy.</p>
-    <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end;">
-      <div>
-        <label style="font-size:0.75rem;color:#666;display:block;margin-bottom:0.25rem;">Commit Message</label>
-        <input id="releaseMsg" type="text" placeholder="release: vYYMMDD" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:280px;" />
-      </div>
-      <label style="font-size:0.82rem;color:#888;display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
-        <input type="checkbox" id="releaseDry" /> Dry run
-      </label>
-    </div>
-    <div class="actions" style="margin-top: 1rem;">
-      <button class="primary" onclick="releasePipeline('all')">Full Release</button>
-      <button onclick="releasePipeline('ci')">CI (commit+push+tag)</button>
-      <button onclick="releasePipeline('ship')">Ship (CI+deploy)</button>
-      <button onclick="releasePipeline('commit,push')">Commit + Push</button>
-    </div>
-    <div class="log" id="releaseLog" style="display:none; margin-top: 1rem;"><span class="entry"><span class="time">[--:--:--]</span> Ready</span></div>
-  </div>
-
-  <div class="card">
-    <h2>Deploy Process</h2>
-    <p class="note">Full redeployment requires a local build + push (the buttons above only restart/stop existing machines).</p>
-    <div class="section">
-      <h3>Build &amp; Deploy (from local machine)</h3>
-      <div class="step"><span class="step-num">1.</span><span class="step-text">Build amd64 image: <code>docker buildx build --platform linux/amd64 -t registry.fly.io/{{FLY_APP}}:deployment-vN .</code></span></div>
-      <div class="step"><span class="step-num">2.</span><span class="step-text">Deploy to Fly: <code>fly deploy --now --local-only --image registry.fly.io/{{FLY_APP}}:deployment-vN</code></span></div>
-      <div class="step"><span class="step-num">3.</span><span class="step-text">Verify: <code>curl https://traits.build/health</code></span></div>
-    </div>
-    <div class="section">
-      <h3>Architecture Notes</h3>
-      <div class="step"><span class="step-num">&bull;</span><span class="step-text">Binary is Rust-only. All traits compile into the binary via <code>build.rs</code> (no filesystem needed).</span></div>
-      <div class="step"><span class="step-num">&bull;</span><span class="step-text">Traits using <code>source = "dylib"</code> won't work in Docker. Use <code>source = "builtin"</code> instead.</span></div>
-      <div class="step"><span class="step-num">&bull;</span><span class="step-text">Dockerfile CMD must be <code>["traits"]</code> (no args). It reads <code>TRAITS_PORT</code> env and dispatches <code>kernel.serve</code>.</span></div>
-      <div class="step"><span class="step-num">&bull;</span><span class="step-text">Must build with <code>--platform linux/amd64</code> (Fly runs x86_64, Mac builds arm64 by default).</span></div>
-      <div class="step"><span class="step-num">&bull;</span><span class="step-text">Secrets: <code>admin_password</code>, <code>fly_api_token</code>, <code>cloudflare_api_token</code> managed via the Secrets card above (encrypted, persisted to disk). Env vars (<code>ADMIN_PASSWORD</code>, <code>FLY_API_TOKEN</code>) still work as fallback.</span></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Deploy Config</h2>
-    <p class="note">Edit deploy settings. Persisted across deploys — changes take effect after server restart.</p>
-    <table style="margin-top: 1rem;">
-      <tr>
-        <td>Fly App</td>
-        <td><input id="cfgFlyAppInput" type="text" value="{{FLY_APP}}" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:100%;" /></td>
-      </tr>
-      <tr>
-        <td>Fly Region</td>
-        <td><input id="cfgFlyRegionInput" type="text" value="{{FLY_REGION}}" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:100%;" /></td>
-      </tr>
-    </table>
-    <div class="actions" style="margin-top: 1rem;">
-      <button class="primary" id="btnSaveConfig" onclick="saveConfig()">Save</button>
-      <span id="cfgSaveStatus" style="color:#888;font-size:0.85rem;align-self:center;"></span>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Secrets</h2>
-    <p class="note">Manage encrypted secrets via <code>sys.secrets</code>. Values are encrypted at rest and never returned by the API.</p>
-    <div style="margin-top: 1rem;">
-      <table id="secretsTable"><tr><td colspan="3" style="color:#555;">Loading...</td></tr></table>
-    </div>
-    <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end;">
-      <div>
-        <label style="font-size:0.75rem;color:#666;display:block;margin-bottom:0.25rem;">ID</label>
-        <input id="secretId" type="text" placeholder="e.g. fly_api_token" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:180px;" />
-      </div>
-      <div>
-        <label style="font-size:0.75rem;color:#666;display:block;margin-bottom:0.25rem;">Value</label>
-        <input id="secretValue" type="password" placeholder="secret value" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:220px;" />
-      </div>
-      <button class="primary" onclick="setSecret()">Set Secret</button>
-      <span id="secretStatus" style="color:#888;font-size:0.82rem;align-self:center;"></span>
-    </div>
-    <p class="note" style="margin-top:0.75rem;">Known IDs: <code>admin_password</code>, <code>fly_api_token</code>, <code>cloudflare_api_token</code>.  Secrets override matching env vars.</p>
-  </div>
-
-  <div class="card">
-    <h2>Activity Log</h2>
-    <div class="log" id="log"><span class="entry"><span class="time">[--:--:--]</span> Waiting for commands...</span></div>
-  </div>
-</div>
-
-<script>
+const JS: &str = r##"
 const API = window.location.origin + '/traits';
 
 function log(msg, type) {
@@ -226,7 +249,7 @@ function log(msg, type) {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-var _statusPaused = false;  // pause health checks after scale-to-0
+var _statusPaused = false;
 
 async function callTrait(path, args) {
   const res = await fetch(API + '/' + path, {
@@ -238,7 +261,7 @@ async function callTrait(path, args) {
 }
 
 async function checkStatus() {
-  if (_statusPaused) return;  // don't ping /health when machine is stopped
+  if (_statusPaused) return;
   try {
     const r = await fetch(window.location.origin + '/health');
     const h = await r.json();
@@ -436,7 +459,7 @@ async function releasePipeline(steps) {
 }
 
 async function checkFlyMachine() {
-  if (_statusPaused) return;  // don't hit server when machine is stopped
+  if (_statusPaused) return;
   try {
     const r = await callTrait('www.admin.deploy', ['status']);
     if (r.error) {
@@ -446,7 +469,6 @@ async function checkFlyMachine() {
       return;
     }
     const d = r.result || r;
-    // Handle string error responses (e.g. "Error: FLY_API_TOKEN not set...")
     if (typeof d === 'string') {
       document.getElementById('flyDot').className = 'dot red';
       document.getElementById('flyText').textContent = d.startsWith('Error') ? 'Token missing' : 'API error';
@@ -512,15 +534,12 @@ async function scale(n) {
       else { log('Scale result: ' + JSON.stringify(d)); }
     }
   } catch(e) { log('Scale error: ' + e.message, 'error'); }
-  // After scale-to-0, don't hit /health (would trigger Fly auto_start)
   if (n > 0) { _statusPaused = false; setTimeout(checkStatus, 3000); }
   else {
-    // Manually set UI to offline state
     document.getElementById('statusDot').className = 'dot red';
     document.getElementById('statusText').textContent = 'Stopped';
     document.getElementById('uptime').textContent = '—';
-    _statusPaused = true;  // pause ALL periodic checks (health + fly machine)
-    // Manually set fly machine UI to stopped
+    _statusPaused = true;
     document.getElementById('flyDot').className = 'dot yellow';
     document.getElementById('flyText').textContent = 'Stopped';
     document.getElementById('machineState').textContent = 'stopped';
@@ -626,6 +645,4 @@ async function deleteSecret(id) {
   } catch(e) { log('Delete error: ' + e.message, 'error'); }
   loadSecrets();
 }
-</script>
-</body>
-</html>"##;
+"##;
