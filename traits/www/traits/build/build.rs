@@ -100,9 +100,9 @@ footer a{color:var(--accent)}
 
 <!-- Hero -->
 <div class="hero">
-  <div class="pill">open source &middot; pure Rust &middot; AI-ready</div>
+  <div class="pill">open source &middot; pure Rust &middot; encrypted secrets &middot; AI-ready</div>
   <h1><span>traits</span>.build</h1>
-  <p class="sub">Typed, composable function objects, ready for AI development, compiled into a single Rust binary. Define traits in TOML, call them via CLI, REST, or MCP. The kernel is traits all the way down.</p>
+  <p class="sub">Typed, composable functions compiled into a single Rust binary with encrypted secrets, zero-trust auth, and first-class AI integration. Define traits in TOML, call them via CLI, REST, or MCP.</p>
   <div class="cta">
     <a href="#built-in-traits" class="btn btn-primary">Explore Traits</a>
     <a href="/docs" class="btn btn-outline">Documentation</a>
