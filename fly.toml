@@ -1,6 +1,3 @@
-app = "polygrait-api"
-primary_region = "iad"
-
 [build]
   dockerfile = "Dockerfile"
 
