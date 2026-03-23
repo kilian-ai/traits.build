@@ -213,8 +213,20 @@ struct ParamToml {
     description: String,
     #[serde(default)]
     optional: bool,
+    /// When `required = false` is specified, treat as optional.
+    #[serde(default = "default_required")]
+    required: bool,
     #[serde(default)]
     pipe: bool,
+}
+
+fn default_required() -> bool { true }
+
+impl ParamToml {
+    /// A param is optional if `optional = true` OR `required = false`.
+    fn is_optional(&self) -> bool {
+        self.optional || !self.required
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -472,7 +484,7 @@ impl Registry {
                     name: p.name.clone(),
                     param_type: parse_type(&p.param_type),
                     description: p.description.clone(),
-                    optional: p.optional,
+                    optional: p.is_optional(),
                     pipe: p.pipe,
                 }
             }).collect()
