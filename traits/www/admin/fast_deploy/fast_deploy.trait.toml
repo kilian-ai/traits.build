@@ -16,6 +16,12 @@ required = false
 type = "object"
 description = "{ ok, output, exit_code }"
 
+[requires]
+admin = "www/webpage"
+
+[bindings]
+admin = "www.admin"
+
 [implementation]
 language = "rust"
 source = "builtin"

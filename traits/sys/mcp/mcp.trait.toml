@@ -15,6 +15,16 @@ params = []
 type = "null"
 description = "Runs MCP stdio loop (blocks until stdin closes)"
 
+[requires]
+globals = "kernel/globals"
+types = "kernel/types"
+dispatcher = "kernel/dispatcher"
+
+[bindings]
+globals = "kernel.globals"
+types = "kernel.types"
+dispatcher = "kernel.dispatcher"
+
 [implementation]
 language = "rust"
 source = "builtin"

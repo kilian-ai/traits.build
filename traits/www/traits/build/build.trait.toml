@@ -13,6 +13,12 @@ provides = ["www/webpage"]
 type = "string"
 description = "HTML landing page"
 
+[requires]
+globals = "kernel/globals"
+
+[bindings]
+globals = "kernel.globals"
+
 [implementation]
 language = "rust"
 source = "builtin"

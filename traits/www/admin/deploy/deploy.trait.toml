@@ -15,6 +15,12 @@ params = [
 type = "string"
 description = "Deployment result"
 
+[requires]
+admin = "www/webpage"
+
+[bindings]
+admin = "www.admin"
+
 [implementation]
 language = "rust"
 source = "builtin"

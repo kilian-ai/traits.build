@@ -287,11 +287,18 @@ fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
         let _ = fs::write(&toml_path, updated);
     }
 
-    // Sync version to Cargo.toml (strip 'v' prefix, use 0.YYMMDD.HHMMSS format)
+    // Sync version to Cargo.toml (strip 'v' prefix, use 0.YYMMDD.PATCH format)
+    // Semver forbids leading zeros in version segments, so parse HHMMSS as integer
     let cargo_toml_path = manifest_dir.join("Cargo.toml");
     if let Ok(cargo_content) = fs::read_to_string(&cargo_toml_path) {
-        let cargo_ver = new_ver.strip_prefix('v').unwrap_or(&new_ver);
-        let cargo_ver = format!("0.{}", cargo_ver);
+        let ver_str = new_ver.strip_prefix('v').unwrap_or(&new_ver);
+        let cargo_ver = if let Some((date, time)) = ver_str.split_once('.') {
+            // Strip leading zeros from HHMMSS by parsing as integer
+            let patch: u32 = time.parse().unwrap_or(0);
+            format!("0.{}.{}", date, patch)
+        } else {
+            format!("0.{}.0", ver_str)
+        };
         // Only replace the version line in the [package] section (before any other section)
         let mut in_package = false;
         let mut replaced = false;

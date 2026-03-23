@@ -12,6 +12,12 @@ tags = ["www", "admin", "deployment"]
 type = "string"
 description = "Destroy operation result"
 
+[requires]
+admin = "www/webpage"
+
+[bindings]
+admin = "www.admin"
+
 [implementation]
 language = "rust"
 source = "builtin"

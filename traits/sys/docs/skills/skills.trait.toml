@@ -22,6 +22,14 @@ optional = true
 type = "string"
 description = "Generated SKILL.md markdown content"
 
+[requires]
+openapi = "sys/openapi"
+globals = "kernel/globals"
+
+[bindings]
+openapi = "sys.openapi"
+globals = "kernel.globals"
+
 [implementation]
 language = "rust"
 source = "builtin"

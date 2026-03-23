@@ -24,5 +24,5 @@ description = "Object with ok and checksum fields"
 
 [implementation]
 language = "rust"
-source = "builtin"
+source = "dylib"
 entry = "checksum"

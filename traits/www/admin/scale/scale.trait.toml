@@ -15,6 +15,12 @@ params = [
 type = "string"
 description = "Scale operation result"
 
+[requires]
+admin = "www/webpage"
+
+[bindings]
+admin = "www.admin"
+
 [implementation]
 language = "rust"
 source = "builtin"

@@ -16,6 +16,12 @@ params = [
 type = "object"
 description = "Save result with ok status"
 
+[requires]
+admin = "www/webpage"
+
+[bindings]
+admin = "www.admin"
+
 [implementation]
 language = "rust"
 source = "builtin"

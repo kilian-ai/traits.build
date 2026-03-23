@@ -14,6 +14,12 @@ auth = "basic"
 type = "string"
 description = "HTML admin dashboard"
 
+[requires]
+config = "kernel/config"
+
+[bindings]
+config = "kernel.config"
+
 [implementation]
 language = "rust"
 source = "builtin"

@@ -16,5 +16,5 @@ description = "{ ok, processes: [{ trait_path, pid, alive, uptime, memory_mb, pi
 
 [implementation]
 language = "rust"
-source = "builtin"
+source = "dylib"
 entry = "ps"

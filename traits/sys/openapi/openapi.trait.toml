@@ -13,6 +13,18 @@ params = []
 type = "any"
 description = "OpenAPI 3.0 JSON specification object"
 
+[requires]
+globals = "kernel/globals"
+types = "kernel/types"
+dispatcher = "kernel/dispatcher"
+registry = "kernel/registry"
+
+[bindings]
+globals = "kernel.globals"
+types = "kernel.types"
+dispatcher = "kernel.dispatcher"
+registry = "kernel.registry"
+
 [implementation]
 language = "rust"
 source = "builtin"

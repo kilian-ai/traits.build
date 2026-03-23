@@ -1833,16 +1833,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "trait-www-traits-build"
-version = "0.260320.142947"
+name = "trait-sys-checksum"
+version = "0.1.0"
 dependencies = [
+ "plugin_api",
+ "regex",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "trait-sys-ps"
+version = "0.1.0"
+dependencies = [
+ "libc",
  "plugin_api",
  "serde_json",
 ]
 
 [[package]]
 name = "traits"
-version = "0.260322.220710"
+version = "0.260323.5457"
 dependencies = [
  "actix-cors",
  "actix-rt",
