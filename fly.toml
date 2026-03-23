@@ -6,6 +6,7 @@ primary_region = "iad"
 
 [env]
   TRAITS_PORT = "8090"
+  TRAITS_BIND = "0.0.0.0"
   RUST_LOG = "info"
 
 [http_service]

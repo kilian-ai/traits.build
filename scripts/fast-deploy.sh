@@ -57,18 +57,18 @@ echo "put $TMP_BIN $REMOTE_BIN" | fly ssh sftp shell -a "$APP"
 
 echo "==> Restarting machine..."
 fly ssh console -a "$APP" -C "chmod +x $REMOTE_BIN"
-fly machines restart "$MACHINE_ID" -a "$APP"
+fly machines restart "$MACHINE_ID" -a "$APP" --skip-health-checks 2>/dev/null || true
 
 echo "==> Waiting for health..."
 sleep 5
-for i in 1 2 3 4 5; do
+for i in $(seq 1 12); do
     H=$(curl -sf "https://traits.build/health" 2>/dev/null || true)
     if [ -n "$H" ]; then
         echo "==> Healthy!"
         echo "$H" | python3 -m json.tool
         exit 0
     fi
-    echo "    retry $i/5..."
-    sleep 3
+    echo "    retry $i/12..."
+    sleep 5
 done
-echo "Warning: health check didn't pass. Check: fly logs -a $APP"
+echo "Warning: health check didn't pass after 60s. Check: fly logs -a $APP"
