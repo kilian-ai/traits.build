@@ -15,6 +15,7 @@ provides = ["kernel/serve"]
 "/docs" = "www/webpage"
 "/docs/api" = "www/webpage"
 "/llm-openai" = "www/webpage"
+"/llm-test" = "www/webpage"
 dispatcher = "kernel/dispatcher"
 secrets = "sys/secrets"
 
@@ -25,6 +26,7 @@ secrets = "sys/secrets"
 "/docs" = "www.docs"
 "/docs/api" = "www.docs.api"
 "/llm-openai" = "www.llm.openai"
+"/llm-test" = "www.llm_test"
 dispatcher = "kernel.dispatcher"
 secrets = "sys.secrets"
 
