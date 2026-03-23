@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260323.204807"
+version = "0.260323.210603"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -53,6 +53,7 @@ futures = "0.3"
 sha2 = "0.10"
 libc = "0.2"
 pulldown-cmark = "0.12"
+maud = "0.26"
 
 [build-dependencies]
 sha2 = "0.10"

@@ -1,4 +1,5 @@
 use serde_json::Value;
+use maud::{html, DOCTYPE, PreEscaped};
 
 /// Context reference config — lists .md files to embed as system context.
 #[derive(serde::Deserialize)]
@@ -34,17 +35,105 @@ pub fn llm_test(_args: &[Value]) -> Value {
     let context = load_context();
     let escaped_context = serde_json::to_string(&context).unwrap_or_else(|_| "\"\"".into());
 
-    let html = LLM_TEST_HTML.replace("{{CONTEXT_JSON}}", &escaped_context);
-    Value::String(html)
+    let page = html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="UTF-8";
+                meta name="viewport" content="width=device-width, initial-scale=1.0";
+                title { "traits.build — LLM Test" }
+                style { (PreEscaped(CSS)) }
+            }
+            body {
+                div.header {
+                    h1 { "traits.build " span { "llm test" } }
+                    p.subtitle { "Chat with LLM models — OpenAI API, local server, or in-browser WebGPU inference" }
+                }
+
+                div.controls {
+                    div.control-group {
+                        label { "Provider" }
+                        select #provider onchange="onProviderChange()" {
+                            option value="openai" { "OpenAI" }
+                            option value="webgpu" { "Browser (WebGPU)" }
+                            option value="local" { "Local Server (ollama, etc.)" }
+                        }
+                    }
+                    div.control-group {
+                        label { "Model" }
+                        select #model onchange="onModelChange()" {}
+                    }
+                    div.control-group #localUrlGroup style="display:none;" {
+                        label { "Local Server URL" }
+                        input type="text" #localUrl value="http://127.0.0.1:8080"
+                            style="padding:0.5rem 0.75rem; border-radius:6px; border:1px solid #333; background:#151515; color:#e0e0e0; font-size:0.85rem; width:220px;";
+                    }
+                    div.control-group #webgpuStatus style="display:none;" {
+                        label { "WebGPU Engine" }
+                        span #webgpuBadge.webgpu-badge { span.dot {} "Checking..." }
+                    }
+                    div.control-group #ctxWindowGroup style="display:none;" {
+                        label { "Context Window" }
+                        input type="number" #ctxWindow value="8192" min="512" max="131072" step="512"
+                            style="padding:0.5rem 0.75rem; border-radius:6px; border:1px solid #333; background:#151515; color:#e0e0e0; font-size:0.85rem; width:100px;";
+                    }
+                    div.control-group #maxTokensGroup style="display:none;" {
+                        label { "Max Output Tokens" }
+                        input type="number" #maxTokens value="1024" min="64" max="16384" step="64"
+                            style="padding:0.5rem 0.75rem; border-radius:6px; border:1px solid #333; background:#151515; color:#e0e0e0; font-size:0.85rem; width:100px;";
+                    }
+                    div.context-toggle {
+                        label for="ctxToggle" { "Include docs context" }
+                        div.toggle {
+                            input type="checkbox" #ctxToggle checked;
+                            span.slider {}
+                        }
+                    }
+                }
+
+                div.progress-bar #progressBar {
+                    div.progress-label #progressLabel { "Loading model..." }
+                    div.progress-track { div.progress-fill #progressFill {} }
+                }
+
+                div.cache-card #cacheCard {
+                    div.cache-card-header {
+                        h3 { (PreEscaped("&#x1F4BE;")) " Cached Models "
+                            span #persistBadge."persist-badge"."temp" onclick="requestPersist()" title="Click to request persistent storage" { "temporary" }
+                        }
+                        span.storage-info #storageInfo {}
+                    }
+                    div.cache-models #cacheModels {
+                        div.cache-empty { "Scanning cache..." }
+                    }
+                }
+
+                div.chat-area #chatArea {
+                    div.empty-state #emptyState {
+                        div.inner {
+                            div.icon { (PreEscaped("&#x1F50D;")) }
+                            p { "Send a message to start chatting" }
+                            p.hint { "Context docs are loaded from the reference file" }
+                        }
+                    }
+                }
+
+                div.input-area {
+                    textarea #input placeholder="Type your message..." rows="1" onkeydown="handleKey(event)" {}
+                    button.send #sendBtn onclick="sendMessage()" { "Send" }
+                }
+
+                script type="module" {
+                    (PreEscaped(format!("const CONTEXT = {};\n{}", escaped_context, JS)))
+                }
+            }
+        }
+    };
+
+    Value::String(page.into_string())
 }
 
-const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>traits.build — LLM Test</title>
-<style>
+const CSS: &str = r##"
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; }
 
@@ -139,86 +228,9 @@ const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
   .cache-model-delete { background: none; border: 1px solid #333; color: #888; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; cursor: pointer; transition: all 0.15s; }
   .cache-model-delete:hover { border-color: #991b1b; color: #f87171; background: #1a0a0a; }
   .cache-empty { padding: 0.75rem 1rem; font-size: 0.78rem; color: #555; text-align: center; }
-</style>
-</head>
-<body>
+"##;
 
-<div class="header">
-  <h1>traits.build <span>llm test</span></h1>
-  <p class="subtitle">Chat with LLM models — OpenAI API, local server, or in-browser WebGPU inference</p>
-</div>
-
-<div class="controls">
-  <div class="control-group">
-    <label>Provider</label>
-    <select id="provider" onchange="onProviderChange()">
-      <option value="openai">OpenAI</option>
-      <option value="webgpu">Browser (WebGPU)</option>
-      <option value="local">Local Server (ollama, etc.)</option>
-    </select>
-  </div>
-  <div class="control-group">
-    <label>Model</label>
-    <select id="model" onchange="onModelChange()"></select>
-  </div>
-  <div class="control-group" id="localUrlGroup" style="display:none;">
-    <label>Local Server URL</label>
-    <input type="text" id="localUrl" value="http://127.0.0.1:8080" style="padding:0.5rem 0.75rem; border-radius:6px; border:1px solid #333; background:#151515; color:#e0e0e0; font-size:0.85rem; width:220px;">
-  </div>
-  <div class="control-group" id="webgpuStatus" style="display:none;">
-    <label>WebGPU Engine</label>
-    <span id="webgpuBadge" class="webgpu-badge"><span class="dot"></span>Checking...</span>
-  </div>
-  <div class="control-group" id="ctxWindowGroup" style="display:none;">
-    <label>Context Window</label>
-    <input type="number" id="ctxWindow" value="8192" min="512" max="131072" step="512" style="padding:0.5rem 0.75rem; border-radius:6px; border:1px solid #333; background:#151515; color:#e0e0e0; font-size:0.85rem; width:100px;">
-  </div>
-  <div class="control-group" id="maxTokensGroup" style="display:none;">
-    <label>Max Output Tokens</label>
-    <input type="number" id="maxTokens" value="1024" min="64" max="16384" step="64" style="padding:0.5rem 0.75rem; border-radius:6px; border:1px solid #333; background:#151515; color:#e0e0e0; font-size:0.85rem; width:100px;">
-  </div>
-  <div class="context-toggle">
-    <label for="ctxToggle">Include docs context</label>
-    <div class="toggle">
-      <input type="checkbox" id="ctxToggle" checked>
-      <span class="slider"></span>
-    </div>
-  </div>
-</div>
-
-<div class="progress-bar" id="progressBar">
-  <div class="progress-label" id="progressLabel">Loading model...</div>
-  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-</div>
-
-<div class="cache-card" id="cacheCard">
-  <div class="cache-card-header">
-    <h3>&#x1F4BE; Cached Models <span id="persistBadge" class="persist-badge temp" onclick="requestPersist()" title="Click to request persistent storage">temporary</span></h3>
-    <span class="storage-info" id="storageInfo"></span>
-  </div>
-  <div class="cache-models" id="cacheModels">
-    <div class="cache-empty">Scanning cache...</div>
-  </div>
-</div>
-
-<div class="chat-area" id="chatArea">
-  <div class="empty-state" id="emptyState">
-    <div class="inner">
-      <div class="icon">&#x1F50D;</div>
-      <p>Send a message to start chatting</p>
-      <p class="hint">Context docs are loaded from the reference file</p>
-    </div>
-  </div>
-</div>
-
-<div class="input-area">
-  <textarea id="input" placeholder="Type your message..." rows="1" onkeydown="handleKey(event)"></textarea>
-  <button class="send" id="sendBtn" onclick="sendMessage()">Send</button>
-</div>
-
-<script type="module">
-const CONTEXT = {{CONTEXT_JSON}};
-
+const JS: &str = r##"
 const MODELS = {
   openai: [
     { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
@@ -284,7 +296,7 @@ async function updatePersistBadge(persisted) {
   if (persisted) {
     badge.textContent = 'persistent';
     badge.className = 'persist-badge';
-    badge.title = 'Storage is persistent — models won\u0027t be evicted';
+    badge.title = 'Storage is persistent — models won\'t be evicted';
     badge.style.cursor = 'default';
   } else {
     badge.textContent = 'temporary — click to persist';
@@ -302,17 +314,14 @@ function formatBytes(bytes) {
 }
 
 async function scanCachedModels() {
-  const modelMap = new Map(); // modelId -> totalSize
+  const modelMap = new Map();
   try {
     const cacheNames = await caches.keys();
     for (const name of cacheNames) {
-      // WebLLM uses cache names containing 'webllm' or stores under model URLs
       const cache = await caches.open(name);
       const keys = await cache.keys();
       for (const req of keys) {
         const url = req.url || req;
-        // Match HuggingFace model URLs or WebLLM patterns
-        // Typical: https://huggingface.co/mlc-ai/SmolLM2-135M-Instruct-q4f16_1-MLC/resolve/main/...
         const hfMatch = url.match(/huggingface\.co\/mlc-ai\/([^\/]+)\//);
         if (hfMatch) {
           const modelId = hfMatch[1];
@@ -323,7 +332,6 @@ async function scanCachedModels() {
             if (cl) {
               size = parseInt(cl, 10);
             } else {
-              // Try reading the body to get size (clone to avoid consuming)
               try {
                 const blob = await resp.clone().blob();
                 size = blob.size;
@@ -356,7 +364,6 @@ async function deleteCachedModel(modelId) {
       }
     }
     showToast('Deleted ' + modelId + ' (' + deleted + ' files)');
-    // If the deleted model was loaded, reset engine
     if (webgpuLoadedModel === modelId) {
       webgpuLoadedModel = null;
       webgpuReady = false;
@@ -377,25 +384,21 @@ async function refreshCacheCard() {
   }
   card.classList.add('active');
 
-  // Check persistence status
   if (navigator.storage && navigator.storage.persisted) {
     const persisted = await navigator.storage.persisted();
     updatePersistBadge(persisted);
-    // Auto-request persistence on first visit
     if (!persisted && navigator.storage.persist) {
       const granted = await navigator.storage.persist();
       updatePersistBadge(granted);
     }
   }
 
-  // Storage estimate
   const infoEl = document.getElementById('storageInfo');
   if (navigator.storage && navigator.storage.estimate) {
     const est = await navigator.storage.estimate();
     infoEl.textContent = formatBytes(est.usage || 0) + ' / ' + formatBytes(est.quota || 0);
   }
 
-  // Scan cached models
   const modelMap = await scanCachedModels();
   cachedModelSet = new Set(modelMap.keys());
   const container = document.getElementById('cacheModels');
@@ -410,7 +413,6 @@ async function refreshCacheCard() {
 
       const nameSpan = document.createElement('span');
       nameSpan.className = 'cache-model-name';
-      // Find friendly label
       const known = MODELS.webgpu.find(m => m.value === modelId);
       nameSpan.textContent = known ? known.label : modelId;
       nameSpan.title = modelId;
@@ -431,7 +433,6 @@ async function refreshCacheCard() {
     }
   }
 
-  // Update model dropdown to show cached status
   updateModelDropdownCacheStatus();
 }
 
@@ -499,12 +500,10 @@ async function ensureWebGPUEngine(modelId) {
 
   const ctxWindow = parseInt(document.getElementById('ctxWindow').value) || 8192;
 
-  // Already loaded with this model and same context window
   if (webgpuEngine && webgpuLoadedModel === modelId && webgpuLoadedCtxWindow === ctxWindow) {
     return true;
   }
 
-  // Need to load or switch model (or context window changed)
   webgpuReady = false;
   updateWebGPUBadge('loading', 'Loading...');
 
@@ -516,7 +515,6 @@ async function ensureWebGPUEngine(modelId) {
       updateWebGPUBadge('loading', pct + '%');
     };
 
-    // Override context_window_size so small models can handle larger prompts
     const chatOpts = { context_window_size: ctxWindow };
 
     if (webgpuEngine) {
@@ -535,7 +533,6 @@ async function ensureWebGPUEngine(modelId) {
     webgpuReady = true;
     hideProgress();
     updateWebGPUBadge('ok', 'Ready · ctx ' + ctxWindow);
-    // Refresh cache card after model download/load
     refreshCacheCard();
     return true;
   } catch (e) {
@@ -565,7 +562,6 @@ function onProviderChange() {
     modelSel.appendChild(opt);
   }
 
-  // Set default context window from model config
   if (prov === 'webgpu' && MODELS.webgpu.length > 0) {
     const first = MODELS.webgpu[0];
     document.getElementById('ctxWindow').value = first.ctx || 8192;
@@ -581,7 +577,6 @@ function onProviderChange() {
     }
   }
 
-  // Show/hide + refresh cache card
   refreshCacheCard();
 }
 
@@ -589,7 +584,6 @@ function onModelChange() {
   const prov = document.getElementById('provider').value;
   if (prov === 'webgpu') {
     const modelId = document.getElementById('model').value;
-    // Update context window default for selected model
     const known = MODELS.webgpu.find(m => m.value === modelId);
     if (known && known.ctx) {
       document.getElementById('ctxWindow').value = known.ctx;
@@ -695,13 +689,11 @@ async function sendWebGPU(text, modelId, useContext) {
   if (useContext) {
     chatMessages.push({ role: 'system', content: CONTEXT });
   }
-  // Include conversation history
   for (const m of messages) {
     chatMessages.push({ role: m.role, content: m.content });
   }
   chatMessages.push({ role: 'user', content: text });
 
-  // Use streaming for real-time output
   const maxTokens = parseInt(document.getElementById('maxTokens').value) || 1024;
   const chunks = await webgpuEngine.chat.completions.create({
     messages: chatMessages,
@@ -713,7 +705,6 @@ async function sendWebGPU(text, modelId, useContext) {
 
   removeTyping();
 
-  // Create assistant bubble for streaming
   const bubble = appendMessage('assistant', '');
   const streamNode = document.createTextNode('');
   bubble.insertBefore(streamNode, bubble.firstChild);
@@ -728,10 +719,9 @@ async function sendWebGPU(text, modelId, useContext) {
     if (chunk.usage) usage = chunk.usage;
   }
 
-  // Add meta line
-  let meta = 'webgpu · ' + modelId;
+  let meta = 'webgpu \u00B7 ' + modelId;
   if (usage) {
-    meta += ' · ' + (usage.prompt_tokens || 0) + '+' + (usage.completion_tokens || 0) + ' tokens';
+    meta += ' \u00B7 ' + (usage.prompt_tokens || 0) + '+' + (usage.completion_tokens || 0) + ' tokens';
   }
   const metaDiv = document.createElement('div');
   metaDiv.className = 'meta-line';
@@ -762,7 +752,6 @@ async function sendServer(text, provider, model, useContext, localUrl) {
   const raw = await resp.json();
   removeTyping();
 
-  // REST API wraps trait results in { result, error }
   if (raw.error) {
     showToast('Error: ' + raw.error);
     appendMessage('assistant', '\u26A0 ' + raw.error);
@@ -833,6 +822,4 @@ window.deleteCachedModel = deleteCachedModel;
 // Init
 onProviderChange();
 document.getElementById('input').focus();
-</script>
-</body>
-</html>"##;
+"##;
