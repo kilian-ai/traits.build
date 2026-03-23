@@ -715,13 +715,15 @@ async function sendWebGPU(text, modelId, useContext) {
 
   // Create assistant bubble for streaming
   const bubble = appendMessage('assistant', '');
+  const streamNode = document.createTextNode('');
+  bubble.insertBefore(streamNode, bubble.firstChild);
   let fullContent = '';
   let usage = null;
 
   for await (const chunk of chunks) {
     const delta = chunk.choices[0]?.delta?.content || '';
     fullContent += delta;
-    bubble.childNodes[0].textContent = fullContent;
+    streamNode.textContent = fullContent;
     document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
     if (chunk.usage) usage = chunk.usage;
   }
