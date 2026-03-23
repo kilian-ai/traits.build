@@ -333,19 +333,38 @@ async function fastDeploy(mode) {
   const btn = isBuild ? document.getElementById('btnFastDeploy') : document.getElementById('btnFastUpload');
   const label = isBuild ? 'Build + Deploy' : 'Re-upload';
   btn.disabled = true;
-  btn.textContent = isBuild ? 'Building...' : 'Uploading...';
-  deployLog(isBuild ? 'Starting build + deploy (this may take a minute)...' : 'Re-uploading last binary...');
+  deployLog(isBuild ? 'Starting build + deploy...' : 'Re-uploading last binary...');
+  var startTime = Date.now();
+  var stages = isBuild ? [
+    [0, 'Copying source to build container...'],
+    [5, 'Compiling (deps cached after first run)...'],
+    [30, 'Still compiling...'],
+    [60, 'Still compiling (first build takes ~3 min)...'],
+    [120, 'Almost there...'],
+    [180, 'This is taking longer than usual...'],
+  ] : [[0, 'Uploading binary...']];
+  var stageIdx = 0;
+  var timer = setInterval(function() {
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
+    btn.textContent = (isBuild ? 'Building' : 'Uploading') + '... ' + elapsed + 's';
+    while (stageIdx < stages.length && elapsed >= stages[stageIdx][0]) {
+      deployLog(stages[stageIdx][1]);
+      stageIdx++;
+    }
+  }, 1000);
   try {
     const r = await callTrait('www.admin.fast_deploy', [mode]);
+    clearInterval(timer);
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
     const d = r.result || r;
     if (d && d.ok) {
-      deployLog('Deploy succeeded (exit ' + d.exit_code + ')');
+      deployLog('Deploy succeeded in ' + elapsed + 's');
       if (d.output) d.output.split('\n').forEach(function(l) { if(l.trim()) deployLog('  ' + l); });
     } else {
-      deployLog('Deploy failed: ' + (d.error || d.output || JSON.stringify(d)), 'error');
+      deployLog('Deploy failed after ' + elapsed + 's: ' + (d.error || d.output || JSON.stringify(d)), 'error');
       if (d.output) d.output.split('\n').forEach(function(l) { if(l.trim()) deployLog('  ' + l, 'error'); });
     }
-  } catch(e) { deployLog('Error: ' + e.message, 'error'); }
+  } catch(e) { clearInterval(timer); deployLog('Error: ' + e.message, 'error'); }
   btn.disabled = false;
   btn.textContent = label;
   setTimeout(checkStatus, 8000);

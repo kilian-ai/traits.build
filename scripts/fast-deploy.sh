@@ -43,7 +43,7 @@ if [ "${1:-}" != "--upload" ]; then
         -v "/tmp:/out" \
         -e CARGO_TARGET_DIR=/cargo-target \
         rust:latest \
-        sh -c 'cp -a /src /build && cd /build && cargo build --release && cp /cargo-target/release/traits /out/traits-linux-amd64'
+        sh -c 'echo "[copy] Copying source (excluding target/)..." && mkdir -p /build && tar -C /src --exclude=./target -cf - . | tar -C /build -xf - && echo "[build] Compiling..." && cd /build && cargo build --release 2>&1 && echo "[done] Copying binary..." && cp /cargo-target/release/traits /out/traits-linux-amd64'
 
     echo "==> Built: $(du -h "$TMP_BIN" | cut -f1)"
 fi
