@@ -439,7 +439,20 @@ async function checkFlyMachine() {
   if (_statusPaused) return;  // don't hit server when machine is stopped
   try {
     const r = await callTrait('www.admin.deploy', ['status']);
+    if (r.error) {
+      document.getElementById('flyDot').className = 'dot red';
+      document.getElementById('flyText').textContent = 'API error';
+      log('Fly API: ' + r.error, 'error');
+      return;
+    }
     const d = r.result || r;
+    // Handle string error responses (e.g. "Error: FLY_API_TOKEN not set...")
+    if (typeof d === 'string') {
+      document.getElementById('flyDot').className = 'dot red';
+      document.getElementById('flyText').textContent = d.startsWith('Error') ? 'Token missing' : 'API error';
+      log('Fly API: ' + d, 'error');
+      return;
+    }
     if (d && d.machines) {
       const m = d.machines[0];
       if (m) {
@@ -460,6 +473,10 @@ async function checkFlyMachine() {
         document.getElementById('flyDot').className = 'dot red';
         document.getElementById('flyText').textContent = 'No machines';
       }
+    } else {
+      document.getElementById('flyDot').className = 'dot red';
+      document.getElementById('flyText').textContent = 'Unexpected response';
+      log('Fly API: unexpected response: ' + JSON.stringify(d), 'warn');
     }
   } catch(e) {
     document.getElementById('flyDot').className = 'dot gray';
