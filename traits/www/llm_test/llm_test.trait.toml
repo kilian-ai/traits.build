@@ -1,7 +1,7 @@
 [trait]
 description = "LLM test page — chat UI with provider/model selection and context file loading"
-version = "v260323.165800"
-checksum = "936efd4ef3e37b981d10efdaa124a2e1c1ccf63dfc0111e7215447aecda682b3"
+version = "v260323.174059"
+checksum = "98f1153243ad6e8808ebbcbf40100545e65a8cf7d58e14be0b1d4e8e31bb2128"
 epoch = 0
 author = "system"
 tags = ["www", "llm", "chat", "test"]

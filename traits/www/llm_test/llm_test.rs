@@ -317,21 +317,28 @@ async function sendMessage() {
       body: JSON.stringify(body)
     });
 
-    const data = await resp.json();
+    const raw = await resp.json();
     removeTyping();
 
-    if (data.ok && data.content) {
-      let meta = `${data.provider} · ${data.model}`;
-      if (data.usage) {
-        const u = data.usage;
-        meta += ` · ${u.prompt_tokens || 0}+${u.completion_tokens || 0} tokens`;
-      }
-      appendMessage('assistant', data.content, meta);
-      messages.push({ role: 'assistant', content: data.content });
+    // REST API wraps trait results in { result, error }
+    if (raw.error) {
+      showToast('Error: ' + raw.error);
+      appendMessage('assistant', '⚠ ' + raw.error);
     } else {
-      const err = data.error || data.body?.error?.message || 'Unknown error';
-      showToast('Error: ' + err);
-      appendMessage('assistant', '⚠ ' + err);
+      const data = raw.result || raw;
+      if (data.ok && data.content) {
+        let meta = `${data.provider} · ${data.model}`;
+        if (data.usage) {
+          const u = data.usage;
+          meta += ` · ${u.prompt_tokens || 0}+${u.completion_tokens || 0} tokens`;
+        }
+        appendMessage('assistant', data.content, meta);
+        messages.push({ role: 'assistant', content: data.content });
+      } else {
+        const err = data.error || 'Unknown error';
+        showToast('Error: ' + err);
+        appendMessage('assistant', '⚠ ' + err);
+      }
     }
   } catch (e) {
     removeTyping();
