@@ -142,7 +142,7 @@ const ADMIN_HTML: &str = r##"<!DOCTYPE html>
       <div class="step"><span class="step-num">&bull;</span><span class="step-text">Traits using <code>source = "dylib"</code> won't work in Docker. Use <code>source = "builtin"</code> instead.</span></div>
       <div class="step"><span class="step-num">&bull;</span><span class="step-text">Dockerfile CMD must be <code>["traits"]</code> (no args). It reads <code>TRAITS_PORT</code> env and dispatches <code>kernel.serve</code>.</span></div>
       <div class="step"><span class="step-num">&bull;</span><span class="step-text">Must build with <code>--platform linux/amd64</code> (Fly runs x86_64, Mac builds arm64 by default).</span></div>
-      <div class="step"><span class="step-num">&bull;</span><span class="step-text">Secrets: <code>ADMIN_PASSWORD</code>, <code>FLY_API_TOKEN</code>, <code>CLOUDFLARE_API_TOKEN</code> set via <code>fly secrets set</code>.</span></div>
+      <div class="step"><span class="step-num">&bull;</span><span class="step-text">Secrets: <code>admin_password</code>, <code>fly_api_token</code>, <code>cloudflare_api_token</code> managed via the Secrets card above (encrypted, persisted to disk). Env vars (<code>ADMIN_PASSWORD</code>, <code>FLY_API_TOKEN</code>) still work as fallback.</span></div>
     </div>
   </div>
 
@@ -163,6 +163,27 @@ const ADMIN_HTML: &str = r##"<!DOCTYPE html>
       <button class="primary" id="btnSaveConfig" onclick="saveConfig()">Save</button>
       <span id="cfgSaveStatus" style="color:#888;font-size:0.85rem;align-self:center;"></span>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>Secrets</h2>
+    <p class="note">Manage encrypted secrets via <code>sys.secrets</code>. Values are encrypted at rest and never returned by the API.</p>
+    <div style="margin-top: 1rem;">
+      <table id="secretsTable"><tr><td colspan="3" style="color:#555;">Loading...</td></tr></table>
+    </div>
+    <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end;">
+      <div>
+        <label style="font-size:0.75rem;color:#666;display:block;margin-bottom:0.25rem;">ID</label>
+        <input id="secretId" type="text" placeholder="e.g. fly_api_token" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:180px;" />
+      </div>
+      <div>
+        <label style="font-size:0.75rem;color:#666;display:block;margin-bottom:0.25rem;">Value</label>
+        <input id="secretValue" type="password" placeholder="secret value" style="background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.4rem 0.6rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.85rem;width:220px;" />
+      </div>
+      <button class="primary" onclick="setSecret()">Set Secret</button>
+      <span id="secretStatus" style="color:#888;font-size:0.82rem;align-self:center;"></span>
+    </div>
+    <p class="note" style="margin-top:0.75rem;">Known IDs: <code>admin_password</code>, <code>fly_api_token</code>, <code>cloudflare_api_token</code>.  Secrets override matching env vars.</p>
   </div>
 
   <div class="card">
@@ -445,8 +466,66 @@ async function saveConfig() {
 
 checkStatus();
 checkFlyMachine();
+loadSecrets();
 setInterval(checkStatus, 30000);
 setInterval(checkFlyMachine, 60000);
+
+async function loadSecrets() {
+  try {
+    const r = await callTrait('sys.secrets', ['list']);
+    const d = r.result || r;
+    const tbl = document.getElementById('secretsTable');
+    if (d && d.ok && d.secrets) {
+      if (d.secrets.length === 0) {
+        tbl.innerHTML = '<tr><td colspan="3" style="color:#555;">No secrets stored yet</td></tr>';
+      } else {
+        tbl.innerHTML = d.secrets.map(function(id) {
+          return '<tr><td style="width:auto;"><code>' + esc(id) + '</code></td>'
+            + '<td style="color:#555;width:100px;text-align:center;">●●●●●●</td>'
+            + '<td style="width:80px;text-align:right;"><button style="padding:0.2rem 0.6rem;font-size:0.78rem;" class="danger" onclick="deleteSecret(\'' + esc(id) + '\')">Delete</button></td></tr>';
+        }).join('');
+      }
+    } else {
+      tbl.innerHTML = '<tr><td colspan="3" style="color:#e55;">Failed to load</td></tr>';
+    }
+  } catch(e) {
+    document.getElementById('secretsTable').innerHTML = '<tr><td colspan="3" style="color:#e55;">Error: ' + esc(e.message) + '</td></tr>';
+  }
+}
+
+async function setSecret() {
+  var id = document.getElementById('secretId').value.trim();
+  var val = document.getElementById('secretValue').value;
+  var status = document.getElementById('secretStatus');
+  if (!id || !val) { status.textContent = 'ID and value required'; status.style.color = '#e55'; return; }
+  status.textContent = 'Saving...'; status.style.color = '#888';
+  try {
+    const r = await callTrait('sys.secrets', ['set', id, val]);
+    const d = r.result || r;
+    if (d && d.ok) {
+      status.textContent = 'Saved ✓'; status.style.color = '#6b9';
+      document.getElementById('secretId').value = '';
+      document.getElementById('secretValue').value = '';
+      log('Secret set: ' + id);
+      loadSecrets();
+    } else {
+      status.textContent = d.error || 'Failed'; status.style.color = '#e55';
+    }
+  } catch(e) { status.textContent = 'Error: ' + e.message; status.style.color = '#e55'; }
+  setTimeout(function() { status.textContent = ''; }, 4000);
+}
+
+async function deleteSecret(id) {
+  if (!confirm('Delete secret "' + id + '"?')) return;
+  log('Deleting secret: ' + id + '...');
+  try {
+    const r = await callTrait('sys.secrets', ['delete', id]);
+    const d = r.result || r;
+    if (d && d.ok) { log('Deleted: ' + id); }
+    else { log('Delete failed: ' + (d.error || JSON.stringify(d)), 'error'); }
+  } catch(e) { log('Delete error: ' + e.message, 'error'); }
+  loadSecrets();
+}
 </script>
 </body>
 </html>"##;

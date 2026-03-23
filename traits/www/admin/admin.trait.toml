@@ -1,7 +1,7 @@
 [trait]
 description = "Admin dashboard for traits.build deployment"
-version = "v260322.191849"
-checksum = "42b457cb33c4c52927c4ecc616fdf9260bdd25a5144fc7ef8013b05f93069a9f"
+version = "v260323"
+checksum = "8259261b5560675f3442f83596a244d66647b981f71b15d9bfcf7f00bdaa56c6"
 epoch = 0
 author = "system"
 tags = ["www", "admin", "deployment"]
@@ -16,9 +16,11 @@ description = "HTML admin dashboard"
 
 [requires]
 config = "kernel/config"
+secrets = "sys/secrets"
 
 [bindings]
 config = "kernel.config"
+secrets = "sys.secrets"
 
 [implementation]
 language = "rust"

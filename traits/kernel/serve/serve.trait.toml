@@ -1,8 +1,8 @@
 [trait]
 description = "Start the HTTP API server"
-version = "v260321.222758"
+version = "v260323.131314"
 epoch = 0
-checksum = "cc174639cdd1bd8444e19b7dcf8194ec43ccf64cbf8908bfbe30ad2e89931e4b"
+checksum = "e12c53979fcc383fd38921c07de10b4357ff9fc021b680e41a3449865fa43261"
 author = "system"
 tags = ["system", "server"]
 background = true
@@ -15,6 +15,7 @@ provides = ["kernel/serve"]
 "/docs" = "www/webpage"
 "/docs/api" = "www/webpage"
 dispatcher = "kernel/dispatcher"
+secrets = "sys/secrets"
 
 [bindings]
 "/" = "www.traits.build"
@@ -23,6 +24,7 @@ dispatcher = "kernel/dispatcher"
 "/docs" = "www.docs"
 "/docs/api" = "www.docs.api"
 dispatcher = "kernel.dispatcher"
+secrets = "sys.secrets"
 
 [signature]
 params = [

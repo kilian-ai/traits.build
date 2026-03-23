@@ -16,9 +16,15 @@ pub struct FlyApi {
 
 impl FlyApi {
     pub fn new() -> Result<Self, String> {
-        let token = std::env::var("FLY_API_TOKEN")
-            .or_else(|_| std::env::var("FLY_ACCESS_TOKEN"))
-            .map_err(|_| "FLY_API_TOKEN not set (also checked FLY_ACCESS_TOKEN)".to_string())?;
+        // Try secrets store first, then fall back to env vars
+        let ctx = crate::dispatcher::compiled::secrets::SecretContext::resolve(&["fly_api_token"]);
+        let token = if let Some(t) = ctx.get("fly_api_token") {
+            t.to_string()
+        } else {
+            std::env::var("FLY_API_TOKEN")
+                .or_else(|_| std::env::var("FLY_ACCESS_TOKEN"))
+                .map_err(|_| "FLY_API_TOKEN not set (checked secrets store + env vars)".to_string())?
+        };
         if token.is_empty() {
             return Err("FLY_API_TOKEN is empty".to_string());
         }

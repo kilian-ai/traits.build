@@ -276,14 +276,20 @@ async fn get_trait_info(
     }
 }
 
-/// Check HTTP Basic Auth against ADMIN_PASSWORD env var.
+/// Check HTTP Basic Auth against secrets store or ADMIN_PASSWORD env var.
 /// Returns Ok(()) if auth is valid, Err(HttpResponse) with 401 if not.
 fn check_basic_auth(req: &HttpRequest) -> Result<(), HttpResponse> {
-    let password = match std::env::var("ADMIN_PASSWORD") {
-        Ok(p) if !p.is_empty() => p,
-        _ => return Err(HttpResponse::InternalServerError()
-            .content_type("text/plain")
-            .body("ADMIN_PASSWORD not configured")),
+    // Try secrets store first, then fall back to env var
+    let ctx = crate::dispatcher::compiled::secrets::SecretContext::resolve(&["admin_password"]);
+    let password = if let Some(p) = ctx.get("admin_password") {
+        p.to_string()
+    } else {
+        match std::env::var("ADMIN_PASSWORD") {
+            Ok(p) if !p.is_empty() => p,
+            _ => return Err(HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body("ADMIN_PASSWORD not configured (set via secrets store or env var)")),
+        }
     };
 
     let auth_header = match req.headers().get("Authorization") {

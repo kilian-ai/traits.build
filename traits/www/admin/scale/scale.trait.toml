@@ -17,9 +17,11 @@ description = "Scale operation result"
 
 [requires]
 admin = "www/webpage"
+secrets = "sys/secrets"
 
 [bindings]
 admin = "www.admin"
+secrets = "sys.secrets"
 
 [implementation]
 language = "rust"
