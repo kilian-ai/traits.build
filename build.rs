@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use sha2::{Sha256, Digest};
 
-// Shared SHA-256 helpers (same code used by sys.checksum trait)
-include!("traits/sys/checksum/checksum.sha256.rs");
+// Shared SHA-256 helpers (canonical copy at root, mirrored in sys/checksum/)
+include!("sha256.rs");
 
 /// Represents a discovered builtin trait with its source .rs file.
 struct TraitModule {
