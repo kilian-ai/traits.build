@@ -788,9 +788,102 @@ impl Dispatcher {
             }
         }
 
+        // REST traits: dispatch via sys.call using the [http] config from the TOML
+        if let Some(entry) = self.registry.get(path) {
+            if let Some(ref http) = entry.http {
+                return self.execute_rest(path, &entry, &args, http);
+            }
+        }
+
         // Sync dispatch through compiled modules
         compiled::dispatch_trait_value(path, &args)
             .ok_or_else(|| RouterError::ExecError(format!("No implementation for {}", path)))
+    }
+
+    /// Execute a REST trait by building sys.call args from the [http] config.
+    /// Template substitution: {{param_name}} in url/body is replaced with the arg value.
+    fn execute_rest(
+        &self,
+        path: &str,
+        entry: &crate::registry::TraitEntry,
+        args: &[TraitValue],
+        http: &crate::registry::HttpTraitConfig,
+    ) -> Result<TraitValue, RouterError> {
+        // Build param name → value map from signature + args
+        // Start with defaults, then override with actual args
+        let mut param_map: std::collections::HashMap<String, String> = http.defaults.iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (i, param) in entry.signature.params.iter().enumerate() {
+            if let Some(arg) = args.get(i) {
+                let val_str = match arg {
+                    TraitValue::String(s) => s.clone(),
+                    TraitValue::Int(n) => n.to_string(),
+                    TraitValue::Float(f) => f.to_string(),
+                    TraitValue::Bool(b) => b.to_string(),
+                    TraitValue::Null => continue,
+                    other => serde_json::to_string(&other.to_json()).unwrap_or_default(),
+                };
+                param_map.insert(param.name.clone(), val_str);
+            }
+        }
+
+        // Template substitution helper
+        let substitute = |template: &str| -> String {
+            let mut result = template.to_string();
+            for (name, val) in &param_map {
+                result = result.replace(&format!("{{{{{}}}}}", name), val);
+            }
+            result
+        };
+
+        // Build URL with template substitution
+        let url = substitute(&http.url);
+
+        // Build body with template substitution
+        let body: serde_json::Value = if let Some(ref body_template) = http.body {
+            let body_str = substitute(body_template);
+            serde_json::from_str(&body_str).unwrap_or(serde_json::Value::String(body_str))
+        } else {
+            serde_json::Value::Null
+        };
+
+        // Auth secret
+        let auth_secret = http.auth_secret.as_deref()
+            .map(|s| serde_json::Value::String(s.to_string()))
+            .unwrap_or(serde_json::Value::Null);
+
+        // Method
+        let method = serde_json::Value::String(http.method.clone());
+
+        // Headers
+        let headers: serde_json::Value = if http.headers.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::json!(http.headers)
+        };
+
+        // Call sys.call with [url, body, auth_secret, method, headers]
+        let call_args = vec![
+            serde_json::Value::String(url),
+            body,
+            auth_secret,
+            method,
+            headers,
+        ];
+
+        tracing::debug!("REST dispatch for '{}': calling sys.call", path);
+        let result = compiled::dispatch("sys.call", &call_args)
+            .ok_or_else(|| RouterError::ExecError("sys.call trait not available".into()))?;
+
+        // Extract response_path if configured (e.g., "body.choices.0.message.content")
+        let result = if let Some(ref response_path) = http.response_path {
+            extract_json_path(&result, response_path)
+        } else {
+            result
+        };
+
+        Ok(TraitValue::from_json(&result))
     }
 
     /// Handle __release__, __inspect__ for a specific handle.
@@ -851,6 +944,28 @@ impl Dispatcher {
     }
 
     pub async fn shutdown(&self) {}
+}
+
+// ── JSON path extraction for REST traits ──
+
+/// Extract a value from nested JSON using a dot-separated path.
+/// Supports array indexing: "choices.0.message.content"
+fn extract_json_path(value: &serde_json::Value, path: &str) -> serde_json::Value {
+    let mut current = value;
+    for segment in path.split('.') {
+        current = if let Ok(idx) = segment.parse::<usize>() {
+            match current.get(idx) {
+                Some(v) => v,
+                None => return serde_json::Value::Null,
+            }
+        } else {
+            match current.get(segment) {
+                Some(v) => v,
+                None => return serde_json::Value::Null,
+            }
+        };
+    }
+    current.clone()
 }
 
 // ── Trait dispatch entry point ──

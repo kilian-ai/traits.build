@@ -1,0 +1,30 @@
+[trait]
+description = "OpenAI Chat Completions API (REST wrapper)"
+version = "v250614"
+author = "system"
+tags = ["llm", "openai", "rest", "ai"]
+
+[trait.http]
+method = "POST"
+url = "https://api.openai.com/v1/chat/completions"
+auth_secret = "openai_api_key"
+body = '{"model": "{{model}}", "messages": [{"role": "user", "content": "{{prompt}}"}]}'
+response_path = "body.choices.0.message.content"
+
+[trait.http.defaults]
+model = "gpt-4o-mini"
+
+[signature]
+params = [
+  { name = "prompt", type = "string", description = "User message to send to the model", required = true },
+  { name = "model", type = "string", description = "OpenAI model (default: gpt-4o-mini)", optional = true },
+]
+
+[signature.returns]
+type = "string"
+description = "Assistant response text"
+
+[implementation]
+language = "rust"
+source = "rest"
+entry = "openai"

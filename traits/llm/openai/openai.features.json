@@ -1,0 +1,39 @@
+{
+  "trait": "llm.openai",
+  "features": [
+    {
+      "name": "Chat completion with prompt",
+      "description": "Send a prompt to OpenAI and get a response",
+      "tests": [
+        {
+          "name": "returns string response",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/llm/openai",
+          "body": { "args": ["Say hello in exactly one word"] },
+          "expect": {
+            "status": 200,
+            "json_path": "$.result"
+          },
+          "requires_secret": "openai_api_key"
+        }
+      ]
+    },
+    {
+      "name": "Missing prompt returns error",
+      "description": "Calling without a prompt should fail with arg count error",
+      "tests": [
+        {
+          "name": "error on missing prompt",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/llm/openai",
+          "body": { "args": [] },
+          "expect": {
+            "status": 400
+          }
+        }
+      ]
+    }
+  ]
+}

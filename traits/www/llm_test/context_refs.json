@@ -1,0 +1,11 @@
+{
+  "description": "Reference files loaded as LLM context. Paths relative to project root.",
+  "files": [
+    "docs/intro.md",
+    "docs/architecture.md",
+    "docs/trait-definition.md",
+    "docs/rest-api.md",
+    "docs/type-system.md",
+    "docs/creating-traits.md"
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "features": [
+    {
+      "name": "missing prompt returns error",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["\"ok\":false", "prompt is required"] }
+        }
+      ]
+    },
+    {
+      "name": "empty prompt returns error",
+      "examples": [
+        {
+          "input": [""],
+          "output": { "contains": ["\"ok\":false", "prompt is required"] }
+        }
+      ]
+    },
+    {
+      "name": "unknown provider returns error",
+      "examples": [
+        {
+          "input": ["hello", "badprovider"],
+          "output": { "contains": ["\"ok\":false", "Unknown provider: badprovider"] }
+        }
+      ]
+    },
+    {
+      "name": "openai call returns structured response",
+      "examples": [
+        {
+          "input": ["Say only the word 'pong'. Nothing else.", "openai", "gpt-4.1-nano"],
+          "output": { "contains": ["\"ok\":true", "\"provider\":\"openai\""] }
+        }
+      ]
+    },
+    {
+      "name": "local with no server returns error gracefully",
+      "examples": [
+        {
+          "input": ["hello", "local", "default", null, "http://127.0.0.1:59999"],
+          "output": { "contains": ["\"ok\":false"] }
+        }
+      ]
+    }
+  ]
+}

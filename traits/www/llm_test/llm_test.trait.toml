@@ -1,0 +1,21 @@
+[trait]
+description = "LLM test page — chat UI with provider/model selection and context file loading"
+version = "v260323.165800"
+checksum = "936efd4ef3e37b981d10efdaa124a2e1c1ccf63dfc0111e7215447aecda682b3"
+epoch = 0
+author = "system"
+tags = ["www", "llm", "chat", "test"]
+provides = ["www/webpage"]
+auth = "basic"
+
+[signature]
+params = []
+
+[signature.returns]
+type = "string"
+description = "HTML chat page"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "llm_test"

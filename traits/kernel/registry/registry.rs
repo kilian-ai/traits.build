@@ -137,18 +137,24 @@ struct CliMapToml {
 #[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct HttpTraitConfig {
     #[serde(default = "default_http_method")]
-    method: String,
-    url: String,
+    pub method: String,
+    pub url: String,
     #[serde(default = "default_http_response")]
-    response: String,
+    pub response: String,
     #[serde(default)]
-    timeout_ms: Option<u64>,
+    pub timeout_ms: Option<u64>,
     #[serde(default)]
-    headers: HashMap<String, String>,
+    pub headers: HashMap<String, String>,
     #[serde(default)]
-    query: HashMap<String, String>,
+    pub query: HashMap<String, String>,
     #[serde(default)]
-    body: Option<String>,
+    pub body: Option<String>,
+    #[serde(default)]
+    pub auth_secret: Option<String>,
+    #[serde(default)]
+    pub response_path: Option<String>,
+    #[serde(default)]
+    pub defaults: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -442,7 +448,11 @@ impl Registry {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let impl_toml = toml.implementation.as_ref();
         let cli_map = toml.cli_map.as_ref();
-        let language = if let Some(imp) = impl_toml {
+        let is_rest = impl_toml.map(|i| i.source == "rest").unwrap_or(false)
+            || toml.trait_def.http.is_some();
+        let language = if is_rest {
+            Language::Rust
+        } else if let Some(imp) = impl_toml {
             parse_language(&imp.language)
                 .ok_or_else(|| format!("Unknown language: {}", imp.language))?
         } else if toml.trait_def.command.is_some() {
@@ -490,7 +500,9 @@ impl Registry {
             return Err(format!("Duplicate trait path: {}", trait_path).into());
         }
 
-        let source_path = if let Some(imp) = impl_toml {
+        let source_path = if is_rest {
+            PathBuf::from("rest")
+        } else if let Some(imp) = impl_toml {
             toml_path.parent()
                 .unwrap_or(Path::new("."))
                 .join(&imp.source)
@@ -502,7 +514,9 @@ impl Registry {
             PathBuf::new()
         };
 
-        let entry_name = if let Some(imp) = impl_toml {
+        let entry_name = if is_rest {
+            "rest".to_string()
+        } else if let Some(imp) = impl_toml {
             if imp.entry.is_empty() {
                 trait_path.split('.').last().unwrap_or("main").to_string()
             } else {

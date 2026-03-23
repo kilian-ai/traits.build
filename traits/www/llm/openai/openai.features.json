@@ -1,0 +1,22 @@
+{
+  "trait": "www.llm.openai",
+  "features": [
+    {
+      "name": "Serves HTML page",
+      "description": "Returns the LLM chat UI HTML page",
+      "tests": [
+        {
+          "name": "returns HTML",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/www/llm/openai",
+          "body": { "args": [] },
+          "expect": {
+            "status": 200,
+            "contains": "LLM Chat"
+          }
+        }
+      ]
+    }
+  ]
+}

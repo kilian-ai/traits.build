@@ -446,6 +446,7 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
         };
 
         let mut is_builtin = false;
+        let mut is_rest = false;
         let mut is_background = false;
         let mut is_not_callable = false;
         let mut entry_name = String::new();
@@ -454,6 +455,9 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
             let trimmed = line.trim();
             if trimmed.starts_with("source") && (trimmed.contains("\"builtin\"") || trimmed.contains("\"kernel\"")) {
                 is_builtin = true;
+            }
+            if trimmed.starts_with("source") && trimmed.contains("\"rest\"") {
+                is_rest = true;
             }
             if trimmed.starts_with("callable") && trimmed.contains("false") {
                 is_not_callable = true;
@@ -467,6 +471,32 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
                     entry_name = val.trim().trim_matches('"').to_string();
                 }
             }
+        }
+
+        // REST traits: register in entries (for registry) but no compiled module needed
+        if is_rest {
+            let rel_path = path.strip_prefix(manifest_dir)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let trait_path = path.strip_prefix(traits_dir)
+                .ok()
+                .and_then(|p| p.to_str())
+                .and_then(|s| s.strip_suffix(".trait.toml")
+                    .or_else(|| s.strip_suffix(".strait.toml")))
+                .map(|s| {
+                    let result = s.replace('/', ".").replace('\\', ".");
+                    let parts: Vec<&str> = result.split('.').collect();
+                    if parts.len() >= 2 && parts[parts.len() - 1] == parts[parts.len() - 2] {
+                        parts[..parts.len() - 1].join(".")
+                    } else {
+                        result
+                    }
+                });
+            if let Some(tp) = trait_path {
+                entries.push((tp, rel_path));
+            }
+            continue;
         }
 
         if is_builtin {

@@ -1,0 +1,46 @@
+[trait]
+description = "Unified LLM inference — routes to OpenAI API or a local model server (wgml, ollama, llama.cpp)"
+version = "v260323.165800"
+checksum = "458c3ab6731060f51a11426e7146459c36f5251a1e9ff435fe90756bf4e48a00"
+epoch = 0
+author = "system"
+tags = ["system", "llm", "inference", "openai", "wgml"]
+
+[[signature.params]]
+name = "prompt"
+type = "string"
+description = "User message / prompt text"
+required = true
+
+[[signature.params]]
+name = "provider"
+type = "string"
+description = "Backend: 'openai' (default) or 'local'"
+required = false
+
+[[signature.params]]
+name = "model"
+type = "string"
+description = "Model name (default: gpt-4.1-nano for openai, or model loaded on local server)"
+required = false
+
+[[signature.params]]
+name = "context"
+type = "string"
+description = "System message / context to prepend (e.g. contents of reference .md files)"
+required = false
+
+[[signature.params]]
+name = "local_url"
+type = "string"
+description = "Local inference server base URL (default: http://127.0.0.1:8080)"
+required = false
+
+[signature.returns]
+type = "object"
+description = "{ ok, provider, model, content, usage? }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "llm"

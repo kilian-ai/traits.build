@@ -349,8 +349,8 @@ fn base64_decode(input: &str) -> Option<String> {
 async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
     let url_path = req.path();
 
-    // Protect /admin paths with HTTP Basic Auth
-    if url_path.starts_with("/admin") {
+    // Protect /admin and /llm-test paths with HTTP Basic Auth
+    if url_path.starts_with("/admin") || url_path.starts_with("/llm-test") {
         if let Err(resp) = check_basic_auth(&req) {
             return resp;
         }

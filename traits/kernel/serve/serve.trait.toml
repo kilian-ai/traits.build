@@ -1,8 +1,8 @@
 [trait]
 description = "Start the HTTP API server"
-version = "v260323.133432"
+version = "v260323.165800"
 epoch = 0
-checksum = "c23621afb42f649125ba872bc7b11ee4050149e49d76f995a767f259921c3f51"
+checksum = "c261103492aae8c7626b743bbdaa030aeab0f1ed670acb21cc80e2fd0c33ae79"
 author = "system"
 tags = ["system", "server"]
 background = true
@@ -14,6 +14,7 @@ provides = ["kernel/serve"]
 "/admin" = "www/webpage"
 "/docs" = "www/webpage"
 "/docs/api" = "www/webpage"
+"/llm-openai" = "www/webpage"
 dispatcher = "kernel/dispatcher"
 secrets = "sys/secrets"
 
@@ -23,6 +24,7 @@ secrets = "sys/secrets"
 "/admin" = "www.admin"
 "/docs" = "www.docs"
 "/docs/api" = "www.docs.api"
+"/llm-openai" = "www.llm.openai"
 dispatcher = "kernel.dispatcher"
 secrets = "sys.secrets"
 

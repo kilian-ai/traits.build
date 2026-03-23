@@ -1,0 +1,22 @@
+{
+  "features": [
+    {
+      "name": "returns HTML page",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["<!DOCTYPE html>"] }
+        }
+      ]
+    },
+    {
+      "name": "contains chat area and provider dropdown",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["chatArea", "openai", "ctxToggle"] }
+        }
+      ]
+    }
+  ]
+}
