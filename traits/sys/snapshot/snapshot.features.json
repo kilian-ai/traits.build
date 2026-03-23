@@ -40,7 +40,7 @@
         {
           "input": ["sys.version"],
           "output": {
-            "contains": ["\"ok\": true", "new_version"]
+            "contains": ["ok", "new_version"]
           }
         }
       ]

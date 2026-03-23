@@ -28,9 +28,9 @@
       ],
       "examples": [
         {
-          "input": ["sys.checksum", "hash", "hello"],
+          "input": [],
           "output": {
-            "contains": ["checksum", "ok"]
+            "contains": ["dispatch_layers"]
           }
         }
       ]
@@ -108,22 +108,22 @@
       ]
     },
     {
-      "name": "Meta-dispatch via sys.call",
-      "description": "Dispatcher handles indirect dispatch (call → call) through sys.call trait",
+      "name": "Meta-dispatch via kernel.call",
+      "description": "Dispatcher handles indirect dispatch (call → call) through kernel.call trait",
       "tests": [
         {
-          "name": "sys.call dispatches to another trait",
+          "name": "kernel.call dispatches to another trait",
           "type": "command",
-          "command": "./target/release/traits call sys.call sys.version",
+          "command": "./target/release/traits call kernel.call sys.version",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "version" }
           ]
         },
         {
-          "name": "sys.call returns not-found for missing trait",
+          "name": "kernel.call returns not-found for missing trait",
           "type": "command",
-          "command": "./target/release/traits call sys.call nonexistent.trait",
+          "command": "./target/release/traits call kernel.call nonexistent.trait",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "not found" }

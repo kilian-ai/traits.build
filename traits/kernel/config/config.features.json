@@ -29,7 +29,7 @@
         {
           "input": [],
           "output": {
-            "contains": ["version"]
+            "contains": ["port"]
           }
         }
       ]
@@ -87,7 +87,7 @@
         {
           "name": "cargo test config passes",
           "type": "command",
-          "command": "cd \"$PWD\" && cargo test --lib -- config::tests 2>&1 | tail -5",
+          "command": "cd \"$PWD\" && cargo test --bin traits -- config::tests 2>&1 | tail -5",
           "checks": [
             { "type": "contains", "expected": "test result: ok" }
           ]

@@ -49,9 +49,9 @@
           ]
         },
         {
-          "name": "sys.call is always available",
+          "name": "kernel.call is always available",
           "type": "command",
-          "command": "./target/release/traits call sys.call sys.version",
+          "command": "./target/release/traits call kernel.call sys.version",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "version" }
@@ -66,7 +66,7 @@
         {
           "name": "unit tests cover primitives, generics, and optionals",
           "type": "command",
-          "command": "cd \"$PWD\" && cargo test --lib -- registry::tests::test_parse_type 2>&1 | tail -5",
+          "command": "cd \"$PWD\" && cargo test --bin traits -- registry::tests::test_parse_type 2>&1 | tail -5",
           "checks": [
             { "type": "contains", "expected": "test result: ok" }
           ]
@@ -80,7 +80,7 @@
         {
           "name": "unit tests cover all languages and unknown input",
           "type": "command",
-          "command": "cd \"$PWD\" && cargo test --lib -- registry::tests::test_parse_language 2>&1 | tail -5",
+          "command": "cd \"$PWD\" && cargo test --bin traits -- registry::tests::test_parse_language 2>&1 | tail -5",
           "checks": [
             { "type": "contains", "expected": "test result: ok" }
           ]
@@ -94,7 +94,7 @@
         {
           "name": "unit test for empty registry",
           "type": "command",
-          "command": "cd \"$PWD\" && cargo test --lib -- registry::tests::test_registry_basic 2>&1 | tail -5",
+          "command": "cd \"$PWD\" && cargo test --bin traits -- registry::tests::test_registry_basic 2>&1 | tail -5",
           "checks": [
             { "type": "contains", "expected": "test result: ok" }
           ]
@@ -166,7 +166,7 @@
         {
           "name": "sys.reload reloads without error",
           "type": "command",
-          "command": "./target/release/traits call sys.reload",
+          "command": "./target/release/traits call kernel.reload",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "ok" }

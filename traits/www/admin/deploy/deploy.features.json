@@ -19,7 +19,7 @@
         {
           "input": ["status"],
           "output": {
-            "contains": ["ok"]
+            "contains": ["FLY_API_TOKEN"]
           }
         }
       ]

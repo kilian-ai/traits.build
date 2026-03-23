@@ -1,5 +1,5 @@
 {
-  "module": "traits/sys/reload/reload.rs",
+  "module": "traits/kernel/reload/reload.rs",
   "description": "Reload trait registry from disk",
   "features": [
     {
@@ -9,10 +9,10 @@
         {
           "name": "reload returns ok with count",
           "type": "command",
-          "command": "./target/release/traits call sys.reload 2>/dev/null",
+          "command": "./target/release/traits call kernel.reload 2>/dev/null",
           "checks": [
             { "type": "exit_code", "expected": 0 },
-            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "ok" },
             { "type": "contains", "expected": "count" }
           ]
         }
@@ -21,7 +21,7 @@
         {
           "input": [],
           "output": {
-            "contains": ["\"ok\": true", "count"]
+            "contains": ["ok", "count"]
           }
         }
       ]

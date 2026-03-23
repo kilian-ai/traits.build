@@ -1,5 +1,5 @@
 {
-  "trait": "sys.call",
+  "trait": "kernel.call",
   "description": "Meta-dispatch trait — calls another trait by dot-notation path",
   "features": [
     {
@@ -9,7 +9,7 @@
         {
           "name": "call sys.version with no args",
           "type": "command",
-          "command": "./target/release/traits call sys.call sys.version",
+          "command": "./target/release/traits call kernel.call sys.version",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "version" }
@@ -18,7 +18,7 @@
         {
           "name": "call sys.checksum with forwarded args",
           "type": "command",
-          "command": "./target/release/traits call sys.call sys.checksum '[\"hash\",\"hello\"]'",
+          "command": "./target/release/traits call kernel.call sys.checksum '[\"hash\",\"hello\"]'",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "checksum" },
@@ -42,7 +42,7 @@
         {
           "name": "empty string trait_path",
           "type": "command",
-          "command": "./target/release/traits call sys.call ''",
+          "command": "./target/release/traits call kernel.call ''",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "trait_path is required" }
@@ -51,7 +51,7 @@
         {
           "name": "no args at all triggers usage",
           "type": "command",
-          "command": "./target/release/traits call sys.call",
+          "command": "./target/release/traits call kernel.call",
           "checks": [
             { "type": "exit_code", "expected": 1 },
             { "type": "contains", "expected": "trait_path" }
@@ -66,7 +66,7 @@
         {
           "name": "nonexistent trait path",
           "type": "command",
-          "command": "./target/release/traits call sys.call nonexistent.trait",
+          "command": "./target/release/traits call kernel.call nonexistent.trait",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "not found" }
@@ -75,7 +75,7 @@
         {
           "name": "error includes the trait path",
           "type": "command",
-          "command": "./target/release/traits call sys.call nonexistent.trait",
+          "command": "./target/release/traits call kernel.call nonexistent.trait",
           "checks": [
             { "type": "contains", "expected": "nonexistent.trait" }
           ]
@@ -89,10 +89,10 @@
         {
           "name": "call sys.list with no forwarded args",
           "type": "command",
-          "command": "./target/release/traits call sys.call sys.list",
+          "command": "./target/release/traits call kernel.call sys.list",
           "checks": [
             { "type": "exit_code", "expected": 0 },
-            { "type": "contains", "expected": "sys.call" }
+            { "type": "contains", "expected": "kernel.call" }
           ]
         }
       ]

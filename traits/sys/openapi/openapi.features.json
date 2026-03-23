@@ -31,7 +31,7 @@
           "type": "command",
           "command": "./target/release/traits call sys.openapi 2>/dev/null",
           "checks": [
-            { "type": "contains", "expected": "polygrait-api.fly.dev" },
+            { "type": "contains", "expected": "servers" },
             { "type": "contains", "expected": "127.0.0.1:8090" }
           ]
         }

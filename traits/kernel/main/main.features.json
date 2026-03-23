@@ -20,7 +20,7 @@
         {
           "input": [],
           "output": {
-            "contains": ["registry_initialized"]
+            "contains": ["bootstrapped"]
           }
         }
       ]

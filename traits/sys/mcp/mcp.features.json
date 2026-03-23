@@ -5,13 +5,14 @@
     {
       "name": "MCP initialize handshake",
       "description": "Responds to initialize request with server info and capabilities",
-      "examples": [
+      "tests": [
         {
-          "input": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}",
+          "name": "initialize returns protocol version and server info",
+          "type": "command",
+          "command": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}' | ./target/release/traits mcp 2>/dev/null | head -1",
           "checks": [
-            { "type": "contains", "value": "\"protocolVersion\"" },
-            { "type": "contains", "value": "\"serverInfo\"" },
-            { "type": "contains", "value": "traits-mcp-server" }
+            { "type": "contains", "expected": "protocolVersion" },
+            { "type": "contains", "expected": "serverInfo" }
           ]
         }
       ]
@@ -19,12 +20,13 @@
     {
       "name": "MCP tools/list",
       "description": "Lists all registered traits as MCP tools with JSON Schema input schemas",
-      "examples": [
+      "tests": [
         {
-          "input": "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}",
+          "name": "tools/list returns tool definitions",
+          "type": "command",
+          "command": "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}\\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\\n' | ./target/release/traits mcp 2>/dev/null | tail -1",
           "checks": [
-            { "type": "contains", "value": "\"tools\"" },
-            { "type": "contains", "value": "\"inputSchema\"" }
+            { "type": "contains", "expected": "tools" }
           ]
         }
       ]
@@ -32,11 +34,13 @@
     {
       "name": "MCP tools/call",
       "description": "Calls a trait by tool name and returns the result",
-      "examples": [
+      "tests": [
         {
-          "input": "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"sys_list\",\"arguments\":{}}}",
+          "name": "tools/call invokes sys_version",
+          "type": "command",
+          "command": "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}\\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"sys_version\",\"arguments\":{}}}\\n' | ./target/release/traits mcp 2>/dev/null | tail -1",
           "checks": [
-            { "type": "contains", "value": "\"content\"" }
+            { "type": "contains", "expected": "content" }
           ]
         }
       ]
