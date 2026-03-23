@@ -169,7 +169,7 @@ const ADMIN_HTML: &str = r##"<!DOCTYPE html>
 
   <div class="card">
     <h2>Deploy Config</h2>
-    <p class="note">Edit deploy settings. Saved to <code>traits.toml</code> — changes take effect after server restart.</p>
+    <p class="note">Edit deploy settings. Persisted across deploys — changes take effect after server restart.</p>
     <table style="margin-top: 1rem;">
       <tr>
         <td>Fly App</td>

@@ -5,6 +5,8 @@
   TRAITS_PORT = "8090"
   TRAITS_BIND = "0.0.0.0"
   RUST_LOG = "info"
+  FLY_APP = "polygrait-api"
+  FLY_REGION = "iad"
 
 [http_service]
   internal_port = 8090

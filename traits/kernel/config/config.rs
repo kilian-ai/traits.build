@@ -105,7 +105,21 @@ impl Config {
                     config.traits.timeout = t;
                 }
             }
-            // Deploy overrides
+            // Deploy overrides: persistent volume → env vars
+            // Check /data/deploy.toml first (Fly.io persistent volume)
+            if let Ok(deploy_content) = std::fs::read_to_string("/data/deploy.toml") {
+                if let Ok(overlay) = toml::from_str::<toml::Value>(&deploy_content) {
+                    if let Some(deploy) = overlay.get("deploy") {
+                        if let Some(app) = deploy.get("fly_app").and_then(|v| v.as_str()) {
+                            if !app.is_empty() { config.deploy.fly_app = app.to_string(); }
+                        }
+                        if let Some(region) = deploy.get("fly_region").and_then(|v| v.as_str()) {
+                            if !region.is_empty() { config.deploy.fly_region = region.to_string(); }
+                        }
+                    }
+                }
+            }
+            // Env vars override everything
             if let Ok(app) = std::env::var("FLY_APP") {
                 if !app.is_empty() {
                     config.deploy.fly_app = app;
