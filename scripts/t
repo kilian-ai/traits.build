@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Launcher script for traits server with deploy env vars.
+# This file is template and can be copied to root folder as option to store secrets. Not so safe.
+# Usage: ./t serve -p 8090   or   ./t list   etc.
+
+export FLY_APP=""
+export FLY_REGION=""
+export FLY_ACCESS_TOKEN="FlyV1 fm2_"
+export ADMIN_PASSWORD="change-me"
+
+exec ./target/release/traits "$@"
