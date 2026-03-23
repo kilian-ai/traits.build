@@ -122,6 +122,23 @@ const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
   .webgpu-badge.not-supported { background: #2a0a0a; border-color: #4a1a1a; color: #f87171; }
   .webgpu-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; }
   .webgpu-badge.not-supported .dot { background: #f87171; }
+
+  /* Cached models card */
+  .cache-card { display: none; margin: 0 2rem; border: 1px solid #1a1a1a; border-radius: 8px; background: #111; overflow: hidden; }
+  .cache-card.active { display: block; }
+  .cache-card-header { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 1rem; background: #151515; border-bottom: 1px solid #1a1a1a; }
+  .cache-card-header h3 { font-size: 0.8rem; font-weight: 500; color: #ccc; display: flex; align-items: center; gap: 0.5rem; }
+  .cache-card-header .storage-info { font-size: 0.7rem; color: #666; }
+  .persist-badge { font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 3px; border: 1px solid #1a4a1a; background: #0a2a0a; color: #4ade80; cursor: default; }
+  .persist-badge.temp { border-color: #4a3a1a; background: #2a1a0a; color: #fbbf24; cursor: pointer; }
+  .cache-models { padding: 0.25rem 0; }
+  .cache-model-row { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 1rem; font-size: 0.78rem; border-bottom: 1px solid #1a1a1a; }
+  .cache-model-row:last-child { border-bottom: none; }
+  .cache-model-name { color: #ccc; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cache-model-size { color: #666; font-size: 0.7rem; margin: 0 0.75rem; white-space: nowrap; }
+  .cache-model-delete { background: none; border: 1px solid #333; color: #888; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; cursor: pointer; transition: all 0.15s; }
+  .cache-model-delete:hover { border-color: #991b1b; color: #f87171; background: #1a0a0a; }
+  .cache-empty { padding: 0.75rem 1rem; font-size: 0.78rem; color: #555; text-align: center; }
 </style>
 </head>
 <body>
@@ -164,6 +181,16 @@ const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
 <div class="progress-bar" id="progressBar">
   <div class="progress-label" id="progressLabel">Loading model...</div>
   <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+</div>
+
+<div class="cache-card" id="cacheCard">
+  <div class="cache-card-header">
+    <h3>&#x1F4BE; Cached Models <span id="persistBadge" class="persist-badge temp" onclick="requestPersist()" title="Click to request persistent storage">temporary</span></h3>
+    <span class="storage-info" id="storageInfo"></span>
+  </div>
+  <div class="cache-models" id="cacheModels">
+    <div class="cache-empty">Scanning cache...</div>
+  </div>
 </div>
 
 <div class="chat-area" id="chatArea">
@@ -219,6 +246,7 @@ let webgpuEngine = null;
 let webgpuReady = false;
 let webgpuLoadedModel = null;
 let webgpuSupported = false;
+let cachedModelSet = new Set();
 
 // Check WebGPU support on page load
 async function checkWebGPU() {
@@ -232,6 +260,182 @@ async function checkWebGPU() {
   }
 }
 checkWebGPU();
+
+// ── Persistent storage & cache management ──
+async function requestPersist() {
+  if (navigator.storage && navigator.storage.persist) {
+    const granted = await navigator.storage.persist();
+    updatePersistBadge(granted);
+    if (granted) showToast('Storage set to persistent — cached models will not be evicted');
+  }
+}
+
+async function updatePersistBadge(persisted) {
+  const badge = document.getElementById('persistBadge');
+  if (persisted) {
+    badge.textContent = 'persistent';
+    badge.className = 'persist-badge';
+    badge.title = 'Storage is persistent — models won\u0027t be evicted';
+    badge.style.cursor = 'default';
+  } else {
+    badge.textContent = 'temporary — click to persist';
+    badge.className = 'persist-badge temp';
+    badge.title = 'Click to request persistent storage';
+  }
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+async function scanCachedModels() {
+  const modelMap = new Map(); // modelId -> totalSize
+  try {
+    const cacheNames = await caches.keys();
+    for (const name of cacheNames) {
+      // WebLLM uses cache names containing 'webllm' or stores under model URLs
+      const cache = await caches.open(name);
+      const keys = await cache.keys();
+      for (const req of keys) {
+        const url = req.url || req;
+        // Match HuggingFace model URLs or WebLLM patterns
+        // Typical: https://huggingface.co/mlc-ai/SmolLM2-135M-Instruct-q4f16_1-MLC/resolve/main/...
+        const hfMatch = url.match(/huggingface\.co\/mlc-ai\/([^\/]+)\//);
+        if (hfMatch) {
+          const modelId = hfMatch[1];
+          const resp = await cache.match(req);
+          let size = 0;
+          if (resp) {
+            const cl = resp.headers.get('content-length');
+            if (cl) {
+              size = parseInt(cl, 10);
+            } else {
+              // Try reading the body to get size (clone to avoid consuming)
+              try {
+                const blob = await resp.clone().blob();
+                size = blob.size;
+              } catch (e) { /* ignore */ }
+            }
+          }
+          modelMap.set(modelId, (modelMap.get(modelId) || 0) + size);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Cache scan failed:', e);
+  }
+  return modelMap;
+}
+
+async function deleteCachedModel(modelId) {
+  try {
+    const cacheNames = await caches.keys();
+    let deleted = 0;
+    for (const name of cacheNames) {
+      const cache = await caches.open(name);
+      const keys = await cache.keys();
+      for (const req of keys) {
+        const url = req.url || req;
+        if (url.includes('/' + modelId + '/')) {
+          await cache.delete(req);
+          deleted++;
+        }
+      }
+    }
+    showToast('Deleted ' + modelId + ' (' + deleted + ' files)');
+    // If the deleted model was loaded, reset engine
+    if (webgpuLoadedModel === modelId) {
+      webgpuLoadedModel = null;
+      webgpuReady = false;
+      updateWebGPUBadge('loading', 'Not loaded');
+    }
+    await refreshCacheCard();
+  } catch (e) {
+    showToast('Delete failed: ' + e.message);
+  }
+}
+
+async function refreshCacheCard() {
+  const card = document.getElementById('cacheCard');
+  const prov = document.getElementById('provider').value;
+  if (prov !== 'webgpu') {
+    card.classList.remove('active');
+    return;
+  }
+  card.classList.add('active');
+
+  // Check persistence status
+  if (navigator.storage && navigator.storage.persisted) {
+    const persisted = await navigator.storage.persisted();
+    updatePersistBadge(persisted);
+    // Auto-request persistence on first visit
+    if (!persisted && navigator.storage.persist) {
+      const granted = await navigator.storage.persist();
+      updatePersistBadge(granted);
+    }
+  }
+
+  // Storage estimate
+  const infoEl = document.getElementById('storageInfo');
+  if (navigator.storage && navigator.storage.estimate) {
+    const est = await navigator.storage.estimate();
+    infoEl.textContent = formatBytes(est.usage || 0) + ' / ' + formatBytes(est.quota || 0);
+  }
+
+  // Scan cached models
+  const modelMap = await scanCachedModels();
+  cachedModelSet = new Set(modelMap.keys());
+  const container = document.getElementById('cacheModels');
+
+  if (modelMap.size === 0) {
+    container.innerHTML = '<div class="cache-empty">No cached models — download one by sending a message</div>';
+  } else {
+    container.innerHTML = '';
+    for (const [modelId, size] of modelMap) {
+      const row = document.createElement('div');
+      row.className = 'cache-model-row';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'cache-model-name';
+      // Find friendly label
+      const known = MODELS.webgpu.find(m => m.value === modelId);
+      nameSpan.textContent = known ? known.label : modelId;
+      nameSpan.title = modelId;
+
+      const sizeSpan = document.createElement('span');
+      sizeSpan.className = 'cache-model-size';
+      sizeSpan.textContent = formatBytes(size);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'cache-model-delete';
+      delBtn.textContent = 'Delete';
+      delBtn.onclick = () => deleteCachedModel(modelId);
+
+      row.appendChild(nameSpan);
+      row.appendChild(sizeSpan);
+      row.appendChild(delBtn);
+      container.appendChild(row);
+    }
+  }
+
+  // Update model dropdown to show cached status
+  updateModelDropdownCacheStatus();
+}
+
+function updateModelDropdownCacheStatus() {
+  const prov = document.getElementById('provider').value;
+  if (prov !== 'webgpu') return;
+  const modelSel = document.getElementById('model');
+  for (const opt of modelSel.options) {
+    const known = MODELS.webgpu.find(m => m.value === opt.value);
+    const base = known ? known.label : opt.value;
+    opt.textContent = cachedModelSet.has(opt.value) ? '\u2713 ' + base : base;
+  }
+}
 
 function showProgress(text, pct) {
   const bar = document.getElementById('progressBar');
@@ -319,6 +523,8 @@ async function ensureWebGPUEngine(modelId) {
     webgpuReady = true;
     hideProgress();
     updateWebGPUBadge('ok', 'Ready');
+    // Refresh cache card after model download/load
+    refreshCacheCard();
     return true;
   } catch (e) {
     hideProgress();
@@ -354,6 +560,9 @@ function onProviderChange() {
       updateWebGPUBadge('loading', 'Not loaded');
     }
   }
+
+  // Show/hide + refresh cache card
+  refreshCacheCard();
 }
 
 function onModelChange() {
@@ -589,6 +798,8 @@ window.onProviderChange = onProviderChange;
 window.onModelChange = onModelChange;
 window.handleKey = handleKey;
 window.sendMessage = sendMessage;
+window.requestPersist = requestPersist;
+window.deleteCachedModel = deleteCachedModel;
 
 // Init
 onProviderChange();

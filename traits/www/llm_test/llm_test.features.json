@@ -23,7 +23,16 @@
       "examples": [
         {
           "input": [],
-          "output": { "contains": ["webgpu", "SmolLM2", "WebGPU", "CreateMLCEngine"] }
+          "output": { "contains": ["webgpu", "SmolLM2", "WebGPU", "MLCEngine"] }
+        }
+      ]
+    },
+    {
+      "name": "contains cached models card with persistent storage",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["cacheCard", "Cached Models", "persistBadge", "scanCachedModels", "navigator.storage.persist"] }
         }
       ]
     }
