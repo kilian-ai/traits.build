@@ -44,7 +44,7 @@ if [ "${1:-}" != "--upload" ]; then
         -e CARGO_TARGET_DIR=/cargo-target \
         -w /src \
         rust:latest \
-        sh -c 'cargo build --release && cp /cargo-target/release/traits /out/traits-linux-amd64'
+        sh -c 'cargo build --release --locked && cp /cargo-target/release/traits /out/traits-linux-amd64'
 
     echo "==> Built: $(du -h "$TMP_BIN" | cut -f1)"
 fi
