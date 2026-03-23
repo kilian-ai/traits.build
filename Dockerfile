@@ -50,6 +50,7 @@ RUN chmod +x /usr/local/bin/traits
 
 # Set environment and expose port
 ENV TRAITS_PORT=8090
+ENV TRAITS_BIND=0.0.0.0
 ENV RUST_LOG=info
 EXPOSE 8090
 

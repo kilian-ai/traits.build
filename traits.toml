@@ -1,6 +1,7 @@
 [traits]
 traits_dir = "./traits"
 port = 8090
+bind = "127.0.0.1"  # use "0.0.0.0" for Docker/production (set via TRAITS_BIND env)
 timeout = 30
 
 # [deploy]

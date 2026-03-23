@@ -398,7 +398,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
 
     let state = web::Data::new(AppState { dispatcher, start_time: std::time::Instant::now() });
 
-    info!("Starting Traits server on port {} ({} page routes)", port, page_routes.len());
+    info!("Starting Traits server on {}:{} ({} page routes)", config.traits.bind, port, page_routes.len());
 
     HttpServer::new(move || {
         let cors = Cors::default()
@@ -419,7 +419,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
             .default_service(web::to(serve_page))
     })
     .workers(2)
-    .bind(format!("0.0.0.0:{}", port))?
+    .bind(format!("{}:{}", config.traits.bind, port))?
     .run()
     .await?;
 

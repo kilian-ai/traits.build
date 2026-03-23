@@ -34,6 +34,8 @@ pub struct TraitsConfig {
     pub traits_dir: String,
     #[serde(default = "default_port")]
     pub port: u16,
+    #[serde(default = "default_bind")]
+    pub bind: String,
     #[serde(default = "default_timeout")]
     pub timeout: u64,
     #[serde(default = "default_bindings_file")]
@@ -65,6 +67,10 @@ fn default_port() -> u16 {
     8080
 }
 
+fn default_bind() -> String {
+    "127.0.0.1".into()
+}
+
 fn default_timeout() -> u64 {
     30
 }
@@ -88,6 +94,11 @@ impl Config {
             }
             if let Ok(dir) = std::env::var("TRAITS_DIR") {
                 config.traits.traits_dir = dir;
+            }
+            if let Ok(bind) = std::env::var("TRAITS_BIND") {
+                if !bind.is_empty() {
+                    config.traits.bind = bind;
+                }
             }
             if let Ok(timeout) = std::env::var("TRAITS_TIMEOUT") {
                 if let Ok(t) = timeout.parse() {
@@ -113,6 +124,7 @@ impl Config {
                 traits: TraitsConfig {
                     traits_dir: default_traits_dir(),
                     port: default_port(),
+                    bind: default_bind(),
                     timeout: default_timeout(),
                     bindings_file: default_bindings_file(),
                 },
@@ -133,6 +145,7 @@ pub fn config(args: &[serde_json::Value]) -> serde_json::Value {
             "fields": {
                 "traits.traits_dir": "string — directory containing trait definitions",
                 "traits.port": "int — server listen port",
+                "traits.bind": "string — bind address (default: 127.0.0.1)",
                 "traits.timeout": "int — default call timeout in seconds",
                 "traits.bindings_file": "string — path to bindings.cl",
                 "workers": "map — per-language worker configs"
@@ -144,6 +157,7 @@ pub fn config(args: &[serde_json::Value]) -> serde_json::Value {
         Some(cfg) => serde_json::json!({
             "traits_dir": cfg.traits.traits_dir,
             "port": cfg.traits.port,
+            "bind": cfg.traits.bind,
             "timeout": cfg.traits.timeout,
             "bindings_file": cfg.traits.bindings_file,
             "deploy": {
