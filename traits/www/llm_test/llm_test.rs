@@ -70,6 +70,13 @@ const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
   .toggle input:checked + .slider { background: #1d4ed8; }
   .toggle input:checked + .slider:before { transform: translateX(16px); background: white; }
 
+  /* Progress bar for WebGPU model loading */
+  .progress-bar { display: none; padding: 0.5rem 2rem; border-bottom: 1px solid #1a1a1a; }
+  .progress-bar.active { display: block; }
+  .progress-label { font-size: 0.75rem; color: #888; margin-bottom: 0.35rem; }
+  .progress-track { height: 4px; background: #222; border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #1d4ed8, #4ade80); border-radius: 2px; width: 0%; transition: width 0.3s ease; }
+
   /* Chat area */
   .chat-area { flex: 1; overflow-y: auto; padding: 1.5rem 2rem; display: flex; flex-direction: column; gap: 1rem; max-width: 900px; width: 100%; margin: 0 auto; }
   .message { display: flex; gap: 0.75rem; animation: fadeIn 0.2s ease; }
@@ -109,13 +116,19 @@ const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
 
   /* Error toast */
   .toast { position: fixed; bottom: 5rem; left: 50%; transform: translateX(-50%); background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; padding: 0.75rem 1.25rem; border-radius: 8px; font-size: 0.85rem; z-index: 100; animation: fadeIn 0.2s ease; }
+
+  /* WebGPU badge */
+  .webgpu-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: #0a2a0a; border: 1px solid #1a4a1a; color: #4ade80; margin-left: 0.5rem; }
+  .webgpu-badge.not-supported { background: #2a0a0a; border-color: #4a1a1a; color: #f87171; }
+  .webgpu-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; }
+  .webgpu-badge.not-supported .dot { background: #f87171; }
 </style>
 </head>
 <body>
 
 <div class="header">
   <h1>traits.build <span>llm test</span></h1>
-  <p class="subtitle">Chat with LLM models — OpenAI API or local inference server</p>
+  <p class="subtitle">Chat with LLM models — OpenAI API, local server, or in-browser WebGPU inference</p>
 </div>
 
 <div class="controls">
@@ -123,16 +136,21 @@ const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
     <label>Provider</label>
     <select id="provider" onchange="onProviderChange()">
       <option value="openai">OpenAI</option>
-      <option value="local">Local (wgml / ollama)</option>
+      <option value="webgpu">Browser (WebGPU)</option>
+      <option value="local">Local Server (ollama, etc.)</option>
     </select>
   </div>
   <div class="control-group">
     <label>Model</label>
-    <select id="model"></select>
+    <select id="model" onchange="onModelChange()"></select>
   </div>
   <div class="control-group" id="localUrlGroup" style="display:none;">
     <label>Local Server URL</label>
     <input type="text" id="localUrl" value="http://127.0.0.1:8080" style="padding:0.5rem 0.75rem; border-radius:6px; border:1px solid #333; background:#151515; color:#e0e0e0; font-size:0.85rem; width:220px;">
+  </div>
+  <div class="control-group" id="webgpuStatus" style="display:none;">
+    <label>WebGPU Engine</label>
+    <span id="webgpuBadge" class="webgpu-badge"><span class="dot"></span>Checking...</span>
   </div>
   <div class="context-toggle">
     <label for="ctxToggle">Include docs context</label>
@@ -141,6 +159,11 @@ const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
       <span class="slider"></span>
     </div>
   </div>
+</div>
+
+<div class="progress-bar" id="progressBar">
+  <div class="progress-label" id="progressLabel">Loading model...</div>
+  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
 </div>
 
 <div class="chat-area" id="chatArea">
@@ -158,7 +181,7 @@ const LLM_TEST_HTML: &str = r##"<!DOCTYPE html>
   <button class="send" id="sendBtn" onclick="sendMessage()">Send</button>
 </div>
 
-<script>
+<script type="module">
 const CONTEXT = {{CONTEXT_JSON}};
 
 const MODELS = {
@@ -168,6 +191,15 @@ const MODELS = {
     { value: 'gpt-4.1',      label: 'GPT-4.1' },
     { value: 'gpt-4o',       label: 'GPT-4o' },
     { value: 'o3-mini',      label: 'o3-mini' },
+  ],
+  webgpu: [
+    { value: 'SmolLM2-135M-Instruct-q4f16_1-MLC',   label: 'SmolLM2 135M (tiny, fast)' },
+    { value: 'SmolLM2-360M-Instruct-q4f16_1-MLC',   label: 'SmolLM2 360M (small)' },
+    { value: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',   label: 'Qwen2.5 0.5B' },
+    { value: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC',   label: 'Qwen2.5 1.5B' },
+    { value: 'Llama-3.2-1B-Instruct-q4f16_1-MLC',    label: 'Llama 3.2 1B' },
+    { value: 'Phi-3.5-mini-instruct-q4f16_1-MLC',    label: 'Phi 3.5 Mini (3.8B)' },
+    { value: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',    label: 'Llama 3.2 3B' },
   ],
   local: [
     { value: 'default',  label: 'Default (server model)' },
@@ -181,17 +213,156 @@ const MODELS = {
 let messages = [];
 let sending = false;
 
+// ── WebGPU / WebLLM state ──
+let webllm = null;
+let webgpuEngine = null;
+let webgpuReady = false;
+let webgpuLoadedModel = null;
+let webgpuSupported = false;
+
+// Check WebGPU support on page load
+async function checkWebGPU() {
+  if (navigator.gpu) {
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      webgpuSupported = !!adapter;
+    } catch (e) {
+      webgpuSupported = false;
+    }
+  }
+}
+checkWebGPU();
+
+function showProgress(text, pct) {
+  const bar = document.getElementById('progressBar');
+  const label = document.getElementById('progressLabel');
+  const fill = document.getElementById('progressFill');
+  bar.classList.add('active');
+  label.textContent = text;
+  fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+function hideProgress() {
+  document.getElementById('progressBar').classList.remove('active');
+}
+
+function updateWebGPUBadge(status, text) {
+  const badge = document.getElementById('webgpuBadge');
+  badge.textContent = '';
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  badge.appendChild(dot);
+  badge.appendChild(document.createTextNode(text));
+  if (status === 'ok') {
+    badge.className = 'webgpu-badge';
+  } else if (status === 'error') {
+    badge.className = 'webgpu-badge not-supported';
+  } else {
+    badge.className = 'webgpu-badge';
+  }
+}
+
+async function loadWebLLM() {
+  if (webllm) return;
+  showProgress('Loading WebLLM library...', 5);
+  try {
+    webllm = await import('https://esm.run/@mlc-ai/web-llm');
+  } catch (e) {
+    hideProgress();
+    showToast('Failed to load WebLLM: ' + e.message);
+    updateWebGPUBadge('error', 'Load failed');
+    throw e;
+  }
+}
+
+async function ensureWebGPUEngine(modelId) {
+  if (!webgpuSupported) {
+    showToast('WebGPU is not supported in this browser. Use Chrome 113+ or Edge 113+.');
+    updateWebGPUBadge('error', 'Not supported');
+    return false;
+  }
+
+  await loadWebLLM();
+
+  // Already loaded with this model
+  if (webgpuEngine && webgpuLoadedModel === modelId) {
+    return true;
+  }
+
+  // Need to load or switch model
+  webgpuReady = false;
+  updateWebGPUBadge('loading', 'Loading...');
+
+  try {
+    const initProgressCallback = (report) => {
+      const pct = Math.round((report.progress || 0) * 100);
+      const text = report.text || 'Loading model...';
+      showProgress(text, pct);
+      updateWebGPUBadge('loading', pct + '%');
+    };
+
+    if (webgpuEngine) {
+      // Reload with new model
+      showProgress('Switching model to ' + modelId + '...', 0);
+      webgpuEngine.setInitProgressCallback(initProgressCallback);
+      await webgpuEngine.reload(modelId);
+    } else {
+      showProgress('Initializing WebGPU engine...', 0);
+      webgpuEngine = await webllm.CreateMLCEngine(modelId, {
+        initProgressCallback: initProgressCallback,
+      });
+    }
+
+    webgpuLoadedModel = modelId;
+    webgpuReady = true;
+    hideProgress();
+    updateWebGPUBadge('ok', 'Ready');
+    return true;
+  } catch (e) {
+    hideProgress();
+    updateWebGPUBadge('error', 'Failed');
+    showToast('WebGPU model load failed: ' + e.message);
+    return false;
+  }
+}
+
 function onProviderChange() {
   const prov = document.getElementById('provider').value;
   const modelSel = document.getElementById('model');
   const localGroup = document.getElementById('localUrlGroup');
+  const webgpuGroup = document.getElementById('webgpuStatus');
+
   localGroup.style.display = prov === 'local' ? 'flex' : 'none';
+  webgpuGroup.style.display = prov === 'webgpu' ? 'flex' : 'none';
+
   modelSel.innerHTML = '';
   for (const m of MODELS[prov] || []) {
     const opt = document.createElement('option');
     opt.value = m.value;
     opt.textContent = m.label;
     modelSel.appendChild(opt);
+  }
+
+  if (prov === 'webgpu') {
+    if (!webgpuSupported) {
+      updateWebGPUBadge('error', 'Not supported');
+    } else if (webgpuReady && webgpuLoadedModel === modelSel.value) {
+      updateWebGPUBadge('ok', 'Ready');
+    } else {
+      updateWebGPUBadge('loading', 'Not loaded');
+    }
+  }
+}
+
+function onModelChange() {
+  const prov = document.getElementById('provider').value;
+  if (prov === 'webgpu') {
+    const modelId = document.getElementById('model').value;
+    if (webgpuReady && webgpuLoadedModel === modelId) {
+      updateWebGPUBadge('ok', 'Ready');
+    } else {
+      updateWebGPUBadge('loading', 'Not loaded');
+    }
   }
 }
 
@@ -278,6 +449,101 @@ function showToast(msg) {
   setTimeout(() => toast.remove(), 5000);
 }
 
+// ── WebGPU in-browser inference ──
+async function sendWebGPU(text, modelId, useContext) {
+  const ok = await ensureWebGPUEngine(modelId);
+  if (!ok) return;
+
+  const chatMessages = [];
+  if (useContext) {
+    chatMessages.push({ role: 'system', content: CONTEXT });
+  }
+  // Include conversation history
+  for (const m of messages) {
+    chatMessages.push({ role: m.role, content: m.content });
+  }
+  chatMessages.push({ role: 'user', content: text });
+
+  // Use streaming for real-time output
+  const chunks = await webgpuEngine.chat.completions.create({
+    messages: chatMessages,
+    temperature: 0.7,
+    max_tokens: 2048,
+    stream: true,
+    stream_options: { include_usage: true },
+  });
+
+  removeTyping();
+
+  // Create assistant bubble for streaming
+  const bubble = appendMessage('assistant', '');
+  let fullContent = '';
+  let usage = null;
+
+  for await (const chunk of chunks) {
+    const delta = chunk.choices[0]?.delta?.content || '';
+    fullContent += delta;
+    bubble.childNodes[0].textContent = fullContent;
+    document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
+    if (chunk.usage) usage = chunk.usage;
+  }
+
+  // Add meta line
+  let meta = 'webgpu · ' + modelId;
+  if (usage) {
+    meta += ' · ' + (usage.prompt_tokens || 0) + '+' + (usage.completion_tokens || 0) + ' tokens';
+  }
+  const metaDiv = document.createElement('div');
+  metaDiv.className = 'meta-line';
+  metaDiv.textContent = meta;
+  bubble.appendChild(metaDiv);
+
+  messages.push({ role: 'assistant', content: fullContent });
+}
+
+// ── Server-side inference (OpenAI / Local) ──
+async function sendServer(text, provider, model, useContext, localUrl) {
+  const body = {
+    args: [
+      text,
+      provider,
+      model,
+      useContext ? CONTEXT : null,
+      provider === 'local' ? localUrl : null
+    ]
+  };
+
+  const resp = await fetch('/traits/sys/llm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  const raw = await resp.json();
+  removeTyping();
+
+  // REST API wraps trait results in { result, error }
+  if (raw.error) {
+    showToast('Error: ' + raw.error);
+    appendMessage('assistant', '\u26A0 ' + raw.error);
+  } else {
+    const data = raw.result || raw;
+    if (data.ok && data.content) {
+      let meta = data.provider + ' \u00B7 ' + data.model;
+      if (data.usage) {
+        const u = data.usage;
+        meta += ' \u00B7 ' + (u.prompt_tokens || 0) + '+' + (u.completion_tokens || 0) + ' tokens';
+      }
+      appendMessage('assistant', data.content, meta);
+      messages.push({ role: 'assistant', content: data.content });
+    } else {
+      const err = data.error || 'Unknown error';
+      showToast('Error: ' + err);
+      appendMessage('assistant', '\u26A0 ' + err);
+    }
+  }
+}
+
 async function sendMessage() {
   if (sending) return;
 
@@ -301,54 +567,26 @@ async function sendMessage() {
   showTyping();
 
   try {
-    const body = {
-      args: [
-        text,
-        provider,
-        model,
-        useContext ? CONTEXT : null,
-        provider === 'local' ? localUrl : null
-      ]
-    };
-
-    const resp = await fetch('/traits/sys/llm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-
-    const raw = await resp.json();
-    removeTyping();
-
-    // REST API wraps trait results in { result, error }
-    if (raw.error) {
-      showToast('Error: ' + raw.error);
-      appendMessage('assistant', '⚠ ' + raw.error);
+    if (provider === 'webgpu') {
+      await sendWebGPU(text, model, useContext);
     } else {
-      const data = raw.result || raw;
-      if (data.ok && data.content) {
-        let meta = `${data.provider} · ${data.model}`;
-        if (data.usage) {
-          const u = data.usage;
-          meta += ` · ${u.prompt_tokens || 0}+${u.completion_tokens || 0} tokens`;
-        }
-        appendMessage('assistant', data.content, meta);
-        messages.push({ role: 'assistant', content: data.content });
-      } else {
-        const err = data.error || 'Unknown error';
-        showToast('Error: ' + err);
-        appendMessage('assistant', '⚠ ' + err);
-      }
+      await sendServer(text, provider, model, useContext, localUrl);
     }
   } catch (e) {
     removeTyping();
-    showToast('Network error: ' + e.message);
+    showToast('Error: ' + e.message);
   } finally {
     sending = false;
     document.getElementById('sendBtn').disabled = false;
     input.focus();
   }
 }
+
+// Make functions available globally for inline event handlers
+window.onProviderChange = onProviderChange;
+window.onModelChange = onModelChange;
+window.handleKey = handleKey;
+window.sendMessage = sendMessage;
 
 // Init
 onProviderChange();

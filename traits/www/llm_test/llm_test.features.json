@@ -17,6 +17,15 @@
           "output": { "contains": ["chatArea", "openai", "ctxToggle"] }
         }
       ]
+    },
+    {
+      "name": "contains WebGPU browser provider and model list",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["webgpu", "SmolLM2", "WebGPU", "CreateMLCEngine"] }
+        }
+      ]
     }
   ]
 }
