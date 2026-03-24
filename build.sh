@@ -105,11 +105,38 @@ copy_dylib() {
 
 # ── Generate terminal-runtime.js (classic script for file:// mode) ──
 TERMINAL_SRC="traits/www/terminal/terminal.js"
+TERMINAL_CSS="traits/www/terminal/terminal.css"
 TERMINAL_RUNTIME="traits/www/static/terminal-runtime.js"
 if [[ -f "$TERMINAL_SRC" ]]; then
     echo "Generating terminal runtime..."
-    sed 's/^export async function/async function/' "$TERMINAL_SRC" > "$TERMINAL_RUNTIME"
-    echo 'if (typeof window !== "undefined") window.createTerminal = createTerminal;' >> "$TERMINAL_RUNTIME"
+    {
+        # Inject CSS + xterm CDN stylesheet on first call
+        cat <<'CSSJS'
+(function() {
+  if (document.getElementById('_term-css')) return;
+  var link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css';
+  link.id = '_xterm-css';
+  document.head.appendChild(link);
+  var style = document.createElement('style');
+  style.id = '_term-css';
+CSSJS
+        # Inline the terminal CSS content
+        echo -n "  style.textContent = "
+        python3 -c "
+import sys, json
+css = open(sys.argv[1]).read()
+print(json.dumps(css) + ';')
+" "$TERMINAL_CSS"
+        cat <<'CSSJS2'
+  document.head.appendChild(style);
+})();
+CSSJS2
+        # Terminal JS with export stripped
+        sed 's/^export async function/async function/' "$TERMINAL_SRC"
+        echo 'if (typeof window !== "undefined") window.createTerminal = createTerminal;'
+    } > "$TERMINAL_RUNTIME"
 fi
 
 echo "Copying dylibs..."

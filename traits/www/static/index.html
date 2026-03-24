@@ -217,6 +217,8 @@ async function injectPage(fullHtml, route) {
   if (currentPageCleanup) { currentPageCleanup(); currentPageCleanup = null; }
   document.querySelectorAll('style[data-page]').forEach(s => s.remove());
   document.querySelectorAll('link[data-page]').forEach(l => l.remove());
+  document.querySelectorAll('body > .terminal-wrap').forEach(t => t.remove());
+  frame.style.paddingBottom = '';
 
   const parser = new DOMParser();
   const doc = parser.parseFromString(fullHtml, 'text/html');
@@ -272,6 +274,18 @@ async function injectPage(fullHtml, route) {
   // Update document title from the page
   const pageTitle = doc.querySelector('title');
   if (pageTitle) document.title = pageTitle.textContent;
+
+  // Move terminal-wrap out of frame to body (needs position:fixed on viewport)
+  const termWrap = frame.querySelector('.terminal-wrap');
+  if (termWrap) {
+    // Remove any previous terminal from body
+    document.querySelectorAll('body > .terminal-wrap').forEach(t => t.remove());
+    document.body.appendChild(termWrap);
+    // Give frame padding so content doesn't hide behind fixed terminal
+    frame.style.paddingBottom = '340px';
+  } else {
+    frame.style.paddingBottom = '';
+  }
 }
 
 function currentRouteFromLocation() {
