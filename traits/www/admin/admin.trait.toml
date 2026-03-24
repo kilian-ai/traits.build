@@ -1,7 +1,7 @@
 [trait]
 description = "Admin dashboard for traits.build deployment"
-version = "v260323.233510"
-checksum = "4502ca6dc04ff7e87a08fbb8ec313089d58cc527de4d2e213a925abb053ce0f3"
+version = "v260324"
+checksum = "ca2d4ead9d05d967f80301a3d00bf1b4bab189333ca812d35e534c51c164d061"
 epoch = 0
 author = "system"
 tags = ["www", "admin", "deployment"]
@@ -21,6 +21,10 @@ secrets = "sys/secrets"
 [bindings]
 config = "kernel.config"
 secrets = "sys.secrets"
+
+[config]
+fly_app = "polygrait-api"
+fly_region = "iad"
 
 [implementation]
 language = "rust"

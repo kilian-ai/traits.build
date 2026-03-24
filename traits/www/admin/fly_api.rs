@@ -5,9 +5,7 @@ use std::process::Command;
 
 const FLY_API_BASE: &str = "https://api.machines.dev/v1";
 fn fly_app() -> String {
-    crate::globals::CONFIG.get()
-        .map(|c| c.deploy.fly_app.clone())
-        .unwrap_or_else(|| std::env::var("FLY_APP").unwrap_or_else(|_| "your-fly-app".into()))
+    crate::config::trait_config_or("www.admin", "fly_app", "polygrait-api")
 }
 
 pub struct FlyApi {

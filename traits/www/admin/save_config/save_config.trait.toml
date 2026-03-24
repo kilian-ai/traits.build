@@ -1,7 +1,7 @@
 [trait]
 description = "Save deploy configuration to traits.toml"
-version = "v260323"
-checksum = "aa16763c97cfeba5d120a9431b304483a0268a46ff224916a801791bc0828d95"
+version = "v260324"
+checksum = "d44761d77e9f1b8b0572baa30eb10fb24b1bc18ab6763654c3c626318ecf5f90"
 epoch = 0
 author = "system"
 tags = ["www", "admin", "config"]

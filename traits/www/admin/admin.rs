@@ -2,10 +2,8 @@ use serde_json::Value;
 use maud::{html, DOCTYPE, PreEscaped};
 
 pub fn admin(_args: &[Value]) -> Value {
-    let (fly_app, fly_region) = match crate::globals::CONFIG.get() {
-        Some(cfg) => (cfg.deploy.fly_app.clone(), cfg.deploy.fly_region.clone()),
-        None => ("your-fly-app".into(), "iad".into()),
-    };
+    let fly_app = crate::config::trait_config_or("www.admin", "fly_app", "polygrait-api");
+    let fly_region = crate::config::trait_config_or("www.admin", "fly_region", "iad");
 
     let markup = html! {
         (DOCTYPE)

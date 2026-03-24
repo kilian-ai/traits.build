@@ -6,27 +6,7 @@ use std::path::Path;
 pub struct Config {
     pub traits: TraitsConfig,
     #[serde(default)]
-    pub deploy: DeployConfig,
-    #[serde(default)]
     pub workers: HashMap<String, WorkerConfig>,
-}
-
-#[derive(Debug, Deserialize, Clone, Default)]
-pub struct DeployConfig {
-    #[serde(default = "default_fly_app")]
-    pub fly_app: String,
-    #[serde(default = "default_fly_region")]
-    pub fly_region: String,
-}
-
-fn default_fly_app() -> String {
-    std::env::var("FLY_APP")
-        .or_else(|_| std::env::var("FLY_APP_NAME"))
-        .unwrap_or_else(|_| "your-fly-app".into())
-}
-
-fn default_fly_region() -> String {
-    std::env::var("FLY_REGION").unwrap_or_else(|_| "iad".into())
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -107,33 +87,6 @@ impl Config {
                     config.traits.timeout = t;
                 }
             }
-            // Deploy overrides: persistent volume → env vars
-            // Check /data/deploy.toml first (Fly.io persistent volume)
-            if let Ok(deploy_content) = std::fs::read_to_string("/data/deploy.toml") {
-                if let Ok(overlay) = toml::from_str::<toml::Value>(&deploy_content) {
-                    if let Some(deploy) = overlay.get("deploy") {
-                        if let Some(app) = deploy.get("fly_app").and_then(|v| v.as_str()) {
-                            if !app.is_empty() { config.deploy.fly_app = app.to_string(); }
-                        }
-                        if let Some(region) = deploy.get("fly_region").and_then(|v| v.as_str()) {
-                            if !region.is_empty() { config.deploy.fly_region = region.to_string(); }
-                        }
-                    }
-                }
-            }
-            // Env vars override everything (FLY_APP_NAME is set automatically by Fly.io)
-            let fly_app_env = std::env::var("FLY_APP")
-                .or_else(|_| std::env::var("FLY_APP_NAME"));
-            if let Ok(app) = fly_app_env {
-                if !app.is_empty() {
-                    config.deploy.fly_app = app;
-                }
-            }
-            if let Ok(region) = std::env::var("FLY_REGION") {
-                if !region.is_empty() {
-                    config.deploy.fly_region = region;
-                }
-            }
 
             Ok(config)
         } else {
@@ -146,7 +99,6 @@ impl Config {
                     timeout: default_timeout(),
                     bindings_file: default_bindings_file(),
                 },
-                deploy: DeployConfig::default(),
                 workers: HashMap::new(),
             })
         }
@@ -178,14 +130,98 @@ pub fn config(args: &[serde_json::Value]) -> serde_json::Value {
             "bind": cfg.traits.bind,
             "timeout": cfg.traits.timeout,
             "bindings_file": cfg.traits.bindings_file,
-            "deploy": {
-                "fly_app": cfg.deploy.fly_app,
-                "fly_region": cfg.deploy.fly_region,
-            },
             "workers": cfg.workers.keys().collect::<Vec<_>>()
         }),
         None => serde_json::json!({"error": "config not initialized"}),
     }
+}
+
+/// Resolve a config value for a trait.
+///
+/// Resolution order (first non-empty wins):
+///   1. Environment variable: `{TRAIT_PATH}_{KEY}` (dots→underscores, uppercased)
+///      e.g. `www.admin` key `fly_app` → `WWW_ADMIN_FLY_APP`
+///   2. Persistent override file (`/data/trait_config.toml` on Fly, or local fallback)
+///   3. sys.secrets store (if the default value starts with `secret:`)
+///   4. The `[config]` default from the trait's .trait.toml
+///
+/// Returns None if no value found at any level.
+pub fn trait_config(trait_path: &str, key: &str) -> Option<String> {
+    // 1. Env var override: WWW_ADMIN_FLY_APP
+    let env_key = format!("{}_{}", trait_path.replace('.', "_"), key).to_uppercase();
+    if let Ok(val) = std::env::var(&env_key) {
+        if !val.is_empty() {
+            return Some(val);
+        }
+    }
+
+    // 2. Persistent override file (trait_config.toml)
+    //    Format: ["www.admin"] fly_app = "polygrait-api"
+    if let Some(val) = read_persistent_config(trait_path, key) {
+        return Some(val);
+    }
+
+    // 3. Look up [config] default from registry
+    let default_val = crate::globals::REGISTRY.get()
+        .and_then(|reg| reg.get(trait_path))
+        .and_then(|entry| entry.config.get(key).cloned());
+
+    match default_val {
+        // 4. If default starts with "secret:", resolve from sys.secrets
+        Some(ref val) if val.starts_with("secret:") => {
+            let secret_id = &val["secret:".len()..];
+            let ctx = crate::dispatcher::compiled::secrets::SecretContext::resolve(&[secret_id]);
+            ctx.get(secret_id).map(|s| s.to_string()).or(default_val)
+        }
+        other => other,
+    }
+}
+
+/// Convenience: resolve a config value with a fallback default.
+pub fn trait_config_or(trait_path: &str, key: &str, fallback: &str) -> String {
+    trait_config(trait_path, key).unwrap_or_else(|| fallback.to_string())
+}
+
+/// Path to the persistent trait config override file.
+pub fn persistent_config_path() -> &'static str {
+    if std::path::Path::new("/data").is_dir() {
+        "/data/trait_config.toml"
+    } else {
+        "trait_config.toml"
+    }
+}
+
+/// Read a value from the persistent config overlay.
+fn read_persistent_config(trait_path: &str, key: &str) -> Option<String> {
+    let content = std::fs::read_to_string(persistent_config_path()).ok()?;
+    let table: toml::Value = toml::from_str(&content).ok()?;
+    // Trait paths use dots, TOML sections use quoted keys: ["www.admin"]
+    table.get(trait_path)?
+        .get(key)?
+        .as_str()
+        .map(|s| s.to_string())
+}
+
+/// Write a config value to the persistent overlay file.
+/// Creates the file if it doesn't exist; merges into existing content.
+pub fn write_persistent_config(trait_path: &str, key: &str, value: &str) -> Result<(), String> {
+    let path = persistent_config_path();
+    let mut table: toml::value::Table = if let Ok(content) = std::fs::read_to_string(path) {
+        toml::from_str(&content).unwrap_or_default()
+    } else {
+        toml::value::Table::new()
+    };
+
+    let section = table.entry(trait_path.to_string())
+        .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
+    if let Some(t) = section.as_table_mut() {
+        t.insert(key.to_string(), toml::Value::String(value.to_string()));
+    }
+
+    let content = toml::to_string_pretty(&table)
+        .map_err(|e| format!("TOML serialize error: {}", e))?;
+    std::fs::write(path, content)
+        .map_err(|e| format!("Cannot write {}: {}", path, e))
 }
 
 #[cfg(test)]

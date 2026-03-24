@@ -49,6 +49,8 @@ pub struct TraitEntry {
     pub load: Option<CallConfig>,
     #[allow(dead_code)]
     pub cli_map_source: Option<PathBuf>,
+    /// Per-trait config from [config] section in .trait.toml
+    pub config: HashMap<String, String>,
 }
 
 impl TraitEntry {
@@ -126,6 +128,8 @@ struct TraitToml {
     bindings: Option<HashMap<String, String>>,
     #[serde(default)]
     requires: Option<HashMap<String, String>>,
+    #[serde(default)]
+    config: Option<HashMap<String, toml::Value>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -573,6 +577,15 @@ impl Registry {
             priority: toml.trait_def.priority,
             load: parse_load_config(&toml.load),
             cli_map_source,
+            config: toml.config.map(|m| {
+                m.into_iter().map(|(k, v)| {
+                    let s = match &v {
+                        toml::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    (k, s)
+                }).collect()
+            }).unwrap_or_default(),
         };
 
         self.traits.insert(trait_path, entry);
