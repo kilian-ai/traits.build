@@ -6,6 +6,12 @@ author = "system"
 tags = ["kernel", "cli"]
 provides = ["kernel/cli"]
 
+[requires]
+backend = "cli/backend"
+
+[bindings]
+backend = "sys.cli.native"
+
 [signature]
 params = [
     { name = "line", type = "string", description = "Command line to execute", required = true },

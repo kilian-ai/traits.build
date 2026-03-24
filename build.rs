@@ -113,6 +113,27 @@ fn main() {
     output.push_str("];\n");
     fs::write(out_path, output).expect("Failed to write builtin_traits.rs");
 
+    // ── Resolve module name collisions ──
+    // Multiple traits can produce the same mod_name (e.g. sys.cli.wasm and www.wasm both → "wasm").
+    // Detect collisions and qualify with parent segment to make them unique.
+    {
+        let mut name_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for m in &modules {
+            if m.is_kernel_builtin { continue; }
+            *name_counts.entry(m.mod_name.clone()).or_insert(0) += 1;
+        }
+        for m in &mut modules {
+            if m.is_kernel_builtin { continue; }
+            if name_counts.get(&m.mod_name).copied().unwrap_or(0) > 1 {
+                // Qualify: sys.cli.wasm → cli_wasm, www.wasm → www_wasm
+                let parts: Vec<&str> = m.trait_path.rsplitn(3, '.').collect();
+                if parts.len() >= 2 {
+                    m.mod_name = rust_ident(&format!("{}_{}", parts[1], parts[0]));
+                }
+            }
+        }
+    }
+
     // ── Generate compiled_traits.rs (module declarations + dispatch) ──
     let compiled_path = out_dir.join("compiled_traits.rs");
     let mut ct = String::new();

@@ -1,0 +1,90 @@
+{
+  "trait": "sys.cli.native",
+  "description": "Native terminal CLI backend — method-based dispatch for CLI operations",
+  "features": [
+    {
+      "name": "Introspection",
+      "description": "Calling with no method returns backend info",
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["\"provides\":\"cli/backend\"", "\"target\":\"native\""]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Version method",
+      "description": "Returns the kernel version",
+      "examples": [
+        {
+          "input": ["version"],
+          "output": {
+            "contains": ["0."]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List all traits",
+      "description": "Returns array of all registered traits",
+      "tests": [
+        {
+          "name": "list_all returns array with sys.cli.native",
+          "type": "command",
+          "command": "./target/release/traits call sys.cli.native list_all 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.cli.native" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "All paths method",
+      "description": "Returns array of trait path strings",
+      "tests": [
+        {
+          "name": "all_paths contains sys.list",
+          "type": "command",
+          "command": "./target/release/traits call sys.cli.native all_paths 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "sys.list" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Get info method",
+      "description": "Returns trait metadata for a given path",
+      "tests": [
+        {
+          "name": "get_info for sys.checksum returns params",
+          "type": "command",
+          "command": "./target/release/traits call sys.cli.native get_info sys.checksum 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"path\":\"sys.checksum\"" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Call method",
+      "description": "Dispatches to another trait and returns result",
+      "tests": [
+        {
+          "name": "call sys.version returns ok",
+          "type": "command",
+          "command": "./target/release/traits call sys.cli.native call sys.version 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\":true" }
+          ]
+        }
+      ]
+    }
+  ]
+}

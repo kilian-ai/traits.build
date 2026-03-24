@@ -1,6 +1,7 @@
 [trait]
 description = "Native terminal CLI backend — provides dispatch, registry access, and filesystem persistence for the CLI"
-version = "v260324"
+version = "v260324.225054"
+checksum = "8e21fd9ce6884eb982fbf4b07b9ac11663904cfdd0ff28c6722541a2a47f0036"
 author = "system"
 tags = ["sys", "cli", "native", "terminal"]
 provides = ["cli/backend"]
@@ -8,7 +9,7 @@ provides = ["cli/backend"]
 [signature]
 params = [
     { name = "method", type = "string", description = "Backend method: call, list_all, get_info, search, all_paths, version, load_param_history, save_param_history, load_examples", required = true },
-    { name = "args", type = "list<any>", description = "Method arguments (varies by method)" },
+    { name = "args", type = "list<any>", description = "Method arguments (varies by method)", required = false },
 ]
 
 [signature.returns]

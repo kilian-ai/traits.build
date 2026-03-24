@@ -132,7 +132,7 @@ const HTML: &str = r##"<!DOCTYPE html>
 })();
 </script>
 
-<div class="terminal-wrap">
+<div class="terminal-wrap" id="termWrap" style="display:none">
   <div class="terminal-header" id="termHeader">
     <button id="btnToggleTerm" class="terminal-toggle">▼ Terminal</button>
     <span class="terminal-hint">WASM-powered traits CLI — try "list" or "call sys.checksum hash hello"</span>
@@ -142,26 +142,16 @@ const HTML: &str = r##"<!DOCTYPE html>
     <div id="xterm" class="xterm-mount"></div>
   </div>
 </div>
-<script type="module">
-import { createTerminal } from '/static/www/terminal/terminal.js';
-createTerminal(document.getElementById('xterm'), {
-    header: document.getElementById('termHeader'),
-    container: document.getElementById('termContainer'),
-    toggleBtn: document.getElementById('btnToggleTerm'),
-    statusEl: document.getElementById('termStatus'),
-});
-</script>
 <script>
-// Fallback for SPA/file:// mode where module imports from absolute paths fail.
-// Dynamically import terminal.js, trying multiple paths.
+// Load terminal dynamically — hide wrapper if it fails to load.
 (async function() {
-  if (document.querySelector('#xterm canvas')) return; // Already initialized by module script
   var paths = ['/static/www/terminal/terminal.js', '../terminal/terminal.js'];
   var mod = null;
   for (var p of paths) {
     try { mod = await import(p); break; } catch(e) {}
   }
-  if (!mod) return; // Terminal unavailable in this mode — Redoc still works
+  if (!mod || !mod.createTerminal) return; // Terminal unavailable — wrapper stays hidden
+  document.getElementById('termWrap').style.display = '';
   mod.createTerminal(document.getElementById('xterm'), {
     header: document.getElementById('termHeader'),
     container: document.getElementById('termContainer'),

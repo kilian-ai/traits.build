@@ -382,175 +382,88 @@ fn is_interactive_flag(args: &[String]) -> bool {
     args.iter().any(|a| a == "-i" || a == "--interactive")
 }
 
-/// Load per-trait parameter history from .cli_history.json near cli.trait.toml
-fn load_history() -> std::collections::HashMap<String, std::collections::HashMap<String, Vec<String>>> {
-    let path = history_path();
-    match std::fs::read_to_string(&path) {
-        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
-        Err(_) => std::collections::HashMap::new(),
-    }
-}
+// Helper functions (load_history, save_history, history_path, load_examples)
+// have moved to sys.cli.native — accessed via dispatch("sys.cli.native", ...)
 
-/// Save history back to disk
-fn save_history(history: &std::collections::HashMap<String, std::collections::HashMap<String, Vec<String>>>) {
-    let path = history_path();
-    if let Ok(json) = serde_json::to_string_pretty(history) {
-        let _ = std::fs::write(&path, json);
-    }
-}
+// ── Native CliBackend — thin dispatch wrapper delegating to sys.cli.native ──
 
-fn history_path() -> std::path::PathBuf {
-    let traits_dir = crate::globals::TRAITS_DIR.get()
-        .map(|p| p.as_path())
-        .unwrap_or(std::path::Path::new("./traits"));
-    traits_dir.join("sys").join("cli").join(".cli_history.json")
-}
-
-/// Load examples from a trait's .features.json file
-fn load_examples(trait_path: &str) -> Vec<Vec<String>> {
-    let parts: Vec<&str> = trait_path.split('.').collect();
-    if parts.len() < 2 { return vec![]; }
-    let traits_dir = crate::globals::TRAITS_DIR.get()
-        .map(|p| p.as_path())
-        .unwrap_or(std::path::Path::new("./traits"));
-
-    // Build path: traits/{ns}/{name}/{name}.features.json
-    let mut dir = traits_dir.to_path_buf();
-    for part in &parts {
-        dir.push(part);
-    }
-    let feat_file = dir.join(format!("{}.features.json", parts.last().unwrap()));
-    let content = match std::fs::read_to_string(&feat_file) {
-        Ok(c) => c,
-        Err(_) => return vec![],
-    };
-    let parsed: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return vec![],
-    };
-    let mut examples = vec![];
-    if let Some(features) = parsed.get("features").and_then(|v| v.as_array()) {
-        for feature in features {
-            if let Some(exs) = feature.get("examples").and_then(|v| v.as_array()) {
-                for ex in exs {
-                    if let Some(input) = ex.get("input").and_then(|v| v.as_array()) {
-                        let args: Vec<String> = input.iter().map(|v| match v {
-                            serde_json::Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        }).collect();
-                        examples.push(args);
-                    }
-                }
-            }
-        }
-    }
-    examples
-}
-
-// ── Native CliBackend — bridges kernel CliSession to the native dispatcher ──
-
-struct NativeCliBackend {
-    dispatcher: crate::dispatcher::Dispatcher,
-    rt: tokio::runtime::Handle,
-}
+struct NativeCliBackend;
 
 impl NativeCliBackend {
-    fn new(dispatcher: crate::dispatcher::Dispatcher) -> Self {
-        Self {
-            rt: tokio::runtime::Handle::current(),
-            dispatcher,
-        }
+    fn dispatch_method(&self, method: &str, args: &[serde_json::Value]) -> Option<serde_json::Value> {
+        let mut full_args = vec![serde_json::Value::String(method.to_string())];
+        full_args.extend_from_slice(args);
+        crate::dispatcher::compiled::dispatch("sys.cli.native", &full_args)
     }
 }
 
 impl CliBackend for NativeCliBackend {
     fn call(&self, path: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, String> {
-        let trait_args: Vec<TraitValue> = args.iter().map(|a| TraitValue::from_json(a)).collect();
-        let cc = crate::dispatcher::CallConfig::default();
-        match tokio::task::block_in_place(|| {
-            self.rt.block_on(self.dispatcher.call(path, trait_args, &cc))
-        }) {
-            Ok(result) => Ok(result.to_json()),
-            Err(e) => Err(e.to_string()),
+        match self.dispatch_method("call", &[serde_json::json!(path), serde_json::Value::Array(args.to_vec())]) {
+            Some(v) => {
+                if v.get("ok").and_then(|b| b.as_bool()) == Some(true) {
+                    Ok(v.get("result").cloned().unwrap_or(serde_json::Value::Null))
+                } else {
+                    Err(v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown error").to_string())
+                }
+            }
+            None => Err("Backend dispatch failed".into()),
         }
     }
 
     fn list_all(&self) -> Vec<serde_json::Value> {
-        if let Some(reg) = crate::globals::REGISTRY.get() {
-            reg.all().iter().map(|e| serde_json::json!({
-                "path": e.path,
-                "description": e.description,
-                "version": e.version,
-                "tags": e.tags,
-            })).collect()
-        } else {
-            vec![]
-        }
+        self.dispatch_method("list_all", &[])
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
     }
 
     fn get_info(&self, path: &str) -> Option<serde_json::Value> {
-        let reg = crate::globals::REGISTRY.get()?;
-        let entry = reg.get(path)?;
-        Some(serde_json::json!({
-            "path": entry.path,
-            "description": entry.description,
-            "version": entry.version,
-            "author": entry.author,
-            "tags": entry.tags,
-            "params": entry.signature.params.iter().map(|p| {
-                serde_json::json!({
-                    "name": p.name,
-                    "type": format!("{:?}", p.param_type).to_lowercase(),
-                    "description": p.description,
-                    "required": !p.optional,
-                })
-            }).collect::<Vec<_>>(),
-            "returns": format!("{:?}", entry.signature.returns.return_type).to_lowercase(),
-            "returns_description": entry.signature.returns.description,
-        }))
+        self.dispatch_method("get_info", &[serde_json::json!(path)])
+            .filter(|v| !v.is_null())
     }
 
     fn search(&self, query: &str) -> Vec<serde_json::Value> {
-        if let Some(reg) = crate::globals::REGISTRY.get() {
-            let q = query.to_lowercase();
-            reg.all().iter()
-                .filter(|e| {
-                    e.path.to_lowercase().contains(&q) ||
-                    e.description.to_lowercase().contains(&q) ||
-                    e.tags.iter().any(|t| t.to_lowercase().contains(&q))
-                })
-                .map(|e| serde_json::json!({
-                    "path": e.path,
-                    "description": e.description,
-                }))
-                .collect()
-        } else {
-            vec![]
-        }
+        self.dispatch_method("search", &[serde_json::json!(query)])
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
     }
 
     fn all_paths(&self) -> Vec<String> {
-        if let Some(reg) = crate::globals::REGISTRY.get() {
-            reg.all().iter().map(|e| e.path.clone()).collect()
-        } else {
-            vec![]
-        }
+        self.dispatch_method("all_paths", &[])
+            .and_then(|v| v.as_array().cloned())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default()
     }
 
     fn version(&self) -> String {
-        env!("CARGO_PKG_VERSION").to_string()
+        self.dispatch_method("version", &[])
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
     }
 
     fn load_param_history(&self) -> std::collections::HashMap<String, std::collections::HashMap<String, Vec<String>>> {
-        load_history()
+        self.dispatch_method("load_param_history", &[])
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default()
     }
 
     fn save_param_history(&self, history: &std::collections::HashMap<String, std::collections::HashMap<String, Vec<String>>>) {
-        save_history(history);
+        if let Ok(val) = serde_json::to_value(history) {
+            let _ = self.dispatch_method("save_param_history", &[val]);
+        }
     }
 
     fn load_examples(&self, path: &str) -> Vec<Vec<String>> {
-        load_examples(path)
+        self.dispatch_method("load_examples", &[serde_json::json!(path)])
+            .and_then(|v| v.as_array().cloned())
+            .map(|arr| {
+                arr.iter().filter_map(|ex| {
+                    ex.as_array().map(|a| {
+                        a.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+                    })
+                }).collect()
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -568,8 +481,8 @@ async fn interactive_call(
         return Err("Interactive mode requires a terminal (stdin must be a TTY)".into());
     }
 
-    let dispatcher = crate::bootstrap(config)?;
-    let backend = NativeCliBackend::new(dispatcher);
+    let _dispatcher = crate::bootstrap(config)?; // bootstrap needed to init REGISTRY
+    let backend = NativeCliBackend;
 
     let mut session = CliSession::new();
     session.load_history(&backend);

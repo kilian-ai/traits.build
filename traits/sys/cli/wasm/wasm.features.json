@@ -1,0 +1,33 @@
+{
+  "trait": "sys.cli.wasm",
+  "description": "WASM terminal CLI backend — browser terminal interface (stub in native binary)",
+  "features": [
+    {
+      "name": "Introspection",
+      "description": "Returns backend metadata in native binary",
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": ["\"provides\":\"cli/backend\"", "\"target\":\"wasm\""]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Native stub",
+      "description": "Methods return not-available in native binary",
+      "tests": [
+        {
+          "name": "call method returns WASM-only message",
+          "type": "command",
+          "command": "./target/release/traits call sys.cli.wasm call 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "only available in the WASM module" }
+          ]
+        }
+      ]
+    }
+  ]
+}
