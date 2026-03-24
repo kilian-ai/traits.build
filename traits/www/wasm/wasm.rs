@@ -10,8 +10,7 @@ pub fn wasm_page(_args: &[Value]) -> Value {
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 title { "traits.build — WASM Kernel" }
                 link rel="stylesheet" href="/static/www/wasm/wasm.css" {}
-                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" {}
-                (PreEscaped(r#"<script type="importmap">{"imports":{"xterm":"https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm","@xterm/addon-fit":"https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm","@xterm/addon-web-links":"https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/+esm"}}</script>"#))
+                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css" {}
             }
             body {
                 div.container {

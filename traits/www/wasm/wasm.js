@@ -31,7 +31,7 @@ async function boot() {
 
         renderKernelInfo({ ...info, server_traits: total });
         renderTraitList();
-        bindEvents();
+        await bindEvents();
     } catch (e) {
         status.textContent = `Failed to load: ${e.message || e}`;
         status.classList.add('error');
@@ -168,7 +168,7 @@ async function callTrait() {
 
 // ── Events ──
 
-function bindEvents() {
+async function bindEvents() {
     $('traitSearch').addEventListener('input', renderTraitList);
     $('filterCallable').addEventListener('change', renderTraitList);
 
@@ -190,16 +190,15 @@ function bindEvents() {
     });
 
     // Terminal
-    initTerminal();
+    await initTerminal();
 }
 
 // ═══════════════════════════════════════════
 // ── xterm.js Terminal ──
 // ═══════════════════════════════════════════
 
-import { Terminal } from 'xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
+// xterm.js loaded dynamically in initTerminal()
+let Terminal, FitAddon, WebLinksAddon;
 
 // ANSI escape helpers
 const C = {
@@ -227,9 +226,23 @@ const termHistory = [];
 let termHistoryIdx = -1;
 let busy = false;
 
-function initTerminal() {
+async function initTerminal() {
     const header = document.querySelector('.terminal-header');
     const container = $('terminalContainer');
+
+    // Dynamic import from CDN
+    try {
+        const xtermMod = await import('https://cdn.jsdelivr.net/npm/@xterm/xterm@5/+esm');
+        Terminal = xtermMod.Terminal;
+        const fitMod = await import('https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10/+esm');
+        FitAddon = fitMod.FitAddon;
+        const linksMod = await import('https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11/+esm');
+        WebLinksAddon = linksMod.WebLinksAddon;
+    } catch (e) {
+        console.error('Failed to load xterm.js:', e);
+        container.innerHTML = `<div style="padding:1rem;color:#f85149">Failed to load terminal: ${e.message}</div>`;
+        return;
+    }
 
     term = new Terminal({
         cursorBlink: true,

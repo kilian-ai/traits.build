@@ -698,5 +698,56 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
                 }
             }
         }
+
+        // ── Non-builtin traits (source = "static", "dylib", etc.): register + discover JS/CSS assets ──
+        if !is_builtin && !is_rest {
+            let toml_dir = path.parent().unwrap();
+            let rel_path = path.strip_prefix(manifest_dir)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let trait_path = path.strip_prefix(traits_dir)
+                .ok()
+                .and_then(|p| p.to_str())
+                .and_then(|s| s.strip_suffix(".trait.toml")
+                    .or_else(|| s.strip_suffix(".strait.toml")))
+                .map(|s| {
+                    let result = s.replace('/', ".").replace('\\', ".");
+                    let parts: Vec<&str> = result.split('.').collect();
+                    if parts.len() >= 2 && parts[parts.len() - 1] == parts[parts.len() - 2] {
+                        parts[..parts.len() - 1].join(".")
+                    } else {
+                        result
+                    }
+                });
+            if let Some(tp) = trait_path {
+                entries.push((tp, rel_path));
+            }
+
+            let serve_prefix = toml_dir.strip_prefix(traits_dir)
+                .unwrap_or(toml_dir)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if let Ok(dir_entries) = fs::read_dir(toml_dir) {
+                for de in dir_entries.flatten() {
+                    let dp = de.path();
+                    let fname = dp.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let content_type = if fname.ends_with(".css") {
+                        Some("text/css")
+                    } else if fname.ends_with(".js") {
+                        Some("application/javascript")
+                    } else {
+                        None
+                    };
+                    if let Some(ct) = content_type {
+                        static_assets.push(StaticAsset {
+                            serve_path: format!("{}/{}", serve_prefix, fname),
+                            abs_path: dp.to_string_lossy().to_string(),
+                            content_type: ct,
+                        });
+                    }
+                }
+            }
+        }
     }
 }
