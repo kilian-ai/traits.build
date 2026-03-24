@@ -25,6 +25,16 @@ echo "Built: $BIN ($SIZE)"
 WASM_PKG_DIR="traits/kernel/wasm/pkg"
 WASM_INLINE_JS="traits/www/static/wasm-inline.js"
 
+if command -v wasm-pack >/dev/null 2>&1; then
+    echo "Building WASM kernel..."
+    (
+        cd traits/kernel/wasm
+        wasm-pack build --target web --release
+    )
+else
+    echo "Skipping WASM build — wasm-pack not found"
+fi
+
 if [[ -f "$WASM_PKG_DIR/traits_wasm_bg.wasm" ]]; then
     echo "Generating file:// WASM inline loader..."
     {
