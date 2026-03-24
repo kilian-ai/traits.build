@@ -16,7 +16,14 @@ pub fn website(_args: &[Value]) -> Value {
         None => (0, 0),
     };
     #[cfg(target_arch = "wasm32")]
-    let (trait_count, ns_count) = (0usize, 0usize);
+    let (trait_count, ns_count) = {
+        let reg = crate::get_registry();
+        let all = reg.all();
+        let namespaces: std::collections::HashSet<&str> = all.iter()
+            .filter_map(|e| e.path.split('.').next())
+            .collect();
+        (all.len(), namespaces.len())
+    };
 
     #[cfg(not(target_arch = "wasm32"))]
     let binary_size = std::env::current_exe()

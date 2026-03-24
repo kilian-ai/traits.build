@@ -314,6 +314,17 @@ nav.addEventListener('click', e => {
   navigate(el.dataset.href);
 });
 
+// ── Global link interceptor (makes internal links work in file:// mode) ──
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href]');
+  if (!a) return;
+  const href = a.getAttribute('href');
+  if (href && ROUTES[href]) {
+    e.preventDefault();
+    navigate(href);
+  }
+});
+
 // ── Browser back/forward ──
 window.addEventListener('popstate', e => {
   const route = e.state?.route || currentRouteFromLocation();
