@@ -30,8 +30,8 @@ pub fn admin(_args: &[Value]) -> Value {
                     div.card {
                         h2 { "Server Status" }
                         div.status {
-                            div.dot.gray id="statusDot" {}
-                            span.status-text id="statusText" { "Checking..." }
+                            div.dot.gray id="admStatusDot" {}
+                            span.status-text id="admStatusText" { "Checking..." }
                         }
                         table id="statusTable" {
                             tr { td { "Traits" } td id="traitCount" { "\u{2014}" } }
@@ -273,23 +273,43 @@ async function callTrait(path, args) {
 
 async function checkStatus() {
   if (_statusPaused) return;
+  // Try /health endpoint (works when HTTP server is reachable)
   try {
-    const r = await fetch(window.location.origin + '/health');
-    const h = await r.json();
+    var r = await fetch(window.location.origin + '/health');
+    var h = await r.json();
     if (h.status === 'healthy' || h.status === 'running') {
-      document.getElementById('statusDot').className = 'dot green';
-      document.getElementById('statusText').textContent = 'Healthy';
+      document.getElementById('admStatusDot').className = 'dot green';
+      document.getElementById('admStatusText').textContent = 'Healthy';
     } else {
-      document.getElementById('statusDot').className = 'dot yellow';
-      document.getElementById('statusText').textContent = h.status || 'Unknown';
+      document.getElementById('admStatusDot').className = 'dot yellow';
+      document.getElementById('admStatusText').textContent = h.status || 'Unknown';
     }
     document.getElementById('traitCount').textContent = h.trait_count || '—';
     document.getElementById('nsCount').textContent = h.namespace_count || '—';
     document.getElementById('uptime').textContent = h.uptime_human || '—';
     document.getElementById('version').textContent = h.version || '—';
-  } catch(e) {
-    document.getElementById('statusDot').className = 'dot red';
-    document.getElementById('statusText').textContent = 'Unreachable';
+    return;
+  } catch(e) {}
+  // Fallback: WASM SDK info (file:// or cross-origin)
+  if (window._traitsSDK && window._traitsSDK.status && window._traitsSDK.status.wasm) {
+    document.getElementById('admStatusDot').className = 'dot green';
+    document.getElementById('admStatusText').textContent = 'WASM (local)';
+    try {
+      var traits = await window._traitsSDK.list();
+      document.getElementById('traitCount').textContent = traits.length;
+      var ns = new Set(traits.map(function(t) { return (t.path || '').split('.')[0]; }));
+      document.getElementById('nsCount').textContent = ns.size;
+    } catch(e2) {
+      document.getElementById('traitCount').textContent = window._traitsSDK.status.callable;
+    }
+    try {
+      var vr = await callTrait('sys.version', []);
+      if (vr.result) document.getElementById('version').textContent = vr.result.version || vr.result;
+    } catch(e2) {}
+    document.getElementById('uptime').textContent = 'n/a';
+  } else {
+    document.getElementById('admStatusDot').className = 'dot red';
+    document.getElementById('admStatusText').textContent = 'Unreachable';
   }
 }
 
@@ -474,9 +494,9 @@ async function checkFlyMachine() {
   try {
     const r = await callTrait('www.admin.deploy', ['status']);
     if (r.error) {
-      document.getElementById('flyDot').className = 'dot red';
-      document.getElementById('flyText').textContent = 'API error';
-      log('Fly API: ' + r.error, 'error');
+      document.getElementById('flyDot').className = 'dot yellow';
+      var msg = String(r.error);
+      document.getElementById('flyText').textContent = msg.length > 50 ? msg.slice(0, 50) + '...' : msg;
       return;
     }
     const d = r.result || r;
@@ -548,8 +568,8 @@ async function scale(n) {
   } catch(e) { log('Scale error: ' + e.message, 'error'); }
   if (n > 0) { _statusPaused = false; setTimeout(checkStatus, 3000); }
   else {
-    document.getElementById('statusDot').className = 'dot red';
-    document.getElementById('statusText').textContent = 'Stopped';
+    document.getElementById('admStatusDot').className = 'dot red';
+    document.getElementById('admStatusText').textContent = 'Stopped';
     document.getElementById('uptime').textContent = '—';
     _statusPaused = true;
     document.getElementById('flyDot').className = 'dot yellow';
@@ -598,8 +618,8 @@ async function saveConfig() {
 checkStatus();
 checkFlyMachine();
 loadSecrets();
-setInterval(checkStatus, 30000);
-setInterval(checkFlyMachine, 60000);
+var _admTimers = [setInterval(checkStatus, 30000), setInterval(checkFlyMachine, 60000)];
+window._pageCleanup = function() { _admTimers.forEach(clearInterval); };
 
 async function loadSecrets() {
   try {

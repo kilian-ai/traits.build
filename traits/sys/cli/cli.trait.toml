@@ -1,8 +1,8 @@
 [trait]
 description = "CLI bootstrap, trait dispatch, stdin injection, arg parsing, result formatting"
-version = "v260324.234940"
+version = "v260324.235540"
 epoch = 0
-checksum = "c6a30a63ce1bf2dc7cfe49dbaf0a577ab6f4d7eb2ea51073619a01e695070816"
+checksum = "b9a23c7c9fb4f9808c7604f422abc890b6e1f8769b5c83762a41ccc64326c9eb"
 author = "kilian-ai"
 tags = ["system", "cli"]
 provides = ["sys/cli"]
@@ -11,16 +11,15 @@ provides = ["sys/cli"]
 config = "kernel/config"
 call = "kernel/call"
 serve = "sys/serve"
-backend = "cli/backend"
+native = "cli/backend"
+wasm = "cli/backend"
 
 [bindings]
 config = "kernel.config"
 call = "kernel.call"
 serve = "sys.serve"
-backend = "sys.cli.native"
-
-[wasm_bindings]
-backend = "sys.cli.wasm"
+native = "sys.cli.native"
+wasm = "sys.cli.wasm"
 
 [signature]
 params = []

@@ -266,6 +266,10 @@ async function injectPage(fullHtml, route) {
     }
   }
 
+  // Pick up page cleanup callback if set by page scripts
+  currentPageCleanup = window._pageCleanup || null;
+  window._pageCleanup = null;
+
   // Update nav active state
   $$('#shell-nav .links a').forEach(a => {
     a.classList.toggle('active', a.dataset.href === route);

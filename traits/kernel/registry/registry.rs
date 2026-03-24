@@ -127,8 +127,6 @@ struct TraitToml {
     #[serde(default)]
     bindings: Option<HashMap<String, String>>,
     #[serde(default)]
-    wasm_bindings: Option<HashMap<String, String>>,
-    #[serde(default)]
     requires: Option<HashMap<String, String>>,
     #[serde(default)]
     config: Option<HashMap<String, toml::Value>>,

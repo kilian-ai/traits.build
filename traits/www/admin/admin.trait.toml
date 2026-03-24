@@ -1,7 +1,7 @@
 [trait]
 description = "Admin dashboard for traits.build deployment"
-version = "v260324.144551"
-checksum = "a8dc969faa5209aa7efdc5ceea705a9171a6407678f7a0ff255a17dcfe35b8d0"
+version = "v260324.235502"
+checksum = "8944cb8bc847f89592895b4fd8f8195134e974f308cd1ae7d9ccda78f5ca13c4"
 epoch = 0
 author = "system"
 tags = ["www", "admin", "deployment"]

@@ -167,9 +167,9 @@ impl WasmCliBackend {
     fn dispatch_method(&self, method: &str, args: &[Value]) -> Option<Value> {
         let mut full_args = vec![Value::String(method.to_string())];
         full_args.extend_from_slice(args);
-        // Resolve backend from kernel.cli wasm_bindings instead of hardcoding
+        // Resolve "wasm" binding from kernel.cli trait
         let backend = get_registry()
-            .resolve_binding("kernel.cli", "backend")
+            .resolve_binding("kernel.cli", "wasm")
             .unwrap_or_else(|| "sys.cli.wasm".to_string());
         wasm_traits::dispatch(&backend, &full_args)
     }

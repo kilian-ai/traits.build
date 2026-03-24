@@ -22,7 +22,6 @@ pub struct WasmTraitEntry {
 pub struct WasmRegistry {
     traits: HashMap<String, WasmTraitEntry>,
     /// Per-trait bindings: key is "trait_path/binding_key", value is the bound trait path.
-    /// Populated from [wasm_bindings] first, falling back to [bindings].
     bindings: HashMap<String, String>,
 }
 
@@ -39,21 +38,8 @@ impl WasmRegistry {
                 let entry = parse_trait_toml(path, &parsed);
                 self.traits.insert(path.to_string(), entry);
 
-                // Extract bindings: [wasm_bindings] overrides [bindings]
-                let base = parsed.get("bindings")
-                    .and_then(|v| v.as_table());
-                let wasm = parsed.get("wasm_bindings")
-                    .and_then(|v| v.as_table());
-
-                if let Some(table) = base {
-                    for (key, val) in table {
-                        if let Some(s) = val.as_str() {
-                            self.bindings.insert(format!("{}/{}", path, key), s.to_string());
-                        }
-                    }
-                }
-                // wasm_bindings override base bindings for matching keys
-                if let Some(table) = wasm {
+                // Extract [bindings] section
+                if let Some(table) = parsed.get("bindings").and_then(|v| v.as_table()) {
                     for (key, val) in table {
                         if let Some(s) = val.as_str() {
                             self.bindings.insert(format!("{}/{}", path, key), s.to_string());

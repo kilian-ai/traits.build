@@ -7,13 +7,12 @@ tags = ["kernel", "cli"]
 provides = ["kernel/cli"]
 
 [requires]
-backend = "cli/backend"
+native = "cli/backend"
+wasm = "cli/backend"
 
 [bindings]
-backend = "sys.cli.native"
-
-[wasm_bindings]
-backend = "sys.cli.wasm"
+native = "sys.cli.native"
+wasm = "sys.cli.wasm"
 
 [signature]
 params = [
