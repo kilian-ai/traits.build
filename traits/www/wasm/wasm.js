@@ -1,25 +1,19 @@
-import init, { init as kernelInit, call, list_traits, get_trait_info, callable_traits } from '/wasm/traits_wasm.js';
+import { Traits } from '/static/www/sdk/traits.js';
 
 const $ = id => document.getElementById(id);
+const traits = new Traits();
 
 let allTraits = [];
 let currentTrait = null;
-let wasmCallableSet = new Set();
 
 // ── Bootstrap ──
 
 async function boot() {
     const status = $('status');
     try {
-        await init('/wasm/traits_wasm_bg.wasm');
-        const result = JSON.parse(kernelInit());
+        const info = await traits.init();
 
-        // Build set of WASM-callable traits
-        const callableList = JSON.parse(callable_traits());
-        wasmCallableSet = new Set(callableList);
-
-        // Load trait list from WASM registry (has all traits' metadata)
-        allTraits = JSON.parse(list_traits());
+        allTraits = await traits.list();
 
         // Also fetch the live server trait list to get accurate counts
         let serverTraitCount = 0;
@@ -31,15 +25,15 @@ async function boot() {
             }
         } catch { /* server unreachable — WASM-only mode */ }
 
-        const total = serverTraitCount || result.traits_registered;
-        status.textContent = `Kernel ready — ${total} traits (${result.wasm_callable} local WASM, ${total - result.wasm_callable} via REST)`;
+        const total = serverTraitCount || info.traits;
+        status.textContent = `Kernel ready — ${total} traits (${info.callable} local WASM, ${total - info.callable} via REST)`;
         status.classList.add('ok');
 
-        renderKernelInfo({ ...result, server_traits: total });
+        renderKernelInfo({ ...info, server_traits: total });
         renderTraitList();
         bindEvents();
     } catch (e) {
-        status.textContent = `Failed to load WASM: ${e.message || e}`;
+        status.textContent = `Failed to load: ${e.message || e}`;
         status.classList.add('error');
         console.error(e);
     }
@@ -48,10 +42,10 @@ async function boot() {
 function renderKernelInfo(info) {
     const el = $('kernelInfo');
     el.innerHTML = `<table>
-        <tr><td>Version</td><td>${info.version}</td></tr>
-        <tr><td>Total traits</td><td>${info.server_traits || info.traits_registered}</td></tr>
-        <tr><td>WASM (local)</td><td>${info.wasm_callable}</td></tr>
-        <tr><td>REST (server)</td><td>${(info.server_traits || info.traits_registered) - info.wasm_callable}</td></tr>
+        <tr><td>Version</td><td>${info.version || '—'}</td></tr>
+        <tr><td>Total traits</td><td>${info.server_traits || info.traits}</td></tr>
+        <tr><td>WASM (local)</td><td>${info.callable}</td></tr>
+        <tr><td>REST (server)</td><td>${(info.server_traits || info.traits) - info.callable}</td></tr>
         <tr><td>Runtime</td><td>wasm32 + REST hybrid</td></tr>
     </table>`;
 }
@@ -83,11 +77,9 @@ function renderTraitList() {
     $('traitCount').textContent = `${filtered.length} / ${allTraits.length}`;
 }
 
-function selectTrait(path) {
-    const raw = get_trait_info(path);
-    if (!raw) return;
-
-    currentTrait = JSON.parse(raw);
+async function selectTrait(path) {
+    currentTrait = await traits.info(path);
+    if (!currentTrait) return;
     $('welcomePanel').hidden = true;
     $('traitDetail').hidden = false;
 
@@ -157,45 +149,21 @@ async function callTrait() {
     if (!currentTrait) return;
 
     const args = collectArgs();
-    const isLocal = wasmCallableSet.has(currentTrait.path);
-    const tag = isLocal ? 'WASM' : 'REST';
+    const mode = traits.dispatchMode(currentTrait.path);
+    const tag = mode === 'wasm' ? 'WASM' : 'REST';
 
     $('resultSection').hidden = false;
     $('resultOutput').textContent = `Calling via ${tag}...`;
     $('elapsed').textContent = '';
 
-    const t0 = performance.now();
-    try {
-        let result;
-        if (isLocal) {
-            // Direct WASM dispatch — synchronous, sub-millisecond
-            result = JSON.parse(call(currentTrait.path, JSON.stringify(args)));
-        } else {
-            // REST dispatch — async, hits the server
-            result = await callTraitRest(currentTrait.path, args);
-        }
-        const dt = (performance.now() - t0).toFixed(1);
-        $('elapsed').textContent = `${dt}ms (${tag})`;
-        $('resultOutput').textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-    } catch (e) {
-        const dt = (performance.now() - t0).toFixed(1);
-        $('elapsed').textContent = `${dt}ms (${tag})`;
-        $('resultOutput').textContent = `Error: ${e.message || e}`;
+    const res = await traits.call(currentTrait.path, args);
+    $('elapsed').textContent = `${res.ms || 0}ms (${res.dispatch || tag})`;
+    if (res.ok) {
+        const formatted = typeof res.result === 'string' ? res.result : JSON.stringify(res.result, null, 2);
+        $('resultOutput').textContent = formatted;
+    } else {
+        $('resultOutput').textContent = `Error: ${res.error}`;
     }
-}
-
-// ── REST API dispatch ──
-
-async function callTraitRest(traitPath, args) {
-    const url = `/traits/${traitPath.replace(/\./g, '/')}`;
-    const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ args }),
-    });
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error);
-    return data.result;
 }
 
 // ── Events ──
@@ -507,7 +475,7 @@ async function termExec(cmd) {
                 termList(args[0]); break;
             case 'info': case 'i':
                 if (!args[0]) { term.writeln(`${C.red}Usage: info <trait_path>${C.reset}`); break; }
-                termInfo(args[0]); break;
+                await termInfo(args[0]); break;
             case 'call': case 'c':
                 if (!args[0]) { term.writeln(`${C.red}Usage: call <trait_path> [args...]${C.reset}`); break; }
                 await termCall(args[0], args.slice(1)); break;
@@ -616,13 +584,12 @@ function termList(namespace) {
     term.writeln(`${C.gray}${filtered.length} traits${C.reset}`);
 }
 
-function termInfo(path) {
-    const raw = get_trait_info(path);
-    if (!raw) {
+async function termInfo(path) {
+    const t = await traits.info(path);
+    if (!t) {
         term.writeln(`${C.red}Trait "${path}" not found${C.reset}`);
         return;
     }
-    const t = JSON.parse(raw);
     const badge = t.wasm_callable
         ? `${C.green}WASM${C.reset}`
         : `${C.yellow}REST${C.reset}`;
@@ -645,8 +612,8 @@ function termInfo(path) {
 }
 
 async function termCall(path, argStrs) {
-    const isLocal = wasmCallableSet.has(path);
-    const tag = isLocal ? `${C.green}WASM${C.reset}` : `${C.yellow}REST${C.reset}`;
+    const mode = traits.dispatchMode(path);
+    const tag = mode === 'wasm' ? `${C.green}WASM${C.reset}` : `${C.yellow}REST${C.reset}`;
 
     // Parse args: try JSON, fall back to string
     const args = argStrs.map(a => {
@@ -654,17 +621,15 @@ async function termCall(path, argStrs) {
         catch { return a; }
     });
 
-    const t0 = performance.now();
-    let result;
-    if (isLocal) {
-        result = JSON.parse(call(path, JSON.stringify(args)));
-    } else {
-        result = await callTraitRest(path, args);
+    const res = await traits.call(path, args);
+
+    if (!res.ok) {
+        term.writeln(`${C.red}Error: ${res.error}${C.reset}`);
+        return;
     }
-    const dt = (performance.now() - t0).toFixed(1);
 
     // Format output
-    const formatted = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+    const formatted = typeof res.result === 'string' ? res.result : JSON.stringify(res.result, null, 2);
     const lines = formatted.split('\n');
     if (lines.length > 100) {
         for (const line of lines.slice(0, 80)) term.writeln(`${C.green}${line}${C.reset}`);
@@ -672,7 +637,7 @@ async function termCall(path, argStrs) {
     } else {
         for (const line of lines) term.writeln(`${C.green}${line}${C.reset}`);
     }
-    term.writeln(`${C.gray}${dt}ms (${C.reset}${tag}${C.gray})${C.reset}`);
+    term.writeln(`${C.gray}${res.ms || 0}ms (${C.reset}${tag}${C.gray})${C.reset}`);
 }
 
 function termWriteVersion() {

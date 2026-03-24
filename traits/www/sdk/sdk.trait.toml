@@ -1,0 +1,17 @@
+[trait]
+description = "JavaScript SDK client for traits.build — unified WASM + REST dispatch"
+version = "v260324"
+author = "system"
+tags = ["www", "sdk", "client", "javascript"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "string"
+description = "SDK source code (JavaScript ES module)"
+
+[implementation]
+language = "javascript"
+source = "static"
+entry = "traits.js"

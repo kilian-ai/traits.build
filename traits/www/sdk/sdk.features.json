@@ -1,0 +1,35 @@
+{
+  "trait": "www.sdk",
+  "features": [
+    {
+      "name": "SDK JS file is served as static asset",
+      "tests": [
+        {
+          "type": "command",
+          "command": "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8092/static/www/sdk/traits.js",
+          "expect": { "contains": "200" }
+        }
+      ]
+    },
+    {
+      "name": "SDK exports Traits class",
+      "tests": [
+        {
+          "type": "command",
+          "command": "grep -c 'export class Traits' traits/www/sdk/traits.js",
+          "expect": { "contains": "1" }
+        }
+      ]
+    },
+    {
+      "name": "SDK exports getTraits convenience function",
+      "tests": [
+        {
+          "type": "command",
+          "command": "grep -c 'export function getTraits' traits/www/sdk/traits.js",
+          "expect": { "contains": "1" }
+        }
+      ]
+    }
+  ]
+}
