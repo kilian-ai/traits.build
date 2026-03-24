@@ -12,6 +12,7 @@ kernel_module = true
 [requires]
 "/" = "www/webpage"
 "/copy" = "www/webpage"
+"/playground" = "www/webpage"
 "/admin" = "www/webpage"
 "/docs" = "www/webpage"
 "/docs/api" = "www/webpage"
@@ -23,6 +24,7 @@ secrets = "sys/secrets"
 [bindings]
 "/" = "www.traits.build"
 "/copy" = "www.traits.build"
+"/playground" = "www.playground"
 "/admin" = "www.admin"
 "/docs" = "www.docs"
 "/docs/api" = "www.docs.api"
