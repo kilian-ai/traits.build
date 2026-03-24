@@ -17,6 +17,23 @@ pub mod types;
 #[path = "../../../cli/cli.rs"]
 pub mod cli;
 
+// ── WWW page traits (generate HTML, compiled for wasm32) ──
+
+#[path = "../../../../www/traits/build/build.rs"]
+pub mod www_build;
+
+#[path = "../../../../www/docs/docs.rs"]
+pub mod www_docs;
+
+#[path = "../../../../www/docs/api/api.rs"]
+pub mod www_docs_api;
+
+#[path = "../../../../www/admin/admin.rs"]
+pub mod www_admin;
+
+#[path = "../../../../www/static/static.rs"]
+pub mod www_static;
+
 /// WASM-callable trait paths (curated list of pure-computation traits).
 pub const WASM_CALLABLE: &[&str] = &[
     "kernel.types",
@@ -25,6 +42,11 @@ pub const WASM_CALLABLE: &[&str] = &[
     "sys.list",
     "sys.registry",
     "sys.version",
+    "www.traits.build",
+    "www.docs",
+    "www.docs.api",
+    "www.admin",
+    "www.static",
 ];
 
 /// Dispatch a trait call by path. Returns None if the path isn't WASM-callable.
@@ -36,6 +58,11 @@ pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
         "sys.list" => Some(registry::list(args)),
         "sys.registry" => Some(registry::registry(args)),
         "sys.version" => Some(version::version(args)),
+        "www.traits.build" => Some(www_build::website(args)),
+        "www.docs" => Some(www_docs::docs(args)),
+        "www.docs.api" => Some(www_docs_api::api_docs(args)),
+        "www.admin" => Some(www_admin::admin(args)),
+        "www.static" => Some(www_static::static_page(args)),
         _ => None,
     }
 }

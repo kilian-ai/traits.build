@@ -1963,7 +1963,7 @@ dependencies = [
 
 [[package]]
 name = "traits"
-version = "0.260324.141655"
+version = "0.260324.145359"
 dependencies = [
  "actix-cors",
  "actix-rt",
@@ -1997,6 +1997,8 @@ name = "traits-wasm"
 version = "0.260324.42350"
 dependencies = [
  "js-sys",
+ "maud",
+ "pulldown-cmark",
  "serde",
  "serde_json",
  "sha2",

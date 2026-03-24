@@ -152,8 +152,12 @@ pub fn version() -> String {
 
 // ═══════════════════════════════════════════
 // ── CLI interface (powered by kernel/cli) ──
+// Stateful session: all line editing, history,
+// tab completion, and interactive mode live in Rust.
+// The browser terminal is a thin display layer.
 // ═══════════════════════════════════════════
 
+use std::cell::RefCell;
 use wasm_traits::cli::{CliBackend, self as cli_core};
 
 /// WASM implementation of CliBackend — bridges kernel/cli to WASM registry+dispatch.
@@ -227,31 +231,38 @@ impl CliBackend for WasmCliBackend {
     }
 }
 
-/// Execute a CLI command line. Returns ANSI-formatted output.
-/// This is the primary interface for browser terminals.
-#[wasm_bindgen]
-pub fn cli_exec(line: &str) -> String {
-    cli_core::exec_line(line, &WasmCliBackend)
+thread_local! {
+    static CLI_SESSION: RefCell<Option<cli_core::CliSession>> = RefCell::new(None);
 }
 
-/// Get tab completions for a prefix. Returns JSON: {"matches": [...], "common": "..."}
-#[wasm_bindgen]
-pub fn cli_complete(prefix: &str) -> String {
-    let reg = get_registry();
-    let all_paths: Vec<String> = reg.all().iter().map(|e| e.path.clone()).collect();
-    let (matches, common) = cli_core::tab_completions(prefix, &all_paths);
-    serde_json::to_string(&serde_json::json!({
-        "matches": matches,
-        "common": common,
-    })).unwrap_or_default()
+fn with_session<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut cli_core::CliSession) -> R,
+{
+    CLI_SESSION.with(|cell| {
+        let mut opt = cell.borrow_mut();
+        if opt.is_none() {
+            *opt = Some(cli_core::CliSession::new());
+        }
+        f(opt.as_mut().unwrap())
+    })
 }
 
-/// Get interactive mode parameters for a trait.
-/// Returns JSON array of param objects, or empty string if not found.
+/// Feed raw terminal input bytes to the CLI session.
+/// Returns ANSI text to write to the terminal.
+/// This is the primary interface for browser terminals — all line editing,
+/// history, tab completion, and interactive mode are handled in Rust.
 #[wasm_bindgen]
-pub fn cli_interactive_params(path: &str) -> String {
-    match cli_core::interactive_params(path, &WasmCliBackend) {
-        Some(params) => serde_json::to_string(&params).unwrap_or_default(),
-        None => String::new(),
-    }
+pub fn cli_input(data: &str) -> String {
+    with_session(|session| {
+        session.feed(data, &WasmCliBackend)
+    })
+}
+
+/// Get the welcome banner + initial prompt.
+#[wasm_bindgen]
+pub fn cli_welcome() -> String {
+    with_session(|session| {
+        session.welcome(&WasmCliBackend)
+    })
 }

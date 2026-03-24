@@ -63,21 +63,33 @@ const HTML: &str = r##"<!DOCTYPE html>
 <div id="redoc"></div>
 <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
 <script>
-(function() {
-  fetch('/traits/sys/openapi', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ args: [] })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    document.getElementById('loading').className = 'hidden';
-    var spec = data.result;
-    if (!spec || !spec.openapi) {
-      document.getElementById('redoc').innerHTML =
-        '<div style="padding:2rem;color:#f85149">Failed to load OpenAPI spec.</div>';
-      return;
-    }
+(async function() {
+  var spec = null;
+  // Use SDK if available (WASM-first, REST-fallback)
+  if (window._traitsSDK) {
+    try {
+      var r = await window._traitsSDK.call('sys.openapi', []);
+      if (r.ok) spec = r.result;
+    } catch(e) { console.warn('SDK openapi failed:', e); }
+  }
+  // Fallback to direct REST
+  if (!spec) {
+    try {
+      var res = await fetch('/traits/sys/openapi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: [] })
+      });
+      var data = await res.json();
+      spec = data.result;
+    } catch(e) {}
+  }
+  document.getElementById('loading').className = 'hidden';
+  if (!spec || !spec.openapi) {
+    document.getElementById('redoc').innerHTML =
+      '<div style="padding:2rem;color:#f85149">Failed to load OpenAPI spec.</div>';
+    return;
+  }
     Redoc.init(spec, {
       theme: {
         colors: {
@@ -111,12 +123,6 @@ const HTML: &str = r##"<!DOCTYPE html>
       hideDownloadButton: false,
       sortPropsAlphabetically: true
     }, document.getElementById('redoc'));
-  })
-  .catch(function(err) {
-    document.getElementById('loading').className = 'hidden';
-    document.getElementById('redoc').innerHTML =
-      '<div style="padding:2rem;color:#f85149">Error loading spec: ' + err.message + '</div>';
-  });
 })();
 </script>
 

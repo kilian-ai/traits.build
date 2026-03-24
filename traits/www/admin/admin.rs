@@ -2,8 +2,15 @@ use serde_json::Value;
 use maud::{html, DOCTYPE, PreEscaped};
 
 pub fn admin(_args: &[Value]) -> Value {
+    #[cfg(not(target_arch = "wasm32"))]
     let fly_app = crate::config::trait_config_or("www.admin", "fly_app", "polygrait-api");
+    #[cfg(target_arch = "wasm32")]
+    let fly_app = "polygrait-api".to_string();
+
+    #[cfg(not(target_arch = "wasm32"))]
     let fly_region = crate::config::trait_config_or("www.admin", "fly_region", "iad");
+    #[cfg(target_arch = "wasm32")]
+    let fly_region = "iad".to_string();
 
     let markup = html! {
         (DOCTYPE)
@@ -250,6 +257,12 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 var _statusPaused = false;
 
 async function callTrait(path, args) {
+  // Use SDK if available (WASM-first, REST-fallback)
+  if (window._traitsSDK) {
+    const r = await window._traitsSDK.call(path, args || []);
+    if (r.ok) return { result: r.result };
+    return { error: r.error || 'SDK call failed' };
+  }
   const res = await fetch(API + '/' + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

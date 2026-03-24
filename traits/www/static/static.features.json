@@ -2,7 +2,7 @@
     "trait": "www.static",
     "features": [
         {
-            "name": "returns HTML string",
+            "name": "returns HTML bootloader",
             "examples": [
                 {
                     "args": [],
@@ -19,32 +19,53 @@
             ]
         },
         {
-            "name": "includes WASM SDK bootstrap",
+            "name": "includes SPA router with route table",
             "examples": [
                 {
                     "args": [],
-                    "test": { "type": "contains", "value": "loadWasm" }
+                    "test": { "type": "contains", "value": "ROUTES" }
                 },
                 {
                     "args": [],
-                    "test": { "type": "contains", "value": "callTrait" }
+                    "test": { "type": "contains", "value": "www.traits.build" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "www.docs" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "www.admin" }
                 }
             ]
         },
         {
-            "name": "has SPA router with three pages",
+            "name": "includes SDK with dual dispatch",
             "examples": [
                 {
                     "args": [],
-                    "test": { "type": "contains", "value": "page-home" }
+                    "test": { "type": "contains", "value": "TraitsSDK" }
                 },
                 {
                     "args": [],
-                    "test": { "type": "contains", "value": "page-traits" }
+                    "test": { "type": "contains", "value": "_traitsSDK" }
                 },
                 {
                     "args": [],
-                    "test": { "type": "contains", "value": "page-try" }
+                    "test": { "type": "contains", "value": "dispatch" }
+                }
+            ]
+        },
+        {
+            "name": "has page injection with DOMParser",
+            "examples": [
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "DOMParser" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "injectPage" }
                 }
             ]
         }

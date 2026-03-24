@@ -1,8 +1,10 @@
 use serde_json::Value;
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashSet;
 use maud::{html, DOCTYPE, PreEscaped};
 
 pub fn website(_args: &[Value]) -> Value {
+    #[cfg(not(target_arch = "wasm32"))]
     let (trait_count, ns_count) = match crate::globals::REGISTRY.get() {
         Some(reg) => {
             let all = reg.all();
@@ -13,11 +15,17 @@ pub fn website(_args: &[Value]) -> Value {
         }
         None => (0, 0),
     };
+    #[cfg(target_arch = "wasm32")]
+    let (trait_count, ns_count) = (0usize, 0usize);
+
+    #[cfg(not(target_arch = "wasm32"))]
     let binary_size = std::env::current_exe()
         .ok()
         .and_then(|p| std::fs::metadata(p).ok())
         .map(|m| format!("{:.1} MB", m.len() as f64 / 1_048_576.0))
         .unwrap_or_else(|| "? MB".to_string());
+    #[cfg(target_arch = "wasm32")]
+    let binary_size = "WASM".to_string();
 
     let code_how_it_works = format!(r##"<span class="cm"># 1. Define a trait (TOML + Rust source)</span>
 traits/sys/checksum/checksum.trait.toml
