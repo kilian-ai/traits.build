@@ -20,11 +20,6 @@ fn get_entry_detail(path: &str) -> Option<Value> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn get_entry_summary(path: &str) -> Option<Value> {
-    crate::globals::REGISTRY.get()?.get(path).map(|t| t.to_summary_json())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 fn registry_count() -> usize {
     crate::globals::REGISTRY.get().map(|r| r.len()).unwrap_or(0)
 }
@@ -58,11 +53,6 @@ fn get_entry_detail(path: &str) -> Option<Value> {
         "returns": t.returns_type,
         "returns_description": t.returns_description,
     }))
-}
-
-#[cfg(target_arch = "wasm32")]
-fn get_entry_summary(path: &str) -> Option<Value> {
-    get_entry_detail(path)
 }
 
 #[cfg(target_arch = "wasm32")]

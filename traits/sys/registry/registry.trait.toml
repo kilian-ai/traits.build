@@ -1,8 +1,8 @@
 [trait]
 description = "Registry read API — list, info, query, search, and inspect registered traits"
-version = "v260324"
+version = "v260324.234137"
 epoch = 0
-checksum = "ceded206bae8b9bbb2c9f780b03b45a34e4765630d6a2327950b21513975354e"
+checksum = "1ce084c91be5b5f2f054aa35a30aa8642598f7d70d7e3fd2cc7f04ed6b2544d8"
 author = "system"
 tags = ["system", "meta", "registry"]
 provides = ["sys/registry"]

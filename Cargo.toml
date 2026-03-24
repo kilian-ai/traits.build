@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260324.233507"
+version = "0.260324.234237"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -69,3 +69,7 @@ sha2 = "0.10"
 [dev-dependencies]
 tempfile = "3"
 assert_cmd = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true

@@ -18,6 +18,4 @@ sha2 = "0.10"
 maud = "0.26"
 pulldown-cmark = "0.12"
 
-[profile.release]
-opt-level = "s"
-lto = true
+# profile.release is in workspace root Cargo.toml
