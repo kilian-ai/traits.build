@@ -226,124 +226,268 @@ function bindEvents() {
 }
 
 // ═══════════════════════════════════════════
-// ── Terminal Emulator ──
+// ── xterm.js Terminal ──
 // ═══════════════════════════════════════════
 
+import { Terminal } from 'xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+
+// ANSI escape helpers
+const C = {
+    reset: '\x1b[0m',
+    bold:  '\x1b[1m',
+    dim:   '\x1b[2m',
+    green: '\x1b[32m',
+    red:   '\x1b[31m',
+    yellow:'\x1b[33m',
+    blue:  '\x1b[34m',
+    magenta:'\x1b[35m',
+    cyan:  '\x1b[36m',
+    white: '\x1b[37m',
+    gray:  '\x1b[90m',
+    brightWhite: '\x1b[97m',
+};
+const PROMPT = `${C.green}traits ${C.reset}`;
+const PROMPT_LEN = 7; // visible chars: "traits "
+
+let term = null;
+let fitAddon = null;
+let lineBuffer = '';
+let cursorPos = 0;
 const termHistory = [];
 let termHistoryIdx = -1;
+let busy = false;
 
 function initTerminal() {
     const header = document.querySelector('.terminal-header');
     const container = $('terminalContainer');
-    const input = $('termInput');
+
+    term = new Terminal({
+        cursorBlink: true,
+        cursorStyle: 'bar',
+        fontSize: 13,
+        fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', 'Menlo', monospace",
+        lineHeight: 1.3,
+        scrollback: 5000,
+        theme: {
+            background: '#0d1117',
+            foreground: '#c9d1d9',
+            cursor: '#58a6ff',
+            cursorAccent: '#0d1117',
+            selectionBackground: '#264f78',
+            selectionForeground: '#ffffff',
+            black: '#484f58',
+            red: '#f85149',
+            green: '#3fb950',
+            yellow: '#d29922',
+            blue: '#58a6ff',
+            magenta: '#bc8cff',
+            cyan: '#76e3ea',
+            white: '#c9d1d9',
+            brightBlack: '#6e7681',
+            brightRed: '#ffa198',
+            brightGreen: '#56d364',
+            brightYellow: '#e3b341',
+            brightBlue: '#79c0ff',
+            brightMagenta: '#d2a8ff',
+            brightCyan: '#b3f0ff',
+            brightWhite: '#f0f6fc',
+        },
+    });
+
+    fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(new WebLinksAddon());
+    term.open($('xterm'));
+    fitAddon.fit();
 
     // Toggle collapse
     header.addEventListener('click', () => {
         container.classList.toggle('collapsed');
         const btn = $('btnToggleTerm');
         btn.textContent = container.classList.contains('collapsed') ? '▶ Terminal' : '▼ Terminal';
-        if (!container.classList.contains('collapsed')) input.focus();
-    });
-
-    // Command input
-    input.addEventListener('keydown', async (e) => {
-        if (e.key === 'Enter') {
-            const cmd = input.value.trim();
-            input.value = '';
-            if (cmd) {
-                termHistory.push(cmd);
-                termHistoryIdx = termHistory.length;
-                termWrite(`<span class="line-dim">traits </span><span class="line-cmd">${escHtml(cmd)}</span>`, 'line');
-                await termExec(cmd);
-            }
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            if (termHistoryIdx > 0) {
-                termHistoryIdx--;
-                input.value = termHistory[termHistoryIdx];
-            }
-        } else if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            if (termHistoryIdx < termHistory.length - 1) {
-                termHistoryIdx++;
-                input.value = termHistory[termHistoryIdx];
-            } else {
-                termHistoryIdx = termHistory.length;
-                input.value = '';
-            }
-        } else if (e.key === 'Tab') {
-            e.preventDefault();
-            termTabComplete(input);
-        } else if (e.key === 'l' && e.ctrlKey) {
-            e.preventDefault();
-            $('termOutput').innerHTML = '';
+        if (!container.classList.contains('collapsed')) {
+            setTimeout(() => { fitAddon.fit(); term.focus(); }, 50);
         }
     });
 
-    // Welcome message
-    termWrite('traits.build terminal — WASM + REST hybrid', 'line-accent');
-    termWrite(`${allTraits.length} traits loaded. Type "help" for commands.`, 'line-info');
-    termWrite('', 'line');
+    // Resize
+    const resizeObs = new ResizeObserver(() => {
+        if (!container.classList.contains('collapsed')) fitAddon.fit();
+    });
+    resizeObs.observe(container);
+
+    // Input handling
+    term.onData(onTermData);
+
+    // Welcome
+    term.writeln(`${C.blue}${C.bold}traits.build${C.reset} terminal — WASM + REST hybrid`);
+    term.writeln(`${C.gray}${allTraits.length} traits loaded. Type "help" for commands.${C.reset}`);
+    term.writeln('');
+    writePrompt();
 }
 
-function termWrite(text, cls = 'line') {
-    const output = $('termOutput');
-    const el = document.createElement('span');
-    el.className = `line ${cls}`;
-    el.innerHTML = text;
-    output.appendChild(el);
-    // Auto-scroll
-    const container = $('terminalContainer');
-    container.scrollTop = container.scrollHeight;
+function writePrompt() {
+    term.write(PROMPT);
 }
 
-function escHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function refreshLine() {
+    term.write('\x1b[2K\r');  // clear entire line, carriage return
+    term.write(PROMPT + lineBuffer);
+    const tail = lineBuffer.length - cursorPos;
+    if (tail > 0) term.write(`\x1b[${tail}D`);
+}
+
+function setLine(text) {
+    lineBuffer = text;
+    cursorPos = text.length;
+    refreshLine();
+}
+
+function onTermData(data) {
+    if (busy) return;
+
+    // Escape sequences
+    if (data === '\x1b[A') {         // Up arrow — history back
+        if (termHistoryIdx > 0) {
+            termHistoryIdx--;
+            setLine(termHistory[termHistoryIdx]);
+        } else if (termHistory.length > 0 && termHistoryIdx === -1) {
+            termHistoryIdx = termHistory.length - 1;
+            setLine(termHistory[termHistoryIdx]);
+        }
+        return;
+    }
+    if (data === '\x1b[B') {         // Down arrow — history forward
+        if (termHistoryIdx < termHistory.length - 1) {
+            termHistoryIdx++;
+            setLine(termHistory[termHistoryIdx]);
+        } else {
+            termHistoryIdx = termHistory.length;
+            setLine('');
+        }
+        return;
+    }
+    if (data === '\x1b[C') {         // Right arrow
+        if (cursorPos < lineBuffer.length) { cursorPos++; term.write(data); }
+        return;
+    }
+    if (data === '\x1b[D') {         // Left arrow
+        if (cursorPos > 0) { cursorPos--; term.write(data); }
+        return;
+    }
+    if (data === '\x1b[H') return;   // Home — ignore
+    if (data === '\x1b[F') return;   // End — ignore
+    if (data.startsWith('\x1b')) return;  // Other escape sequences — ignore
+
+    // Control characters
+    for (let i = 0; i < data.length; i++) {
+        const ch = data[i];
+        const code = ch.charCodeAt(0);
+
+        if (code === 13) {            // Enter
+            term.writeln('');
+            const cmd = lineBuffer.trim();
+            lineBuffer = '';
+            cursorPos = 0;
+            if (cmd) {
+                termHistory.push(cmd);
+                termHistoryIdx = termHistory.length;
+                busy = true;
+                termExec(cmd).finally(() => { busy = false; writePrompt(); });
+            } else {
+                writePrompt();
+            }
+            return; // Don't process remaining chars after Enter
+        }
+        if (code === 127 || code === 8) {  // Backspace / BS
+            if (cursorPos > 0) {
+                lineBuffer = lineBuffer.slice(0, cursorPos - 1) + lineBuffer.slice(cursorPos);
+                cursorPos--;
+                refreshLine();
+            }
+        } else if (code === 9) {      // Tab
+            termTabComplete();
+        } else if (code === 12) {     // Ctrl+L
+            term.clear();
+            refreshLine();
+        } else if (code === 3) {      // Ctrl+C
+            lineBuffer = '';
+            cursorPos = 0;
+            term.write('^C');
+            term.writeln('');
+            writePrompt();
+        } else if (code === 21) {     // Ctrl+U — clear line
+            lineBuffer = '';
+            cursorPos = 0;
+            refreshLine();
+        } else if (code === 23) {     // Ctrl+W — delete word back
+            const before = lineBuffer.slice(0, cursorPos);
+            const trimmed = before.replace(/\S+\s*$/, '');
+            lineBuffer = trimmed + lineBuffer.slice(cursorPos);
+            cursorPos = trimmed.length;
+            refreshLine();
+        } else if (code === 1) {      // Ctrl+A — home
+            cursorPos = 0;
+            refreshLine();
+        } else if (code === 5) {      // Ctrl+E — end
+            cursorPos = lineBuffer.length;
+            refreshLine();
+        } else if (code >= 32) {      // Printable
+            lineBuffer = lineBuffer.slice(0, cursorPos) + ch + lineBuffer.slice(cursorPos);
+            cursorPos++;
+            refreshLine();
+        }
+    }
 }
 
 // ── Tab completion ──
 
-function termTabComplete(input) {
-    const val = input.value;
-    const parts = val.split(/\s+/);
-    
-    // Complete trait paths (works for: call <path>, info <path>, or just <path>)
+function termTabComplete() {
+    const parts = lineBuffer.split(/\s+/);
     let prefix;
-    if (parts.length === 1) {
-        // Could be a command or a trait path
-        prefix = parts[0];
-    } else if (parts.length === 2 && ['call', 'info', 'c', 'i'].includes(parts[0])) {
-        prefix = parts[1];
+    if (parts.length <= 1) {
+        prefix = parts[0] || '';
+    } else if (['call', 'info', 'c', 'i'].includes(parts[0])) {
+        prefix = parts[parts.length - 1];
     } else {
         return;
     }
 
-    const matches = allTraits
-        .map(t => t.path)
-        .filter(p => p.startsWith(prefix));
+    const matches = allTraits.map(t => t.path).filter(p => p.startsWith(prefix));
 
     if (matches.length === 1) {
-        if (parts.length === 1) {
-            input.value = matches[0];
+        if (parts.length <= 1) {
+            setLine(matches[0] + ' ');
         } else {
             parts[parts.length - 1] = matches[0];
-            input.value = parts.join(' ');
+            setLine(parts.join(' ') + ' ');
         }
-    } else if (matches.length > 1 && matches.length <= 30) {
+    } else if (matches.length > 1 && matches.length <= 40) {
         // Show matches
-        termWrite(matches.join('  '), 'line-info');
-        // Complete common prefix
+        term.writeln('');
+        const cols = term.cols || 80;
+        const maxLen = Math.max(...matches.map(m => m.length)) + 2;
+        const perRow = Math.max(1, Math.floor(cols / maxLen));
+        for (let i = 0; i < matches.length; i += perRow) {
+            const row = matches.slice(i, i + perRow).map(m => m.padEnd(maxLen)).join('');
+            term.writeln(`${C.cyan}${row}${C.reset}`);
+        }
+        // Common prefix
         let common = matches[0];
         for (const m of matches) {
             while (!m.startsWith(common)) common = common.slice(0, -1);
         }
         if (common.length > prefix.length) {
-            if (parts.length === 1) {
-                input.value = common;
+            if (parts.length <= 1) {
+                setLine(common);
             } else {
                 parts[parts.length - 1] = common;
-                input.value = parts.join(' ');
+                setLine(parts.join(' '));
             }
+        } else {
+            refreshLine();
         }
     }
 }
@@ -357,74 +501,46 @@ async function termExec(cmd) {
 
     try {
         switch (command) {
-            case 'help':
-            case 'h':
-            case '?':
-                termShowHelp();
-                break;
-
-            case 'list':
-            case 'ls':
-                termList(args[0]);
-                break;
-
-            case 'info':
-            case 'i':
-                if (!args[0]) { termWrite('Usage: info <trait_path>', 'line-err'); break; }
-                termInfo(args[0]);
-                break;
-
-            case 'call':
-            case 'c':
-                if (!args[0]) { termWrite('Usage: call <trait_path> [args...]', 'line-err'); break; }
-                await termCall(args[0], args.slice(1));
-                break;
-
-            case 'search':
-            case 's':
-                termSearch(args.join(' '));
-                break;
-
-            case 'version':
-            case 'v':
-                termWrite(`v${$('status').textContent}`, 'line-ok');
-                break;
-
-            case 'clear':
-            case 'cls':
-                $('termOutput').innerHTML = '';
-                break;
-
+            case 'help': case 'h': case '?':
+                termShowHelp(); break;
+            case 'list': case 'ls':
+                termList(args[0]); break;
+            case 'info': case 'i':
+                if (!args[0]) { term.writeln(`${C.red}Usage: info <trait_path>${C.reset}`); break; }
+                termInfo(args[0]); break;
+            case 'call': case 'c':
+                if (!args[0]) { term.writeln(`${C.red}Usage: call <trait_path> [args...]${C.reset}`); break; }
+                await termCall(args[0], args.slice(1)); break;
+            case 'search': case 's':
+                termSearch(args.join(' ')); break;
+            case 'version': case 'v':
+                termWriteVersion(); break;
+            case 'clear': case 'cls':
+                term.clear(); break;
             case 'history':
-                termHistory.forEach((h, i) => termWrite(`  ${i + 1}  ${escHtml(h)}`, 'line'));
+                termHistory.forEach((h, i) => term.writeln(`  ${C.gray}${String(i + 1).padStart(3)}${C.reset}  ${h}`));
                 break;
-
             default:
-                // Try as a trait path directly: "sys.checksum hash hello"
                 if (allTraits.some(t => t.path === command)) {
                     await termCall(command, args);
                 } else {
-                    termWrite(`Unknown command: ${escHtml(command)}. Type "help" for usage.`, 'line-err');
+                    term.writeln(`${C.red}Unknown command: ${command}${C.reset}. Type ${C.blue}help${C.reset} for usage.`);
                 }
         }
     } catch (e) {
-        termWrite(`Error: ${escHtml(e.message || String(e))}`, 'line-err');
+        term.writeln(`${C.red}Error: ${e.message || String(e)}${C.reset}`);
     }
 }
 
 function parseCommand(cmd) {
-    // Simple shell-like parsing: respects double quotes
     const parts = [];
     let current = '';
     let inQuote = false;
     for (const ch of cmd) {
-        if (ch === '"') {
-            inQuote = !inQuote;
-        } else if (ch === ' ' && !inQuote) {
+        if (ch === '"') { inQuote = !inQuote; }
+        else if (ch === ' ' && !inQuote) {
             if (current) { parts.push(current); current = ''; }
-        } else {
-            current += ch;
-        }
+        } else { current += ch; }
     }
     if (current) parts.push(current);
     return parts;
@@ -434,33 +550,38 @@ function parseCommand(cmd) {
 
 function termShowHelp() {
     const lines = [
-        ['<span class="line-bold">Commands:</span>', ''],
-        ['  list [namespace]', 'List traits (optionally filter by namespace)'],
-        ['  info &lt;path&gt;', 'Show trait details and parameters'],
-        ['  call &lt;path&gt; [args...]', 'Call a trait (WASM locally, REST otherwise)'],
-        ['  search &lt;query&gt;', 'Search traits by name or description'],
-        ['  &lt;path&gt; [args...]', 'Shorthand: call a trait directly by path'],
-        ['  history', 'Show command history'],
-        ['  clear', 'Clear the terminal'],
-        ['  help', 'Show this help'],
+        [`${C.bold}${C.brightWhite}Commands${C.reset}`, ''],
+        [`  ${C.green}list${C.reset} ${C.gray}[namespace]${C.reset}`, 'List traits (filter by namespace)'],
+        [`  ${C.green}info${C.reset} ${C.gray}<path>${C.reset}`, 'Show trait details and parameters'],
+        [`  ${C.green}call${C.reset} ${C.gray}<path> [args...]${C.reset}`, 'Call a trait (WASM or REST)'],
+        [`  ${C.green}search${C.reset} ${C.gray}<query>${C.reset}`, 'Search by name or description'],
+        [`  ${C.gray}<path> [args...]${C.reset}`, 'Shorthand — call trait directly'],
+        [`  ${C.green}history${C.reset}`, 'Show command history'],
+        [`  ${C.green}clear${C.reset}`, 'Clear terminal'],
+        [`  ${C.green}version${C.reset}`, 'Show version info'],
+        [`  ${C.green}help${C.reset}`, 'Show this help'],
         ['', ''],
-        ['<span class="line-bold">Shortcuts:</span>', ''],
-        ['  Tab', 'Auto-complete trait paths'],
-        ['  ↑ / ↓', 'Navigate command history'],
-        ['  Ctrl+L', 'Clear terminal'],
+        [`${C.bold}${C.brightWhite}Shortcuts${C.reset}`, ''],
+        [`  ${C.cyan}Tab${C.reset}`, 'Auto-complete trait paths'],
+        [`  ${C.cyan}↑ / ↓${C.reset}`, 'Navigate command history'],
+        [`  ${C.cyan}Ctrl+L${C.reset}`, 'Clear terminal'],
+        [`  ${C.cyan}Ctrl+C${C.reset}`, 'Cancel current line'],
+        [`  ${C.cyan}Ctrl+U${C.reset}`, 'Clear entire line'],
+        [`  ${C.cyan}Ctrl+W${C.reset}`, 'Delete word backward'],
+        [`  ${C.cyan}Ctrl+A/E${C.reset}`, 'Jump to start/end of line'],
         ['', ''],
-        ['<span class="line-bold">Examples:</span>', ''],
-        ['  call sys.checksum hash "hello world"', ''],
-        ['  sys.version', ''],
-        ['  info sys.list', ''],
-        ['  list sys', ''],
-        ['  search checksum', ''],
+        [`${C.bold}${C.brightWhite}Examples${C.reset}`, ''],
+        [`  ${C.gray}call sys.checksum hash "hello world"${C.reset}`, ''],
+        [`  ${C.gray}sys.version${C.reset}`, ''],
+        [`  ${C.gray}info sys.list${C.reset}`, ''],
+        [`  ${C.gray}list sys${C.reset}`, ''],
+        [`  ${C.gray}search checksum${C.reset}`, ''],
     ];
     for (const [left, right] of lines) {
         if (right) {
-            termWrite(`${left}  <span class="line-dim">${right}</span>`, '');
+            term.writeln(`${left}  ${C.gray}${right}${C.reset}`);
         } else {
-            termWrite(left, '');
+            term.writeln(left);
         }
     }
 }
@@ -470,7 +591,7 @@ function termList(namespace) {
     if (namespace) {
         filtered = allTraits.filter(t => t.path.startsWith(namespace));
         if (filtered.length === 0) {
-            termWrite(`No traits in namespace "${escHtml(namespace)}"`, 'line-warn');
+            term.writeln(`${C.yellow}No traits in namespace "${namespace}"${C.reset}`);
             return;
         }
     }
@@ -483,47 +604,49 @@ function termList(namespace) {
     }
 
     for (const [ns, traits] of Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]))) {
-        termWrite(`<span class="line-bold">${escHtml(ns)}</span> <span class="line-dim">(${traits.length})</span>`, '');
+        term.writeln(`${C.bold}${C.brightWhite}${ns}${C.reset} ${C.gray}(${traits.length})${C.reset}`);
         for (const t of traits) {
             const name = t.path.split('.').pop();
             const badge = t.wasm_callable
-                ? '<span class="line-ok">[WASM]</span>'
-                : '<span class="line-warn">[REST]</span>';
-            termWrite(`  ${badge} <span class="line-accent">${escHtml(name)}</span>  <span class="line-dim">${escHtml(t.description || '')}</span>`, '');
+                ? `${C.green}[WASM]${C.reset}`
+                : `${C.yellow}[REST]${C.reset}`;
+            term.writeln(`  ${badge} ${C.blue}${name}${C.reset}  ${C.gray}${t.description || ''}${C.reset}`);
         }
     }
-    termWrite(`<span class="line-dim">${filtered.length} traits</span>`, '');
+    term.writeln(`${C.gray}${filtered.length} traits${C.reset}`);
 }
 
 function termInfo(path) {
     const raw = get_trait_info(path);
     if (!raw) {
-        termWrite(`Trait "${escHtml(path)}" not found`, 'line-err');
+        term.writeln(`${C.red}Trait "${path}" not found${C.reset}`);
         return;
     }
     const t = JSON.parse(raw);
-    const badge = t.wasm_callable ? '<span class="line-ok">WASM</span>' : '<span class="line-warn">REST</span>';
-    termWrite(`<span class="line-bold">${escHtml(t.path)}</span>  ${badge}  <span class="line-dim">${escHtml(t.version || '')}</span>`, '');
-    if (t.description) termWrite(`  ${escHtml(t.description)}`, 'line-info');
+    const badge = t.wasm_callable
+        ? `${C.green}WASM${C.reset}`
+        : `${C.yellow}REST${C.reset}`;
+    term.writeln(`${C.bold}${C.brightWhite}${t.path}${C.reset}  ${badge}  ${C.gray}${t.version || ''}${C.reset}`);
+    if (t.description) term.writeln(`  ${C.gray}${t.description}${C.reset}`);
 
     const params = t.params || [];
     if (params.length > 0) {
-        termWrite('', '');
-        termWrite('<span class="line-bold">Parameters:</span>', '');
+        term.writeln('');
+        term.writeln(`${C.bold}Parameters:${C.reset}`);
         for (const p of params) {
-            const req = p.required ? ' <span class="line-err">*</span>' : '';
-            termWrite(`  <span class="line-accent">${escHtml(p.name)}</span> <span class="line-dim">(${escHtml(p.type)})</span>${req}  ${escHtml(p.description || '')}`, '');
+            const req = p.required ? ` ${C.red}*${C.reset}` : '';
+            term.writeln(`  ${C.blue}${p.name}${C.reset} ${C.magenta}(${p.type})${C.reset}${req}  ${C.gray}${p.description || ''}${C.reset}`);
         }
     }
     if (t.returns) {
-        termWrite('', '');
-        termWrite(`<span class="line-bold">Returns:</span> <span class="line-dim">${escHtml(t.returns)}</span>  ${escHtml(t.returns_description || '')}`, '');
+        term.writeln('');
+        term.writeln(`${C.bold}Returns:${C.reset} ${C.magenta}${t.returns}${C.reset}  ${C.gray}${t.returns_description || ''}${C.reset}`);
     }
 }
 
 async function termCall(path, argStrs) {
     const isLocal = wasmCallableSet.has(path);
-    const tag = isLocal ? 'WASM' : 'REST';
+    const tag = isLocal ? `${C.green}WASM${C.reset}` : `${C.yellow}REST${C.reset}`;
 
     // Parse args: try JSON, fall back to string
     const args = argStrs.map(a => {
@@ -542,35 +665,39 @@ async function termCall(path, argStrs) {
 
     // Format output
     const formatted = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-    // Truncate very long outputs
     const lines = formatted.split('\n');
     if (lines.length > 100) {
-        termWrite(escHtml(lines.slice(0, 80).join('\n')), 'line-ok');
-        termWrite(`<span class="line-dim">... (${lines.length - 80} more lines, ${formatted.length} bytes total)</span>`, '');
+        for (const line of lines.slice(0, 80)) term.writeln(`${C.green}${line}${C.reset}`);
+        term.writeln(`${C.gray}... (${lines.length - 80} more lines, ${formatted.length} bytes total)${C.reset}`);
     } else {
-        termWrite(escHtml(formatted), 'line-ok');
+        for (const line of lines) term.writeln(`${C.green}${line}${C.reset}`);
     }
-    termWrite(`<span class="line-dim">${dt}ms (${tag})</span>`, '');
+    term.writeln(`${C.gray}${dt}ms (${C.reset}${tag}${C.gray})${C.reset}`);
+}
+
+function termWriteVersion() {
+    const status = $('status').textContent;
+    term.writeln(`${C.green}${status}${C.reset}`);
 }
 
 function termSearch(query) {
-    if (!query) { termWrite('Usage: search <query>', 'line-err'); return; }
+    if (!query) { term.writeln(`${C.red}Usage: search <query>${C.reset}`); return; }
     const q = query.toLowerCase();
     const results = allTraits.filter(t =>
         t.path.toLowerCase().includes(q) ||
         (t.description || '').toLowerCase().includes(q)
     );
     if (results.length === 0) {
-        termWrite(`No matches for "${escHtml(query)}"`, 'line-warn');
+        term.writeln(`${C.yellow}No matches for "${query}"${C.reset}`);
         return;
     }
     for (const t of results) {
         const badge = t.wasm_callable
-            ? '<span class="line-ok">[WASM]</span>'
-            : '<span class="line-warn">[REST]</span>';
-        termWrite(`${badge} <span class="line-accent">${escHtml(t.path)}</span>  <span class="line-dim">${escHtml(t.description || '')}</span>`, '');
+            ? `${C.green}[WASM]${C.reset}`
+            : `${C.yellow}[REST]${C.reset}`;
+        term.writeln(`${badge} ${C.blue}${t.path}${C.reset}  ${C.gray}${t.description || ''}${C.reset}`);
     }
-    termWrite(`<span class="line-dim">${results.length} matches</span>`, '');
+    term.writeln(`${C.gray}${results.length} matches${C.reset}`);
 }
 
 // ── Go ──

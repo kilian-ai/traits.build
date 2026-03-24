@@ -33,6 +33,14 @@
             "type": "contains",
             "value": "REST API"
           }
+        },
+        {
+          "assert": "includes xterm.js CDN",
+          "command": "traits call www.wasm",
+          "expect": {
+            "type": "contains",
+            "value": "xterm"
+          }
         }
       ]
     }

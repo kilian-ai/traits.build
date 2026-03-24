@@ -10,6 +10,8 @@ pub fn wasm_page(_args: &[Value]) -> Value {
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 title { "traits.build — WASM Kernel" }
                 link rel="stylesheet" href="/static/www/wasm/wasm.css" {}
+                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" {}
+                (PreEscaped(r#"<script type="importmap">{"imports":{"xterm":"https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm","@xterm/addon-fit":"https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm","@xterm/addon-web-links":"https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/+esm"}}</script>"#))
             }
             body {
                 div.container {
@@ -80,18 +82,14 @@ pub fn wasm_page(_args: &[Value]) -> Value {
                     }
                 }
 
-                // Terminal panel — collapsible
+                // Terminal panel — xterm.js
                 div.terminal-wrap {
                     div.terminal-header {
                         button #btnToggleTerm .terminal-toggle { "▼ Terminal" }
-                        span.terminal-hint { "traits CLI in the browser" }
+                        span.terminal-hint { "traits CLI — powered by xterm.js" }
                     }
                     div #terminalContainer .terminal-container {
-                        div #termOutput .term-output {}
-                        div.term-input-line {
-                            span.term-prompt { "traits " }
-                            input #termInput type="text" placeholder="type a command... (try: list, info sys.checksum, call sys.checksum hash hello)" autocomplete="off" spellcheck="false" {}
-                        }
+                        div #xterm .xterm-mount {}
                     }
                 }
                 (PreEscaped(r#"<script type="module" src="/static/www/wasm/wasm.js"></script>"#))

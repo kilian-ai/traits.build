@@ -441,7 +441,7 @@ button.secondary:hover {
     background: #484f58;
 }
 
-/* -- Terminal -- */
+/* -- Terminal (xterm.js) -- */
 .terminal-wrap {
     margin-top: 1.5rem;
     border: 1px solid #30363d;
@@ -478,53 +478,14 @@ button.secondary:hover {
 }
 
 .terminal-container {
-    padding: 0.75rem;
-    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-    font-size: 0.82rem;
-    line-height: 1.5;
-    max-height: 400px;
-    overflow-y: auto;
+    height: 360px;
+    padding: 4px;
 }
 
 .terminal-container.collapsed {
     display: none;
 }
 
-.term-output {
-    white-space: pre-wrap;
-    word-break: break-all;
-}
-
-.term-output .line { display: block; }
-.term-output .line-cmd { color: #c9d1d9; }
-.term-output .line-ok { color: #3fb950; }
-.term-output .line-err { color: #f85149; }
-.term-output .line-info { color: #8b949e; }
-.term-output .line-accent { color: #58a6ff; }
-.term-output .line-warn { color: #d29922; }
-.term-output .line-dim { color: #484f58; }
-.term-output .line-bold { color: #f0f6fc; font-weight: 600; }
-
-.term-input-line {
-    display: flex;
-    align-items: center;
-    margin-top: 0.25rem;
-}
-
-.term-prompt {
-    color: #3fb950;
-    font-weight: 600;
-    flex-shrink: 0;
-    white-space: pre;
-}
-
-#termInput {
-    flex: 1;
-    background: transparent;
-    border: none;
-    color: #c9d1d9;
-    font-family: inherit;
-    font-size: inherit;
-    outline: none;
-    caret-color: #58a6ff;
+.xterm-mount {
+    height: 100%;
 }
