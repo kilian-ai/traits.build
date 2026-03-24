@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::types::TraitValue;
+use crate::cli::{CliSession, CliBackend, CLEAR_SENTINEL};
 use std::io::Read;
 
 use clap::{Parser, Subcommand};
@@ -446,271 +447,199 @@ fn load_examples(trait_path: &str) -> Vec<Vec<String>> {
     examples
 }
 
-/// Interactive prompt for a single parameter with history and arrow key navigation.
-/// Returns the user's input string, or None if they pressed Ctrl-C/Ctrl-D.
-fn prompt_param(
-    param_name: &str,
-    param_type: &str,
-    description: &str,
-    required: bool,
-    default_val: &str,
-    history: &[String],
-) -> Option<String> {
-    use crossterm::{terminal, event::{self, Event, KeyCode, KeyModifiers}, cursor, execute};
-    use std::io::Write;
+// ── Native CliBackend — bridges kernel CliSession to the native dispatcher ──
 
-    let mut stdout = std::io::stdout();
-    let req_badge = if required { "\x1b[91m*\x1b[0m" } else { " " };
-    let type_dim = format!("\x1b[90m{}\x1b[0m", param_type);
+struct NativeCliBackend {
+    dispatcher: crate::dispatcher::Dispatcher,
+    rt: tokio::runtime::Handle,
+}
 
-    // Print param header
-    eprint!("  {} \x1b[1m{}\x1b[0m  {}  \x1b[90m{}\x1b[0m", req_badge, param_name, type_dim, description);
-    if !default_val.is_empty() {
-        eprint!("  \x1b[90m[{}]\x1b[0m", default_val);
-    }
-    eprintln!();
-
-    // Build completion list: history (most recent first) + default
-    let mut completions: Vec<String> = history.iter().rev().cloned().collect();
-    // Deduplicate while preserving order
-    let mut seen = std::collections::HashSet::new();
-    completions.retain(|v| seen.insert(v.clone()));
-    if !default_val.is_empty() && !seen.contains(default_val) {
-        completions.push(default_val.to_string());
-    }
-
-    // Prompt line
-    eprint!("  \x1b[96m❯\x1b[0m ");
-    let _ = stdout.flush();
-
-    // Enter raw mode for key-by-key reading
-    let _ = terminal::enable_raw_mode();
-    let mut input = String::new();
-    let mut hist_idx: Option<usize> = None; // None = typing new, Some(i) = browsing completions[i]
-    let mut cursor_pos: usize = 0;
-
-    loop {
-        if let Ok(Event::Key(key)) = event::read() {
-            match (key.code, key.modifiers) {
-                (KeyCode::Enter, _) => {
-                    let _ = terminal::disable_raw_mode();
-                    eprintln!();
-                    let result = input.trim().to_string();
-                    if result.is_empty() && !default_val.is_empty() {
-                        return Some(default_val.to_string());
-                    }
-                    if result.is_empty() && !required {
-                        return Some(String::new());
-                    }
-                    if result.is_empty() && required {
-                        eprint!("  \x1b[91m  required — try again\x1b[0m\n");
-                        return prompt_param(param_name, param_type, description, required, default_val, history);
-                    }
-                    return Some(result);
-                }
-                (KeyCode::Char('c'), KeyModifiers::CONTROL) | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-                    let _ = terminal::disable_raw_mode();
-                    eprintln!();
-                    return None; // Abort
-                }
-                (KeyCode::Up, _) => {
-                    if completions.is_empty() { continue; }
-                    hist_idx = Some(match hist_idx {
-                        None => 0,
-                        Some(i) => (i + 1).min(completions.len() - 1),
-                    });
-                    input = completions[hist_idx.unwrap()].clone();
-                    cursor_pos = input.len();
-                    redraw_input(&mut stdout, &input, cursor_pos);
-                }
-                (KeyCode::Down, _) => {
-                    if completions.is_empty() { continue; }
-                    match hist_idx {
-                        Some(0) => {
-                            hist_idx = None;
-                            input.clear();
-                            cursor_pos = 0;
-                            redraw_input(&mut stdout, &input, cursor_pos);
-                        }
-                        Some(i) => {
-                            hist_idx = Some(i - 1);
-                            input = completions[hist_idx.unwrap()].clone();
-                            cursor_pos = input.len();
-                            redraw_input(&mut stdout, &input, cursor_pos);
-                        }
-                        None => {}
-                    }
-                }
-                (KeyCode::Left, _) => {
-                    if cursor_pos > 0 {
-                        cursor_pos -= 1;
-                        let _ = execute!(stdout, cursor::MoveLeft(1));
-                    }
-                }
-                (KeyCode::Right, _) => {
-                    if cursor_pos < input.len() {
-                        cursor_pos += 1;
-                        let _ = execute!(stdout, cursor::MoveRight(1));
-                    }
-                }
-                (KeyCode::Backspace, _) => {
-                    if cursor_pos > 0 {
-                        cursor_pos -= 1;
-                        input.remove(cursor_pos);
-                        hist_idx = None;
-                        redraw_input(&mut stdout, &input, cursor_pos);
-                    }
-                }
-                (KeyCode::Delete, _) => {
-                    if cursor_pos < input.len() {
-                        input.remove(cursor_pos);
-                        hist_idx = None;
-                        redraw_input(&mut stdout, &input, cursor_pos);
-                    }
-                }
-                (KeyCode::Home, _) => {
-                    cursor_pos = 0;
-                    redraw_input(&mut stdout, &input, cursor_pos);
-                }
-                (KeyCode::End, _) => {
-                    cursor_pos = input.len();
-                    redraw_input(&mut stdout, &input, cursor_pos);
-                }
-                (KeyCode::Tab, _) => {
-                    // Tab cycles through completions like arrow up
-                    if completions.is_empty() { continue; }
-                    hist_idx = Some(match hist_idx {
-                        None => 0,
-                        Some(i) => (i + 1) % completions.len(),
-                    });
-                    input = completions[hist_idx.unwrap()].clone();
-                    cursor_pos = input.len();
-                    redraw_input(&mut stdout, &input, cursor_pos);
-                }
-                (KeyCode::Char(c), _) => {
-                    input.insert(cursor_pos, c);
-                    cursor_pos += 1;
-                    hist_idx = None;
-                    redraw_input(&mut stdout, &input, cursor_pos);
-                }
-                _ => {}
-            }
+impl NativeCliBackend {
+    fn new(dispatcher: crate::dispatcher::Dispatcher) -> Self {
+        Self {
+            rt: tokio::runtime::Handle::current(),
+            dispatcher,
         }
     }
 }
 
-/// Redraw the input line (erase current line, rewrite)
-fn redraw_input(stdout: &mut std::io::Stdout, input: &str, cursor_pos: usize) {
-    use std::io::Write;
-    // Move to column 0, clear line, print prompt + input, position cursor
-    let _ = write!(stdout, "\r\x1b[2K  \x1b[96m❯\x1b[0m {}", input);
-    // Move cursor to correct position: prompt is "  ❯ " = 4 visible chars
-    let total = 4 + input.len();
-    let target = 4 + cursor_pos;
-    if target < total {
-        let back = total - target;
-        let _ = write!(stdout, "\x1b[{}D", back);
+impl CliBackend for NativeCliBackend {
+    fn call(&self, path: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, String> {
+        let trait_args: Vec<TraitValue> = args.iter().map(|a| TraitValue::from_json(a)).collect();
+        let cc = crate::dispatcher::CallConfig::default();
+        match tokio::task::block_in_place(|| {
+            self.rt.block_on(self.dispatcher.call(path, trait_args, &cc))
+        }) {
+            Ok(result) => Ok(result.to_json()),
+            Err(e) => Err(e.to_string()),
+        }
     }
-    let _ = stdout.flush();
+
+    fn list_all(&self) -> Vec<serde_json::Value> {
+        if let Some(reg) = crate::globals::REGISTRY.get() {
+            reg.all().iter().map(|e| serde_json::json!({
+                "path": e.path,
+                "description": e.description,
+                "version": e.version,
+                "tags": e.tags,
+            })).collect()
+        } else {
+            vec![]
+        }
+    }
+
+    fn get_info(&self, path: &str) -> Option<serde_json::Value> {
+        let reg = crate::globals::REGISTRY.get()?;
+        let entry = reg.get(path)?;
+        Some(serde_json::json!({
+            "path": entry.path,
+            "description": entry.description,
+            "version": entry.version,
+            "author": entry.author,
+            "tags": entry.tags,
+            "params": entry.signature.params.iter().map(|p| {
+                serde_json::json!({
+                    "name": p.name,
+                    "type": format!("{:?}", p.param_type).to_lowercase(),
+                    "description": p.description,
+                    "required": !p.optional,
+                })
+            }).collect::<Vec<_>>(),
+            "returns": format!("{:?}", entry.signature.returns.return_type).to_lowercase(),
+            "returns_description": entry.signature.returns.description,
+        }))
+    }
+
+    fn search(&self, query: &str) -> Vec<serde_json::Value> {
+        if let Some(reg) = crate::globals::REGISTRY.get() {
+            let q = query.to_lowercase();
+            reg.all().iter()
+                .filter(|e| {
+                    e.path.to_lowercase().contains(&q) ||
+                    e.description.to_lowercase().contains(&q) ||
+                    e.tags.iter().any(|t| t.to_lowercase().contains(&q))
+                })
+                .map(|e| serde_json::json!({
+                    "path": e.path,
+                    "description": e.description,
+                }))
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    fn all_paths(&self) -> Vec<String> {
+        if let Some(reg) = crate::globals::REGISTRY.get() {
+            reg.all().iter().map(|e| e.path.clone()).collect()
+        } else {
+            vec![]
+        }
+    }
+
+    fn version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+
+    fn load_param_history(&self) -> std::collections::HashMap<String, std::collections::HashMap<String, Vec<String>>> {
+        load_history()
+    }
+
+    fn save_param_history(&self, history: &std::collections::HashMap<String, std::collections::HashMap<String, Vec<String>>>) {
+        save_history(history);
+    }
+
+    fn load_examples(&self, path: &str) -> Vec<Vec<String>> {
+        load_examples(path)
+    }
 }
 
-/// Interactive call: prompt for each parameter, then dispatch
+/// Interactive call using the unified kernel CliSession.
+/// Puts the terminal in raw mode and feeds crossterm key events as raw bytes
+/// into CliSession.feed(), writing the ANSI output directly to stdout.
 async fn interactive_call(
     config: &Config,
     trait_path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use std::io::IsTerminal;
+    use crossterm::{terminal, event::{self, Event, KeyCode, KeyModifiers}};
+    use std::io::{IsTerminal, Write};
+
     if !std::io::stdin().is_terminal() {
         return Err("Interactive mode requires a terminal (stdin must be a TTY)".into());
     }
 
     let dispatcher = crate::bootstrap(config)?;
+    let backend = NativeCliBackend::new(dispatcher);
 
-    let reg = crate::globals::REGISTRY.get()
-        .ok_or("Registry not initialized")?;
-    let entry = reg.get(trait_path)
-        .ok_or_else(|| format!("Trait '{}' not found", trait_path))?;
+    let mut session = CliSession::new();
+    session.load_history(&backend);
 
-    // Header
-    eprintln!();
-    eprintln!("  \x1b[1m{}\x1b[0m  \x1b[90m{}\x1b[0m", trait_path, entry.description);
-    eprintln!("  \x1b[90m{}\x1b[0m", "─".repeat(50));
+    // Pre-seed the command line and trigger interactive mode
+    let init_cmd = format!("call -i {}\r", trait_path);
+    let init_output = session.feed(&init_cmd, &backend);
+    print!("{}", init_output);
+    std::io::stdout().flush()?;
 
-    if entry.signature.params.is_empty() {
-        eprintln!("  \x1b[90m(no parameters)\x1b[0m");
-        eprintln!();
-    }
+    // Enter raw mode and feed crossterm events to CliSession
+    terminal::enable_raw_mode()?;
+    let result = loop {
+        match event::read() {
+            Ok(Event::Key(key)) => {
+                // Convert crossterm KeyEvent to raw terminal bytes for CliSession.feed()
+                let raw = match (key.code, key.modifiers) {
+                    (KeyCode::Enter, _) => Some("\r".to_string()),
+                    (KeyCode::Tab, _) => Some("\t".to_string()),
+                    (KeyCode::Backspace, _) => Some("\x7f".to_string()),
+                    (KeyCode::Delete, _) => Some("\x1b[3~".to_string()),
+                    (KeyCode::Up, _) => Some("\x1b[A".to_string()),
+                    (KeyCode::Down, _) => Some("\x1b[B".to_string()),
+                    (KeyCode::Left, _) => Some("\x1b[D".to_string()),
+                    (KeyCode::Right, _) => Some("\x1b[C".to_string()),
+                    (KeyCode::Home, _) => Some("\x1b[H".to_string()),
+                    (KeyCode::End, _) => Some("\x1b[F".to_string()),
+                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some("\x03".to_string()),
+                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some("\x04".to_string()),
+                    (KeyCode::Char('l'), KeyModifiers::CONTROL) => Some("\x0c".to_string()),
+                    (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some("\x15".to_string()),
+                    (KeyCode::Char('w'), KeyModifiers::CONTROL) => Some("\x17".to_string()),
+                    (KeyCode::Char('a'), KeyModifiers::CONTROL) => Some("\x01".to_string()),
+                    (KeyCode::Char('e'), KeyModifiers::CONTROL) => Some("\x05".to_string()),
+                    (KeyCode::Char(c), _) => {
+                        let mut buf = [0u8; 4];
+                        Some(c.encode_utf8(&mut buf).to_string())
+                    }
+                    _ => None,
+                };
 
-    // Load history and examples
-    let mut all_history = load_history();
-    let trait_history = all_history.entry(trait_path.to_string()).or_default();
-    let examples = load_examples(trait_path);
+                if let Some(bytes) = raw {
+                    let output = session.feed(&bytes, &backend);
 
-    let mut collected_args: Vec<String> = Vec::new();
+                    // Handle CLEAR sentinel
+                    if output.contains(CLEAR_SENTINEL) {
+                        let cleaned = output.replace(CLEAR_SENTINEL, "\x1b[2J\x1b[H");
+                        print!("{}", cleaned);
+                        std::io::stdout().flush()?;
+                        continue;
+                    }
 
-    for (i, param) in entry.signature.params.iter().enumerate() {
-        let param_type_str = format!("{:?}", param.param_type).to_lowercase();
-        let required = !param.optional;
+                    print!("{}", output);
+                    std::io::stdout().flush()?;
 
-        // Build default from examples
-        let default_val = examples.iter()
-            .filter_map(|ex| ex.get(i).cloned())
-            .next()
-            .unwrap_or_default();
-
-        // Get per-param history
-        let param_hist = trait_history.entry(param.name.clone()).or_insert_with(Vec::new);
-
-        match prompt_param(
-            &param.name,
-            &param_type_str,
-            &param.description,
-            required,
-            &default_val,
-            param_hist,
-        ) {
-            Some(val) => {
-                // Save to history (deduplicate, keep last 20)
-                if !val.is_empty() {
-                    param_hist.retain(|v| v != &val);
-                    param_hist.push(val.clone());
-                    if param_hist.len() > 20 {
-                        param_hist.remove(0);
+                    // If session exited interactive mode (back to prompt),
+                    // and we're in a single-command interactive call, we're done.
+                    if !session.is_interactive() && output.contains("traits \x1b[0m") {
+                        break Ok(());
                     }
                 }
-                collected_args.push(val);
             }
-            None => {
-                eprintln!("  \x1b[90maborted\x1b[0m");
-                dispatcher.shutdown().await;
-                return Ok(());
-            }
+            Ok(_) => {} // Ignore mouse/resize events
+            Err(e) => break Err(Box::new(e) as Box<dyn std::error::Error>),
         }
-    }
+    };
 
-    // Save history
-    save_history(&all_history);
-
-    eprintln!("  \x1b[90m{}\x1b[0m", "─".repeat(50));
-
-    // Parse and dispatch
-    let trait_args = parse_cli_args(trait_path, &collected_args);
-    match dispatcher.call(trait_path, trait_args, &crate::dispatcher::CallConfig::default()).await {
-        Ok(result) => {
-            print_result(trait_path, &result)?;
-        }
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("Argument count mismatch") || msg.contains("expected") {
-                print_trait_usage(trait_path);
-            }
-            dispatcher.shutdown().await;
-            return Err(format!("Trait call failed: {}", e).into());
-        }
-    }
-
-    dispatcher.shutdown().await;
-    Ok(())
+    terminal::disable_raw_mode()?;
+    println!(); // Final newline after raw mode
+    result
 }
 
 // ── Trait dispatch entry point ──

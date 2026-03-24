@@ -333,7 +333,8 @@ window.addEventListener('popstate', e => {
 
 window.addEventListener('hashchange', () => {
   if (!isLocal) return;
-  navigate(currentRouteFromLocation(), false);
+  const hash = location.hash.slice(1);
+  if (hash && ROUTES[hash]) navigate(hash, false);
 });
 
 // ── Boot sequence ──

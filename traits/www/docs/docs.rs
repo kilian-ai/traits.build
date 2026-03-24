@@ -60,7 +60,7 @@ fn build_html() -> String {
             current_cat = page.category;
         }
         sidebar.push_str(&format!(
-            r##"<a class="sb-link" href="#{}" onclick="showPage('{}')">{}</a>"##,
+            r##"<a class="sb-link" href="#{}" onclick="showPage('{}'); return false;">{}</a>"##,
             page.slug, page.slug, page.title
         ));
     }
