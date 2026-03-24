@@ -254,7 +254,7 @@ async function initTerminal() {
         theme: {
             background: '#0d1117',
             foreground: '#c9d1d9',
-            cursor: '#58a6ff',
+            cursor: '#c9d1d9',
             cursorAccent: '#0d1117',
             selectionBackground: '#264f78',
             selectionForeground: '#ffffff',
