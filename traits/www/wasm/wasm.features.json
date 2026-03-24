@@ -25,6 +25,14 @@
             "type": "contains",
             "value": "wasm.js"
           }
+        },
+        {
+          "assert": "welcome text mentions REST API",
+          "command": "traits call www.wasm",
+          "expect": {
+            "type": "contains",
+            "value": "REST API"
+          }
         }
       ]
     }

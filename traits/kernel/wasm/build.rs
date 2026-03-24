@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    // traits/ is 3 levels up from traits/kernel/wasm/
-    let traits_dir = manifest_dir.parent().unwrap().parent().unwrap().join("traits");
-    let root_dir = manifest_dir.parent().unwrap().parent().unwrap();
+    // workspace root is 3 levels up: traits/kernel/wasm → traits/kernel → traits → root
+    let root_dir = manifest_dir.parent().unwrap().parent().unwrap().parent().unwrap();
+    let traits_dir = root_dir.join("traits");
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     println!("cargo:rerun-if-changed=build.rs");

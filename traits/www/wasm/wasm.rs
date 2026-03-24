@@ -27,8 +27,8 @@ pub fn wasm_page(_args: &[Value]) -> Value {
                             }
                             div.filter-bar {
                                 label {
-                                    input #filterCallable type="checkbox" checked {}
-                                    " Callable only"
+                                    input #filterCallable type="checkbox" {}
+                                    " WASM only"
                                 }
                                 span #traitCount .count {}
                             }
@@ -70,7 +70,9 @@ pub fn wasm_page(_args: &[Value]) -> Value {
                                 p { "The traits kernel is loaded directly in your browser as a WebAssembly module." }
                                 p { "Select a trait from the list to see its details. Traits marked "
                                     span.badge.callable { "WASM" }
-                                    " can be called directly in your browser — no server needed."
+                                    " run locally in your browser. Traits marked "
+                                    span.badge.server { "Server" }
+                                    " are called transparently via the REST API."
                                 }
                                 div #kernelInfo .kernel-info {}
                             }
