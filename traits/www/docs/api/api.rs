@@ -86,8 +86,14 @@ const HTML: &str = r##"<!DOCTYPE html>
   }
   document.getElementById('loading').className = 'hidden';
   if (!spec || !spec.openapi) {
-    document.getElementById('redoc').innerHTML =
-      '<div style="padding:2rem;color:#f85149">Failed to load OpenAPI spec.</div>';
+    var isLocal = location.protocol === 'file:';
+    document.getElementById('redoc').innerHTML = isLocal
+      ? '<div style="padding:2rem;text-align:center;color:var(--fg,#c9d1d9)">' +
+        '<h2 style="margin-bottom:1rem;color:#f0f6fc">API Reference</h2>' +
+        '<p style="color:#8b949e;max-width:480px;margin:0 auto">The interactive API documentation requires a running server to generate the OpenAPI spec.</p>' +
+        '<p style="margin-top:1rem"><code style="background:#161b22;padding:0.3rem 0.6rem;border-radius:4px;color:#8bdb8b">./target/release/traits serve -p 8091</code></p>' +
+        '<p style="margin-top:0.5rem;color:#8b949e">Then visit <a href="http://127.0.0.1:8091/docs/api">http://127.0.0.1:8091/docs/api</a></p></div>'
+      : '<div style="padding:2rem;color:#f85149">Failed to load OpenAPI spec.</div>';
     return;
   }
     Redoc.init(spec, {
