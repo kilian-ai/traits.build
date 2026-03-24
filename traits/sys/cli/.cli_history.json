@@ -1,0 +1,38 @@
+{
+  "sys.checksum": {
+    "action": [
+      "io",
+      "signature"
+    ],
+    "data": [
+      "kilian",
+      "kilian von neum"
+    ]
+  },
+  "sys.call": {
+    "headers": [
+      "{\"X-Custom-Test\":\"traits-build\"}"
+    ],
+    "body": [
+      "{\"hello\":\"world\"}"
+    ],
+    "url": [
+      "https://httpbin.org/get"
+    ],
+    "auth_secret": [
+      "null"
+    ],
+    "method": [
+      "PUT"
+    ]
+  },
+  "llm.openai": {
+    "model": [
+      "gpt-5.4"
+    ],
+    "prompt": [
+      "hi",
+      "whats your name and model"
+    ]
+  }
+}

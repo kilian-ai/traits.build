@@ -1,6 +1,6 @@
 [trait]
 description = "Show trait system version, or generate YYMMDD version strings"
-version = "v260324.015105"
+version = "v260324.023947"
 epoch = 0
 checksum = "4420d9b51fc16364bcf511e3aab8a9104f9a8539d3a1a2244b246b94604cc26b"
 author = "system"

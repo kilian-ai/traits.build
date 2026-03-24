@@ -609,6 +609,11 @@ async fn interactive_call(
     config: &Config,
     trait_path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        return Err("Interactive mode requires a terminal (stdin must be a TTY)".into());
+    }
+
     let dispatcher = crate::bootstrap(config)?;
 
     let reg = crate::globals::REGISTRY.get()

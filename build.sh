@@ -33,6 +33,8 @@ copy_dylib() {
     local dst="${trait_dir}/lib${dir_name}.${EXT}"
     if [[ -f "$src" ]]; then
         cp "$src" "$dst"
+        # Re-sign on macOS — cp invalidates the kernel's code signature cache
+        [[ "$(uname)" == "Darwin" ]] && codesign -fs - "$dst" 2>/dev/null || true
         echo "  Copied $src → $dst"
     fi
 }

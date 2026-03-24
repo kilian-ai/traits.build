@@ -1,0 +1,20 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "rebuild-and-test",
+			"type": "shell",
+			"command": "bash build.sh 2>&1 | tail -8"
+		},
+		{
+			"label": "test-interactive",
+			"type": "shell",
+			"command": "./target/release/traits call sys.checksum hash hello 2>/dev/null && echo '---OK---' && printf 'test\\n' | ./target/release/traits call -i sys.checksum 2>&1; echo 'EXIT:'$?"
+		},
+		{
+			"label": "commit",
+			"type": "shell",
+			"command": "git add -A && git commit -m 'fix: re-sign dylibs after copy on macOS, add TTY guard for interactive mode\n\n- build.sh: codesign -fs dylibs after cp to fix stale code signature SIGKILL\n- cli.rs: reject -i mode when stdin is not a TTY'"
+		}
+	]
+}
