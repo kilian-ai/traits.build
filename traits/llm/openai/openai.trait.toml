@@ -17,7 +17,7 @@ model = "gpt-4o-mini"
 [signature]
 params = [
   { name = "prompt", type = "string", description = "User message to send to the model", required = true },
-  { name = "model", type = "string", description = "OpenAI model (default: gpt-4o-mini)", optional = true },
+  { name = "model", type = "string", description = "OpenAI model", optional = true },
 ]
 
 [signature.returns]

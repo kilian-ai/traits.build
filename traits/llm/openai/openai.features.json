@@ -10,12 +10,48 @@
           "type": "rest",
           "method": "POST",
           "path": "/traits/llm/openai",
-          "body": { "args": ["Say hello in exactly one word"] },
+          "body": { "args": ["Respond with exactly the word: hello"] },
           "expect": {
             "status": 200,
-            "json_path": "$.result"
+            "json_path": "$.result",
+            "contains": "hello"
           },
           "requires_secret": "openai_api_key"
+        }
+      ],
+      "examples": [
+        {
+          "input": ["Respond with exactly the word: hello", "gpt-4o-mini"],
+          "output": {
+            "contains": ["hello"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat completion with custom model",
+      "description": "Send a prompt specifying a model explicitly",
+      "tests": [
+        {
+          "name": "custom model returns response",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/llm/openai",
+          "body": { "args": ["Respond with exactly the word: world", "gpt-4o-mini"] },
+          "expect": {
+            "status": 200,
+            "json_path": "$.result",
+            "contains": "world"
+          },
+          "requires_secret": "openai_api_key"
+        }
+      ],
+      "examples": [
+        {
+          "input": ["Respond with exactly the word: world", "gpt-4o-mini"],
+          "output": {
+            "contains": ["world"]
+          }
         }
       ]
     },

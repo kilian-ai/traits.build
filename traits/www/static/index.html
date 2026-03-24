@@ -82,7 +82,8 @@ const ROUTES = {
 const isLocal = location.protocol === 'file:';
 
 function runtimeScriptPath() {
-  return isLocal ? './wasm-runtime.js' : '/static/wasm-runtime.js';
+  if (isLocal) return `./wasm-runtime.js?v=${Date.now()}`;
+  return '/static/www/static/wasm-runtime.js';
 }
 
 function loadScript(src) {

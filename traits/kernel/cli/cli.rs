@@ -84,6 +84,7 @@ struct ParamMeta {
     description: String,
     required: bool,
     default_val: String,
+    example_vals: Vec<String>,
 }
 
 struct InteractiveState {
@@ -428,18 +429,18 @@ impl CliSession {
                 let ptype = p.get("type").and_then(|t| t.as_str()).unwrap_or("any").to_string();
                 let desc = p.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string();
                 let required = p.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
+                let example_vals: Vec<String> = examples
+                    .iter()
+                    .filter_map(|ex| ex.get(i).cloned())
+                    .filter(|v| !v.is_empty())
+                    .collect();
                 let default_val = p.get("default")
                     .and_then(|d| d.as_str())
                     .map(|d| d.to_string())
                     .filter(|d| !d.is_empty())
-                    .or_else(|| {
-                        examples
-                            .iter()
-                            .filter_map(|ex| ex.get(i).cloned())
-                            .next()
-                    })
+                    .or_else(|| example_vals.first().cloned())
                     .unwrap_or_default();
-                ParamMeta { name, ptype, description: desc, required, default_val }
+                ParamMeta { name, ptype, description: desc, required, default_val, example_vals }
             })
             .collect();
 
@@ -1173,12 +1174,20 @@ fn build_history_completions(history: &[String]) -> Vec<String> {
     completions
 }
 
-fn build_tab_completions(default_val: &str) -> Vec<String> {
-    if !default_val.is_empty() {
-        vec![default_val.to_string()]
-    } else {
-        Vec::new()
+fn build_tab_completions(default_val: &str, example_vals: &[String]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut completions = Vec::new();
+    // Default first
+    if !default_val.is_empty() && seen.insert(default_val.to_string()) {
+        completions.push(default_val.to_string());
     }
+    // Then all example values
+    for v in example_vals {
+        if !v.is_empty() && seen.insert(v.clone()) {
+            completions.push(v.clone());
+        }
+    }
+    completions
 }
 
 // ── Native dispatch entry point ──

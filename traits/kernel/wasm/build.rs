@@ -27,6 +27,23 @@ fn main() {
         ));
     }
     bt.push_str("];\n");
+
+    // ── Generate BUILTIN_FEATURES: &[(&str, &str)] = (trait_path, features_json) ──
+    bt.push_str("\npub const BUILTIN_FEATURES: &[(&str, &str)] = &[\n");
+    for (path, rel_path) in &entries {
+        // Derive features.json path from .trait.toml path
+        // e.g. "traits/llm/openai/openai.trait.toml" → "traits/llm/openai/openai.features.json"
+        let features_rel = rel_path.replace(".trait.toml", ".features.json");
+        let features_abs = root_dir.join(&features_rel);
+        if features_abs.exists() {
+            bt.push_str(&format!(
+                "    ({:?}, include_str!({:?})),\n",
+                path, features_abs.to_string_lossy()
+            ));
+        }
+    }
+    bt.push_str("];\n");
+
     fs::write(out_dir.join("wasm_builtin_traits.rs"), bt).expect("write builtin_traits");
 }
 

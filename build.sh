@@ -51,6 +51,7 @@ js = js_path.read_text()
 js = re.sub(r'^/\*.*?\*/\s*', '', js, count=1, flags=re.S)
 js = re.sub(r'^export function (\w+)\(', r'function \1(', js, flags=re.M)
 js = js.replace('export { initSync, __wbg_init as default };', '')
+js = js.replace('import.meta.url', '__traits_runtime_script_url')
 
 exports = [
     'call',
@@ -71,6 +72,8 @@ wasm_b64 = base64.b64encode(wasm_path.read_bytes()).decode('ascii')
 api = ',\n'.join(f'  {name}: {name}' for name in exports)
 wrapped = (
     '(function () {\n'
+    + 'const __traits_runtime_script = typeof document !== "undefined" ? document.currentScript : null;\n'
+    + 'const __traits_runtime_script_url = (__traits_runtime_script && __traits_runtime_script.src) ? __traits_runtime_script.src : (typeof location !== "undefined" ? location.href : "");\n'
     + js
     + '\nwindow.TraitsWasm = {\n'
     + api

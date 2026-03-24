@@ -60,6 +60,10 @@
                 },
                 {
                     "args": [],
+                    "test": { "type": "contains", "value": "/static/www/static/wasm-runtime.js" }
+                },
+                {
+                    "args": [],
                     "test": { "type": "contains", "value": "initSync" }
                 },
                 {
@@ -87,6 +91,11 @@
             "name": "CLI call returns HTML",
             "run": "./target/release/traits call www.static",
             "test": { "type": "contains", "value": "<!DOCTYPE html>" }
+        },
+        {
+            "name": "generated runtime avoids module-only import.meta",
+            "run": "python3 -c \"from pathlib import Path; print('ok' if 'import.meta' not in Path('traits/www/static/wasm-runtime.js').read_text() else 'bad')\"",
+            "test": { "type": "contains", "value": "ok" }
         }
     ]
 }

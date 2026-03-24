@@ -230,6 +230,34 @@ impl CliBackend for WasmCliBackend {
     fn version(&self) -> String {
         env!("CARGO_PKG_VERSION").to_string()
     }
+
+    fn load_examples(&self, path: &str) -> Vec<Vec<String>> {
+        for &(tp, json_str) in BUILTIN_FEATURES {
+            if tp != path { continue; }
+            let parsed: Value = match serde_json::from_str(json_str) {
+                Ok(v) => v,
+                Err(_) => return vec![],
+            };
+            let mut examples = vec![];
+            if let Some(features) = parsed.get("features").and_then(|v| v.as_array()) {
+                for feature in features {
+                    if let Some(exs) = feature.get("examples").and_then(|v| v.as_array()) {
+                        for ex in exs {
+                            if let Some(input) = ex.get("input").and_then(|v| v.as_array()) {
+                                let args: Vec<String> = input.iter().map(|v| match v {
+                                    Value::String(s) => s.clone(),
+                                    other => other.to_string(),
+                                }).collect();
+                                examples.push(args);
+                            }
+                        }
+                    }
+                }
+            }
+            return examples;
+        }
+        vec![]
+    }
 }
 
 thread_local! {
