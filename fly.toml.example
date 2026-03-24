@@ -6,7 +6,7 @@
 # fly.toml is git-ignored — your deployment config stays local.
 
 app = "your-app-name"
-primary_region = "iad"
+primary_region = "your-region"
 
 [build]
   dockerfile = "Dockerfile"

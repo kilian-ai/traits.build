@@ -29,6 +29,9 @@ enum Commands {
     Call {
         /// Trait path in dot notation (e.g., sys.checksum)
         path: String,
+        /// Interactive mode: prompt for each parameter
+        #[arg(short = 'i', long = "interactive")]
+        interactive: bool,
         /// Arguments as JSON values or --flag value pairs
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -47,8 +50,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Call { path, args }) => {
-            call_trait(&config, &path, &args).await?;
+        Some(Commands::Call { path, interactive, args }) => {
+            if interactive || is_interactive_flag(&args) {
+                interactive_call(&config, &path).await?;
+            } else {
+                call_trait(&config, &path, &args).await?;
+            }
         }
         Some(Commands::External(args)) => {
             let name = &args[0];
@@ -72,7 +79,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     sys_path
                 };
-                call_trait(&config, &trait_path, &rest).await?;
+                // Check for -i in the rest args
+                if is_interactive_flag(&rest) {
+                    interactive_call(&config, &trait_path).await?;
+                } else {
+                    call_trait(&config, &trait_path, &rest).await?;
+                }
             }
         }
         None => {
@@ -342,6 +354,340 @@ pub async fn call_trait(
             let msg = e.to_string();
             if msg.contains("Argument count mismatch") || msg.contains("expected") {
                 print_trait_usage(path);
+            }
+            dispatcher.shutdown().await;
+            return Err(format!("Trait call failed: {}", e).into());
+        }
+    }
+
+    dispatcher.shutdown().await;
+    Ok(())
+}
+
+// ── Interactive mode (-i) ──
+
+/// Check if -i or --interactive appears in args (for external subcommand path)
+fn is_interactive_flag(args: &[String]) -> bool {
+    args.iter().any(|a| a == "-i" || a == "--interactive")
+}
+
+/// Load per-trait parameter history from .cli_history.json near cli.trait.toml
+fn load_history() -> std::collections::HashMap<String, std::collections::HashMap<String, Vec<String>>> {
+    let path = history_path();
+    match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => std::collections::HashMap::new(),
+    }
+}
+
+/// Save history back to disk
+fn save_history(history: &std::collections::HashMap<String, std::collections::HashMap<String, Vec<String>>>) {
+    let path = history_path();
+    if let Ok(json) = serde_json::to_string_pretty(history) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
+fn history_path() -> std::path::PathBuf {
+    let traits_dir = crate::globals::TRAITS_DIR.get()
+        .map(|p| p.as_path())
+        .unwrap_or(std::path::Path::new("./traits"));
+    traits_dir.join("sys").join("cli").join(".cli_history.json")
+}
+
+/// Load examples from a trait's .features.json file
+fn load_examples(trait_path: &str) -> Vec<Vec<String>> {
+    let parts: Vec<&str> = trait_path.split('.').collect();
+    if parts.len() < 2 { return vec![]; }
+    let traits_dir = crate::globals::TRAITS_DIR.get()
+        .map(|p| p.as_path())
+        .unwrap_or(std::path::Path::new("./traits"));
+
+    // Build path: traits/{ns}/{name}/{name}.features.json
+    let mut dir = traits_dir.to_path_buf();
+    for part in &parts {
+        dir.push(part);
+    }
+    let feat_file = dir.join(format!("{}.features.json", parts.last().unwrap()));
+    let content = match std::fs::read_to_string(&feat_file) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+    let mut examples = vec![];
+    if let Some(features) = parsed.get("features").and_then(|v| v.as_array()) {
+        for feature in features {
+            if let Some(exs) = feature.get("examples").and_then(|v| v.as_array()) {
+                for ex in exs {
+                    if let Some(input) = ex.get("input").and_then(|v| v.as_array()) {
+                        let args: Vec<String> = input.iter().map(|v| match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        }).collect();
+                        examples.push(args);
+                    }
+                }
+            }
+        }
+    }
+    examples
+}
+
+/// Interactive prompt for a single parameter with history and arrow key navigation.
+/// Returns the user's input string, or None if they pressed Ctrl-C/Ctrl-D.
+fn prompt_param(
+    param_name: &str,
+    param_type: &str,
+    description: &str,
+    required: bool,
+    default_val: &str,
+    history: &[String],
+) -> Option<String> {
+    use crossterm::{terminal, event::{self, Event, KeyCode, KeyModifiers}, cursor, execute};
+    use std::io::Write;
+
+    let mut stdout = std::io::stdout();
+    let req_badge = if required { "\x1b[91m*\x1b[0m" } else { " " };
+    let type_dim = format!("\x1b[90m{}\x1b[0m", param_type);
+
+    // Print param header
+    eprint!("  {} \x1b[1m{}\x1b[0m  {}  \x1b[90m{}\x1b[0m", req_badge, param_name, type_dim, description);
+    if !default_val.is_empty() {
+        eprint!("  \x1b[90m[{}]\x1b[0m", default_val);
+    }
+    eprintln!();
+
+    // Build completion list: history (most recent first) + default
+    let mut completions: Vec<String> = history.iter().rev().cloned().collect();
+    // Deduplicate while preserving order
+    let mut seen = std::collections::HashSet::new();
+    completions.retain(|v| seen.insert(v.clone()));
+    if !default_val.is_empty() && !seen.contains(default_val) {
+        completions.push(default_val.to_string());
+    }
+
+    // Prompt line
+    eprint!("  \x1b[96m❯\x1b[0m ");
+    let _ = stdout.flush();
+
+    // Enter raw mode for key-by-key reading
+    let _ = terminal::enable_raw_mode();
+    let mut input = String::new();
+    let mut hist_idx: Option<usize> = None; // None = typing new, Some(i) = browsing completions[i]
+    let mut cursor_pos: usize = 0;
+
+    loop {
+        if let Ok(Event::Key(key)) = event::read() {
+            match (key.code, key.modifiers) {
+                (KeyCode::Enter, _) => {
+                    let _ = terminal::disable_raw_mode();
+                    eprintln!();
+                    let result = input.trim().to_string();
+                    if result.is_empty() && !default_val.is_empty() {
+                        return Some(default_val.to_string());
+                    }
+                    if result.is_empty() && !required {
+                        return Some(String::new());
+                    }
+                    if result.is_empty() && required {
+                        eprint!("  \x1b[91m  required — try again\x1b[0m\n");
+                        return prompt_param(param_name, param_type, description, required, default_val, history);
+                    }
+                    return Some(result);
+                }
+                (KeyCode::Char('c'), KeyModifiers::CONTROL) | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                    let _ = terminal::disable_raw_mode();
+                    eprintln!();
+                    return None; // Abort
+                }
+                (KeyCode::Up, _) => {
+                    if completions.is_empty() { continue; }
+                    hist_idx = Some(match hist_idx {
+                        None => 0,
+                        Some(i) => (i + 1).min(completions.len() - 1),
+                    });
+                    input = completions[hist_idx.unwrap()].clone();
+                    cursor_pos = input.len();
+                    redraw_input(&mut stdout, &input, cursor_pos);
+                }
+                (KeyCode::Down, _) => {
+                    if completions.is_empty() { continue; }
+                    match hist_idx {
+                        Some(0) => {
+                            hist_idx = None;
+                            input.clear();
+                            cursor_pos = 0;
+                            redraw_input(&mut stdout, &input, cursor_pos);
+                        }
+                        Some(i) => {
+                            hist_idx = Some(i - 1);
+                            input = completions[hist_idx.unwrap()].clone();
+                            cursor_pos = input.len();
+                            redraw_input(&mut stdout, &input, cursor_pos);
+                        }
+                        None => {}
+                    }
+                }
+                (KeyCode::Left, _) => {
+                    if cursor_pos > 0 {
+                        cursor_pos -= 1;
+                        let _ = execute!(stdout, cursor::MoveLeft(1));
+                    }
+                }
+                (KeyCode::Right, _) => {
+                    if cursor_pos < input.len() {
+                        cursor_pos += 1;
+                        let _ = execute!(stdout, cursor::MoveRight(1));
+                    }
+                }
+                (KeyCode::Backspace, _) => {
+                    if cursor_pos > 0 {
+                        cursor_pos -= 1;
+                        input.remove(cursor_pos);
+                        hist_idx = None;
+                        redraw_input(&mut stdout, &input, cursor_pos);
+                    }
+                }
+                (KeyCode::Delete, _) => {
+                    if cursor_pos < input.len() {
+                        input.remove(cursor_pos);
+                        hist_idx = None;
+                        redraw_input(&mut stdout, &input, cursor_pos);
+                    }
+                }
+                (KeyCode::Home, _) => {
+                    cursor_pos = 0;
+                    redraw_input(&mut stdout, &input, cursor_pos);
+                }
+                (KeyCode::End, _) => {
+                    cursor_pos = input.len();
+                    redraw_input(&mut stdout, &input, cursor_pos);
+                }
+                (KeyCode::Tab, _) => {
+                    // Tab cycles through completions like arrow up
+                    if completions.is_empty() { continue; }
+                    hist_idx = Some(match hist_idx {
+                        None => 0,
+                        Some(i) => (i + 1) % completions.len(),
+                    });
+                    input = completions[hist_idx.unwrap()].clone();
+                    cursor_pos = input.len();
+                    redraw_input(&mut stdout, &input, cursor_pos);
+                }
+                (KeyCode::Char(c), _) => {
+                    input.insert(cursor_pos, c);
+                    cursor_pos += 1;
+                    hist_idx = None;
+                    redraw_input(&mut stdout, &input, cursor_pos);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Redraw the input line (erase current line, rewrite)
+fn redraw_input(stdout: &mut std::io::Stdout, input: &str, cursor_pos: usize) {
+    use std::io::Write;
+    // Move to column 0, clear line, print prompt + input, position cursor
+    let _ = write!(stdout, "\r\x1b[2K  \x1b[96m❯\x1b[0m {}", input);
+    // Move cursor to correct position: prompt is "  ❯ " = 4 visible chars
+    let total = 4 + input.len();
+    let target = 4 + cursor_pos;
+    if target < total {
+        let back = total - target;
+        let _ = write!(stdout, "\x1b[{}D", back);
+    }
+    let _ = stdout.flush();
+}
+
+/// Interactive call: prompt for each parameter, then dispatch
+async fn interactive_call(
+    config: &Config,
+    trait_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let dispatcher = crate::bootstrap(config)?;
+
+    let reg = crate::globals::REGISTRY.get()
+        .ok_or("Registry not initialized")?;
+    let entry = reg.get(trait_path)
+        .ok_or_else(|| format!("Trait '{}' not found", trait_path))?;
+
+    // Header
+    eprintln!();
+    eprintln!("  \x1b[1m{}\x1b[0m  \x1b[90m{}\x1b[0m", trait_path, entry.description);
+    eprintln!("  \x1b[90m{}\x1b[0m", "─".repeat(50));
+
+    if entry.signature.params.is_empty() {
+        eprintln!("  \x1b[90m(no parameters)\x1b[0m");
+        eprintln!();
+    }
+
+    // Load history and examples
+    let mut all_history = load_history();
+    let trait_history = all_history.entry(trait_path.to_string()).or_default();
+    let examples = load_examples(trait_path);
+
+    let mut collected_args: Vec<String> = Vec::new();
+
+    for (i, param) in entry.signature.params.iter().enumerate() {
+        let param_type_str = format!("{:?}", param.param_type).to_lowercase();
+        let required = !param.optional;
+
+        // Build default from examples
+        let default_val = examples.iter()
+            .filter_map(|ex| ex.get(i).cloned())
+            .next()
+            .unwrap_or_default();
+
+        // Get per-param history
+        let param_hist = trait_history.entry(param.name.clone()).or_insert_with(Vec::new);
+
+        match prompt_param(
+            &param.name,
+            &param_type_str,
+            &param.description,
+            required,
+            &default_val,
+            param_hist,
+        ) {
+            Some(val) => {
+                // Save to history (deduplicate, keep last 20)
+                if !val.is_empty() {
+                    param_hist.retain(|v| v != &val);
+                    param_hist.push(val.clone());
+                    if param_hist.len() > 20 {
+                        param_hist.remove(0);
+                    }
+                }
+                collected_args.push(val);
+            }
+            None => {
+                eprintln!("  \x1b[90maborted\x1b[0m");
+                dispatcher.shutdown().await;
+                return Ok(());
+            }
+        }
+    }
+
+    // Save history
+    save_history(&all_history);
+
+    eprintln!("  \x1b[90m{}\x1b[0m", "─".repeat(50));
+
+    // Parse and dispatch
+    let trait_args = parse_cli_args(trait_path, &collected_args);
+    match dispatcher.call(trait_path, trait_args, &crate::dispatcher::CallConfig::default()).await {
+        Ok(result) => {
+            print_result(trait_path, &result)?;
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("Argument count mismatch") || msg.contains("expected") {
+                print_trait_usage(trait_path);
             }
             dispatcher.shutdown().await;
             return Err(format!("Trait call failed: {}", e).into());

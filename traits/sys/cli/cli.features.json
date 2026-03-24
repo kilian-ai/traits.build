@@ -430,6 +430,31 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Interactive mode (-i flag)",
+      "description": "traits call -i <trait> prompts for each parameter with name, type, description, history, and examples from features.json",
+      "tests": [
+        {
+          "name": "-i flag appears in call help",
+          "type": "command",
+          "command": "./target/release/traits call --help 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "--interactive"
+            },
+            {
+              "type": "contains",
+              "expected": "-i"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
