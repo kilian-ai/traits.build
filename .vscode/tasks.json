@@ -15,6 +15,21 @@
 			"label": "commit",
 			"type": "shell",
 			"command": "git add -A && git commit -m 'fix: re-sign dylibs after copy on macOS, add TTY guard for interactive mode\n\n- build.sh: codesign -fs dylibs after cp to fix stale code signature SIGKILL\n- cli.rs: reject -i mode when stdin is not a TTY'"
+		},
+		{
+			"label": "rebuild",
+			"type": "shell",
+			"command": "bash build.sh 2>&1 | tail -8"
+		},
+		{
+			"label": "test-quiet",
+			"type": "shell",
+			"command": "./target/release/traits call sys.checksum hash hello 2>&1 && echo '---' && ./target/release/traits list 2>&1 | head -3"
+		},
+		{
+			"label": "commit",
+			"type": "shell",
+			"command": "git add -A && git commit -m 'fix: suppress INFO logs in CLI mode, only show for serve'"
 		}
 	]
 }

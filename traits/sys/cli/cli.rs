@@ -44,10 +44,16 @@ enum Commands {
 /// Entry point: parse CLI args, load config, dispatch.
 /// Called from main.rs — all logic lives here.
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt().with_writer(std::io::stderr).init();
-
     let config = Config::load("traits.toml")?;
     let cli = Cli::parse();
+
+    // Only show INFO logs for server mode; CLI commands use WARN to stay quiet
+    let is_serve = cli.command.is_none();
+    let level = if is_serve { tracing::Level::INFO } else { tracing::Level::WARN };
+    tracing_subscriber::fmt()
+        .with_max_level(level)
+        .with_writer(std::io::stderr)
+        .init();
 
     match cli.command {
         Some(Commands::Call { path, interactive, args }) => {

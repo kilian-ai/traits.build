@@ -1,4 +1,38 @@
 {
+  "llm.openai": {
+    "prompt": [
+      "hi",
+      "whats your name and model"
+    ],
+    "model": [
+      "gpt-5.4"
+    ]
+  },
+  "sys.mcp": {},
+  "sys.registry": {
+    "action": [
+      "list"
+    ],
+    "arg": []
+  },
+  "sys.call": {
+    "method": [
+      "PUT"
+    ],
+    "auth_secret": [
+      "null"
+    ],
+    "headers": [
+      "{\"X-Custom-Test\":\"traits-build\"}"
+    ],
+    "url": [
+      "https://httpbin.org/get"
+    ],
+    "body": [
+      "{\"hello\":\"world\"}"
+    ]
+  },
+  "sys.ps": {},
   "sys.checksum": {
     "action": [
       "io",
@@ -7,32 +41,6 @@
     "data": [
       "kilian",
       "kilian von neum"
-    ]
-  },
-  "sys.call": {
-    "headers": [
-      "{\"X-Custom-Test\":\"traits-build\"}"
-    ],
-    "body": [
-      "{\"hello\":\"world\"}"
-    ],
-    "url": [
-      "https://httpbin.org/get"
-    ],
-    "auth_secret": [
-      "null"
-    ],
-    "method": [
-      "PUT"
-    ]
-  },
-  "llm.openai": {
-    "model": [
-      "gpt-5.4"
-    ],
-    "prompt": [
-      "hi",
-      "whats your name and model"
     ]
   }
 }
