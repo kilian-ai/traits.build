@@ -194,7 +194,102 @@ export class Traits {
         };
     }
 
+    // ── Page Rendering ──
+
+    /**
+     * Call a trait and render its HTML result into a DOM element.
+     * @param {string} path - Trait path (e.g. 'www.traits.build')
+     * @param {Array} [args=[]] - Arguments
+     * @param {string|HTMLElement} [target='body'] - CSS selector or element
+     * @returns {Promise<{ok: boolean, dispatch: string}>}
+     */
+    async render(path, args = [], target = 'body') {
+        const el = typeof target === 'string' ? document.querySelector(target) : target;
+        if (!el) return { ok: false, error: `Target not found: ${target}` };
+
+        const res = await this.call(path, args);
+        if (res.ok) {
+            const html = typeof res.result === 'string'
+                ? res.result
+                : JSON.stringify(res.result, null, 2);
+            el.innerHTML = html;
+            this._runScripts(el);
+        }
+        return res;
+    }
+
+    /**
+     * Navigate to a URL path (SPA-style). Fetches page HTML from the server
+     * and injects it into the target element. Updates browser history.
+     * @param {string} urlPath - URL path (e.g. '/wasm', '/admin')
+     * @param {string|HTMLElement} [target='body'] - CSS selector or element
+     * @param {Object} [opts]
+     * @param {boolean} [opts.pushState=true] - Update browser URL
+     * @returns {Promise<{ok: boolean, path: string}>}
+     */
+    async navigate(urlPath, target = 'body', opts = {}) {
+        const el = typeof target === 'string' ? document.querySelector(target) : target;
+        if (!el) return { ok: false, error: `Target not found: ${target}` };
+
+        try {
+            const res = await fetch(`${this.server}${urlPath}`);
+            if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+            const html = await res.text();
+            el.innerHTML = html;
+            this._runScripts(el);
+            if (opts.pushState !== false && typeof history !== 'undefined') {
+                history.pushState({ path: urlPath }, '', urlPath);
+            }
+            return { ok: true, path: urlPath };
+        } catch (e) {
+            return { ok: false, error: e.message || String(e) };
+        }
+    }
+
+    /**
+     * Enable SPA-style link interception. Internal link clicks use
+     * navigate() instead of full page loads.
+     * @param {string|HTMLElement} [scope='body'] - Scope for link interception
+     * @param {string|HTMLElement} [target='body'] - Render target
+     */
+    intercept(scope = 'body', target = 'body') {
+        const el = typeof scope === 'string' ? document.querySelector(scope) : scope;
+        if (!el) return;
+
+        el.addEventListener('click', (e) => {
+            const a = e.target.closest('a[href]');
+            if (!a) return;
+            const href = a.getAttribute('href');
+            // Skip external links, anchors, and special protocols
+            if (!href || href.startsWith('http') || href.startsWith('#') ||
+                href.startsWith('mailto:') || href.startsWith('javascript:') ||
+                a.hasAttribute('download') || a.target === '_blank') return;
+            e.preventDefault();
+            this.navigate(href, target);
+        });
+
+        // Handle browser back/forward
+        window.addEventListener('popstate', (e) => {
+            if (e.state?.path) {
+                this.navigate(e.state.path, target, { pushState: false });
+            }
+        });
+    }
+
     // ── Internal ──
+
+    /**
+     * Execute <script> tags that were injected via innerHTML.
+     * innerHTML doesn't run scripts, so we re-create them.
+     */
+    _runScripts(container) {
+        for (const old of container.querySelectorAll('script')) {
+            const s = document.createElement('script');
+            for (const attr of old.attributes) s.setAttribute(attr.name, attr.value);
+            s.textContent = old.textContent;
+            old.replaceWith(s);
+        }
+    }
 
     _callWasm(path, args) {
         const t0 = performance.now();
