@@ -56,11 +56,15 @@
                 },
                 {
                     "args": [],
-                    "test": { "type": "contains", "value": "wasm-inline.js" }
+                    "test": { "type": "contains", "value": "wasm-runtime.js" }
                 },
                 {
                     "args": [],
                     "test": { "type": "contains", "value": "initSync" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "window.TraitsWasm" }
                 }
             ]
         },

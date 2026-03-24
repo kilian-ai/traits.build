@@ -64,7 +64,7 @@ a:hover{text-decoration:underline}
 
 <div id="page-frame"></div>
 
-<script type="module">
+<script>
 // ═══════════════════════════════════════════════════════════════
 // SPA Bootloader — loads WASM kernel, routes URLs to www.* traits
 // Page JS uses window._traitsSDK for all trait calls
@@ -79,12 +79,29 @@ const ROUTES = {
   '/admin':    'www.admin',
 };
 
-// ── Detect WASM file location ──
-function wasmBase() {
-  if (location.protocol === 'file:') return '../../kernel/wasm/pkg/';
-  return '/wasm/';
-}
 const isLocal = location.protocol === 'file:';
+
+function runtimeScriptPath() {
+  return isLocal ? './wasm-runtime.js' : '/static/wasm-runtime.js';
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-runtime-src="${src}"]`);
+    if (existing) {
+      if (window.TraitsWasm) resolve();
+      else existing.addEventListener('load', () => resolve(), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.dataset.runtimeSrc = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load runtime: ${src}`));
+    document.head.appendChild(script);
+  });
+}
 
 function decodeBase64Bytes(base64) {
   const bin = atob(base64);
@@ -245,6 +262,15 @@ function injectPage(fullHtml, route) {
   if (pageTitle) document.title = pageTitle.textContent;
 }
 
+function currentRouteFromLocation() {
+  if (isLocal) {
+    const hash = location.hash.slice(1) || '/';
+    return ROUTES[hash] ? hash : '/';
+  }
+  const path = location.pathname === '' || location.pathname === '/static' ? '/' : location.pathname;
+  return ROUTES[path] ? path : '/';
+}
+
 // ── Router ──
 let currentRoute = null;
 
@@ -274,7 +300,8 @@ async function navigate(route, pushState = true) {
   }
 
   if (pushState) {
-    history.pushState({ route }, '', route);
+    if (isLocal) history.pushState({ route }, '', '#' + route);
+    else history.pushState({ route }, '', route);
   }
 }
 
@@ -288,21 +315,22 @@ nav.addEventListener('click', e => {
 
 // ── Browser back/forward ──
 window.addEventListener('popstate', e => {
-  const route = e.state?.route || location.pathname;
+  const route = e.state?.route || currentRouteFromLocation();
   navigate(route, false);
+});
+
+window.addEventListener('hashchange', () => {
+  if (!isLocal) return;
+  navigate(currentRouteFromLocation(), false);
 });
 
 // ── Boot sequence ──
 async function boot() {
   try {
-    const base = wasmBase();
-    const mod = await import(base + 'traits_wasm.js');
-    if (isLocal) {
-      const inline = await import('./wasm-inline.js');
-      mod.initSync(decodeBase64Bytes(inline.WASM_BASE64));
-    } else {
-      await mod.default(base + 'traits_wasm_bg.wasm');
-    }
+    await loadScript(runtimeScriptPath());
+    const mod = window.TraitsWasm;
+    if (!mod) throw new Error('TraitsWasm runtime missing');
+    mod.initSync(decodeBase64Bytes(mod.WASM_BASE64));
     const info = JSON.parse(mod.init());
     JSON.parse(mod.callable_traits()).forEach(p => wasmCallableSet.add(p));
     wasm = mod;
@@ -322,8 +350,7 @@ async function boot() {
   setTimeout(() => overlay.remove(), 300);
 
   // Route to initial page
-  const path = location.pathname === '' || location.pathname === '/static' ? '/' : location.pathname;
-  const route = ROUTES[path] ? path : '/';
+  const route = currentRouteFromLocation();
   await navigate(route, false);
 }
 

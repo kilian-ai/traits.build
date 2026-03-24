@@ -1,7 +1,7 @@
 [trait]
 description = "Self-contained static website — WASM kernel + SDK, no server required"
-version = "v260324.152002"
-checksum = "e81bb80f71ec92b15b7f23dafa83a779b3a5e868e667e91e89d0fe5e8a212ee2"
+version = "v260324.153121"
+checksum = "f3c1fd6c1b1600f40d14b27a75fb311f00760cb9ded388c0c21227e9b4cba29c"
 author = "system"
 tags = ["www", "webpage", "static", "wasm"]
 provides = ["www/webpage"]
