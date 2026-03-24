@@ -71,7 +71,7 @@ impl WasmRegistry {
     }
 
     /// Resolve a keyed binding for a trait (e.g., resolve_binding("kernel.cli", "backend")).
-    /// Returns the bound trait path from [wasm_bindings] (preferred) or [bindings].
+    /// Returns the bound trait path from [bindings].
     pub fn resolve_binding(&self, trait_path: &str, key: &str) -> Option<String> {
         self.bindings.get(&format!("{}/{}", trait_path, key)).cloned()
     }
