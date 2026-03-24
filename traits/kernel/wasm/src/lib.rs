@@ -170,7 +170,8 @@ impl CliBackend for WasmCliBackend {
             None => {
                 let reg = get_registry();
                 if reg.get(path).is_some() {
-                    Err(format!("Trait '{}' requires REST dispatch (not available in WASM)", path))
+                    // Signal REST dispatch needed — terminal.js intercepts "REST:" prefix
+                    Err(format!("REST:{}", path))
                 } else {
                     Err(format!("Trait '{}' not found", path))
                 }

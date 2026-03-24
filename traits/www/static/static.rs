@@ -87,9 +87,10 @@ const ROUTES = {
 
 // ── Detect WASM file location ──
 function wasmBase() {
-  if (location.protocol === 'file:') return './wasm/';
+  if (location.protocol === 'file:') return '../../kernel/wasm/pkg/';
   return '/wasm/';
 }
+const isLocal = location.protocol === 'file:';
 
 // ── Minimal SDK (inlined for zero-dependency boot) ──
 let wasm = null, wasmReady = false;
@@ -110,7 +111,10 @@ class TraitsSDK {
         return { ok: false, error: e.message || String(e), dispatch: 'wasm' };
       }
     }
-    // REST fallback
+    // REST fallback (skip if no server — file:// mode)
+    if (isLocal) {
+      return { ok: false, error: 'Trait not available in WASM: ' + path, dispatch: 'none' };
+    }
     const rest = path.replace(/\./g, '/');
     const t0 = performance.now();
     try {
@@ -141,6 +145,7 @@ class TraitsSDK {
 
   async list() {
     if (wasmReady) return JSON.parse(wasm.list_traits());
+    if (isLocal) return [];
     const r = await fetch(`${this._origin}/traits`);
     return r.json();
   }
@@ -150,6 +155,7 @@ class TraitsSDK {
       const raw = wasm.get_trait_info(path);
       return raw ? JSON.parse(raw) : null;
     }
+    if (isLocal) return null;
     const rest = path.replace(/\./g, '/');
     const res = await fetch(`${this._origin}/traits/${rest}`);
     return res.ok ? res.json() : null;

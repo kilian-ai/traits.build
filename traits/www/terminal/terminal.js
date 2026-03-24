@@ -7,6 +7,8 @@
 // ═══════════════════════════════════════════
 
 const CLEAR_SENTINEL = '\x1b[CLEAR]';
+const REST_RE = /\x1b\[REST\]([\s\S]*?)\x1b\[\/REST\]/;
+const PROMPT = '\x1b[32mtraits \x1b[0m';
 
 let Terminal, FitAddon, WebLinksAddon;
 
@@ -110,11 +112,59 @@ export async function createTerminal(mountEl, opts = {}) {
         console.error('WASM load failed:', e);
     }
 
-    // ── Input → WASM session → output ──
+    // ── Input → WASM session → output (with REST fallback) ──
+    let restPending = false;
+
     term.onData(data => {
         if (!wasm || !wasm.cli_input) return;
+        if (restPending) return; // Block input during REST calls
+
         const output = wasm.cli_input(data);
         if (!output) return;
+
+        // Check for REST dispatch sentinel
+        const restMatch = output.match(REST_RE);
+        if (restMatch) {
+            // Write visible part (loading message) without the sentinel
+            const visible = output.replace(REST_RE, '');
+            if (visible) term.write(visible);
+
+            // Parse dispatch info and make REST call
+            try {
+                const { p, a } = JSON.parse(restMatch[1]);
+                const restPath = p.replace(/\./g, '/');
+                restPending = true;
+
+                fetch(`/traits/${restPath}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ args: a }),
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.result !== undefined) {
+                        const text = typeof data.result === 'string'
+                            ? data.result
+                            : JSON.stringify(data.result, null, 2);
+                        term.write(text.replace(/\n/g, '\r\n'));
+                        if (!text.endsWith('\n')) term.write('\r\n');
+                    } else if (data.error) {
+                        term.write(`\x1b[31mError: ${data.error}\x1b[0m\r\n`);
+                    }
+                    term.write(PROMPT);
+                })
+                .catch(e => {
+                    term.write(`\x1b[31mREST error: ${e.message}\x1b[0m\r\n`);
+                    term.write(PROMPT);
+                })
+                .finally(() => { restPending = false; });
+            } catch (e) {
+                term.write(`\x1b[31mREST parse error: ${e.message}\x1b[0m\r\n`);
+                term.write(PROMPT);
+            }
+            return;
+        }
+
         if (output.includes(CLEAR_SENTINEL)) {
             term.clear();
             const rest = output.replaceAll(CLEAR_SENTINEL, '');

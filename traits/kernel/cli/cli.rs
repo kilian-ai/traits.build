@@ -29,6 +29,10 @@ const IPROMPT: &str = "  \x1b[96m❯\x1b[0m ";
 /// Sentinel returned by clear — frontends intercept this.
 pub const CLEAR_SENTINEL: &str = "\x1b[CLEAR]";
 
+/// REST dispatch sentinels — frontend intercepts and makes fetch().
+pub const REST_SENTINEL_START: &str = "\x1b[REST]";
+pub const REST_SENTINEL_END: &str = "\x1b[/REST]";
+
 // ── Key events ──
 
 pub enum KeyEvent {
@@ -323,6 +327,10 @@ impl CliSession {
                 if result.contains(CLEAR_SENTINEL) {
                     return format!("{CLEAR_SENTINEL}{PROMPT}");
                 }
+                if result.contains(REST_SENTINEL_START) {
+                    out.push_str(&result);
+                    return out; // No prompt — JS handles async REST
+                }
                 if !result.is_empty() {
                     out.push_str(&result);
                     if !result.ends_with('\n') && !result.ends_with("\r\n") {
@@ -538,6 +546,10 @@ impl CliSession {
                     let result = exec_line(&cmd, backend);
                     backend.save_param_history(&self.param_history);
 
+                    if result.contains(REST_SENTINEL_START) {
+                        out.push_str(&result);
+                        return out; // No prompt — JS handles async REST
+                    }
                     if !result.is_empty() && !result.contains(CLEAR_SENTINEL) {
                         out.push_str(&result);
                         if !result.ends_with('\n') && !result.ends_with("\r\n") {
@@ -686,6 +698,13 @@ impl CliSession {
 
     fn handle_editing_key(&mut self, key: KeyEvent) -> String {
         match key {
+            KeyEvent::Backspace => {
+                if self.cursor_pos > 0 {
+                    self.cursor_pos -= 1;
+                    self.line_buffer.remove(self.cursor_pos);
+                    self.refresh_line()
+                } else { String::new() }
+            }
             KeyEvent::Left => {
                 if self.cursor_pos > 0 {
                     self.cursor_pos -= 1;
@@ -845,6 +864,14 @@ fn exec_call(backend: &dyn CliBackend, path: &str, arg_strs: &[String]) -> Strin
                 }
             }
             out
+        }
+        Err(e) if e.starts_with("REST:") => {
+            let rest_path = &e[5..];
+            let args_json = serde_json::to_string(&args).unwrap_or_else(|_| "[]".to_string());
+            format!(
+                "{GRAY}calling {rest_path} via REST…{RESET}\r\n\
+                 {REST_SENTINEL_START}{{\"p\":\"{rest_path}\",\"a\":{args_json}}}{REST_SENTINEL_END}"
+            )
         }
         Err(e) => format!("{RED}Error: {}{RESET}\r\n", e),
     }
