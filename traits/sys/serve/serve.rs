@@ -362,10 +362,16 @@ async fn serve_static(req: HttpRequest) -> HttpResponse {
 async fn serve_wasm_asset(req: HttpRequest) -> HttpResponse {
     let path = req.match_info().get("path").unwrap_or("");
     match crate::dispatcher::wasm_static_assets::get_wasm_asset(path) {
-        Some((content, content_type)) => HttpResponse::Ok()
-            .content_type(content_type)
-            .insert_header(("Cache-Control", "public, max-age=3600"))
-            .body(content.to_vec()),
+        Some((content, content_type)) => {
+            // ETag from content length + first 16 bytes for cache validation
+            let etag = format!("\"{:x}-{}\"", content.len(),
+                content.iter().take(16).fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64)));
+            HttpResponse::Ok()
+                .content_type(content_type)
+                .insert_header(("Cache-Control", "no-cache"))
+                .insert_header(("ETag", etag))
+                .body(content.to_vec())
+        }
         None => HttpResponse::NotFound()
             .content_type("text/plain")
             .body("WASM asset not found"),
