@@ -151,5 +151,24 @@ createTerminal(document.getElementById('xterm'), {
     statusEl: document.getElementById('termStatus'),
 });
 </script>
+<script>
+// Fallback for SPA/file:// mode where module imports from absolute paths fail.
+// Dynamically import terminal.js, trying multiple paths.
+(async function() {
+  if (document.querySelector('#xterm canvas')) return; // Already initialized by module script
+  var paths = ['/static/www/terminal/terminal.js', '../terminal/terminal.js'];
+  var mod = null;
+  for (var p of paths) {
+    try { mod = await import(p); break; } catch(e) {}
+  }
+  if (!mod) return; // Terminal unavailable in this mode — Redoc still works
+  mod.createTerminal(document.getElementById('xterm'), {
+    header: document.getElementById('termHeader'),
+    container: document.getElementById('termContainer'),
+    toggleBtn: document.getElementById('btnToggleTerm'),
+    statusEl: document.getElementById('termStatus'),
+  });
+})();
+</script>
 </body>
 </html>"##;

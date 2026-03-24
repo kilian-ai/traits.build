@@ -97,16 +97,25 @@ export async function createTerminal(mountEl, opts = {}) {
     // ── Load WASM kernel ──
     let wasm = null;
     try {
-        const wasmJsUrl = '/wasm/traits_wasm.js';
-        const wasmBinUrl = '/wasm/traits_wasm_bg.wasm';
-        const mod = await import(wasmJsUrl);
-        await mod.default(wasmBinUrl);
-        const initResult = JSON.parse(mod.init());
-        wasm = mod;
-        const count = initResult.traits_registered || 0;
-        const wasmCount = initResult.wasm_callable || 0;
-        setStatus(`${count} traits (${wasmCount} WASM)`, 'ready');
-        if (opts.onReady) opts.onReady({ wasm, traitCount: count, wasmCount });
+        // Reuse WASM already loaded by SPA shell (window.TraitsWasm from wasm-runtime.js)
+        if (window.TraitsWasm && window.TraitsWasm.cli_input) {
+            wasm = window.TraitsWasm;
+            const count = wasm.is_registered ? JSON.parse(wasm.callable_traits()).length : 0;
+            setStatus(`WASM (SPA)`, 'ready');
+            if (opts.onReady) opts.onReady({ wasm, traitCount: 0, wasmCount: count });
+        } else {
+            // Standalone mode — load WASM from server
+            const wasmJsUrl = '/wasm/traits_wasm.js';
+            const wasmBinUrl = '/wasm/traits_wasm_bg.wasm';
+            const mod = await import(wasmJsUrl);
+            await mod.default(wasmBinUrl);
+            const initResult = JSON.parse(mod.init());
+            wasm = mod;
+            const count = initResult.traits_registered || 0;
+            const wasmCount = initResult.wasm_callable || 0;
+            setStatus(`${count} traits (${wasmCount} WASM)`, 'ready');
+            if (opts.onReady) opts.onReady({ wasm, traitCount: count, wasmCount });
+        }
     } catch (e) {
         setStatus('WASM failed', 'error');
         console.error('WASM load failed:', e);

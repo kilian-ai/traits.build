@@ -212,7 +212,7 @@ const statusText = $('#statusText');
 
 let currentPageCleanup = null;
 
-function injectPage(fullHtml, route) {
+async function injectPage(fullHtml, route) {
   // Clean up previous page
   if (currentPageCleanup) { currentPageCleanup(); currentPageCleanup = null; }
   document.querySelectorAll('style[data-page]').forEach(s => s.remove());
@@ -241,17 +241,28 @@ function injectPage(fullHtml, route) {
   // Set body content
   frame.innerHTML = doc.body.innerHTML;
 
-  // Execute scripts (innerHTML doesn't auto-execute them)
-  const scripts = frame.querySelectorAll('script');
-  scripts.forEach(old => {
+  // Execute scripts IN ORDER — await external scripts before running inline ones
+  const scripts = [...frame.querySelectorAll('script')];
+  for (const old of scripts) {
     const s = document.createElement('script');
     for (const attr of old.attributes) {
-      // Skip type="module" — handle it separately
+      // Skip type="module" for file:// mode — dynamic import() from absolute paths fails
+      if (attr.name === 'type' && attr.value === 'module' && isLocal) continue;
       s.setAttribute(attr.name, attr.value);
     }
     s.textContent = old.textContent;
-    old.replaceWith(s);
-  });
+
+    if (s.src) {
+      // External script — wait for it to load before continuing
+      await new Promise((resolve) => {
+        s.onload = resolve;
+        s.onerror = () => { console.warn('Script load failed:', s.src); resolve(); };
+        old.replaceWith(s);
+      });
+    } else {
+      old.replaceWith(s);
+    }
+  }
 
   // Update nav active state
   $$('#shell-nav .links a').forEach(a => {
@@ -293,7 +304,7 @@ async function navigate(route, pushState = true) {
   frame.style.opacity = '1';
 
   if (result.ok && typeof result.result === 'string') {
-    injectPage(result.result, route);
+    await injectPage(result.result, route);
   } else {
     frame.innerHTML = '<div style="padding:4rem;text-align:center;color:#f44"><h2>Error loading page</h2><p>' +
       (result.error || 'Unknown error') + '</p><p style="color:var(--muted);margin-top:0.5rem">Trait: ' + traitPath +
