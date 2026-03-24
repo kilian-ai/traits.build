@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260324.140001"
+version = "0.260324.141655"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -54,7 +54,6 @@ dashmap = "5"
 thiserror = "1"
 regex = "1"
 actix-cors = "0.7"
-actix-ws = "0.3"
 libloading = "0.8"
 crossterm = "0.28"
 tokio-stream = "0.1"

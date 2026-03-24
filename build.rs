@@ -6,6 +6,26 @@ use sha2::{Sha256, Digest};
 // Shared SHA-256 helpers (canonical copy at root, mirrored in sys/checksum/)
 include!("sha256.rs");
 
+/// Rust reserved keywords that need `r#` prefix when used as identifiers.
+const RUST_KEYWORDS: &[&str] = &[
+    "abstract", "as", "async", "await", "become", "box", "break", "const",
+    "continue", "crate", "do", "dyn", "else", "enum", "extern", "false",
+    "final", "fn", "for", "if", "impl", "in", "let", "loop", "macro",
+    "match", "mod", "move", "mut", "override", "priv", "pub", "ref",
+    "return", "self", "Self", "static", "struct", "super", "trait", "true",
+    "try", "type", "typeof", "union", "unsafe", "unsized", "use", "virtual",
+    "where", "while", "yield",
+];
+
+/// Escape a name if it's a Rust keyword (e.g. "static" → "r#static").
+fn rust_ident(name: &str) -> String {
+    if RUST_KEYWORDS.contains(&name) {
+        format!("r#{name}")
+    } else {
+        name.to_string()
+    }
+}
+
 /// Represents a discovered builtin trait with its source .rs file.
 struct TraitModule {
     /// Trait path: "sys.checksum", "kernel.serve", etc.
@@ -103,7 +123,7 @@ fn main() {
         let abs_path = manifest_dir.join(&m.rs_rel_path);
         ct.push_str(&format!(
             "#[path = {:?}]\npub mod {};\n\n",
-            abs_path.to_string_lossy(), m.mod_name
+            abs_path.to_string_lossy(), rust_ident(&m.mod_name)
         ));
         println!("cargo:rerun-if-changed={}", abs_path.display());
     }
@@ -114,14 +134,14 @@ fn main() {
     ct.push_str("    match trait_path {\n");
     for m in &modules {
         let func = if m.entry == "checksum" {
-            format!("{}::checksum_dispatch", m.mod_name)
+            format!("{}::checksum_dispatch", rust_ident(&m.mod_name))
         } else if m.is_kernel_builtin && m.mod_name == "main" {
             // main.rs IS the crate root — no module prefix
             format!("crate::{}", m.entry)
         } else if m.is_kernel_builtin {
-            format!("crate::{}::{}", m.mod_name, m.entry)
+            format!("crate::{}::{}", rust_ident(&m.mod_name), m.entry)
         } else {
-            format!("{}::{}", m.mod_name, m.entry)
+            format!("{}::{}", rust_ident(&m.mod_name), m.entry)
         };
         ct.push_str(&format!(
             "        {:?} => Some({}(args)),\n",
@@ -186,7 +206,7 @@ fn main() {
         let abs_path = manifest_dir.join(&f.rs_rel_path);
         cf.push_str(&format!(
             "#[path = {:?}]\npub mod {};\n\n",
-            abs_path.to_string_lossy(), f.mod_name
+            abs_path.to_string_lossy(), rust_ident(&f.mod_name)
         ));
         println!("cargo:rerun-if-changed={}", abs_path.display());
     }
@@ -196,7 +216,7 @@ fn main() {
     for f in &cli_formatters {
         cf.push_str(&format!(
             "        {:?} => Some({}::format_cli(result)),\n",
-            f.trait_path, f.mod_name
+            f.trait_path, rust_ident(&f.mod_name)
         ));
     }
     cf.push_str("        _ => None,\n");
@@ -211,7 +231,7 @@ fn main() {
     for k in &kernel_modules {
         km.push_str(&format!(
             "#[path = {:?}]\npub mod {};\n\n",
-            k.abs_path, k.mod_name
+            k.abs_path, rust_ident(&k.mod_name)
         ));
         println!("cargo:rerun-if-changed={}", k.abs_path);
     }
@@ -673,7 +693,7 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
                         .to_string_lossy()
                         .replace('\\', "/");
                     // Module name: last segment of trait path (e.g., "sys.checksum" -> "checksum")
-                    let mod_name = tp.rsplit('.').next().unwrap_or(&tp).to_string();
+                    let mod_name = rust_ident(tp.rsplit('.').next().unwrap_or(&tp));
                     let entry = if entry_name.is_empty() { mod_name.clone() } else { entry_name.clone() };
                     let is_kb = tp.starts_with("kernel.") || is_kernel_module;
                     // Kernel traits (and kernel_module = true) need crate-level module declarations

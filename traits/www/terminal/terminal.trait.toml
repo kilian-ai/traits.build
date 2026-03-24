@@ -1,0 +1,11 @@
+[trait]
+description = "Shared xterm.js terminal component — WASM-powered CLI for all pages"
+version = "v260324"
+author = "system"
+tags = ["www", "terminal"]
+callable = false
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "terminal"

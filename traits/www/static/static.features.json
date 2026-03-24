@@ -1,0 +1,59 @@
+{
+    "trait": "www.static",
+    "features": [
+        {
+            "name": "returns HTML string",
+            "examples": [
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "<!DOCTYPE html>" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "traits_wasm_bg.wasm" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "traits.build" }
+                }
+            ]
+        },
+        {
+            "name": "includes WASM SDK bootstrap",
+            "examples": [
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "loadWasm" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "callTrait" }
+                }
+            ]
+        },
+        {
+            "name": "has SPA router with three pages",
+            "examples": [
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "page-home" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "page-traits" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "page-try" }
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "CLI call returns HTML",
+            "run": "./target/release/traits call www.static",
+            "test": { "type": "contains", "value": "<!DOCTYPE html>" }
+        }
+    ]
+}

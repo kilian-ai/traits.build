@@ -1,0 +1,23 @@
+{
+    "trait": "kernel.cli",
+    "features": [
+        {
+            "name": "help command",
+            "examples": [
+                {
+                    "input": ["help"],
+                    "contains": ["Commands", "list", "info", "call", "search"]
+                }
+            ]
+        },
+        {
+            "name": "version command",
+            "examples": [
+                {
+                    "input": ["version"],
+                    "contains": ["traits.build"]
+                }
+            ]
+        }
+    ]
+}

@@ -16,7 +16,7 @@ const HTML: &str = r##"<!DOCTYPE html>
 <title>API Reference — traits.build</title>
 <meta name="description" content="REST API documentation for the traits.build composable function kernel">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css">
-<link rel="stylesheet" href="/static/www/docs/api/api.css">
+<link rel="stylesheet" href="/static/www/terminal/terminal.css">
 <style>
   body {
     margin: 0; padding: 0; background: #0d1117; color: #c9d1d9;
@@ -123,12 +123,21 @@ const HTML: &str = r##"<!DOCTYPE html>
 <div class="terminal-wrap">
   <div class="terminal-header" id="termHeader">
     <button id="btnToggleTerm" class="terminal-toggle">▼ Terminal</button>
-    <span class="terminal-hint">live traits CLI — try "t list" or "t call sys.checksum hash hello"</span>
+    <span class="terminal-hint">WASM-powered traits CLI — try "list" or "call sys.checksum hash hello"</span>
+    <span id="termStatus" class="terminal-status"></span>
   </div>
   <div id="termContainer" class="terminal-container">
     <div id="xterm" class="xterm-mount"></div>
   </div>
 </div>
-<script type="module" src="/static/www/docs/api/api.js"></script>
+<script type="module">
+import { createTerminal } from '/static/www/terminal/terminal.js';
+createTerminal(document.getElementById('xterm'), {
+    header: document.getElementById('termHeader'),
+    container: document.getElementById('termContainer'),
+    toggleBtn: document.getElementById('btnToggleTerm'),
+    statusEl: document.getElementById('termStatus'),
+});
+</script>
 </body>
 </html>"##;

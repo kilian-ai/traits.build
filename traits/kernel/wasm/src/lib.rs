@@ -149,3 +149,109 @@ pub fn callable_traits() -> String {
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
+
+// ═══════════════════════════════════════════
+// ── CLI interface (powered by kernel/cli) ──
+// ═══════════════════════════════════════════
+
+use wasm_traits::cli::{CliBackend, self as cli_core};
+
+/// WASM implementation of CliBackend — bridges kernel/cli to WASM registry+dispatch.
+struct WasmCliBackend;
+
+impl CliBackend for WasmCliBackend {
+    fn call(&self, path: &str, args: &[Value]) -> Result<Value, String> {
+        match wasm_traits::dispatch(path, args) {
+            Some(result) => Ok(result),
+            None => {
+                let reg = get_registry();
+                if reg.get(path).is_some() {
+                    Err(format!("Trait '{}' requires REST dispatch (not available in WASM)", path))
+                } else {
+                    Err(format!("Trait '{}' not found", path))
+                }
+            }
+        }
+    }
+
+    fn list_all(&self) -> Vec<Value> {
+        let reg = get_registry();
+        reg.all().iter().map(|e| serde_json::json!({
+            "path": e.path,
+            "description": e.description,
+            "version": e.version,
+            "tags": e.tags,
+            "wasm_callable": e.wasm_callable,
+        })).collect()
+    }
+
+    fn get_info(&self, path: &str) -> Option<Value> {
+        let reg = get_registry();
+        reg.get(path).map(|e| serde_json::json!({
+            "path": e.path,
+            "description": e.description,
+            "version": e.version,
+            "author": e.author,
+            "tags": e.tags,
+            "wasm_callable": e.wasm_callable,
+            "params": e.params,
+            "returns": e.returns_type,
+            "returns_description": e.returns_description,
+        }))
+    }
+
+    fn search(&self, query: &str) -> Vec<Value> {
+        let reg = get_registry();
+        let q = query.to_lowercase();
+        reg.all().iter()
+            .filter(|e| {
+                e.path.to_lowercase().contains(&q) ||
+                e.description.to_lowercase().contains(&q) ||
+                e.tags.iter().any(|t| t.to_lowercase().contains(&q))
+            })
+            .map(|e| serde_json::json!({
+                "path": e.path,
+                "description": e.description,
+                "wasm_callable": e.wasm_callable,
+            }))
+            .collect()
+    }
+
+    fn all_paths(&self) -> Vec<String> {
+        let reg = get_registry();
+        reg.all().iter().map(|e| e.path.clone()).collect()
+    }
+
+    fn version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+}
+
+/// Execute a CLI command line. Returns ANSI-formatted output.
+/// This is the primary interface for browser terminals.
+#[wasm_bindgen]
+pub fn cli_exec(line: &str) -> String {
+    cli_core::exec_line(line, &WasmCliBackend)
+}
+
+/// Get tab completions for a prefix. Returns JSON: {"matches": [...], "common": "..."}
+#[wasm_bindgen]
+pub fn cli_complete(prefix: &str) -> String {
+    let reg = get_registry();
+    let all_paths: Vec<String> = reg.all().iter().map(|e| e.path.clone()).collect();
+    let (matches, common) = cli_core::tab_completions(prefix, &all_paths);
+    serde_json::to_string(&serde_json::json!({
+        "matches": matches,
+        "common": common,
+    })).unwrap_or_default()
+}
+
+/// Get interactive mode parameters for a trait.
+/// Returns JSON array of param objects, or empty string if not found.
+#[wasm_bindgen]
+pub fn cli_interactive_params(path: &str) -> String {
+    match cli_core::interactive_params(path, &WasmCliBackend) {
+        Some(params) => serde_json::to_string(&params).unwrap_or_default(),
+        None => String::new(),
+    }
+}

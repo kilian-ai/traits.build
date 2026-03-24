@@ -14,6 +14,9 @@ pub mod version;
 #[path = "../../../types/types.rs"]
 pub mod types;
 
+#[path = "../../../cli/cli.rs"]
+pub mod cli;
+
 /// WASM-callable trait paths (curated list of pure-computation traits).
 pub const WASM_CALLABLE: &[&str] = &[
     "kernel.types",
