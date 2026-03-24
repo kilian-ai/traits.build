@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 /// Reads all registered traits, maps their signatures to OpenAPI paths,
 /// and returns a complete spec object suitable for Redoc/Swagger UI.
 /// Examples are generated live by calling each safe trait via compiled dispatch.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn openapi(_args: &[Value]) -> Value {
     let reg = match crate::globals::REGISTRY.get() {
         Some(r) => r,
@@ -374,6 +375,7 @@ pub fn openapi(_args: &[Value]) -> Value {
 }
 
 /// Map a TraitType to an OpenAPI/JSON Schema type object.
+#[cfg(not(target_arch = "wasm32"))]
 fn trait_type_to_schema(t: &crate::types::TraitType) -> Value {
     use crate::types::TraitType;
     match t {
@@ -404,6 +406,7 @@ fn trait_type_to_schema(t: &crate::types::TraitType) -> Value {
 }
 
 /// Generate an example value for a TraitType (fallback when live dispatch isn't available).
+#[cfg(not(target_arch = "wasm32"))]
 fn example_value(t: &crate::types::TraitType) -> Value {
     use crate::types::TraitType;
     match t {
@@ -490,6 +493,7 @@ fn static_example(path: &str) -> Option<LiveExample> {
 
 /// Generate live examples by actually calling safe traits via compiled dispatch.
 /// Falls back to static examples for unsafe traits.
+#[cfg(not(target_arch = "wasm32"))]
 fn generate_live_examples(all: &[crate::registry::TraitEntry]) -> std::collections::HashMap<&str, LiveExample> {
     let mut map = std::collections::HashMap::new();
     for entry in all {
@@ -539,4 +543,378 @@ fn truncate_example(v: Value) -> Value {
         }
         other => other,
     }
+}
+
+// ── WASM-specific OpenAPI generation ──
+
+/// Map a type name string to an OpenAPI/JSON Schema type object (WASM variant).
+#[cfg(target_arch = "wasm32")]
+fn type_str_to_schema(t: &str) -> Value {
+    let t = t.trim();
+    match t {
+        "int" | "integer" => json!({ "type": "integer", "format": "int64" }),
+        "float" | "number" => json!({ "type": "number", "format": "double" }),
+        "string" => json!({ "type": "string" }),
+        "bool" | "boolean" => json!({ "type": "boolean" }),
+        "bytes" => json!({ "type": "string", "format": "binary" }),
+        "null" => json!({ "nullable": true }),
+        "any" => json!({}),
+        "handle" => json!({ "type": "string", "description": "Opaque handle reference" }),
+        t if t.starts_with("list<") && t.ends_with('>') => {
+            let inner = &t[5..t.len()-1];
+            json!({ "type": "array", "items": type_str_to_schema(inner) })
+        }
+        t if t.starts_with("map<") && t.ends_with('>') => {
+            // map<K,V> — extract V for additionalProperties
+            let inner = &t[4..t.len()-1];
+            let v_type = inner.split(',').nth(1).unwrap_or("any").trim();
+            json!({ "type": "object", "additionalProperties": type_str_to_schema(v_type) })
+        }
+        t if t.ends_with('?') => {
+            let inner = &t[..t.len()-1];
+            let mut s = type_str_to_schema(inner);
+            if let Some(obj) = s.as_object_mut() {
+                obj.insert("nullable".into(), Value::Bool(true));
+            }
+            s
+        }
+        _ => json!({}),
+    }
+}
+
+/// Generate an example value from a type name string (WASM variant).
+#[cfg(target_arch = "wasm32")]
+fn example_value_from_str(t: &str) -> Value {
+    let t = t.trim();
+    match t {
+        "int" | "integer" => json!(42),
+        "float" | "number" => json!(3.14),
+        "string" => json!("example"),
+        "bool" | "boolean" => json!(true),
+        "bytes" => json!("deadbeef"),
+        "null" => Value::Null,
+        "any" => json!("value"),
+        "handle" => json!("hdl:example"),
+        t if t.starts_with("list<") => json!([example_value_from_str(&t[5..t.len()-1])]),
+        t if t.starts_with("map<") => json!({ "key": "value" }),
+        t if t.ends_with('?') => example_value_from_str(&t[..t.len()-1]),
+        _ => json!("value"),
+    }
+}
+
+/// Generate examples in WASM using WASM dispatch for callable traits + static fallbacks.
+#[cfg(target_arch = "wasm32")]
+fn generate_wasm_examples(paths: &[String]) -> std::collections::HashMap<String, LiveExample> {
+    let mut map = std::collections::HashMap::new();
+    for path in paths {
+        if path.starts_with("kernel.") { continue; }
+
+        // Try WASM dispatch for safe traits
+        if let Some(args) = safe_example_args(path) {
+            if let Some(result) = crate::wasm_traits::dispatch(path, &args) {
+                let truncated = truncate_example(result);
+                map.insert(path.clone(), LiveExample {
+                    request_args: args,
+                    response: truncated,
+                });
+                continue;
+            }
+        }
+
+        // Fall back to static examples
+        if let Some(ex) = static_example(path) {
+            map.insert(path.clone(), ex);
+        }
+    }
+    map
+}
+
+/// WASM version: generate OpenAPI spec from WasmRegistry entries.
+#[cfg(target_arch = "wasm32")]
+pub fn openapi(_args: &[Value]) -> Value {
+    let reg = crate::get_registry();
+    let all = reg.all();
+    let mut paths = serde_json::Map::new();
+    let mut tag_set = std::collections::BTreeSet::new();
+
+    // Generate examples (WASM dispatch for callable traits + static fallbacks)
+    let trait_paths: Vec<String> = all.iter().map(|e| e.path.clone()).collect();
+    let live_examples = generate_wasm_examples(&trait_paths);
+
+    for entry in &all {
+        if entry.path.starts_with("kernel.") { continue; }
+
+        let namespace = entry.path.split('.').next().unwrap_or("other");
+        tag_set.insert(namespace.to_string());
+
+        let api_path = format!("/traits/{}", entry.path.replace('.', "/"));
+
+        // Build request body from params (Vec<Value> in WASM)
+        let mut param_properties = serde_json::Map::new();
+        let mut required_params = Vec::new();
+        let mut param_names: Vec<String> = Vec::new();
+        let mut param_types: Vec<String> = Vec::new();
+
+        for p in &entry.params {
+            let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("arg");
+            let ptype = p.get("type").and_then(|v| v.as_str()).unwrap_or("any");
+            let desc = p.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            let required = p.get("required").and_then(|v| v.as_bool()).unwrap_or(true);
+
+            let mut prop = type_str_to_schema(ptype);
+            if !desc.is_empty() {
+                prop.as_object_mut().unwrap()
+                    .insert("description".into(), Value::String(desc.to_string()));
+            }
+            param_properties.insert(name.to_string(), prop);
+            param_names.push(name.to_string());
+            param_types.push(ptype.to_string());
+
+            if required {
+                required_params.push(Value::String(name.to_string()));
+            }
+        }
+
+        let live = live_examples.get(&entry.path);
+
+        let request_body = if entry.params.is_empty() {
+            json!({
+                "required": false,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "args": {
+                                    "type": "array",
+                                    "items": {},
+                                    "description": "No arguments required"
+                                }
+                            }
+                        },
+                        "example": { "args": [] }
+                    }
+                }
+            })
+        } else {
+            let mut object_schema = json!({
+                "type": "object",
+                "properties": param_properties,
+            });
+            if !required_params.is_empty() {
+                object_schema.as_object_mut().unwrap()
+                    .insert("required".into(), Value::Array(required_params));
+            }
+
+            let args_desc = format!("Positional arguments: [{}]", param_names.join(", "));
+            let schema_desc = format!(
+                "Pass arguments either as positional array (`args: [...]`) or as named object (`args: {{{}}}`).",
+                param_names.iter().map(|n| format!("\"{}\": ...", n)).collect::<Vec<_>>().join(", ")
+            );
+
+            let positional_example: Vec<Value> = if let Some(ex) = live {
+                ex.request_args.clone()
+            } else {
+                param_types.iter().map(|t| example_value_from_str(t)).collect()
+            };
+
+            let named_example: serde_json::Map<String, Value> = param_names.iter()
+                .zip(positional_example.iter())
+                .map(|(n, v)| (n.clone(), v.clone()))
+                .collect();
+
+            json!({
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "args": {
+                                    "type": "array",
+                                    "items": {},
+                                    "description": args_desc
+                                }
+                            },
+                            "description": schema_desc
+                        },
+                        "examples": {
+                            "positional": {
+                                "summary": "Positional array form",
+                                "value": { "args": positional_example }
+                            },
+                            "named": {
+                                "summary": "Named object form",
+                                "value": { "args": named_example }
+                            }
+                        }
+                    }
+                }
+            })
+        };
+
+        let return_schema = type_str_to_schema(&entry.returns_type);
+
+        let response_200 = if let Some(ex) = live {
+            json!({
+                "description": entry.returns_description,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "result": return_schema,
+                                "error": { "type": "string", "nullable": true }
+                            }
+                        },
+                        "example": { "result": ex.response }
+                    }
+                }
+            })
+        } else {
+            json!({
+                "description": entry.returns_description,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "result": return_schema,
+                                "error": { "type": "string", "nullable": true }
+                            }
+                        }
+                    }
+                }
+            })
+        };
+
+        let operation = json!({
+            "summary": format!("POST {}", api_path),
+            "description": entry.description,
+            "operationId": entry.path.replace('.', "_"),
+            "tags": [namespace],
+            "requestBody": request_body,
+            "responses": {
+                "200": response_200,
+                "404": {
+                    "description": "Trait not found",
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Bad request (argument count or type mismatch)",
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                        }
+                    }
+                }
+            }
+        });
+
+        paths.insert(api_path, json!({ "post": operation }));
+    }
+
+    let tags: Vec<Value> = tag_set.iter().map(|ns| {
+        let desc = match ns.as_str() {
+            "sys" => "System utilities — registry, checksums, versioning, testing",
+            "www" => "Web interface — landing page, admin dashboard, deployment",
+            _ => "",
+        };
+        json!({ "name": ns, "description": desc })
+    }).collect();
+
+    // Standard endpoints
+    let mut standard_paths = serde_json::Map::new();
+    standard_paths.insert("/health".into(), json!({
+        "get": {
+            "summary": "Health check",
+            "operationId": "health_check",
+            "tags": ["infrastructure"],
+            "responses": {
+                "200": {
+                    "description": "Server health status",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "status": { "type": "string", "example": "healthy" },
+                                    "version": { "type": "string" },
+                                    "trait_count": { "type": "integer" },
+                                    "namespace_count": { "type": "integer" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }));
+    standard_paths.insert("/traits".into(), json!({
+        "get": {
+            "summary": "List all traits (tree view)",
+            "operationId": "list_traits",
+            "tags": ["infrastructure"],
+            "responses": {
+                "200": {
+                    "description": "Hierarchical tree of all registered traits",
+                    "content": {
+                        "application/json": {
+                            "schema": { "type": "object" }
+                        }
+                    }
+                }
+            }
+        }
+    }));
+
+    for (k, v) in paths {
+        standard_paths.insert(k, v);
+    }
+
+    json!({
+        "openapi": "3.0.3",
+        "info": {
+            "title": "traits.build API",
+            "description": "REST API for the traits.build composable function kernel.\n\nEvery trait is callable via `POST /traits/{namespace}/{name}` with a JSON body `{\"args\": [...]}`. Arguments can be passed as a positional array or as a named object.\n\n**Live instance:** [https://traits.build](https://traits.build)",
+            "version": env!("CARGO_PKG_VERSION"),
+            "contact": {
+                "name": "GitHub",
+                "url": "https://github.com/kilian-ai/traits.build"
+            },
+            "license": {
+                "name": "MIT"
+            }
+        },
+        "servers": [
+            {
+                "url": "https://traits.build",
+                "description": "Production (Fly.io)"
+            },
+            {
+                "url": "http://127.0.0.1:8090",
+                "description": "Local development"
+            }
+        ],
+        "tags": tags.into_iter().chain(std::iter::once(json!({
+            "name": "infrastructure",
+            "description": "Server health, metrics, and trait introspection endpoints"
+        }))).collect::<Vec<_>>(),
+        "paths": standard_paths,
+        "components": {
+            "schemas": {
+                "ErrorResponse": {
+                    "type": "object",
+                    "properties": {
+                        "result": { "nullable": true },
+                        "error": { "type": "string" }
+                    }
+                }
+            }
+        }
+    })
 }

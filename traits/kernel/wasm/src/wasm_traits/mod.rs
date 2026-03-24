@@ -34,12 +34,16 @@ pub mod www_admin;
 #[path = "../../../../www/static/static.rs"]
 pub mod www_static;
 
+#[path = "../../../../sys/openapi/openapi.rs"]
+pub mod openapi;
+
 /// WASM-callable trait paths (curated list of pure-computation traits).
 pub const WASM_CALLABLE: &[&str] = &[
     "kernel.types",
     "sys.checksum",
     "sys.info",
     "sys.list",
+    "sys.openapi",
     "sys.registry",
     "sys.version",
     "www.traits.build",
@@ -56,6 +60,7 @@ pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
         "sys.checksum" => Some(checksum::checksum_dispatch(args)),
         "sys.info" => Some(registry::info(args)),
         "sys.list" => Some(registry::list(args)),
+        "sys.openapi" => Some(openapi::openapi(args)),
         "sys.registry" => Some(registry::registry(args)),
         "sys.version" => Some(version::version(args)),
         "www.traits.build" => Some(www_build::website(args)),
