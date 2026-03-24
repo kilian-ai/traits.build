@@ -393,7 +393,12 @@ impl NativeCliBackend {
     fn dispatch_method(&self, method: &str, args: &[serde_json::Value]) -> Option<serde_json::Value> {
         let mut full_args = vec![serde_json::Value::String(method.to_string())];
         full_args.extend_from_slice(args);
-        crate::dispatcher::compiled::dispatch("sys.cli.native", &full_args)
+        // Resolve backend from kernel.cli binding instead of hardcoding
+        let backend = crate::globals::REGISTRY.get()
+            .and_then(|reg| reg.get("kernel.cli"))
+            .and_then(|entry| entry.trait_bindings.get("backend").cloned())
+            .unwrap_or_else(|| "sys.cli.native".to_string());
+        crate::dispatcher::compiled::dispatch(&backend, &full_args)
     }
 }
 

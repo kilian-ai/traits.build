@@ -21,11 +21,14 @@ pub struct WasmTraitEntry {
 /// Lightweight trait registry backed by HashMap (no DashMap needed in WASM).
 pub struct WasmRegistry {
     traits: HashMap<String, WasmTraitEntry>,
+    /// Per-trait bindings: key is "trait_path/binding_key", value is the bound trait path.
+    /// Populated from [wasm_bindings] first, falling back to [bindings].
+    bindings: HashMap<String, String>,
 }
 
 impl WasmRegistry {
     pub fn new() -> Self {
-        Self { traits: HashMap::new() }
+        Self { traits: HashMap::new(), bindings: HashMap::new() }
     }
 
     /// Load from the build.rs-generated BUILTIN_TRAIT_DEFS array.
@@ -35,6 +38,28 @@ impl WasmRegistry {
             if let Ok(parsed) = toml_content.parse::<toml::Value>() {
                 let entry = parse_trait_toml(path, &parsed);
                 self.traits.insert(path.to_string(), entry);
+
+                // Extract bindings: [wasm_bindings] overrides [bindings]
+                let base = parsed.get("bindings")
+                    .and_then(|v| v.as_table());
+                let wasm = parsed.get("wasm_bindings")
+                    .and_then(|v| v.as_table());
+
+                if let Some(table) = base {
+                    for (key, val) in table {
+                        if let Some(s) = val.as_str() {
+                            self.bindings.insert(format!("{}/{}", path, key), s.to_string());
+                        }
+                    }
+                }
+                // wasm_bindings override base bindings for matching keys
+                if let Some(table) = wasm {
+                    for (key, val) in table {
+                        if let Some(s) = val.as_str() {
+                            self.bindings.insert(format!("{}/{}", path, key), s.to_string());
+                        }
+                    }
+                }
             }
         }
     }
@@ -57,6 +82,12 @@ impl WasmRegistry {
 
     pub fn len(&self) -> usize {
         self.traits.len()
+    }
+
+    /// Resolve a keyed binding for a trait (e.g., resolve_binding("kernel.cli", "backend")).
+    /// Returns the bound trait path from [wasm_bindings] (preferred) or [bindings].
+    pub fn resolve_binding(&self, trait_path: &str, key: &str) -> Option<String> {
+        self.bindings.get(&format!("{}/{}", trait_path, key)).cloned()
     }
 }
 

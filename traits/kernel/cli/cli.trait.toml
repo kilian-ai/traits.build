@@ -12,6 +12,9 @@ backend = "cli/backend"
 [bindings]
 backend = "sys.cli.native"
 
+[wasm_bindings]
+backend = "sys.cli.wasm"
+
 [signature]
 params = [
     { name = "line", type = "string", description = "Command line to execute", required = true },
