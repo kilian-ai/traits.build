@@ -1,8 +1,8 @@
 [trait]
 description = "Start the HTTP API server"
-version = "v260324"
+version = "v260324.042350"
 epoch = 0
-checksum = "4d849d2f7770787253e828b3afbfad903f23b1fdc8321bd641eb9bc2587292b7"
+checksum = "e89d3e546907ee3c542ebdde7bd59bfa9532764ca2d73877060e0a82d20d421a"
 author = "system"
 tags = ["sys", "server"]
 background = true
@@ -13,6 +13,7 @@ kernel_module = true
 "/" = "www/webpage"
 "/copy" = "www/webpage"
 "/playground" = "www/webpage"
+"/wasm" = "www/webpage"
 "/admin" = "www/webpage"
 "/docs" = "www/webpage"
 "/docs/api" = "www/webpage"
@@ -25,6 +26,7 @@ secrets = "sys/secrets"
 "/" = "www.traits.build"
 "/copy" = "www.traits.build"
 "/playground" = "www.playground"
+"/wasm" = "www.wasm"
 "/admin" = "www.admin"
 "/docs" = "www.docs"
 "/docs/api" = "www.docs.api"

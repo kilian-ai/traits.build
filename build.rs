@@ -217,6 +217,31 @@ fn main() {
     }
     fs::write(kernel_path, km).expect("Failed to write kernel_modules.rs");
 
+    // ── Discover JS client library from kernel/wasm/js/ ──
+    let wasm_js_dir = traits_dir.join("kernel/wasm/js");
+    if wasm_js_dir.exists() {
+        if let Ok(rd) = fs::read_dir(&wasm_js_dir) {
+            for entry in rd.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                let ct = if fname.ends_with(".js") {
+                    Some("application/javascript")
+                } else if fname.ends_with(".css") {
+                    Some("text/css")
+                } else {
+                    None
+                };
+                if let Some(content_type) = ct {
+                    static_assets.push(StaticAsset {
+                        serve_path: format!("js/{}", fname),
+                        abs_path: entry.path().to_string_lossy().to_string(),
+                        content_type,
+                    });
+                    println!("cargo:rerun-if-changed={}", entry.path().display());
+                }
+            }
+        }
+    }
+
     // ── Generate static_assets.rs (embedded CSS/JS files served at /static/) ──
     static_assets.sort_by(|a, b| a.serve_path.cmp(&b.serve_path));
     let sa_path = out_dir.join("static_assets.rs");
@@ -236,6 +261,39 @@ fn main() {
     sa.push_str("    }\n");
     sa.push_str("}\n");
     fs::write(sa_path, sa).expect("Failed to write static_assets.rs");
+
+    // ── Generate wasm_static_assets.rs (binary WASM module files from wasm-pack) ──
+    let wasm_pkg_dir = traits_dir.join("kernel/wasm/pkg");
+    let wsa_path = out_dir.join("wasm_static_assets.rs");
+    let mut wsa = String::new();
+    wsa.push_str("/// Look up an embedded WASM asset by filename.\n");
+    wsa.push_str("/// Returns (bytes, content_type) if found.\n");
+    wsa.push_str("pub fn get_wasm_asset(path: &str) -> Option<(&'static [u8], &'static str)> {\n");
+    wsa.push_str("    match path {\n");
+    if wasm_pkg_dir.exists() {
+        if let Ok(rd) = fs::read_dir(&wasm_pkg_dir) {
+            for entry in rd.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                let ct = if fname.ends_with(".wasm") {
+                    "application/wasm"
+                } else if fname.ends_with(".js") {
+                    "application/javascript"
+                } else {
+                    continue;
+                };
+                let abs_path = entry.path().to_string_lossy().to_string();
+                wsa.push_str(&format!(
+                    "        {:?} => Some((include_bytes!({:?}), {:?})),\n",
+                    fname, abs_path, ct
+                ));
+                println!("cargo:rerun-if-changed={}", abs_path);
+            }
+        }
+    }
+    wsa.push_str("        _ => None,\n");
+    wsa.push_str("    }\n");
+    wsa.push_str("}\n");
+    fs::write(wsa_path, wsa).expect("Failed to write wasm_static_assets.rs");
 }
 
 /// Compute YYMMDD from current UTC time (no chrono dependency).

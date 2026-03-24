@@ -16,9 +16,6 @@ toml = "0.8"
 js-sys = "0.3"
 sha2 = "0.10"
 
-[build-dependencies]
-sha2 = "0.10"
-
 [profile.release]
 opt-level = "s"
 lto = true

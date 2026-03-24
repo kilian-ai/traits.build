@@ -1,8 +1,8 @@
 [trait]
 description = "Core trait execution engine: path resolution, arg validation, dispatch, handle management"
-version = "v260324.034324"
+version = "v260324.041422"
 epoch = 0
-checksum = "aa099ff9d07fa72b2fd042770a877143454072b3c36388dec81e2be9a0efa485"
+checksum = "cb74c1df4197e5d76c6e0ff9c84d63120332de0d8f938f6172a51901c7b926fb"
 author = "kilian-ai"
 tags = ["kernel", "dispatcher"]
 provides = ["kernel/dispatcher"]

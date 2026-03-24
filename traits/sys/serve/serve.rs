@@ -2,9 +2,9 @@ use serde_json::Value;
 
 // ── Trait dispatch entry point ──
 
-/// kernel.serve trait dispatch — sync stub (background traits use start() instead).
+/// sys.serve trait dispatch — sync stub (background traits use start() instead).
 pub fn serve(_args: &[Value]) -> Value {
-    serde_json::json!({"error": "kernel.serve is a background trait — dispatched via start()"})
+    serde_json::json!({"error": "sys.serve is a background trait — dispatched via start()"})
 }
 
 /// Async entry point for background dispatch.
@@ -358,7 +358,21 @@ async fn serve_static(req: HttpRequest) -> HttpResponse {
     }
 }
 
-/// Serve pages by resolving keyed interface bindings from kernel.serve's [requires]/[bindings].
+/// Serve WASM binary assets (wasm-pack output: .wasm, .js glue code).
+async fn serve_wasm_asset(req: HttpRequest) -> HttpResponse {
+    let path = req.match_info().get("path").unwrap_or("");
+    match crate::dispatcher::wasm_static_assets::get_wasm_asset(path) {
+        Some((content, content_type)) => HttpResponse::Ok()
+            .content_type(content_type)
+            .insert_header(("Cache-Control", "public, max-age=3600"))
+            .body(content.to_vec()),
+        None => HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body("WASM asset not found"),
+    }
+}
+
+/// Serve pages by resolving keyed interface bindings from sys.serve's [requires]/[bindings].
 /// Each key is a URL path (e.g. "/", "/admin"), resolved to a page trait.
 async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
     let url_path = req.path();
@@ -370,7 +384,7 @@ async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
         }
     }
 
-    let trait_path = match state.dispatcher.resolve_keyed(url_path, "kernel.serve") {
+    let trait_path = match state.dispatcher.resolve_keyed(url_path, "sys.serve") {
         Some(tp) => tp,
         None => return HttpResponse::NotFound()
             .content_type("text/html; charset=utf-8")
@@ -395,17 +409,17 @@ async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
     }
 }
 
-/// Start the HTTP server — called by the runtime when kernel.serve is dispatched.
+/// Start the HTTP server — called by the runtime when sys.serve is dispatched.
 /// Uses the already-initialized globals (registry, config) instead of re-bootstrapping.
-/// Resolves the www/website interface from kernel.serve's [bindings] section.
+/// Resolves the www/website interface from sys.serve's [bindings] section.
 pub async fn start_server(config: crate::config::Config, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let registry = crate::globals::REGISTRY.get()
         .expect("Registry must be initialized before starting server")
         .clone();
     let dispatcher = Dispatcher::new(registry, config.traits.timeout);
 
-    // Resolve all keyed page routes from kernel.serve's [requires]/[bindings]
-    let page_routes = dispatcher.resolve_all_keyed("kernel.serve");
+    // Resolve all keyed page routes from sys.serve's [requires]/[bindings]
+    let page_routes = dispatcher.resolve_all_keyed("sys.serve");
     for (url_path, trait_path) in &page_routes {
         info!("Page route '{}' → {}", url_path, trait_path);
     }
@@ -431,6 +445,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
             .route("/traits/{path:.*}", web::post().to(call_trait))
             .route("/traits/{path:.*}", web::get().to(get_trait_info))
             .route("/static/{path:.*}", web::get().to(serve_static))
+            .route("/wasm/{path:.*}", web::get().to(serve_wasm_asset))
             .default_service(web::to(serve_page))
     })
     .workers(2)

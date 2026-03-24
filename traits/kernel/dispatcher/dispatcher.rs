@@ -142,6 +142,11 @@ pub mod static_assets {
     include!(concat!(env!("OUT_DIR"), "/static_assets.rs"));
 }
 
+// ── WASM static assets — binary files from wasm-pack output ──
+pub mod wasm_static_assets {
+    include!(concat!(env!("OUT_DIR"), "/wasm_static_assets.rs"));
+}
+
 // ────────────────── call configuration ──────────────────
 
 /// Configuration for a trait call — carries overrides and param defaults.

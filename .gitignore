@@ -5,3 +5,5 @@
 /t
 fly.toml
 trait_config.toml
+traits/kernel/wasm/pkg/
+traits/kernel/wasm/_old_js/

@@ -1,0 +1,18 @@
+[trait]
+description = "In-browser WASM kernel playground"
+version = "v260324"
+checksum = "fd92d13ab42c23c09440f7e2a618d64249d5067d804d8284443b6bb69471668a"
+author = "system"
+tags = ["www", "webpage", "wasm"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML page loading the WASM kernel"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "wasm_page"

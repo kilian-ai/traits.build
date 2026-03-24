@@ -1,0 +1,32 @@
+{
+  "trait": "www.wasm",
+  "features": [
+    {
+      "name": "returns HTML page",
+      "examples": [
+        {
+          "input": { "args": [] },
+          "output": { "type": "string" }
+        }
+      ],
+      "vtests": [
+        {
+          "assert": "result contains '<html'",
+          "command": "traits call www.wasm",
+          "expect": {
+            "type": "contains",
+            "value": "<html"
+          }
+        },
+        {
+          "assert": "result contains wasm.js script tag",
+          "command": "traits call www.wasm",
+          "expect": {
+            "type": "contains",
+            "value": "wasm.js"
+          }
+        }
+      ]
+    }
+  ]
+}

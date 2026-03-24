@@ -1,14 +1,11 @@
 use wasm_bindgen::prelude::*;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 mod registry;
+mod wasm_traits;
 
-// Include generated trait dispatch table
-include!(concat!(env!("OUT_DIR"), "/wasm_dispatch.rs"));
-
-// Include generated trait definitions
+// Include generated trait definitions (for registry browsing)
 include!(concat!(env!("OUT_DIR"), "/wasm_builtin_traits.rs"));
 
 static REGISTRY: OnceLock<registry::WasmRegistry> = OnceLock::new();
@@ -17,8 +14,8 @@ fn get_registry() -> &'static registry::WasmRegistry {
     REGISTRY.get_or_init(|| {
         let mut reg = registry::WasmRegistry::new();
         reg.load_builtins(BUILTIN_TRAIT_DEFS);
-        // Mark which traits are callable in WASM
-        for path in list_wasm_callable() {
+        // Mark curated WASM-callable traits
+        for path in wasm_traits::WASM_CALLABLE {
             reg.mark_wasm_callable(path);
         }
         reg
@@ -28,10 +25,9 @@ fn get_registry() -> &'static registry::WasmRegistry {
 /// Initialize the WASM kernel. Call once before using other functions.
 #[wasm_bindgen]
 pub fn init() -> Result<JsValue, JsValue> {
-    // Force registry initialization
     let reg = get_registry();
     let count = reg.len();
-    let callable = list_wasm_callable().len();
+    let callable = wasm_traits::WASM_CALLABLE.len();
     Ok(serde_json::to_string(&serde_json::json!({
         "status": "ok",
         "traits_registered": count,
@@ -40,8 +36,21 @@ pub fn init() -> Result<JsValue, JsValue> {
     })).unwrap().into())
 }
 
+/// Check if a trait can be called locally in WASM.
+#[wasm_bindgen]
+pub fn is_callable(trait_path: &str) -> bool {
+    wasm_traits::WASM_CALLABLE.contains(&trait_path)
+}
+
+/// Check if a trait is registered (even if not WASM-callable).
+#[wasm_bindgen]
+pub fn is_registered(trait_path: &str) -> bool {
+    get_registry().get(trait_path).is_some()
+}
+
 /// Call a trait by dot-notation path with JSON args.
-/// Returns JSON string result.
+/// Returns JSON string result. Only works for WASM-callable traits.
+/// For non-WASM traits, use the traits.js REST client.
 #[wasm_bindgen]
 pub fn call(trait_path: &str, args_json: &str) -> Result<String, JsValue> {
     let args: Vec<Value> = match serde_json::from_str(args_json) {
@@ -50,14 +59,13 @@ pub fn call(trait_path: &str, args_json: &str) -> Result<String, JsValue> {
         Err(e) => return Err(JsValue::from_str(&format!("Invalid JSON args: {}", e))),
     };
 
-    match dispatch_wasm(trait_path, &args) {
+    match wasm_traits::dispatch(trait_path, &args) {
         Some(result) => Ok(serde_json::to_string(&result).unwrap_or_default()),
         None => {
-            // Check if trait exists but isn't WASM-callable
             let reg = get_registry();
             if reg.get(trait_path).is_some() {
                 Err(JsValue::from_str(&format!(
-                    "Trait '{}' exists but is not callable in WASM (requires server-side I/O)",
+                    "Trait '{}' exists but requires REST dispatch (use Traits client)",
                     trait_path
                 )))
             } else {
@@ -133,7 +141,7 @@ pub fn search_traits(query: &str) -> String {
 /// Get the list of traits that can be called directly in WASM.
 #[wasm_bindgen]
 pub fn callable_traits() -> String {
-    serde_json::to_string(&list_wasm_callable()).unwrap_or_default()
+    serde_json::to_string(&wasm_traits::WASM_CALLABLE).unwrap_or_default()
 }
 
 /// Get kernel version.
