@@ -1,4 +1,11 @@
-app = "polygrait-api"
+# fly.toml.example — Fly.io deployment config template
+#
+# Copy to fly.toml and edit with your own values:
+#   cp fly.toml.example fly.toml
+#
+# fly.toml is git-ignored — your deployment config stays local.
+
+app = "your-app-name"
 primary_region = "iad"
 
 [build]

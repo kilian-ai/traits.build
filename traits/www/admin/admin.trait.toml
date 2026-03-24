@@ -23,8 +23,8 @@ config = "kernel.config"
 secrets = "sys.secrets"
 
 [config]
-fly_app = "polygrait-api"
-fly_region = "iad"
+fly_app = ""
+fly_region = ""
 
 [implementation]
 language = "rust"

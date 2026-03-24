@@ -192,7 +192,7 @@ pub fn persistent_config_path() -> &'static str {
 }
 
 /// Read a value from the persistent config overlay.
-fn read_persistent_config(trait_path: &str, key: &str) -> Option<String> {
+pub fn read_persistent_config(trait_path: &str, key: &str) -> Option<String> {
     let content = std::fs::read_to_string(persistent_config_path()).ok()?;
     let table: toml::Value = toml::from_str(&content).ok()?;
     // Trait paths use dots, TOML sections use quoted keys: ["www.admin"]
@@ -200,6 +200,75 @@ fn read_persistent_config(trait_path: &str, key: &str) -> Option<String> {
         .get(key)?
         .as_str()
         .map(|s| s.to_string())
+}
+
+/// Read all keys for a specific trait from the persistent overlay.
+pub fn read_persistent_config_section(trait_path: &str) -> Vec<(String, String)> {
+    let content = match std::fs::read_to_string(persistent_config_path()) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let table: toml::Value = match toml::from_str(&content) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+    match table.get(trait_path).and_then(|v| v.as_table()) {
+        Some(section) => section.iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Read all traits and their config from the persistent overlay.
+pub fn read_persistent_config_all() -> Vec<(String, std::collections::HashMap<String, String>)> {
+    let content = match std::fs::read_to_string(persistent_config_path()) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let table: toml::value::Table = match toml::from_str(&content) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+    table.iter()
+        .filter_map(|(path, val)| {
+            val.as_table().map(|section| {
+                let map: std::collections::HashMap<String, String> = section.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect();
+                (path.clone(), map)
+            })
+        })
+        .collect()
+}
+
+/// Delete a config value from the persistent overlay file.
+pub fn delete_persistent_config(trait_path: &str, key: &str) -> Result<bool, String> {
+    let path = persistent_config_path();
+    let mut table: toml::value::Table = if let Ok(content) = std::fs::read_to_string(path) {
+        toml::from_str(&content).unwrap_or_default()
+    } else {
+        return Ok(false);
+    };
+
+    let deleted = if let Some(section) = table.get_mut(trait_path).and_then(|v| v.as_table_mut()) {
+        section.remove(key).is_some()
+    } else {
+        false
+    };
+
+    if deleted {
+        // Remove empty sections
+        if table.get(trait_path).and_then(|v| v.as_table()).map(|t| t.is_empty()).unwrap_or(false) {
+            table.remove(trait_path);
+        }
+        let content = toml::to_string_pretty(&table)
+            .map_err(|e| format!("TOML serialize error: {}", e))?;
+        std::fs::write(path, content)
+            .map_err(|e| format!("Cannot write {}: {}", path, e))?;
+    }
+
+    Ok(deleted)
 }
 
 /// Write a config value to the persistent overlay file.

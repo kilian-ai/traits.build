@@ -1,0 +1,48 @@
+[trait]
+description = "Manage persistent trait config values — set, get, delete, list config with full resolution layer visibility"
+version = "v260324.010921"
+checksum = "b8d6477cbcc58a8fbd2cf3943166290f6546217043d9c253e44c988296996ebd"
+epoch = 0
+author = "system"
+tags = ["sys", "config", "management"]
+provides = ["sys/config"]
+
+[[signature.params]]
+name = "action"
+type = "string"
+description = "Action: set | get | delete | list"
+
+[[signature.params]]
+name = "trait_path"
+type = "string"
+description = "Trait path in dot notation (e.g. www.admin)"
+optional = true
+
+[[signature.params]]
+name = "key"
+type = "string"
+description = "Config key (e.g. fly_app)"
+optional = true
+
+[[signature.params]]
+name = "value"
+type = "string"
+description = "Config value (only for 'set' action)"
+optional = true
+
+[signature.returns]
+type = "object"
+description = "Result object — varies by action"
+
+[requires]
+kernel_config = "kernel/config"
+registry = "kernel/registry"
+
+[bindings]
+kernel_config = "kernel.config"
+registry = "kernel.registry"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "sys_config"

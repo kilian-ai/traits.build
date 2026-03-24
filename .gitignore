@@ -3,3 +3,5 @@
 *.dylib
 *.so
 /t
+fly.toml
+trait_config.toml

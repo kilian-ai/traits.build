@@ -1,0 +1,137 @@
+{
+  "trait": "sys.config",
+  "description": "Persistent trait config management — set, get, delete, list config values",
+  "features": [
+    {
+      "name": "Set and get a config value",
+      "description": "Store a config value and retrieve it with source info",
+      "tests": [
+        {
+          "name": "set a test config value",
+          "type": "command",
+          "command": "./target/release/traits call sys.config set test.trait test_key test_value 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "\"action\": \"set\"" },
+            { "type": "contains", "expected": "\"key\": \"test_key\"" }
+          ]
+        },
+        {
+          "name": "get the config value shows persistent source",
+          "type": "command",
+          "command": "./target/release/traits call sys.config get test.trait test_key 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "\"value\": \"test_value\"" },
+            { "type": "contains", "expected": "\"source\": \"persistent\"" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "List config for a trait",
+      "description": "List all config keys for a specific trait",
+      "tests": [
+        {
+          "name": "list config for test trait",
+          "type": "command",
+          "command": "./target/release/traits call sys.config list test.trait 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "\"action\": \"list\"" },
+            { "type": "contains", "expected": "test_key" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "List all traits with config",
+      "description": "List all traits that have config defined",
+      "tests": [
+        {
+          "name": "list all returns traits array",
+          "type": "command",
+          "command": "./target/release/traits call sys.config list 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "\"action\": \"list\"" },
+            { "type": "contains", "expected": "traits" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Get nonexistent config",
+      "description": "Get a config key that does not exist",
+      "tests": [
+        {
+          "name": "get nonexistent returns null value",
+          "type": "command",
+          "command": "./target/release/traits call sys.config get nonexistent.trait missing_key 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"source\": \"none\"" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Delete config value",
+      "description": "Delete a config value from persistent overlay",
+      "tests": [
+        {
+          "name": "delete the test config value",
+          "type": "command",
+          "command": "./target/release/traits call sys.config delete test.trait test_key 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"deleted\": true" }
+          ]
+        },
+        {
+          "name": "delete nonexistent returns deleted false",
+          "type": "command",
+          "command": "./target/release/traits call sys.config delete nonexistent.trait missing_key 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"deleted\": false" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Unknown action error",
+      "description": "Returns error with valid action list for unknown actions",
+      "tests": [
+        {
+          "name": "unknown action returns error",
+          "type": "command",
+          "command": "./target/release/traits call sys.config badaction 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "Unknown action: badaction" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Validation: empty trait path",
+      "description": "Set/get/delete require a non-empty trait path",
+      "tests": [
+        {
+          "name": "set without trait path returns error",
+          "type": "command",
+          "command": "./target/release/traits call sys.config set '' '' '' 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "trait path is required" }
+          ]
+        }
+      ]
+    }
+  ]
+}
