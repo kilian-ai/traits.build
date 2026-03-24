@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 pub mod checksum;
+pub mod registry;
 pub mod version;
 
 // kernel.types — include the standalone Rust file directly (zero crate:: deps)
@@ -11,6 +12,9 @@ pub mod types;
 pub const WASM_CALLABLE: &[&str] = &[
     "kernel.types",
     "sys.checksum",
+    "sys.info",
+    "sys.list",
+    "sys.registry",
     "sys.version",
 ];
 
@@ -19,6 +23,9 @@ pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
     match trait_path {
         "kernel.types" => Some(types::types(args)),
         "sys.checksum" => Some(checksum::checksum_dispatch(args)),
+        "sys.info" => Some(registry::info_dispatch(args)),
+        "sys.list" => Some(registry::list_dispatch(args)),
+        "sys.registry" => Some(registry::registry_dispatch(args)),
         "sys.version" => Some(version::version(args)),
         _ => None,
     }

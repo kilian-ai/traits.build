@@ -10,7 +10,7 @@ include!(concat!(env!("OUT_DIR"), "/wasm_builtin_traits.rs"));
 
 static REGISTRY: OnceLock<registry::WasmRegistry> = OnceLock::new();
 
-fn get_registry() -> &'static registry::WasmRegistry {
+pub(crate) fn get_registry() -> &'static registry::WasmRegistry {
     REGISTRY.get_or_init(|| {
         let mut reg = registry::WasmRegistry::new();
         reg.load_builtins(BUILTIN_TRAIT_DEFS);
