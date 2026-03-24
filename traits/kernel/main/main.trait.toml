@@ -1,8 +1,8 @@
 [trait]
 path = "kernel.main"
 description = "Binary entry point, system bootstrap, and trait-exists probe"
-version = "v260321"
-checksum = "dd02fd368ecf818141a4404a03a77b2c55c8fed4e9004c5d87628c367b44e5f3"
+version = "v260324"
+checksum = "3e07f8bd6aefd5fb2f9f89dcd2580c416a9d04c3c17f6033016e5ec8f8f2ebaf"
 epoch = 0
 author = "system"
 tags = ["kernel", "bootstrap", "entry"]
@@ -18,14 +18,14 @@ dispatcher = "kernel/dispatcher"
 registry = "kernel/registry"
 config = "kernel/config"
 globals = "kernel/globals"
-dylib_loader = "kernel/dylib_loader"
+dylib_loader = "sys/dylib_loader"
 
 [bindings]
 dispatcher = "kernel.dispatcher"
 registry = "kernel.registry"
 config = "kernel.config"
 globals = "kernel.globals"
-dylib_loader = "kernel.dylib_loader"
+dylib_loader = "sys.dylib_loader"
 
 [implementation]
 language = "rust"

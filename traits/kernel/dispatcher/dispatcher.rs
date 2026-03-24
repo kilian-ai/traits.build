@@ -6,16 +6,20 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 
 // ── PID file management for background traits ──
+// Only available on native targets (not WASM)
 
+#[cfg(not(target_arch = "wasm32"))]
 /// Directory for PID files (relative to working directory)
 const RUN_DIR: &str = ".run";
 
+#[cfg(not(target_arch = "wasm32"))]
 /// Get the PID file path for a trait
 fn pid_file_path(trait_path: &str) -> std::path::PathBuf {
     std::path::Path::new(RUN_DIR).join(format!("{}.pid", trait_path))
 }
 
 /// Write current process PID to the run file
+#[cfg(not(target_arch = "wasm32"))]
 fn write_pid_file(trait_path: &str) {
     let path = pid_file_path(trait_path);
     if let Err(e) = std::fs::create_dir_all(RUN_DIR) {
@@ -31,6 +35,7 @@ fn write_pid_file(trait_path: &str) {
 }
 
 /// Read PID from a run file, returns None if missing or unreadable
+#[cfg(not(target_arch = "wasm32"))]
 fn read_pid_file(trait_path: &str) -> Option<u32> {
     let path = pid_file_path(trait_path);
     std::fs::read_to_string(&path)
@@ -39,18 +44,21 @@ fn read_pid_file(trait_path: &str) -> Option<u32> {
 }
 
 /// Remove the PID file for a trait
+#[cfg(not(target_arch = "wasm32"))]
 pub fn remove_pid_file(trait_path: &str) {
     let path = pid_file_path(trait_path);
     let _ = std::fs::remove_file(path);
 }
 
 /// Check if a process is alive
+#[cfg(not(target_arch = "wasm32"))]
 fn process_alive(pid: u32) -> bool {
     // kill(pid, 0) checks existence without sending a signal
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
 /// Result of a stop attempt — richer than bool so callers can report accurately.
+#[cfg(not(target_arch = "wasm32"))]
 pub enum StopResult {
     /// Process was alive and has been killed
     Killed { pid: u32 },
@@ -63,6 +71,7 @@ pub enum StopResult {
 }
 
 /// Stop an existing background trait by PID file.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn stop_existing(trait_path: &str) -> StopResult {
     let pid = match read_pid_file(trait_path) {
         Some(p) => p,
@@ -82,6 +91,7 @@ pub fn stop_existing(trait_path: &str) -> StopResult {
 }
 
 /// Kill a process: SIGTERM, wait up to 3s, then SIGKILL.
+#[cfg(not(target_arch = "wasm32"))]
 fn kill_pid(pid: u32) {
     tracing::info!("Sending SIGTERM to PID {}", pid);
     unsafe { libc::kill(pid as i32, libc::SIGTERM); }
@@ -97,6 +107,7 @@ fn kill_pid(pid: u32) {
 }
 
 /// Find which trait (if any) has a PID file containing the given PID.
+#[cfg(not(target_arch = "wasm32"))]
 fn find_trait_by_pid(pid: u32) -> Option<String> {
     let entries = std::fs::read_dir(RUN_DIR).ok()?;
     for entry in entries.flatten() {
@@ -124,6 +135,11 @@ pub mod compiled {
 // ── CLI output formatters — auto-discovered *_cli.rs companions ──
 pub mod cli_formatters {
     include!(concat!(env!("OUT_DIR"), "/cli_formatters.rs"));
+}
+
+// ── Static assets — auto-discovered .css/.js files from trait directories ──
+pub mod static_assets {
+    include!(concat!(env!("OUT_DIR"), "/static_assets.rs"));
 }
 
 // ────────────────── call configuration ──────────────────

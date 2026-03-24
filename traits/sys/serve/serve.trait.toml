@@ -1,12 +1,13 @@
 [trait]
 description = "Start the HTTP API server"
-version = "v260323.165800"
+version = "v260324"
 epoch = 0
-checksum = "c261103492aae8c7626b743bbdaa030aeab0f1ed670acb21cc80e2fd0c33ae79"
+checksum = "4d849d2f7770787253e828b3afbfad903f23b1fdc8321bd641eb9bc2587292b7"
 author = "system"
-tags = ["system", "server"]
+tags = ["sys", "server"]
 background = true
-provides = ["kernel/serve"]
+provides = ["sys/serve"]
+kernel_module = true
 
 [requires]
 "/" = "www/webpage"
@@ -41,5 +42,6 @@ description = "Server status (never returns while running)"
 
 [implementation]
 language = "rust"
-source = "kernel"
+source = "builtin"
 entry = "serve"
+kernel_module = true

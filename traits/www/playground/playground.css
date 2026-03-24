@@ -1,0 +1,49 @@
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;min-height:100vh}
+.container{max-width:720px;margin:0 auto;padding:2rem 1.5rem}
+header{margin-bottom:2rem}
+h1{font-size:1.6rem;font-weight:600;color:#e6edf3}
+h1 .accent{color:#58a6ff;font-weight:400}
+.subtitle{color:#484f58;font-size:0.85rem;margin-top:0.25rem}
+.selector{margin-bottom:1.5rem;position:relative}
+.search-wrap{position:relative}
+.search-wrap input{width:100%;padding:0.65rem 0.85rem;background:#161b22;border:1px solid #30363d;border-radius:8px;color:#e6edf3;font-size:0.95rem;outline:none;transition:border-color 0.15s}
+.search-wrap input:focus{border-color:#58a6ff}
+.dropdown{position:absolute;top:100%;left:0;right:0;background:#161b22;border:1px solid #30363d;border-radius:8px;margin-top:4px;max-height:320px;overflow-y:auto;display:none;z-index:10;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
+.dropdown.open{display:block}
+.dropdown .item{padding:0.5rem 0.85rem;cursor:pointer;border-bottom:1px solid #21262d;display:flex;align-items:baseline;gap:0.5rem}
+.dropdown .item:last-child{border-bottom:none}
+.dropdown .item:hover,.dropdown .item.active{background:#1c2128}
+.dropdown .item .path{color:#58a6ff;font-family:monospace;font-size:0.88rem;flex-shrink:0}
+.dropdown .item .ddesc{color:#484f58;font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.25rem;margin-bottom:1.25rem}
+.trait-header{margin-bottom:1rem;display:flex;align-items:baseline;gap:0.75rem;flex-wrap:wrap}
+.trait-header h2{font-size:1.15rem;color:#e6edf3;font-family:monospace}
+.desc{color:#484f58;font-size:0.82rem}
+.params{display:flex;flex-direction:column;gap:0.85rem}
+.param{display:flex;flex-direction:column;gap:0.25rem}
+.param-label{display:flex;align-items:baseline;gap:0.5rem}
+.param-label .name{font-family:monospace;color:#e6edf3;font-weight:600;font-size:0.9rem}
+.param-label .type{color:#484f58;font-size:0.78rem}
+.param-label .req{color:#f85149;font-size:0.7rem;font-weight:700}
+.param-label .opt{color:#3fb950;font-size:0.7rem}
+.param-desc{color:#484f58;font-size:0.78rem;margin-bottom:0.15rem}
+.param input,.param select,.param textarea{width:100%;padding:0.5rem 0.7rem;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-family:monospace;font-size:0.88rem;outline:none;transition:border-color 0.15s}
+.param input:focus,.param textarea:focus{border-color:#58a6ff}
+.param .examples{display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.2rem}
+.param .examples .chip{padding:0.15rem 0.5rem;background:#21262d;border:1px solid #30363d;border-radius:12px;font-size:0.72rem;color:#8b949e;cursor:pointer;font-family:monospace;transition:background 0.1s,border-color 0.1s}
+.param .examples .chip:hover{background:#30363d;border-color:#58a6ff;color:#c9d1d9}
+.actions{display:flex;align-items:center;gap:1rem;margin-top:1rem}
+button{padding:0.55rem 1.2rem;border:none;border-radius:6px;font-size:0.88rem;cursor:pointer;font-weight:500;transition:background 0.15s}
+.primary{background:#238636;color:#fff}
+.primary:hover{background:#2ea043}
+.primary:disabled{background:#21262d;color:#484f58;cursor:default}
+.secondary{background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:0.3rem 0.7rem;font-size:0.78rem}
+.secondary:hover{background:#30363d}
+.elapsed{color:#484f58;font-size:0.82rem}
+.result-panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.25rem}
+.result-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem}
+.result-header h3{font-size:0.95rem;color:#e6edf3}
+.result{background:#0d1117;padding:1rem;border-radius:6px;border:1px solid #21262d;color:#e6edf3;font-family:monospace;font-size:0.85rem;white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow-y:auto;line-height:1.5}
+.result .err{color:#f85149}
+.no-params{color:#484f58;font-size:0.85rem;font-style:italic}

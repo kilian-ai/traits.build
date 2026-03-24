@@ -10,12 +10,12 @@ provides = ["sys/cli"]
 [requires]
 config = "kernel/config"
 call = "kernel/call"
-serve = "kernel/serve"
+serve = "sys/serve"
 
 [bindings]
 config = "kernel.config"
 call = "kernel.call"
-serve = "kernel.serve"
+serve = "sys.serve"
 
 [signature]
 params = []

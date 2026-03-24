@@ -21,7 +21,7 @@ pub fn bootstrap(config: &Config) -> Result<Dispatcher, Box<dyn std::error::Erro
 
     // Resolve all required interfaces through the interface system.
     let cc = CallConfig::default();
-    for iface in &["kernel/config", "kernel/registry", "kernel/dispatcher", "kernel/globals", "kernel/dylib_loader"] {
+    for iface in &["kernel/config", "kernel/registry", "kernel/dispatcher", "kernel/globals", "sys/dylib_loader"] {
         let resolved = registry
             .resolve_interface(iface, &cc)
             .unwrap_or_else(|| format!("{}.{}", iface.split('/').next().unwrap_or(""), iface.split('/').last().unwrap_or("")));
@@ -66,7 +66,7 @@ pub fn main_info(args: &[serde_json::Value]) -> serde_json::Value {
     let cc = dispatcher::CallConfig::default();
     let iface_keys = [
         "kernel/config", "kernel/registry", "kernel/dispatcher",
-        "kernel/globals", "kernel/dylib_loader",
+        "kernel/globals", "sys/dylib_loader",
     ];
     let interfaces: serde_json::Map<String, serde_json::Value> = iface_keys.iter().map(|k| {
         let resolved = globals::REGISTRY

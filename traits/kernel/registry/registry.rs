@@ -404,6 +404,7 @@ impl Registry {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_from_dir(&self, dir: &Path) -> Result<usize, Box<dyn std::error::Error>> {
         // Clear existing entries so reload doesn't hit duplicate errors
         self.traits.clear();
@@ -435,6 +436,7 @@ impl Registry {
         Ok(count)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_trait_file(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
         let toml: TraitToml = toml::from_str(&content)

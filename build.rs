@@ -37,6 +37,16 @@ struct CliFormatter {
     rs_rel_path: String,
 }
 
+/// A discovered static asset (.css, .js) that lives alongside a trait.
+struct StaticAsset {
+    /// Serve path: "www/playground/playground.css"
+    serve_path: String,
+    /// Absolute path to the file on disk.
+    abs_path: String,
+    /// MIME content type: "text/css" or "application/javascript"
+    content_type: &'static str,
+}
+
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
@@ -60,8 +70,9 @@ fn main() {
     let mut modules: Vec<TraitModule> = Vec::new();
     let mut cli_formatters: Vec<CliFormatter> = Vec::new();
     let mut kernel_modules: Vec<KernelModule> = Vec::new();
+    let mut static_assets: Vec<StaticAsset> = Vec::new();
 
-    visit_traits(&traits_dir, &manifest_dir, &traits_dir, &mut entries, &mut modules, &mut cli_formatters, &mut kernel_modules, is_publish);
+    visit_traits(&traits_dir, &manifest_dir, &traits_dir, &mut entries, &mut modules, &mut cli_formatters, &mut kernel_modules, &mut static_assets, is_publish);
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     modules.sort_by(|a, b| a.trait_path.cmp(&b.trait_path));
 
@@ -205,6 +216,26 @@ fn main() {
         println!("cargo:rerun-if-changed={}", k.abs_path);
     }
     fs::write(kernel_path, km).expect("Failed to write kernel_modules.rs");
+
+    // ── Generate static_assets.rs (embedded CSS/JS files served at /static/) ──
+    static_assets.sort_by(|a, b| a.serve_path.cmp(&b.serve_path));
+    let sa_path = out_dir.join("static_assets.rs");
+    let mut sa = String::new();
+    sa.push_str("/// Look up an embedded static asset by its serve path.\n");
+    sa.push_str("/// Returns (content, content_type) if found.\n");
+    sa.push_str("pub fn get_static_asset(path: &str) -> Option<(&'static str, &'static str)> {\n");
+    sa.push_str("    match path {\n");
+    for a in &static_assets {
+        sa.push_str(&format!(
+            "        {:?} => Some((include_str!({:?}), {:?})),\n",
+            a.serve_path, a.abs_path, a.content_type
+        ));
+        println!("cargo:rerun-if-changed={}", a.abs_path);
+    }
+    sa.push_str("        _ => None,\n");
+    sa.push_str("    }\n");
+    sa.push_str("}\n");
+    fs::write(sa_path, sa).expect("Failed to write static_assets.rs");
 }
 
 /// Compute YYMMDD from current UTC time (no chrono dependency).
@@ -419,7 +450,7 @@ fn watch_dirs_recursive(dir: &Path) {
     }
 }
 
-fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mut Vec<(String, String)>, modules: &mut Vec<TraitModule>, cli_formatters: &mut Vec<CliFormatter>, kernel_modules: &mut Vec<KernelModule>, is_publish: bool) {
+fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mut Vec<(String, String)>, modules: &mut Vec<TraitModule>, cli_formatters: &mut Vec<CliFormatter>, kernel_modules: &mut Vec<KernelModule>, static_assets: &mut Vec<StaticAsset>, is_publish: bool) {
     // Watch directories so cargo re-runs build.rs when traits are added/removed
     println!("cargo:rerun-if-changed={}", dir.display());
 
@@ -431,7 +462,7 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
     for entry in read_dir.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            visit_traits(&path, manifest_dir, traits_dir, entries, modules, cli_formatters, kernel_modules, is_publish);
+            visit_traits(&path, manifest_dir, traits_dir, entries, modules, cli_formatters, kernel_modules, static_assets, is_publish);
             continue;
         }
         if !path.to_string_lossy().ends_with(".trait.toml") {
@@ -449,6 +480,7 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
         let mut is_rest = false;
         let mut is_background = false;
         let mut is_not_callable = false;
+        let mut is_kernel_module = false;
         let mut entry_name = String::new();
 
         for line in content.lines() {
@@ -464,6 +496,9 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
             }
             if trimmed.starts_with("background") && trimmed.contains("true") {
                 is_background = true;
+            }
+            if trimmed == "kernel_module = true" {
+                is_kernel_module = true;
             }
             if trimmed.starts_with("entry") {
                 // Parse entry = "function_name"
@@ -544,6 +579,32 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
                     });
                 }
 
+                // Discover static assets (.css, .js) in this trait's directory
+                let serve_prefix = toml_dir.strip_prefix(traits_dir)
+                    .unwrap_or(toml_dir)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                if let Ok(dir_entries) = fs::read_dir(toml_dir) {
+                    for de in dir_entries.flatten() {
+                        let dp = de.path();
+                        let fname = dp.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        let content_type = if fname.ends_with(".css") {
+                            Some("text/css")
+                        } else if fname.ends_with(".js") {
+                            Some("application/javascript")
+                        } else {
+                            None
+                        };
+                        if let Some(ct) = content_type {
+                            static_assets.push(StaticAsset {
+                                serve_path: format!("{}/{}", serve_prefix, fname),
+                                abs_path: dp.to_string_lossy().to_string(),
+                                content_type: ct,
+                            });
+                        }
+                    }
+                }
+
                 let rs_file = toml_dir.join(format!("{}.rs", dir_name));
                 if rs_file.exists() {
                     // Update checksum in .trait.toml (bumps version if source changed)
@@ -556,8 +617,8 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
                     // Module name: last segment of trait path (e.g., "sys.checksum" -> "checksum")
                     let mod_name = tp.rsplit('.').next().unwrap_or(&tp).to_string();
                     let entry = if entry_name.is_empty() { mod_name.clone() } else { entry_name.clone() };
-                    let is_kb = tp.starts_with("kernel.");
-                    // Kernel traits need crate-level module declarations too
+                    let is_kb = tp.starts_with("kernel.") || is_kernel_module;
+                    // Kernel traits (and kernel_module = true) need crate-level module declarations
                     // Skip "main" — it IS the crate root, not a child module
                     if is_kb && mod_name != "main" {
                         kernel_modules.push(KernelModule {

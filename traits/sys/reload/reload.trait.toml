@@ -4,8 +4,9 @@ version = "v260320"
 epoch = 0
 checksum = "4fafbe9c45fd038e11e1389c88f5860896c408f054789fba22971f52c0fd8630"
 author = "system"
-tags = ["kernel", "admin"]
-provides = ["kernel/reload"]
+tags = ["sys", "admin"]
+provides = ["sys/reload"]
+kernel_module = true
 
 [requires]
 globals = "kernel/globals"
@@ -22,5 +23,6 @@ description = "Reload status with trait count"
 
 [implementation]
 language = "rust"
-source = "kernel"
+source = "builtin"
 entry = "reload"
+kernel_module = true

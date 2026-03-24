@@ -344,6 +344,20 @@ fn base64_decode(input: &str) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
+/// Serve embedded static assets (.css, .js) discovered at build time from trait directories.
+async fn serve_static(req: HttpRequest) -> HttpResponse {
+    let path = req.match_info().get("path").unwrap_or("");
+    match crate::dispatcher::static_assets::get_static_asset(path) {
+        Some((content, content_type)) => HttpResponse::Ok()
+            .content_type(content_type)
+            .insert_header(("Cache-Control", "public, max-age=3600"))
+            .body(content),
+        None => HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body("Static asset not found"),
+    }
+}
+
 /// Serve pages by resolving keyed interface bindings from kernel.serve's [requires]/[bindings].
 /// Each key is a URL path (e.g. "/", "/admin"), resolved to a page trait.
 async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
@@ -416,6 +430,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
             .route("/traits/", web::get().to(list_traits))
             .route("/traits/{path:.*}", web::post().to(call_trait))
             .route("/traits/{path:.*}", web::get().to(get_trait_info))
+            .route("/static/{path:.*}", web::get().to(serve_static))
             .default_service(web::to(serve_page))
     })
     .workers(2)

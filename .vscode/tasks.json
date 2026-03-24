@@ -30,6 +30,21 @@
 			"label": "commit",
 			"type": "shell",
 			"command": "git add -A && git commit -m 'fix: suppress INFO logs in CLI mode, only show for serve'"
+		},
+		{
+			"label": "check-commits",
+			"type": "shell",
+			"command": "git log --oneline -3"
+		},
+		{
+			"label": "amend-commit",
+			"type": "shell",
+			"command": "git commit --amend -m 'fix: suppress INFO logs in CLI mode, only show for serve'"
+		},
+		{
+			"label": "wc",
+			"type": "shell",
+			"command": "wc -l traits/www/admin/admin.rs"
 		}
 	]
 }

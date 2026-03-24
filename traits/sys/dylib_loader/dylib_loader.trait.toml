@@ -4,8 +4,9 @@ version = "v260322"
 epoch = 0
 checksum = "ee21dce07ab764e64d064ef35966faa268206388cf1969e397064abd67d306e6"
 author = "kilian-ai"
-tags = ["kernel", "dylib"]
-provides = ["kernel/dylib_loader"]
+tags = ["sys", "dylib"]
+provides = ["sys/dylib_loader"]
+kernel_module = true
 
 [signature]
 params = []
@@ -16,5 +17,6 @@ description = "Loaded dylib info: count, trait paths, search directories"
 
 [implementation]
 language = "rust"
-source = "kernel"
+source = "builtin"
 entry = "dylib_loader"
+kernel_module = true

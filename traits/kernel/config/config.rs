@@ -62,6 +62,7 @@ fn default_bindings_file() -> String {
 }
 
 impl Config {
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let path = Path::new(path);
         if path.exists() {
@@ -157,6 +158,7 @@ pub fn trait_config(trait_path: &str, key: &str) -> Option<String> {
 
     // 2. Persistent override file (trait_config.toml)
     //    Format: ["www.admin"] fly_app = "polygrait-api"
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(val) = read_persistent_config(trait_path, key) {
         return Some(val);
     }
@@ -183,6 +185,7 @@ pub fn trait_config_or(trait_path: &str, key: &str, fallback: &str) -> String {
 }
 
 /// Path to the persistent trait config override file.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn persistent_config_path() -> &'static str {
     if std::path::Path::new("/data").is_dir() {
         "/data/trait_config.toml"
@@ -192,6 +195,7 @@ pub fn persistent_config_path() -> &'static str {
 }
 
 /// Read a value from the persistent config overlay.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn read_persistent_config(trait_path: &str, key: &str) -> Option<String> {
     let content = std::fs::read_to_string(persistent_config_path()).ok()?;
     let table: toml::Value = toml::from_str(&content).ok()?;
@@ -203,6 +207,7 @@ pub fn read_persistent_config(trait_path: &str, key: &str) -> Option<String> {
 }
 
 /// Read all keys for a specific trait from the persistent overlay.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn read_persistent_config_section(trait_path: &str) -> Vec<(String, String)> {
     let content = match std::fs::read_to_string(persistent_config_path()) {
         Ok(c) => c,
@@ -221,6 +226,7 @@ pub fn read_persistent_config_section(trait_path: &str) -> Vec<(String, String)>
 }
 
 /// Read all traits and their config from the persistent overlay.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn read_persistent_config_all() -> Vec<(String, std::collections::HashMap<String, String>)> {
     let content = match std::fs::read_to_string(persistent_config_path()) {
         Ok(c) => c,
@@ -243,6 +249,7 @@ pub fn read_persistent_config_all() -> Vec<(String, std::collections::HashMap<St
 }
 
 /// Delete a config value from the persistent overlay file.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn delete_persistent_config(trait_path: &str, key: &str) -> Result<bool, String> {
     let path = persistent_config_path();
     let mut table: toml::value::Table = if let Ok(content) = std::fs::read_to_string(path) {
@@ -273,6 +280,7 @@ pub fn delete_persistent_config(trait_path: &str, key: &str) -> Result<bool, Str
 
 /// Write a config value to the persistent overlay file.
 /// Creates the file if it doesn't exist; merges into existing content.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn write_persistent_config(trait_path: &str, key: &str, value: &str) -> Result<(), String> {
     let path = persistent_config_path();
     let mut table: toml::value::Table = if let Ok(content) = std::fs::read_to_string(path) {
