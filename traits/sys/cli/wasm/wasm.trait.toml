@@ -8,7 +8,7 @@ provides = ["cli/backend"]
 
 [signature]
 params = [
-    { name = "method", type = "string", description = "Backend method: call, list_all, get_info, search, all_paths, version, load_examples", required = true },
+    { name = "method", type = "string", description = "Backend method: call, list_all, get_info, search, all_paths, version, load_examples", required = false },
     { name = "args", type = "any", description = "Method arguments (varies by method)", required = false },
 ]
 

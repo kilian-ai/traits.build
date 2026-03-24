@@ -362,6 +362,12 @@ async function boot() {
 
     dot.className = 'dot ok';
     statusText.textContent = `${info.traits_registered} traits · WASM`;
+
+    // Pre-load terminal as classic script (import() blocked in file:// mode)
+    try {
+      const termSrc = isLocal ? `./terminal-runtime.js?v=${Date.now()}` : '/static/www/static/terminal-runtime.js';
+      await loadScript(termSrc);
+    } catch(e) { console.warn('Terminal pre-load failed:', e); }
   } catch(e) {
     console.warn('WASM init failed, using REST only:', e);
     dot.className = 'dot off';

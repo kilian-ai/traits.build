@@ -160,103 +160,72 @@ pub fn version() -> String {
 use std::cell::RefCell;
 use wasm_traits::cli::{CliBackend, self as cli_core};
 
-/// WASM implementation of CliBackend — bridges kernel/cli to WASM registry+dispatch.
+/// WASM implementation of CliBackend — thin dispatch wrapper delegating to sys.cli.wasm.
 struct WasmCliBackend;
+
+impl WasmCliBackend {
+    fn dispatch_method(&self, method: &str, args: &[Value]) -> Option<Value> {
+        let mut full_args = vec![Value::String(method.to_string())];
+        full_args.extend_from_slice(args);
+        wasm_traits::dispatch("sys.cli.wasm", &full_args)
+    }
+}
 
 impl CliBackend for WasmCliBackend {
     fn call(&self, path: &str, args: &[Value]) -> Result<Value, String> {
-        match wasm_traits::dispatch(path, args) {
-            Some(result) => Ok(result),
-            None => {
-                let reg = get_registry();
-                if reg.get(path).is_some() {
-                    // Signal REST dispatch needed — terminal.js intercepts "REST:" prefix
-                    Err(format!("REST:{}", path))
+        match self.dispatch_method("call", &[serde_json::json!(path), Value::Array(args.to_vec())]) {
+            Some(v) => {
+                if v.get("ok").and_then(|b| b.as_bool()) == Some(true) {
+                    Ok(v.get("result").cloned().unwrap_or(Value::Null))
                 } else {
-                    Err(format!("Trait '{}' not found", path))
+                    Err(v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown error").to_string())
                 }
             }
+            None => Err("Backend dispatch failed".into()),
         }
     }
 
     fn list_all(&self) -> Vec<Value> {
-        let reg = get_registry();
-        reg.all().iter().map(|e| serde_json::json!({
-            "path": e.path,
-            "description": e.description,
-            "version": e.version,
-            "tags": e.tags,
-            "wasm_callable": e.wasm_callable,
-        })).collect()
+        self.dispatch_method("list_all", &[])
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
     }
 
     fn get_info(&self, path: &str) -> Option<Value> {
-        let reg = get_registry();
-        reg.get(path).map(|e| serde_json::json!({
-            "path": e.path,
-            "description": e.description,
-            "version": e.version,
-            "author": e.author,
-            "tags": e.tags,
-            "wasm_callable": e.wasm_callable,
-            "params": e.params,
-            "returns": e.returns_type,
-            "returns_description": e.returns_description,
-        }))
+        self.dispatch_method("get_info", &[serde_json::json!(path)])
+            .filter(|v| !v.is_null())
     }
 
     fn search(&self, query: &str) -> Vec<Value> {
-        let reg = get_registry();
-        let q = query.to_lowercase();
-        reg.all().iter()
-            .filter(|e| {
-                e.path.to_lowercase().contains(&q) ||
-                e.description.to_lowercase().contains(&q) ||
-                e.tags.iter().any(|t| t.to_lowercase().contains(&q))
-            })
-            .map(|e| serde_json::json!({
-                "path": e.path,
-                "description": e.description,
-                "wasm_callable": e.wasm_callable,
-            }))
-            .collect()
+        self.dispatch_method("search", &[serde_json::json!(query)])
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
     }
 
     fn all_paths(&self) -> Vec<String> {
-        let reg = get_registry();
-        reg.all().iter().map(|e| e.path.clone()).collect()
+        self.dispatch_method("all_paths", &[])
+            .and_then(|v| v.as_array().cloned())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default()
     }
 
     fn version(&self) -> String {
-        env!("CARGO_PKG_VERSION").to_string()
+        self.dispatch_method("version", &[])
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
     }
 
     fn load_examples(&self, path: &str) -> Vec<Vec<String>> {
-        for &(tp, json_str) in BUILTIN_FEATURES {
-            if tp != path { continue; }
-            let parsed: Value = match serde_json::from_str(json_str) {
-                Ok(v) => v,
-                Err(_) => return vec![],
-            };
-            let mut examples = vec![];
-            if let Some(features) = parsed.get("features").and_then(|v| v.as_array()) {
-                for feature in features {
-                    if let Some(exs) = feature.get("examples").and_then(|v| v.as_array()) {
-                        for ex in exs {
-                            if let Some(input) = ex.get("input").and_then(|v| v.as_array()) {
-                                let args: Vec<String> = input.iter().map(|v| match v {
-                                    Value::String(s) => s.clone(),
-                                    other => other.to_string(),
-                                }).collect();
-                                examples.push(args);
-                            }
-                        }
-                    }
-                }
-            }
-            return examples;
-        }
-        vec![]
+        self.dispatch_method("load_examples", &[serde_json::json!(path)])
+            .and_then(|v| v.as_array().cloned())
+            .map(|arr| {
+                arr.iter().filter_map(|ex| {
+                    ex.as_array().map(|a| {
+                        a.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+                    })
+                }).collect()
+            })
+            .unwrap_or_default()
     }
 }
 

@@ -145,14 +145,17 @@ const HTML: &str = r##"<!DOCTYPE html>
 <script>
 // Load terminal dynamically — hide wrapper if it fails to load.
 (async function() {
-  var paths = ['/static/www/terminal/terminal.js', '../terminal/terminal.js'];
-  var mod = null;
-  for (var p of paths) {
-    try { mod = await import(p); break; } catch(e) {}
+  var createTerminal = window.createTerminal; // Pre-loaded by SPA shell (terminal-runtime.js)
+  if (!createTerminal) {
+    // Fallback: import() (works on HTTP server, not file:// mode)
+    var paths = ['/static/www/terminal/terminal.js', '../terminal/terminal.js'];
+    for (var p of paths) {
+      try { var mod = await import(p); createTerminal = mod.createTerminal; break; } catch(e) {}
+    }
   }
-  if (!mod || !mod.createTerminal) return; // Terminal unavailable — wrapper stays hidden
+  if (!createTerminal) return; // Terminal unavailable — wrapper stays hidden
   document.getElementById('termWrap').style.display = '';
-  mod.createTerminal(document.getElementById('xterm'), {
+  createTerminal(document.getElementById('xterm'), {
     header: document.getElementById('termHeader'),
     container: document.getElementById('termContainer'),
     toggleBtn: document.getElementById('btnToggleTerm'),

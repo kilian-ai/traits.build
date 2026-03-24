@@ -103,6 +103,15 @@ copy_dylib() {
     fi
 }
 
+# ── Generate terminal-runtime.js (classic script for file:// mode) ──
+TERMINAL_SRC="traits/www/terminal/terminal.js"
+TERMINAL_RUNTIME="traits/www/static/terminal-runtime.js"
+if [[ -f "$TERMINAL_SRC" ]]; then
+    echo "Generating terminal runtime..."
+    sed 's/^export async function/async function/' "$TERMINAL_SRC" > "$TERMINAL_RUNTIME"
+    echo 'if (typeof window !== "undefined") window.createTerminal = createTerminal;' >> "$TERMINAL_RUNTIME"
+fi
+
 echo "Copying dylibs..."
 copy_dylib "trait_www_traits_build" "traits/www/traits/build" "build"
 copy_dylib "trait_sys_checksum"     "traits/sys/checksum"     "checksum"
