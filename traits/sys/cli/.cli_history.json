@@ -1,4 +1,13 @@
 {
+  "sys.registry": {
+    "action": [
+      "info",
+      "list"
+    ],
+    "arg": [
+      "sys.registry"
+    ]
+  },
   "llm.openai": {
     "model": [
       "gpt-5.4"
@@ -6,32 +15,6 @@
     "prompt": [
       "hi",
       "whats your name and model"
-    ]
-  },
-  "sys.call": {
-    "method": [
-      "PUT"
-    ],
-    "url": [
-      "https://httpbin.org/get"
-    ],
-    "headers": [
-      "{\"X-Custom-Test\":\"traits-build\"}"
-    ],
-    "body": [
-      "{\"hello\":\"world\"}"
-    ],
-    "auth_secret": [
-      "null"
-    ]
-  },
-  "sys.registry": {
-    "arg": [
-      "sys.registry"
-    ],
-    "action": [
-      "info",
-      "list"
     ]
   },
   "sys.checksum": {
@@ -45,5 +28,22 @@
     ]
   },
   "sys.ps": {},
-  "sys.mcp": {}
+  "sys.mcp": {},
+  "sys.call": {
+    "headers": [
+      "{\"X-Custom-Test\":\"traits-build\"}"
+    ],
+    "url": [
+      "https://httpbin.org/get"
+    ],
+    "method": [
+      "PUT"
+    ],
+    "auth_secret": [
+      "null"
+    ],
+    "body": [
+      "{\"hello\":\"world\"}"
+    ]
+  }
 }

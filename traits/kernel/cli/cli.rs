@@ -91,8 +91,10 @@ struct InteractiveState {
     params: Vec<ParamMeta>,
     values: Vec<String>,
     idx: usize,
-    completions: Vec<String>,
-    comp_idx: Option<usize>,
+    history_values: Vec<String>,
+    history_idx: Option<usize>,
+    tab_values: Vec<String>,
+    tab_idx: Option<usize>,
 }
 
 // ── CLI Session ──
@@ -438,14 +440,14 @@ impl CliSession {
         // Build completions for first param
         let first_name = params[0].name.clone();
         let first_default = params[0].default_val.clone();
-        let comps = build_completions(
+        let history_values = build_history_completions(
             self.param_history
                 .get(path)
                 .and_then(|h| h.get(&first_name))
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]),
-            &first_default,
         );
+        let tab_values = build_tab_completions(&first_default);
 
         let desc = info.get("description").and_then(|d| d.as_str()).unwrap_or("");
         let header = format_param_header(&params, 0);
@@ -455,8 +457,10 @@ impl CliSession {
             params,
             values: Vec::new(),
             idx: 0,
-            completions: comps,
-            comp_idx: None,
+            history_values,
+            history_idx: None,
+            tab_values,
+            tab_idx: None,
         });
 
         format!(
@@ -520,16 +524,18 @@ impl CliSession {
                         (np.name.clone(), np.default_val.clone(),
                          format_param_header(&i.params, new_idx))
                     };
-                    let comps = build_completions(
+                    let history_values = build_history_completions(
                         self.param_history.get(&path)
                             .and_then(|h| h.get(&next_name))
                             .map(|v| v.as_slice())
                             .unwrap_or(&[]),
-                        &next_default,
                     );
+                    let tab_values = build_tab_completions(&next_default);
                     let i = self.interactive.as_mut().unwrap();
-                    i.completions = comps;
-                    i.comp_idx = None;
+                    i.history_values = history_values;
+                    i.history_idx = None;
+                    i.tab_values = tab_values;
+                    i.tab_idx = None;
 
                     out.push_str(&header);
                     out.push_str(IPROMPT);
@@ -564,12 +570,12 @@ impl CliSession {
             KeyEvent::Up => {
                 let new_val = {
                     let i = self.interactive.as_mut().unwrap();
-                    if i.completions.is_empty() { return String::new(); }
-                    i.comp_idx = Some(match i.comp_idx {
+                    if i.history_values.is_empty() { return String::new(); }
+                    i.history_idx = Some(match i.history_idx {
                         None => 0,
-                        Some(idx) => (idx + 1).min(i.completions.len() - 1),
+                        Some(idx) => (idx + 1).min(i.history_values.len() - 1),
                     });
-                    i.completions[i.comp_idx.unwrap()].clone()
+                    i.history_values[i.history_idx.unwrap()].clone()
                 };
                 self.line_buffer = new_val;
                 self.cursor_pos = self.line_buffer.len();
@@ -579,12 +585,12 @@ impl CliSession {
             KeyEvent::Down => {
                 let new_val = {
                     let i = self.interactive.as_mut().unwrap();
-                    if i.completions.is_empty() { return String::new(); }
-                    match i.comp_idx {
-                        Some(0) => { i.comp_idx = None; String::new() }
+                    if i.history_values.is_empty() { return String::new(); }
+                    match i.history_idx {
+                        Some(0) => { i.history_idx = None; String::new() }
                         Some(idx) => {
-                            i.comp_idx = Some(idx - 1);
-                            i.completions[i.comp_idx.unwrap()].clone()
+                            i.history_idx = Some(idx - 1);
+                            i.history_values[i.history_idx.unwrap()].clone()
                         }
                         None => return String::new(),
                     }
@@ -597,12 +603,12 @@ impl CliSession {
             KeyEvent::Tab => {
                 let new_val = {
                     let i = self.interactive.as_mut().unwrap();
-                    if i.completions.is_empty() { return String::new(); }
-                    i.comp_idx = Some(match i.comp_idx {
+                    if i.tab_values.is_empty() { return String::new(); }
+                    i.tab_idx = Some(match i.tab_idx {
                         None => 0,
-                        Some(idx) => (idx + 1) % i.completions.len(),
+                        Some(idx) => (idx + 1) % i.tab_values.len(),
                     });
-                    i.completions[i.comp_idx.unwrap()].clone()
+                    i.tab_values[i.tab_idx.unwrap()].clone()
                 };
                 self.line_buffer = new_val;
                 self.cursor_pos = self.line_buffer.len();
@@ -619,14 +625,20 @@ impl CliSession {
             KeyEvent::Char(c) => {
                 self.line_buffer.insert(self.cursor_pos, c);
                 self.cursor_pos += c.len_utf8();
-                if let Some(i) = self.interactive.as_mut() { i.comp_idx = None; }
+                if let Some(i) = self.interactive.as_mut() {
+                    i.history_idx = None;
+                    i.tab_idx = None;
+                }
                 self.refresh_line()
             }
             KeyEvent::Backspace => {
                 if self.cursor_pos > 0 {
                     self.cursor_pos -= 1;
                     self.line_buffer.remove(self.cursor_pos);
-                    if let Some(i) = self.interactive.as_mut() { i.comp_idx = None; }
+                    if let Some(i) = self.interactive.as_mut() {
+                        i.history_idx = None;
+                        i.tab_idx = None;
+                    }
                     self.refresh_line()
                 } else {
                     String::new()
@@ -1148,14 +1160,19 @@ fn format_param_header(params: &[ParamMeta], idx: usize) -> String {
     out
 }
 
-fn build_completions(history: &[String], default_val: &str) -> Vec<String> {
+fn build_history_completions(history: &[String]) -> Vec<String> {
     let mut completions: Vec<String> = history.iter().rev().cloned().collect();
     let mut seen = std::collections::HashSet::new();
     completions.retain(|v| seen.insert(v.clone()));
-    if !default_val.is_empty() && !seen.contains(default_val) {
-        completions.push(default_val.to_string());
-    }
     completions
+}
+
+fn build_tab_completions(default_val: &str) -> Vec<String> {
+    if !default_val.is_empty() {
+        vec![default_val.to_string()]
+    } else {
+        Vec::new()
+    }
 }
 
 // ── Native dispatch entry point ──
