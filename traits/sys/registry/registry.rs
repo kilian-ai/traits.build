@@ -1,27 +1,99 @@
 use serde_json::Value;
 
+// ── Platform-specific registry access ──
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_all_entries() -> Vec<Value> {
+    match crate::globals::REGISTRY.get() {
+        Some(reg) => {
+            let mut traits = reg.all();
+            traits.sort_by(|a, b| a.path.cmp(&b.path));
+            traits.iter().map(|t| t.to_summary_json()).collect()
+        }
+        None => vec![],
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_entry_detail(path: &str) -> Option<Value> {
+    crate::globals::REGISTRY.get()?.get(path).map(|t| t.to_json())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_entry_summary(path: &str) -> Option<Value> {
+    crate::globals::REGISTRY.get()?.get(path).map(|t| t.to_summary_json())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn registry_count() -> usize {
+    crate::globals::REGISTRY.get().map(|r| r.len()).unwrap_or(0)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn get_all_entries() -> Vec<Value> {
+    let reg = crate::get_registry();
+    reg.all().iter().map(|t| serde_json::json!({
+        "path": t.path,
+        "description": t.description,
+        "version": t.version,
+        "tags": t.tags,
+        "wasm_callable": t.wasm_callable,
+    })).collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn get_entry_detail(path: &str) -> Option<Value> {
+    let reg = crate::get_registry();
+    reg.get(path).map(|t| serde_json::json!({
+        "path": t.path,
+        "description": t.description,
+        "version": t.version,
+        "author": t.author,
+        "tags": t.tags,
+        "provides": t.provides,
+        "language": t.language,
+        "source": t.source_type,
+        "wasm_callable": t.wasm_callable,
+        "params": t.params,
+        "returns": t.returns_type,
+        "returns_description": t.returns_description,
+    }))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn get_entry_summary(path: &str) -> Option<Value> {
+    get_entry_detail(path)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn registry_count() -> usize {
+    crate::get_registry().len()
+}
+
+// ── Shared dispatch logic (identical on both targets) ──
+
 /// sys.registry — unified Registry read API.
 ///
 /// Actions: list [ns] | info <path> | tree | namespaces | count | get <path> | search <q> | namespace <ns>
 pub fn registry(args: &[Value]) -> Value {
-    let reg = match crate::globals::REGISTRY.get() {
-        Some(r) => r,
-        None => return serde_json::json!({"error": "Registry not initialized"}),
-    };
-
     let action = args.first().and_then(|v| v.as_str()).unwrap_or("tree");
     let arg2 = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
 
     match action {
         // ── list: all traits or filtered by namespace ──
         "list" => {
-            let mut traits = reg.all();
-            if !arg2.is_empty() {
-                let prefix = format!("{}.", arg2);
-                traits.retain(|t| t.path.starts_with(&prefix) || t.path == arg2);
+            let entries = get_all_entries();
+            if arg2.is_empty() {
+                return Value::Array(entries);
             }
-            traits.sort_by(|a, b| a.path.cmp(&b.path));
-            Value::Array(traits.iter().map(|t| t.to_summary_json()).collect())
+            let prefix = format!("{}.", arg2);
+            let filtered: Vec<Value> = entries.into_iter()
+                .filter(|e| {
+                    let p = e.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    p.starts_with(&prefix) || p == arg2
+                })
+                .collect();
+            Value::Array(filtered)
         }
 
         // ── info: detailed trait info or namespace listing ──
@@ -29,35 +101,42 @@ pub fn registry(args: &[Value]) -> Value {
             if arg2.is_empty() {
                 return serde_json::json!({"error": "info requires a trait path"});
             }
-            if let Some(t) = reg.get(arg2) {
-                return t.to_json();
+            if let Some(detail) = get_entry_detail(arg2) {
+                return detail;
             }
+            // Try as namespace
             let prefix = format!("{}.", arg2);
-            let traits_in_ns: Vec<_> = reg.all().into_iter()
-                .filter(|t| t.path.starts_with(&prefix) || t.path == arg2)
-                .collect();
-            if !traits_in_ns.is_empty() {
-                return Value::Array(traits_in_ns.iter().map(|e| {
+            let entries = get_all_entries();
+            let in_ns: Vec<Value> = entries.into_iter()
+                .filter(|e| {
+                    let p = e.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    p.starts_with(&prefix) || p == arg2
+                })
+                .map(|e| {
                     serde_json::json!({
-                        "path": e.path,
-                        "description": e.description,
-                        "language": e.language.to_string()
+                        "path": e.get("path").and_then(|v| v.as_str()).unwrap_or(""),
+                        "description": e.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                        "language": e.get("language").and_then(|v| v.as_str()).unwrap_or("rust"),
                     })
-                }).collect());
+                })
+                .collect();
+            if !in_ns.is_empty() {
+                return Value::Array(in_ns);
             }
             serde_json::json!({"error": format!("Trait not found: {}", arg2)})
         }
 
         "tree" => {
-            let all = reg.all();
+            let all = get_all_entries();
             let mut tree = Value::Object(serde_json::Map::new());
             for entry in &all {
-                let parts: Vec<&str> = entry.path.split('.').collect();
+                let path = entry.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                let parts: Vec<&str> = path.split('.').collect();
                 let mut current = &mut tree;
                 for (i, part) in parts.iter().enumerate() {
                     if i == parts.len() - 1 {
                         if let Value::Object(ref mut map) = current {
-                            map.insert(part.to_string(), entry.to_json());
+                            map.insert(part.to_string(), entry.clone());
                         }
                     } else {
                         if let Value::Object(ref mut map) = current {
@@ -75,23 +154,26 @@ pub fn registry(args: &[Value]) -> Value {
         }
 
         "namespaces" => {
+            let entries = get_all_entries();
             let mut ns_set = std::collections::BTreeSet::new();
-            for t in &reg.all() {
-                if let Some(ns) = t.path.split('.').next() {
-                    ns_set.insert(ns.to_string());
+            for e in &entries {
+                if let Some(p) = e.get("path").and_then(|v| v.as_str()) {
+                    if let Some(ns) = p.split('.').next() {
+                        ns_set.insert(ns.to_string());
+                    }
                 }
             }
             Value::Array(ns_set.into_iter().map(Value::String).collect())
         }
 
-        "count" => Value::from(reg.len() as i64),
+        "count" => Value::from(registry_count() as i64),
 
         "get" => {
             if arg2.is_empty() {
                 return serde_json::json!({"error": "get requires a trait path"});
             }
-            match reg.get(arg2) {
-                Some(t) => t.to_json(),
+            match get_entry_detail(arg2) {
+                Some(detail) => detail,
                 None => serde_json::json!({"error": format!("not found: {}", arg2)}),
             }
         }
@@ -101,10 +183,16 @@ pub fn registry(args: &[Value]) -> Value {
                 return serde_json::json!({"error": "search requires a query"});
             }
             let q = arg2.to_lowercase();
-            let hits: Vec<Value> = reg.all().iter()
-                .filter(|t| t.path.to_lowercase().contains(&q)
-                          || t.description.to_lowercase().contains(&q))
-                .map(|t| serde_json::json!({"path": t.path, "description": t.description}))
+            let hits: Vec<Value> = get_all_entries().into_iter()
+                .filter(|e| {
+                    let p = e.get("path").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+                    let d = e.get("description").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+                    p.contains(&q) || d.contains(&q)
+                })
+                .map(|e| serde_json::json!({
+                    "path": e.get("path").and_then(|v| v.as_str()).unwrap_or(""),
+                    "description": e.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                }))
                 .collect();
             Value::Array(hits)
         }
@@ -114,9 +202,15 @@ pub fn registry(args: &[Value]) -> Value {
                 return serde_json::json!({"error": "namespace requires a namespace name"});
             }
             let prefix = format!("{}.", arg2);
-            let hits: Vec<Value> = reg.all().iter()
-                .filter(|t| t.path.starts_with(&prefix) || t.path == arg2)
-                .map(|t| serde_json::json!({"path": t.path, "description": t.description}))
+            let hits: Vec<Value> = get_all_entries().into_iter()
+                .filter(|e| {
+                    let p = e.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    p.starts_with(&prefix) || p == arg2
+                })
+                .map(|e| serde_json::json!({
+                    "path": e.get("path").and_then(|v| v.as_str()).unwrap_or(""),
+                    "description": e.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                }))
                 .collect();
             Value::Array(hits)
         }

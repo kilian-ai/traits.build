@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260324.133410"
+version = "0.260324.134423"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -27,6 +27,12 @@ members = [
     "traits/sys/checksum",
     "traits/sys/ps",
 ]
+default-members = [
+    ".",
+    "traits/kernel/plugin_api",
+    "traits/sys/checksum",
+    "traits/sys/ps",
+]
 
 [[bin]]
 name = "traits"
@@ -48,6 +54,7 @@ dashmap = "5"
 thiserror = "1"
 regex = "1"
 actix-cors = "0.7"
+actix-ws = "0.3"
 libloading = "0.8"
 crossterm = "0.28"
 tokio-stream = "0.1"

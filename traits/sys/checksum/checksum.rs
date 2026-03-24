@@ -119,6 +119,8 @@ pub fn io_checksum(features: &[Value]) -> String {
 }
 
 /// Compute checksum over signature params extracted from TOML text.
+/// Only available on native (requires regex crate).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn signature_checksum(toml_text: &str) -> String {
     // Split TOML into [[signature.params]] blocks by finding each header
     let name_re = regex::Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap();
@@ -194,12 +196,21 @@ pub fn checksum(action: &str, data: &Value) -> Value {
             let features = data.as_array().map(|a| a.as_slice()).unwrap_or(&[]);
             serde_json::json!({ "ok": true, "checksum": io_checksum(features) })
         }
-        "signature" => match data.as_str() {
-            Some(toml_text) => {
-                serde_json::json!({ "ok": true, "checksum": signature_checksum(toml_text) })
+        "signature" => {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                match data.as_str() {
+                    Some(toml_text) => {
+                        serde_json::json!({ "ok": true, "checksum": signature_checksum(toml_text) })
+                    }
+                    None => serde_json::json!({ "error": "signature action requires TOML text as string" }),
+                }
             }
-            None => serde_json::json!({ "error": "signature action requires TOML text as string" }),
-        },
+            #[cfg(target_arch = "wasm32")]
+            {
+                serde_json::json!({ "error": "signature action not available in WASM (requires regex)" })
+            }
+        }
         "update" => {
             if !data.is_object() {
                 return serde_json::json!({ "error": "update action requires a release object" });

@@ -10,7 +10,7 @@ if [[ "${1:-}" == "--clean" ]]; then
 fi
 
 echo "Building traits kernel..."
-cargo build --release --workspace
+cargo build --release
 
 BIN="target/release/traits"
 if [[ ! -f "$BIN" ]]; then
