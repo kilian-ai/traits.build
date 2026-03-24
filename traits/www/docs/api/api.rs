@@ -15,6 +15,8 @@ const HTML: &str = r##"<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>API Reference — traits.build</title>
 <meta name="description" content="REST API documentation for the traits.build composable function kernel">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css">
+<link rel="stylesheet" href="/static/www/docs/api/api.css">
 <style>
   body {
     margin: 0; padding: 0; background: #0d1117; color: #c9d1d9;
@@ -52,6 +54,8 @@ const HTML: &str = r##"<!DOCTYPE html>
   /* White-background containers in middle panel */
   .redoc-wrap div[class*="dropdown"] { color: #0d1117 !important; }
   .redoc-wrap code { background: #161b22 !important; }
+  /* Leave space for fixed terminal */
+  body { padding-bottom: 340px; }
 </style>
 </head>
 <body>
@@ -115,5 +119,16 @@ const HTML: &str = r##"<!DOCTYPE html>
   });
 })();
 </script>
+
+<div class="terminal-wrap">
+  <div class="terminal-header" id="termHeader">
+    <button id="btnToggleTerm" class="terminal-toggle">▼ API Terminal</button>
+    <span class="terminal-hint">test endpoints live — type "help" for commands</span>
+  </div>
+  <div id="termContainer" class="terminal-container">
+    <div id="xterm" class="xterm-mount"></div>
+  </div>
+</div>
+<script type="module" src="/static/www/docs/api/api.js"></script>
 </body>
 </html>"##;

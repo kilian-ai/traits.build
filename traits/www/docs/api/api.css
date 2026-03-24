@@ -1,0 +1,45 @@
+/* ── API Docs Terminal ── */
+.terminal-wrap {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    background: #0d1117;
+    border-top: 1px solid #30363d;
+}
+.terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.4rem 1rem;
+    background: #161b22;
+    cursor: pointer;
+    user-select: none;
+}
+.terminal-toggle {
+    background: none;
+    border: none;
+    color: #8b949e;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+}
+.terminal-hint {
+    font-size: 0.75rem;
+    color: #484f58;
+}
+.terminal-container {
+    height: 300px;
+    padding: 4px;
+    overflow: hidden;
+}
+.terminal-container.collapsed {
+    height: 0;
+    padding: 0;
+    overflow: hidden;
+}
+.xterm-mount {
+    height: 100%;
+}
