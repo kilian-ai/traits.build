@@ -64,6 +64,9 @@ fn parse_trait_toml(path: &str, toml: &toml::Value) -> WasmTraitEntry {
     let trait_def = toml.get("trait").unwrap_or(toml);
     let impl_def = toml.get("implementation");
     let sig = toml.get("signature");
+    let http_defaults = trait_def
+        .get("http")
+        .and_then(|h| h.get("defaults"));
 
     let description = trait_def.get("description")
         .and_then(|v| v.as_str())
@@ -108,11 +111,20 @@ fn parse_trait_toml(path: &str, toml: &toml::Value) -> WasmTraitEntry {
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter().map(|p| {
+                let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let required = p.get("required")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or_else(|| !p.get("optional").and_then(|v| v.as_bool()).unwrap_or(false));
+                let default_val = p.get("default")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| http_defaults.and_then(|d| d.get(name)).and_then(|v| v.as_str()))
+                    .unwrap_or("");
                 serde_json::json!({
-                    "name": p.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    "name": name,
                     "type": p.get("type").and_then(|v| v.as_str()).unwrap_or("any"),
                     "description": p.get("description").and_then(|v| v.as_str()).unwrap_or(""),
-                    "required": p.get("required").and_then(|v| v.as_bool()).unwrap_or(true),
+                    "required": required,
+                    "default": default_val,
                 })
             }).collect()
         })

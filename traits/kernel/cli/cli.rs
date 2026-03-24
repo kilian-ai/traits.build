@@ -428,10 +428,16 @@ impl CliSession {
                 let ptype = p.get("type").and_then(|t| t.as_str()).unwrap_or("any").to_string();
                 let desc = p.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string();
                 let required = p.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
-                let default_val = examples
-                    .iter()
-                    .filter_map(|ex| ex.get(i).cloned())
-                    .next()
+                let default_val = p.get("default")
+                    .and_then(|d| d.as_str())
+                    .map(|d| d.to_string())
+                    .filter(|d| !d.is_empty())
+                    .or_else(|| {
+                        examples
+                            .iter()
+                            .filter_map(|ex| ex.get(i).cloned())
+                            .next()
+                    })
                     .unwrap_or_default();
                 ParamMeta { name, ptype, description: desc, required, default_val }
             })
