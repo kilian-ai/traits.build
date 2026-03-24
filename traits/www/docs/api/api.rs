@@ -122,8 +122,8 @@ const HTML: &str = r##"<!DOCTYPE html>
 
 <div class="terminal-wrap">
   <div class="terminal-header" id="termHeader">
-    <button id="btnToggleTerm" class="terminal-toggle">▼ API Terminal</button>
-    <span class="terminal-hint">test endpoints live — type "help" for commands</span>
+    <button id="btnToggleTerm" class="terminal-toggle">▼ Terminal</button>
+    <span class="terminal-hint">live traits CLI — try "t list" or "t call sys.checksum hash hello"</span>
   </div>
   <div id="termContainer" class="terminal-container">
     <div id="xterm" class="xterm-mount"></div>
