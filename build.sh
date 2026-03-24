@@ -22,6 +22,20 @@ SIZE=$(du -h "$BIN" | cut -f1)
 echo ""
 echo "Built: $BIN ($SIZE)"
 
+WASM_PKG_DIR="traits/kernel/wasm/pkg"
+WASM_INLINE_JS="traits/www/static/wasm-inline.js"
+
+if [[ -f "$WASM_PKG_DIR/traits_wasm_bg.wasm" ]]; then
+    echo "Generating file:// WASM inline loader..."
+    {
+        printf "export const WASM_BASE64 = '"
+        base64 < "$WASM_PKG_DIR/traits_wasm_bg.wasm" | tr -d '\n'
+        printf "';\n"
+    } > "$WASM_INLINE_JS"
+else
+    echo "Skipping inline WASM loader generation — missing $WASM_PKG_DIR/traits_wasm_bg.wasm"
+fi
+
 # ── Copy cdylib outputs to trait directories ──
 # The dylib_loader expects lib<dirname>.dylib next to each .trait.toml
 EXT="dylib"

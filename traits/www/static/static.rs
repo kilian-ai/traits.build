@@ -92,6 +92,13 @@ function wasmBase() {
 }
 const isLocal = location.protocol === 'file:';
 
+function decodeBase64Bytes(base64) {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 // ── Minimal SDK (inlined for zero-dependency boot) ──
 let wasm = null, wasmReady = false;
 const wasmCallableSet = new Set();
@@ -296,7 +303,12 @@ async function boot() {
   try {
     const base = wasmBase();
     const mod = await import(base + 'traits_wasm.js');
-    await mod.default(base + 'traits_wasm_bg.wasm');
+    if (isLocal) {
+      const inline = await import('./wasm-inline.js');
+      mod.initSync(decodeBase64Bytes(inline.WASM_BASE64));
+    } else {
+      await mod.default(base + 'traits_wasm_bg.wasm');
+    }
     const info = JSON.parse(mod.init());
     JSON.parse(mod.callable_traits()).forEach(p => wasmCallableSet.add(p));
     wasm = mod;
@@ -307,7 +319,7 @@ async function boot() {
   } catch(e) {
     console.warn('WASM init failed, using REST only:', e);
     dot.className = 'dot off';
-    statusText.textContent = 'REST mode';
+    statusText.textContent = isLocal ? 'WASM load failed' : 'REST mode';
   }
 
   // Show nav, hide overlay

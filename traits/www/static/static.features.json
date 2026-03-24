@@ -53,6 +53,14 @@
                 {
                     "args": [],
                     "test": { "type": "contains", "value": "dispatch" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "wasm-inline.js" }
+                },
+                {
+                    "args": [],
+                    "test": { "type": "contains", "value": "initSync" }
                 }
             ]
         },
