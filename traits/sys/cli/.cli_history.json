@@ -1,49 +1,49 @@
 {
-  "sys.checksum": {
-    "action": [
-      "io",
-      "signature"
-    ],
-    "data": [
-      "kilian",
-      "kilian von neum"
-    ]
-  },
   "llm.openai": {
+    "model": [
+      "gpt-5.4"
+    ],
     "prompt": [
       "hi",
       "whats your name and model"
-    ],
-    "model": [
-      "gpt-5.4"
-    ]
-  },
-  "sys.ps": {},
-  "sys.registry": {
-    "action": [
-      "list",
-      "info"
-    ],
-    "arg": [
-      "sys.registry"
     ]
   },
   "sys.call": {
-    "headers": [
-      "{\"X-Custom-Test\":\"traits-build\"}"
-    ],
-    "auth_secret": [
-      "null"
+    "method": [
+      "PUT"
     ],
     "url": [
       "https://httpbin.org/get"
     ],
+    "headers": [
+      "{\"X-Custom-Test\":\"traits-build\"}"
+    ],
     "body": [
       "{\"hello\":\"world\"}"
     ],
-    "method": [
-      "PUT"
+    "auth_secret": [
+      "null"
     ]
   },
+  "sys.registry": {
+    "arg": [
+      "sys.registry"
+    ],
+    "action": [
+      "info",
+      "list"
+    ]
+  },
+  "sys.checksum": {
+    "data": [
+      "kilian",
+      "kilian von neum"
+    ],
+    "action": [
+      "io",
+      "signature"
+    ]
+  },
+  "sys.ps": {},
   "sys.mcp": {}
 }

@@ -48,7 +48,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Only show INFO logs for server mode; CLI commands use WARN to stay quiet
-    let is_serve = cli.command.is_none();
+    let is_serve = match &cli.command {
+        None => true,
+        Some(Commands::External(args)) => args.first().map(|s| s.as_str()) == Some("serve"),
+        _ => false,
+    };
     let level = if is_serve { tracing::Level::INFO } else { tracing::Level::WARN };
     tracing_subscriber::fmt()
         .with_max_level(level)
