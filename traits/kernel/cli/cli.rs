@@ -447,6 +447,7 @@ impl CliSession {
         // Build completions for first param
         let first_name = params[0].name.clone();
         let first_default = params[0].default_val.clone();
+        let first_examples = params[0].example_vals.clone();
         let history_values = build_history_completions(
             self.param_history
                 .get(path)
@@ -454,7 +455,7 @@ impl CliSession {
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]),
         );
-        let tab_values = build_tab_completions(&first_default);
+        let tab_values = build_tab_completions(&first_default, &first_examples);
 
         let desc = info.get("description").and_then(|d| d.as_str()).unwrap_or("");
         let header = format_param_header(&params, 0);
@@ -525,10 +526,11 @@ impl CliSession {
                 let new_idx = idx + 1;
                 if new_idx < param_count {
                     // Prepare next param
-                    let (next_name, next_default, header) = {
+                    let (next_name, next_default, next_examples, header) = {
                         let i = self.interactive.as_ref().unwrap();
                         let np = &i.params[new_idx];
                         (np.name.clone(), np.default_val.clone(),
+                         np.example_vals.clone(),
                          format_param_header(&i.params, new_idx))
                     };
                     let history_values = build_history_completions(
@@ -537,7 +539,7 @@ impl CliSession {
                             .map(|v| v.as_slice())
                             .unwrap_or(&[]),
                     );
-                    let tab_values = build_tab_completions(&next_default);
+                    let tab_values = build_tab_completions(&next_default, &next_examples);
                     let i = self.interactive.as_mut().unwrap();
                     i.history_values = history_values;
                     i.history_idx = None;
