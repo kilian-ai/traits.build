@@ -1,7 +1,7 @@
 [trait]
 description = "In-browser WASM kernel playground"
-version = "v260324.043139"
-checksum = "86b5cdc315c48ac1105bbf57073d244f8cb9f32265be7eec5c1427359e271282"
+version = "v260324.043446"
+checksum = "706e5c3adf6e8f25fc5f3062ced850c7ae9f1819c6664a720be24434889cecc3"
 author = "system"
 tags = ["www", "webpage", "wasm"]
 provides = ["www/webpage"]

@@ -79,6 +79,21 @@ pub fn wasm_page(_args: &[Value]) -> Value {
                         }
                     }
                 }
+
+                // Terminal panel — collapsible
+                div.terminal-wrap {
+                    div.terminal-header {
+                        button #btnToggleTerm .terminal-toggle { "▼ Terminal" }
+                        span.terminal-hint { "traits CLI in the browser" }
+                    }
+                    div #terminalContainer .terminal-container {
+                        div #termOutput .term-output {}
+                        div.term-input-line {
+                            span.term-prompt { "traits " }
+                            input #termInput type="text" placeholder="type a command... (try: list, info sys.checksum, call sys.checksum hash hello)" autocomplete="off" spellcheck="false" {}
+                        }
+                    }
+                }
                 (PreEscaped(r#"<script type="module" src="/static/www/wasm/wasm.js"></script>"#))
             }
         }
