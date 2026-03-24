@@ -154,10 +154,10 @@ function showPage(slug) {{
 }}
 function initFromHash() {{
   var hash = window.location.hash.slice(1);
-  if (hash) showPage(hash);
+  var page = hash ? document.getElementById('page-' + hash) : null;
+  if (page) {{ showPage(hash); }}
   else {{
-    var first = document.querySelector('.sb-link');
-    if (first) first.classList.add('active');
+    showPage('intro');
   }}
 }}
 window.addEventListener('hashchange', initFromHash);

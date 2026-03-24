@@ -1,7 +1,7 @@
 [trait]
 description = "Serve the documentation site — all docs rendered from markdown"
-version = "v260324"
-checksum = "9f0a4c262299e98d51426dd9d4917c0bdd68a7ec6ef99c7b238aeb494d49b0fd"
+version = "v260324.221202"
+checksum = "aaf71d7fb1fc6f0d70c5de3c715a0ba33ff5b138b9cd77754498ff26bcebb45e"
 author = "system"
 tags = ["www", "docs"]
 provides = ["www/webpage"]
