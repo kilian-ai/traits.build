@@ -1019,6 +1019,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel-logic"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "language-tags"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1963,7 +1972,7 @@ dependencies = [
 
 [[package]]
 name = "traits"
-version = "0.260325.50525"
+version = "0.260325.131019"
 dependencies = [
  "actix-cors",
  "actix-rt",
@@ -1974,6 +1983,7 @@ dependencies = [
  "dashmap",
  "futures",
  "glob",
+ "kernel-logic",
  "libc",
  "libloading",
  "maud",
@@ -1997,6 +2007,7 @@ name = "traits-wasm"
 version = "0.260324.42350"
 dependencies = [
  "js-sys",
+ "kernel-logic",
  "maud",
  "pulldown-cmark",
  "serde",

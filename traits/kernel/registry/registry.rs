@@ -1,19 +1,20 @@
 use crate::dispatcher::CallConfig;
-use crate::types::{Language, TraitSignature, TraitType, TraitValue, ParamDef, ReturnDef};
+use crate::types::{Language, TraitSignature, TraitValue};
 use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{info, warn, error};
 
+// Re-export shared TOML structs and parsing from kernel-logic
+pub use kernel_logic::registry::{
+    BuiltinTraitDef, TraitToml, TraitDefToml, SignatureToml, ParamToml, ReturnToml,
+    ImplementationToml, CliMapToml, HttpTraitConfig,
+    parse_type, parse_language, toml_to_json, toml_value_to_trait_value, derive_trait_path,
+    build_params, build_returns, build_signature, resolve_language, parse_config_section,
+};
+
 // ── Builtin trait definitions (embedded by build.rs) ──
-#[derive(Debug, Clone, Copy)]
-pub struct BuiltinTraitDef {
-    pub path: &'static str,
-    pub rel_path: &'static str,
-    pub toml: &'static str,
-}
 include!(concat!(env!("OUT_DIR"), "/builtin_traits.rs"));
 
 /// A single registered trait
@@ -111,192 +112,7 @@ impl TraitEntry {
     }
 }
 
-/// Raw TOML structure for .trait.toml files
-#[derive(Debug, Deserialize)]
-struct TraitToml {
-    #[serde(alias = "strait", rename = "trait")]
-    trait_def: TraitDefToml,
-    #[serde(default)]
-    signature: Option<SignatureToml>,
-    #[serde(default)]
-    implementation: Option<ImplementationToml>,
-    #[serde(default)]
-    cli_map: Option<CliMapToml>,
-    #[serde(default)]
-    load: Option<HashMap<String, toml::Value>>,
-    #[serde(default)]
-    bindings: Option<HashMap<String, String>>,
-    #[serde(default)]
-    requires: Option<HashMap<String, String>>,
-    #[serde(default)]
-    config: Option<HashMap<String, toml::Value>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CliMapToml {
-    source: String,
-    language: String,
-}
-
-#[derive(Debug, Deserialize, Clone, Serialize)]
-pub struct HttpTraitConfig {
-    #[serde(default = "default_http_method")]
-    pub method: String,
-    pub url: String,
-    #[serde(default = "default_http_response")]
-    pub response: String,
-    #[serde(default)]
-    pub timeout_ms: Option<u64>,
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-    #[serde(default)]
-    pub query: HashMap<String, String>,
-    #[serde(default)]
-    pub body: Option<String>,
-    #[serde(default)]
-    pub auth_secret: Option<String>,
-    #[serde(default)]
-    pub response_path: Option<String>,
-    #[serde(default)]
-    pub defaults: HashMap<String, String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TraitDefToml {
-    #[serde(default)]
-    description: String,
-    #[serde(default = "default_version")]
-    version: String,
-    #[serde(default)]
-    author: String,
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default)]
-    published: Option<String>,
-    #[serde(default)]
-    imports: Vec<String>,
-    #[serde(default)]
-    gui: Option<String>,
-    #[serde(default)]
-    frontend: Option<String>,
-    #[serde(default)]
-    startup_args: Option<Vec<serde_json::Value>>,
-    #[serde(default)]
-    stream: bool,
-    #[serde(default)]
-    background: bool,
-    #[serde(default)]
-    kind: String,
-    #[serde(default)]
-    command: Option<String>,
-    #[serde(default)]
-    codegen: Option<std::collections::HashMap<String, String>>,
-    #[serde(default)]
-    sources: Option<std::collections::HashMap<String, String>>,
-    #[serde(default)]
-    http: Option<HttpTraitConfig>,
-    #[serde(default)]
-    provides: Vec<String>,
-    #[serde(default)]
-    priority: i32,
-}
-
-#[derive(Debug, Deserialize)]
-struct SignatureToml {
-    #[serde(default)]
-    params: Vec<ParamToml>,
-    returns: ReturnToml,
-}
-
-#[derive(Debug, Deserialize)]
-struct ParamToml {
-    name: String,
-    #[serde(rename = "type")]
-    param_type: String,
-    #[serde(default)]
-    description: String,
-    #[serde(default)]
-    optional: bool,
-    /// When `required = false` is specified, treat as optional.
-    #[serde(default = "default_required")]
-    required: bool,
-    #[serde(default)]
-    pipe: bool,
-    #[serde(default)]
-    example: Option<toml::Value>,
-}
-
-fn default_required() -> bool { true }
-
-impl ParamToml {
-    /// A param is optional if `optional = true` OR `required = false`.
-    fn is_optional(&self) -> bool {
-        self.optional || !self.required
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct ReturnToml {
-    #[serde(rename = "type")]
-    return_type: String,
-    #[serde(default)]
-    description: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ImplementationToml {
-    language: String,
-    source: String,
-    #[serde(default)]
-    entry: String,
-}
-
-fn default_version() -> String {
-    "v260322".into()
-}
-
-fn default_http_method() -> String {
-    "GET".into()
-}
-
-fn default_http_response() -> String {
-    "json".into()
-}
-
-/// Parse a type string like "int", "list<string>", "map<string, int>" into TraitType
-pub fn parse_type(s: &str) -> TraitType {
-    let s = s.trim();
-    if s.ends_with('?') {
-        return TraitType::Optional(Box::new(parse_type(&s[..s.len() - 1])));
-    }
-    let lower = s.to_lowercase();
-    let s_lower = lower.as_str();
-    match s_lower {
-        "int" | "integer" => TraitType::Int,
-        "float" | "double" | "number" => TraitType::Float,
-        "string" | "str" => TraitType::String,
-        "bool" | "boolean" => TraitType::Bool,
-        "bytes" => TraitType::Bytes,
-        "null" | "none" | "void" => TraitType::Null,
-        "any" => TraitType::Any,
-        "handle" => TraitType::Handle,
-        s_lower if s_lower.starts_with("list<") && s_lower.ends_with('>') => {
-            let inner = &s_lower[5..s_lower.len() - 1];
-            TraitType::List(Box::new(parse_type(inner)))
-        }
-        s_lower if s_lower.starts_with("map<") && s_lower.ends_with('>') => {
-            let inner = &s_lower[4..s_lower.len() - 1];
-            if let Some(comma_pos) = inner.find(',') {
-                let k = &inner[..comma_pos];
-                let v = &inner[comma_pos + 1..];
-                TraitType::Map(Box::new(parse_type(k)), Box::new(parse_type(v)))
-            } else {
-                TraitType::Map(Box::new(TraitType::String), Box::new(TraitType::Any))
-            }
-        }
-        _ => TraitType::Any,
-    }
-}
+// ── Native-only: load config parsing (depends on CallConfig) ──
 
 fn parse_load_config(raw: &Option<HashMap<String, toml::Value>>) -> Option<CallConfig> {
     let raw = raw.as_ref()?;
@@ -335,77 +151,6 @@ fn parse_load_config(raw: &Option<HashMap<String, toml::Value>>) -> Option<CallC
         }
     }
     Some(cfg)
-}
-
-fn toml_value_to_trait_value(v: &toml::Value) -> Option<TraitValue> {
-    match v {
-        toml::Value::String(s) => Some(TraitValue::String(s.clone())),
-        toml::Value::Integer(n) => Some(TraitValue::Int(*n)),
-        toml::Value::Float(f) => Some(TraitValue::Float(*f)),
-        toml::Value::Boolean(b) => Some(TraitValue::Bool(*b)),
-        toml::Value::Array(arr) => {
-            let items: Vec<TraitValue> = arr.iter()
-                .filter_map(toml_value_to_trait_value)
-                .collect();
-            Some(TraitValue::List(items))
-        }
-        toml::Value::Table(tbl) => {
-            let entries: HashMap<String, TraitValue> = tbl.iter()
-                .filter_map(|(k, v)| toml_value_to_trait_value(v).map(|tv| (k.clone(), tv)))
-                .collect();
-            Some(TraitValue::Map(entries))
-        }
-        _ => None,
-    }
-}
-
-/// Convert a TOML value to a serde_json::Value for OpenAPI examples.
-fn toml_to_json(v: &toml::Value) -> serde_json::Value {
-    match v {
-        toml::Value::String(s) => serde_json::Value::String(s.clone()),
-        toml::Value::Integer(n) => serde_json::json!(*n),
-        toml::Value::Float(f) => serde_json::json!(*f),
-        toml::Value::Boolean(b) => serde_json::Value::Bool(*b),
-        toml::Value::Array(arr) => serde_json::Value::Array(arr.iter().map(toml_to_json).collect()),
-        toml::Value::Table(tbl) => {
-            let map: serde_json::Map<String, serde_json::Value> = tbl.iter()
-                .map(|(k, v)| (k.clone(), toml_to_json(v)))
-                .collect();
-            serde_json::Value::Object(map)
-        }
-        _ => serde_json::Value::Null,
-    }
-}
-
-pub fn parse_language(s: &str) -> Option<Language> {
-    match s.to_lowercase().as_str() {
-        "rust" => Some(Language::Rust),
-        "python" => Some(Language::Python),
-        "javascript" | "js" => Some(Language::JavaScript),
-        "typescript" | "ts" => Some(Language::TypeScript),
-        "java" => Some(Language::Java),
-        "perl" => Some(Language::Perl),
-        "lisp" | "commonlisp" | "common-lisp" | "cl" => Some(Language::Lisp),
-        _ => None,
-    }
-}
-
-fn derive_trait_path(toml_path: &Path) -> Option<String> {
-    let path_str = toml_path.to_string_lossy();
-    let markers: &[&str] = &["traits/", "traits\\", "impl/", "impl\\"];
-    let (idx, marker_len) = markers.iter()
-        .filter_map(|m| path_str.find(m).map(|i| (i, m.len())))
-        .next()?;
-    let rel = &path_str[idx + marker_len..];
-    let stem = rel.strip_suffix(".trait.toml")
-        .or_else(|| rel.strip_suffix(".strait.toml"))?;
-    let mut result = stem.replace('/', ".").replace('\\', ".");
-    // Collapse trailing duplicate: sys.checksum.checksum -> sys.checksum
-    let parts: Vec<&str> = result.split('.').collect();
-    if parts.len() >= 2 && parts[parts.len() - 1] == parts[parts.len() - 2] {
-        result = parts[..parts.len() - 1].join(".");
-    }
-    Some(result)
 }
 
 // ── Registry ────────────────────────────────────────────────────────
@@ -488,48 +233,10 @@ impl Registry {
         let cli_map = toml.cli_map.as_ref();
         let is_rest = impl_toml.map(|i| i.source == "rest").unwrap_or(false)
             || toml.trait_def.http.is_some();
-        let language = if is_rest {
-            Language::Rust
-        } else if let Some(imp) = impl_toml {
-            parse_language(&imp.language)
-                .ok_or_else(|| format!("Unknown language: {}", imp.language))?
-        } else if toml.trait_def.command.is_some() {
-            if let Some(cm) = cli_map {
-                parse_language(&cm.language)
-                    .ok_or_else(|| format!("Unknown cli_map language: {}", cm.language))?
-            } else {
-                Language::Rust
-            }
-        } else {
-            return Err("Missing [implementation] section (required unless command= is set)".into());
-        };
+        let language = resolve_language(&toml)
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
-        let params: Vec<ParamDef> = if let Some(ref sig) = toml.signature {
-            sig.params.iter().map(|p| {
-                ParamDef {
-                    name: p.name.clone(),
-                    param_type: parse_type(&p.param_type),
-                    description: p.description.clone(),
-                    optional: p.is_optional(),
-                    pipe: p.pipe,
-                    example: p.example.as_ref().map(toml_to_json),
-                }
-            }).collect()
-        } else {
-            vec![]
-        };
-
-        let returns = if let Some(ref sig) = toml.signature {
-            ReturnDef {
-                return_type: parse_type(&sig.returns.return_type),
-                description: sig.returns.description.clone(),
-            }
-        } else {
-            ReturnDef {
-                return_type: TraitType::Any,
-                description: String::new(),
-            }
-        };
+        let signature = build_signature(toml.signature.as_ref());
 
         let trait_path = derive_trait_path(&toml_path)
             .ok_or_else(|| format!("Cannot determine trait path from {:?}", toml_path))?;
@@ -582,7 +289,7 @@ impl Registry {
             gui: toml.trait_def.gui,
             frontend: toml.trait_def.frontend,
             startup_args: toml.trait_def.startup_args,
-            signature: TraitSignature { params, returns },
+            signature,
             language,
             source: source_path,
             entry: entry_name,
@@ -600,15 +307,7 @@ impl Registry {
             priority: toml.trait_def.priority,
             load: parse_load_config(&toml.load),
             cli_map_source,
-            config: toml.config.map(|m| {
-                m.into_iter().map(|(k, v)| {
-                    let s = match &v {
-                        toml::Value::String(s) => s.clone(),
-                        other => other.to_string(),
-                    };
-                    (k, s)
-                }).collect()
-            }).unwrap_or_default(),
+            config: parse_config_section(toml.config),
         };
 
         self.traits.insert(trait_path, entry);
@@ -788,34 +487,6 @@ pub fn registry(args: &[serde_json::Value]) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_type() {
-        assert_eq!(parse_type("int"), TraitType::Int);
-        assert_eq!(parse_type("float"), TraitType::Float);
-        assert_eq!(parse_type("string"), TraitType::String);
-        assert_eq!(parse_type("bool"), TraitType::Bool);
-        assert_eq!(parse_type("list<int>"), TraitType::List(Box::new(TraitType::Int)));
-        assert_eq!(
-            parse_type("map<string, int>"),
-            TraitType::Map(Box::new(TraitType::String), Box::new(TraitType::Int))
-        );
-        assert_eq!(
-            parse_type("int?"),
-            TraitType::Optional(Box::new(TraitType::Int))
-        );
-    }
-
-    #[test]
-    fn test_parse_language() {
-        assert_eq!(parse_language("rust"), Some(Language::Rust));
-        assert_eq!(parse_language("Python"), Some(Language::Python));
-        assert_eq!(parse_language("JS"), Some(Language::JavaScript));
-        assert_eq!(parse_language("ts"), Some(Language::TypeScript));
-        assert_eq!(parse_language("java"), Some(Language::Java));
-        assert_eq!(parse_language("perl"), Some(Language::Perl));
-        assert_eq!(parse_language("unknown"), None);
-    }
 
     #[test]
     fn test_registry_basic() {

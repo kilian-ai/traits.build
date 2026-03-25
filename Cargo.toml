@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260325.50525"
+version = "0.260325.131025"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -22,6 +22,7 @@ exclude = [
 [workspace]
 members = [
     ".",
+    "traits/kernel/logic",
     "traits/kernel/plugin_api",
     "traits/kernel/wasm",
     "traits/sys/checksum",
@@ -29,6 +30,7 @@ members = [
 ]
 default-members = [
     ".",
+    "traits/kernel/logic",
     "traits/kernel/plugin_api",
     "traits/sys/checksum",
     "traits/sys/ps",
@@ -39,6 +41,7 @@ name = "traits"
 path = "src/main.rs"
 
 [dependencies]
+kernel-logic = { path = "traits/kernel/logic" }
 actix-web = "4"
 actix-rt = "2"
 serde = { version = "1", features = ["derive"] }
