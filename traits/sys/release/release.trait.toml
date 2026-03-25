@@ -11,18 +11,21 @@ name = "steps"
 type = "string"
 description = "Comma-separated steps to run: build,test,commit,push,tag,publish,deploy. Use 'all' for the full pipeline, 'ci' for commit+push+tag, 'ship' for ci+deploy."
 required = false
+example = "build,test"
 
 [[signature.params]]
 name = "message"
 type = "string"
 description = "Git commit message (default: 'release: vYYMMDD')"
 required = false
+example = "release: v260324"
 
 [[signature.params]]
 name = "dry_run"
 type = "bool"
 description = "If true, show what would happen without executing"
 required = false
+example = true
 
 [signature.returns]
 type = "object"

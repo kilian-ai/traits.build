@@ -15,7 +15,7 @@ registry = "sys.registry"
 
 [signature]
 params = [
-  { name = "path", pipe = true, type = "string", description = "Dot-notation trait path, e.g. sys.checksum" }
+  { name = "path", pipe = true, type = "string", description = "Dot-notation trait path, e.g. sys.checksum", example = "sys.checksum" }
 ]
 
 [signature.returns]

@@ -11,6 +11,7 @@ name = "mode"
 type = "string"
 description = "Mode: 'build' (full build+upload+restart), 'upload' (re-upload last binary+restart)"
 required = false
+example = "build"
 
 [signature.returns]
 type = "object"

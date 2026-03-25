@@ -9,3 +9,7 @@ traits/kernel/wasm/pkg/
 traits/kernel/wasm/_old_js/
 scripts/check-spa-js.js
 scripts/test-spa-shell.js
+scripts/add-toml-examples.py
+scripts/check-example-field.py
+scripts/verify-examples.py
+scripts/verify-openapi-examples.py

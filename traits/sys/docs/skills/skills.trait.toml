@@ -11,6 +11,7 @@ name = "action"
 type = "string"
 description = "Action: generate (default) | write"
 optional = true
+example = "generate"
 
 [[signature.params]]
 name = "openapi_json"

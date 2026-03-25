@@ -15,7 +15,7 @@ registry = "sys.registry"
 
 [signature]
 params = [
-  { name = "namespace", type = "string", description = "Filter by namespace prefix", optional = true }
+  { name = "namespace", type = "string", description = "Filter by namespace prefix", optional = true, example = "sys" }
 ]
 
 [signature.returns]

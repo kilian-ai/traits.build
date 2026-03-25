@@ -17,6 +17,7 @@ version = "sys.version"
 name = "trait_path"
 type = "string"
 description = "Trait path in dot notation (e.g. sys.checksum)"
+example = "sys.checksum"
 
 [signature.returns]
 type = "object"

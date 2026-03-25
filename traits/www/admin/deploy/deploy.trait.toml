@@ -8,7 +8,7 @@ tags = ["www", "admin", "deployment"]
 
 [signature]
 params = [
-  { name = "mode", type = "string", description = "Pass 'status' to query machines without changing them", optional = true },
+  { name = "mode", type = "string", description = "Pass 'status' to query machines without changing them", optional = true, example = "status" },
 ]
 
 [signature.returns]

@@ -42,6 +42,10 @@ pub fn openapi(_args: &[Value]) -> Value {
                 prop.as_object_mut().unwrap()
                     .insert("description".into(), Value::String(p.description.clone()));
             }
+            if let Some(ref ex) = p.example {
+                prop.as_object_mut().unwrap()
+                    .insert("example".into(), ex.clone());
+            }
             param_properties.insert(p.name.clone(), prop);
 
             if !p.optional {
@@ -96,12 +100,12 @@ pub fn openapi(_args: &[Value]) -> Value {
                     .join(", ")
             );
 
-            // Use live example args or fall back to type-based defaults
+            // Use live example args or fall back to TOML examples, then type-based defaults
             let positional_example: Vec<Value> = if let Some(ex) = live {
                 ex.request_args.clone()
             } else {
                 entry.signature.params.iter()
-                    .map(|p| example_value(&p.param_type))
+                    .map(|p| p.example.clone().unwrap_or_else(|| example_value(&p.param_type)))
                     .collect()
             };
 

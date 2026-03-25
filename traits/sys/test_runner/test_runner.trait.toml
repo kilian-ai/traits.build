@@ -19,18 +19,21 @@ dispatcher = "kernel.dispatcher"
 name = "pattern"
 type = "string"
 description = "Glob pattern: 'sys.*', '*', 'sys.checksum', etc."
+example = "sys.*"
 
 [[signature.params]]
 name = "verbose"
 type = "boolean"
 description = "If true, include full output/checks in results."
 optional = true
+example = false
 
 [[signature.params]]
 name = "skip_commands"
 type = "boolean"
 description = "If true, skip shell command tests (avoids deadlock when called via HTTP)."
 optional = true
+example = false
 
 [signature.returns]
 type = "object"

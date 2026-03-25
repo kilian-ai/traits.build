@@ -222,6 +222,8 @@ struct ParamToml {
     required: bool,
     #[serde(default)]
     pipe: bool,
+    #[serde(default)]
+    example: Option<toml::Value>,
 }
 
 fn default_required() -> bool { true }
@@ -354,6 +356,24 @@ fn toml_value_to_trait_value(v: &toml::Value) -> Option<TraitValue> {
             Some(TraitValue::Map(entries))
         }
         _ => None,
+    }
+}
+
+/// Convert a TOML value to a serde_json::Value for OpenAPI examples.
+fn toml_to_json(v: &toml::Value) -> serde_json::Value {
+    match v {
+        toml::Value::String(s) => serde_json::Value::String(s.clone()),
+        toml::Value::Integer(n) => serde_json::json!(*n),
+        toml::Value::Float(f) => serde_json::json!(*f),
+        toml::Value::Boolean(b) => serde_json::Value::Bool(*b),
+        toml::Value::Array(arr) => serde_json::Value::Array(arr.iter().map(toml_to_json).collect()),
+        toml::Value::Table(tbl) => {
+            let map: serde_json::Map<String, serde_json::Value> = tbl.iter()
+                .map(|(k, v)| (k.clone(), toml_to_json(v)))
+                .collect();
+            serde_json::Value::Object(map)
+        }
+        _ => serde_json::Value::Null,
     }
 }
 
@@ -492,6 +512,7 @@ impl Registry {
                     description: p.description.clone(),
                     optional: p.is_optional(),
                     pipe: p.pipe,
+                    example: p.example.as_ref().map(toml_to_json),
                 }
             }).collect()
         } else {

@@ -11,30 +11,35 @@ name = "url"
 type = "string"
 description = "Full URL to call (e.g. https://api.openai.com/v1/chat/completions)"
 required = true
+example = "https://httpbin.org/post"
 
 [[signature.params]]
 name = "body"
 type = "any"
 description = "Request body — object/string sent as JSON"
 required = false
+example = "hello"
 
 [[signature.params]]
 name = "auth_secret"
 type = "string"
 description = "Secret ID for Bearer token auth (looked up in secrets store, falls back to env var with same name uppercased)"
 required = false
+example = "OPENAI_API_KEY"
 
 [[signature.params]]
 name = "method"
 type = "string"
 description = "HTTP method: GET, POST, PUT, PATCH, DELETE (default: POST if body given, GET otherwise)"
 required = false
+example = "POST"
 
 [[signature.params]]
 name = "headers"
 type = "any"
 description = "Additional headers as {key: value} object"
 required = false
+example = "X-Custom: value"
 
 [signature.returns]
 type = "any"

@@ -11,24 +11,28 @@ provides = ["sys/config"]
 name = "action"
 type = "string"
 description = "Action: set | get | delete | list"
+example = "get"
 
 [[signature.params]]
 name = "trait_path"
 type = "string"
 description = "Trait path in dot notation (e.g. www.admin)"
 optional = true
+example = "www.admin"
 
 [[signature.params]]
 name = "key"
 type = "string"
 description = "Config key (e.g. fly_app)"
 optional = true
+example = "fly_app"
 
 [[signature.params]]
 name = "value"
 type = "string"
 description = "Config value (only for 'set' action)"
 optional = true
+example = "polygrait-api"
 
 [signature.returns]
 type = "object"

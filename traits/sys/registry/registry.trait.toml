@@ -15,8 +15,8 @@ globals = "kernel.globals"
 
 [signature]
 params = [
-  { name = "action", type = "string", description = "Action: list|info|tree|namespaces|count|get|search|namespace", optional = true },
-  { name = "arg", type = "string", description = "Argument for info/get/search/namespace/list actions", optional = true }
+  { name = "action", type = "string", description = "Action: list|info|tree|namespaces|count|get|search|namespace", optional = true, example = "info" },
+  { name = "arg", type = "string", description = "Argument for info/get/search/namespace/list actions", optional = true, example = "sys.checksum" }
 ]
 
 [signature.returns]

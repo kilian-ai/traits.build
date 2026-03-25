@@ -39,7 +39,7 @@ secrets = "sys.secrets"
 
 [signature]
 params = [
-  { name = "port", type = "int", description = "Port to listen on (default: from config)", optional = true }
+  { name = "port", type = "int", description = "Port to listen on (default: from config)", optional = true, example = 8090 }
 ]
 
 [signature.returns]

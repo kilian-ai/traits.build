@@ -1,8 +1,8 @@
 [trait]
 description = "Cross-language type system: TraitType, TraitValue, ParamDef, wire protocol types"
-version = "v260320.205918"
+version = "v260325"
 epoch = 0
-checksum = "ca62f0e0c823e2d95145b5ce4419399d8b6a2091227fad093a80d3c4a7c678d7"
+checksum = "7d7f332d7d41438d20387a61a825d84a24be53d385932d025fb60eab72155794"
 author = "kilian-ai"
 tags = ["kernel", "types"]
 provides = ["kernel/types"]

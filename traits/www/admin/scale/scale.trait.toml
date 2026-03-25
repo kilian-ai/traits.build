@@ -8,7 +8,7 @@ tags = ["www", "admin", "deployment"]
 
 [signature]
 params = [
-  { name = "count", type = "int", description = "Target machine count (0 to stop, 1 to start)" }
+  { name = "count", type = "int", description = "Target machine count (0 to stop, 1 to start)", example = 1 }
 ]
 
 [signature.returns]

@@ -8,8 +8,8 @@ tags = ["www", "admin", "config"]
 
 [signature]
 params = [
-  { name = "fly_app", type = "string", description = "Fly.io app name", required = true },
-  { name = "fly_region", type = "string", description = "Fly.io region code", required = true },
+  { name = "fly_app", type = "string", description = "Fly.io app name", required = true, example = "polygrait-api" },
+  { name = "fly_region", type = "string", description = "Fly.io region code", required = true, example = "iad" },
 ]
 
 [signature.returns]

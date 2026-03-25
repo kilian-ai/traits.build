@@ -11,12 +11,14 @@ provides = ["sys/checksum"]
 name = "action"
 type = "string"
 description = "Action: hash | io | signature | update"
+example = "hash"
 
 [[signature.params]]
 name = "data"
 type = "any"
 pipe = true
 description = "Data to checksum: any value (hash), features array (io), TOML text (signature), release object (update)"
+example = "hello world"
 
 [signature.returns]
 type = "object"

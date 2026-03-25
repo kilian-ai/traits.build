@@ -179,6 +179,9 @@ pub struct ParamDef {
     /// When true, this parameter accepts piped stdin input if not provided as a CLI arg.
     #[serde(default)]
     pub pipe: bool,
+    /// Example value for documentation / OpenAPI spec generation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example: Option<serde_json::Value>,
 }
 
 /// Return type definition
