@@ -1,20 +1,28 @@
 #!/bin/bash
-# traits.build — Local Helper Runtime (one-shot)
-# Usage: curl -fsSL https://traits.build/local/helper.sh | bash
+# traits.build — Run any traits command (one-shot)
+# Usage:
+#   curl -fsSL https://traits.build/local/traits.sh | bash
+#   curl -fsSL https://traits.build/local/traits.sh | bash -s -- serve --port 9090
+#   curl -fsSL https://traits.build/local/traits.sh | bash -s -- list
+#   curl -fsSL https://traits.build/local/traits.sh | bash -s -- checksum hash "hello"
 #
-# Downloads and runs the traits helper on localhost.
-# The WASM kernel in your browser will auto-discover this on port 8090.
+# Downloads the traits binary and runs it. Default: serve --port 8090
 # No package manager required — downloads a single binary to /tmp.
 set -euo pipefail
 
-PORT="${TRAITS_PORT:-8090}"
 REPO="kilian-ai/traits.build"
+
+# ── Default command: serve ──
+if [ $# -eq 0 ]; then
+    PORT="${TRAITS_PORT:-8090}"
+    set -- serve --port "$PORT"
+fi
 
 banner() {
     echo ""
     echo "  ┌────────────────────────────────────┐"
-    echo "  │  traits.build — local helper        │"
-    echo "  │  http://localhost:$PORT              │"
+    echo "  │  traits.build                       │"
+    echo "  │  → traits $*"
     echo "  └────────────────────────────────────┘"
     echo ""
 }
@@ -40,11 +48,10 @@ if [ -n "$LATEST" ]; then
     echo "Downloading traits $LATEST ($OS/$ARCH)..."
     if curl -fsSL "$BINARY_URL" -o "$TMPDIR/traits" 2>/dev/null; then
         chmod +x "$TMPDIR/traits"
-        banner
+        banner "$@"
         echo "✓ Downloaded traits $LATEST"
-        echo "  (run 'curl -fsSL https://traits.build/local/install.sh | bash' to install permanently)"
         echo ""
-        exec "$TMPDIR/traits" serve --port "$PORT"
+        exec "$TMPDIR/traits" "$@"
     fi
     echo "  (no prebuilt binary for $OS/$ARCH)"
 fi
@@ -56,9 +63,9 @@ for bin in \
     "$HOME/.traits/bin/traits" \
     "/usr/local/bin/traits"; do
     if [ -n "$bin" ] && [ -x "$bin" ]; then
-        banner
+        banner "$@"
         echo "✓ Using local: $bin"
-        exec "$bin" serve --port "$PORT"
+        exec "$bin" "$@"
     fi
 done
 
@@ -67,8 +74,8 @@ if command -v cargo &>/dev/null; then
     echo "Building from source (1-2 min on first run)..."
     cargo install --git "https://github.com/$REPO" --locked 2>&1
     if command -v traits &>/dev/null; then
-        banner
-        exec traits serve --port "$PORT"
+        banner "$@"
+        exec traits "$@"
     fi
 fi
 

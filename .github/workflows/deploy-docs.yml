@@ -41,6 +41,7 @@ jobs:
           fi
           # Install scripts
           cp traits/www/local/helper/helper.sh _site/local/helper.sh
+          cp traits/www/local/helper/helper.sh _site/local/traits.sh
           cp traits/www/local/install/install.sh _site/local/install.sh
           # Custom domain
           cp CNAME _site/CNAME
