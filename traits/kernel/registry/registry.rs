@@ -217,7 +217,7 @@ impl Registry {
             }
             let toml: TraitToml = toml::from_str(def.toml)
                 .map_err(|e| format!("Parse error in builtin {}: {}", def.rel_path, e))?;
-            let toml_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(def.rel_path);
+            let toml_path = PathBuf::from(def.rel_path);
             self.insert_trait_from_toml(toml, toml_path)?;
             count += 1;
         }
