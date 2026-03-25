@@ -150,35 +150,55 @@ async function createTerminal(mountEl, opts = {}) {
             const visible = output.replace(REST_RE, '');
             if (visible) term.write(visible);
 
-            // Parse dispatch info and make REST call
+            // Parse dispatch info and call via SDK cascade (WASM → helper → REST)
             try {
                 const { p, a } = JSON.parse(restMatch[1]);
-                const restPath = p.replace(/\./g, '/');
                 restPending = true;
 
-                fetch(`/traits/${restPath}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ args: a }),
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.result !== undefined) {
-                        const text = typeof data.result === 'string'
-                            ? data.result
-                            : JSON.stringify(data.result, null, 2);
-                        term.write(text.replace(/\n/g, '\r\n'));
-                        if (!text.endsWith('\n')) term.write('\r\n');
-                    } else if (data.error) {
-                        term.write(`\x1b[31mError: ${data.error}\x1b[0m\r\n`);
-                    }
-                    term.write(PROMPT);
-                })
-                .catch(e => {
-                    term.write(`\x1b[31mREST error: ${e.message}\x1b[0m\r\n`);
-                    term.write(PROMPT);
-                })
-                .finally(() => { restPending = false; });
+                const traitsSdk = window._traitsSDK;
+                if (traitsSdk) {
+                    traitsSdk.call(p, a).then(res => {
+                        if (res.ok && res.result !== undefined) {
+                            const text = typeof res.result === 'string'
+                                ? res.result
+                                : JSON.stringify(res.result, null, 2);
+                            term.write(text.replace(/\n/g, '\r\n'));
+                            if (!text.endsWith('\n')) term.write('\r\n');
+                        } else if (res.error) {
+                            term.write(`\x1b[31mError: ${res.error}\x1b[0m\r\n`);
+                        }
+                        term.write(PROMPT);
+                    }).catch(e => {
+                        term.write(`\x1b[31mDispatch error: ${e.message}\x1b[0m\r\n`);
+                        term.write(PROMPT);
+                    }).finally(() => { restPending = false; });
+                } else {
+                    // Fallback: direct REST call (when not in SPA)
+                    const restPath = p.replace(/\./g, '/');
+                    fetch(`/traits/${restPath}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ args: a }),
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.result !== undefined) {
+                            const text = typeof data.result === 'string'
+                                ? data.result
+                                : JSON.stringify(data.result, null, 2);
+                            term.write(text.replace(/\n/g, '\r\n'));
+                            if (!text.endsWith('\n')) term.write('\r\n');
+                        } else if (data.error) {
+                            term.write(`\x1b[31mError: ${data.error}\x1b[0m\r\n`);
+                        }
+                        term.write(PROMPT);
+                    })
+                    .catch(e => {
+                        term.write(`\x1b[31mREST error: ${e.message}\x1b[0m\r\n`);
+                        term.write(PROMPT);
+                    })
+                    .finally(() => { restPending = false; });
+                }
             } catch (e) {
                 term.write(`\x1b[31mREST parse error: ${e.message}\x1b[0m\r\n`);
                 term.write(PROMPT);
