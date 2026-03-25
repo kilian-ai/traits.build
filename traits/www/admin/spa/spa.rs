@@ -54,33 +54,33 @@ pub fn spa(_args: &[Value]) -> Value {
                         section.card {
                             h2 { "System tools" }
                             p.note id="terminalNote" {
-                                "Every tool below can be tested in the browser terminal. "
-                            a href="/docs/api#tag/infrastructure/operation/list_traits" target="_blank" rel="noopener" id="terminalLink" onclick="return openApiCommand('traits list', '#tag/infrastructure/operation/list_traits')" { "Open terminal" }
+                              "Every tool below can be tested in the browser terminal. "
+                              a href="#" target="_blank" rel="noopener" id="terminalLink" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits list', '#tag/infrastructure/operation/list_traits')" { "Open terminal" }
                             }
                             table.tools {
                                 tr {
                                     td { "List traits" }
-                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits list', '#tag/infrastructure/operation/list_traits')" { code { "traits list" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits list', '#tag/infrastructure/operation/list_traits')" { code { "traits list" } } }
                                 }
                                 tr {
                                     td { "Version" }
-                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits version', '#tag/infrastructure/operation/list_traits')" { code { "traits version" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits version', '#tag/infrastructure/operation/list_traits')" { code { "traits version" } } }
                                 }
                                 tr {
                                     td { "Registry" }
-                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits registry', '#tag/infrastructure/operation/list_traits')" { code { "traits registry" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits registry', '#tag/infrastructure/operation/list_traits')" { code { "traits registry" } } }
                                 }
                                 tr {
                                     td { "Processes" }
-                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits ps', '#tag/infrastructure/operation/list_traits')" { code { "traits ps" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits ps', '#tag/infrastructure/operation/list_traits')" { code { "traits ps" } } }
                                 }
                                 tr {
                                     td { "Run tests" }
-                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand(\"traits test_runner 'sys.*'\", '#tag/infrastructure/operation/list_traits')" { code { "traits test_runner 'sys.*'" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand(\"traits test_runner 'sys.*'\", '#tag/infrastructure/operation/list_traits')" { code { "traits test_runner 'sys.*'" } } }
                                 }
                                 tr {
                                     td { "Reload registry" }
-                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits call kernel.reload', '#tag/infrastructure/operation/list_traits')" { code { "traits call kernel.reload" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits call kernel.reload', '#tag/infrastructure/operation/list_traits')" { code { "traits call kernel.reload" } } }
                                 }
                             }
                         }
@@ -362,6 +362,43 @@ const PENDING_COMMAND_KEY = 'traits.pending.terminal.command';
 const API_DOCS_FRAGMENT = '#tag/infrastructure/operation/list_traits';
 const isLocalFile = location.protocol === 'file:';
 const timers = [];
+const memoryStorage = (() => {
+  const store = new Map();
+  return {
+    get length() { return store.size; },
+    key(index) { return Array.from(store.keys())[index] || null; },
+    getItem(key) { return store.has(key) ? store.get(key) : null; },
+    setItem(key, value) { store.set(String(key), String(value)); },
+    removeItem(key) { store.delete(String(key)); },
+  };
+})();
+
+function resolveStorage() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const probe = '__traits_spa_probe__';
+      window.localStorage.setItem(probe, '1');
+      window.localStorage.removeItem(probe);
+      return { backend: window.localStorage, persistent: true };
+    }
+  } catch (_error) {
+  }
+  return { backend: memoryStorage, persistent: false };
+}
+
+const storageState = resolveStorage();
+const storage = storageState.backend;
+
+function safeSessionSet(key, value) {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem(key, value);
+      return true;
+    }
+  } catch (_error) {
+  }
+  return false;
+}
 
 function esc(value) {
   const div = document.createElement('div');
@@ -375,6 +412,7 @@ function $(id) {
 
 function log(message, type) {
   const el = $('activityLog');
+  if (!el) return;
   const t = new Date().toTimeString().slice(0, 8);
   const safe = esc(message);
   const tone = type ? ` class="${type}"` : '';
@@ -413,12 +451,12 @@ async function callTrait(path, args) {
 
 function storageEntries(prefix) {
   const out = [];
-  for (let index = 0; index < localStorage.length; index++) {
-    const key = localStorage.key(index);
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
     if (key && key.indexOf(prefix) === 0) {
       out.push({
         key: key.slice(prefix.length),
-        value: localStorage.getItem(key) || ''
+        value: storage.getItem(key) || ''
       });
     }
   }
@@ -440,11 +478,8 @@ function apiDocsUrl(fragment) {
 
 function openApiCommand(command, fragment) {
   const suffix = fragment || API_DOCS_FRAGMENT;
-  try {
-    sessionStorage.setItem(SHELL_ROUTE_KEY, '/docs/api');
-    sessionStorage.setItem(PENDING_COMMAND_KEY, `${command}\r`);
-  } catch (_error) {
-  }
+  safeSessionSet(SHELL_ROUTE_KEY, '/docs/api');
+  safeSessionSet(PENDING_COMMAND_KEY, `${command}\r`);
   if (isLocalFile) {
     location.hash = suffix;
     location.reload();
@@ -548,16 +583,16 @@ function saveSecret() {
     setStatus('secretStatus', 'Secret ID and value are required.', true);
     return;
   }
-  localStorage.setItem(SECRET_PFX + key, value);
+  storage.setItem(SECRET_PFX + key, value);
   $('secretKey').value = '';
   $('secretValue').value = '';
   renderSecrets();
-  setStatus('secretStatus', 'Stored locally.');
+  setStatus('secretStatus', storageState.persistent ? 'Stored locally.' : 'Stored for this session only.');
   log(`Stored local secret: ${key}`);
 }
 
 function deleteSecret(key) {
-  localStorage.removeItem(SECRET_PFX + key);
+  storage.removeItem(SECRET_PFX + key);
   renderSecrets();
   setStatus('secretStatus', `Deleted ${key}.`);
   log(`Deleted local secret: ${key}`);
@@ -570,16 +605,16 @@ function saveEnvVar() {
     setStatus('envStatus', 'Variable name is required.', true);
     return;
   }
-  localStorage.setItem(ENV_PFX + key, value);
+  storage.setItem(ENV_PFX + key, value);
   $('envKey').value = '';
   $('envValue').value = '';
   renderEnvVars();
-  setStatus('envStatus', 'Stored locally.');
+  setStatus('envStatus', storageState.persistent ? 'Stored locally.' : 'Stored for this session only.');
   log(`Stored local environment variable: ${key}`);
 }
 
 function deleteEnvVar(key) {
-  localStorage.removeItem(ENV_PFX + key);
+  storage.removeItem(ENV_PFX + key);
   renderEnvVars();
   setStatus('envStatus', `Deleted ${key}.`);
   log(`Deleted local environment variable: ${key}`);
@@ -587,6 +622,11 @@ function deleteEnvVar(key) {
 
 function configureLinks() {
   const terminalLink = $('terminalLink');
+  const commandLinks = Array.from(document.querySelectorAll('.command-link'));
+  commandLinks.forEach((link) => {
+    const fragment = link.getAttribute('data-fragment') || API_DOCS_FRAGMENT;
+    link.setAttribute('href', apiDocsUrl(fragment));
+  });
   if (isLocalFile) {
     $('serverAdminNote').innerHTML = 'Deployment controls stay on the secured localhost admin page when you run a local server.';
     if (terminalLink) {
@@ -598,10 +638,24 @@ function configureLinks() {
   }
 }
 
-configureLinks();
+try {
+  configureLinks();
+} catch (error) {
+  log(`Link setup error: ${error.message || error}`, 'error');
+}
+
 refreshStats();
-renderSecrets();
-renderEnvVars();
+
+try {
+  renderSecrets();
+  renderEnvVars();
+  if (!storageState.persistent) {
+    log('localStorage unavailable; using in-memory storage for this session.', 'warn');
+  }
+} catch (error) {
+  log(`Storage UI error: ${error.message || error}`, 'error');
+}
+
 timers.push(setInterval(refreshStats, 30000));
 window._pageCleanup = function() {
   while (timers.length) clearInterval(timers.pop());
