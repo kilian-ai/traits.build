@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 mod registry;
 mod wasm_traits;
+pub(crate) mod wasm_secrets;
 
 // Include generated trait definitions (for registry browsing)
 include!(concat!(env!("OUT_DIR"), "/wasm_builtin_traits.rs"));
@@ -40,6 +41,13 @@ pub fn init() -> Result<JsValue, JsValue> {
 #[wasm_bindgen]
 pub fn is_callable(trait_path: &str) -> bool {
     wasm_traits::WASM_CALLABLE.contains(&trait_path)
+}
+
+/// Store a secret for use by sys.call / sys.llm (e.g. API keys).
+/// Call before invoking traits that need auth: set_secret("openai_api_key", "sk-...")
+#[wasm_bindgen]
+pub fn set_secret(key: &str, value: &str) {
+    wasm_secrets::set_secret(key, value);
 }
 
 /// Check if a trait is registered (even if not WASM-callable).

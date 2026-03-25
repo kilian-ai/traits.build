@@ -65,14 +65,22 @@ pub mod wasm_impl;
 #[path = "../../../call/call.rs"]
 pub mod call;
 
+#[path = "../../../../sys/call/call.rs"]
+pub mod sys_call;
+
+#[path = "../../../../sys/llm/llm.rs"]
+pub mod llm;
+
 /// WASM-callable trait paths (curated list of pure-computation traits).
 pub const WASM_CALLABLE: &[&str] = &[
     "kernel.call",
     "kernel.types",
+    "sys.call",
     "sys.checksum",
     "sys.cli.wasm",
     "sys.info",
     "sys.list",
+    "sys.llm",
     "sys.openapi",
     "sys.registry",
     "sys.test_runner",
@@ -94,10 +102,12 @@ pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
     match trait_path {
         "kernel.call" => Some(call::call(args)),
         "kernel.types" => Some(types::types(args)),
+        "sys.call" => Some(sys_call::call(args)),
         "sys.checksum" => Some(checksum::checksum_dispatch(args)),
         "sys.cli.wasm" => Some(wasm_impl::wasm_dispatch(args)),
         "sys.info" => Some(registry::info(args)),
         "sys.list" => Some(registry::list(args)),
+        "sys.llm" => Some(llm::llm(args)),
         "sys.openapi" => Some(openapi::openapi(args)),
         "sys.registry" => Some(registry::registry(args)),
         "sys.test_runner" => Some(test_runner::test_runner(args)),

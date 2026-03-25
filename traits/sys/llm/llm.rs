@@ -37,6 +37,17 @@ pub fn llm(args: &[Value]) -> Value {
     }
 }
 
+/// Dispatch to sys.call (platform-aware)
+fn dispatch_sys_call(args: &[Value]) -> Value {
+    #[cfg(not(target_arch = "wasm32"))]
+    let result = crate::dispatcher::compiled::dispatch("sys.call", args);
+
+    #[cfg(target_arch = "wasm32")]
+    let result = crate::wasm_traits::dispatch("sys.call", args);
+
+    result.unwrap_or_else(|| json!({"ok": false, "error": "sys.call not found"}))
+}
+
 /// Call OpenAI chat completions via sys.call
 fn call_openai(prompt: &str, model: Option<&str>, context: Option<&str>) -> Value {
     let model_name = model.unwrap_or("gpt-4.1-nano");
@@ -61,8 +72,7 @@ fn call_openai(prompt: &str, model: Option<&str>, context: Option<&str>) -> Valu
         Value::Null,
     ];
 
-    let result = crate::dispatcher::compiled::dispatch("sys.call", &call_args)
-        .unwrap_or_else(|| json!({"ok": false, "error": "sys.call not found"}));
+    let result = dispatch_sys_call(&call_args);
 
     // Extract the response
     let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -128,8 +138,7 @@ fn call_local(prompt: &str, model: Option<&str>, context: Option<&str>, base_url
         Value::Null,
     ];
 
-    let result = crate::dispatcher::compiled::dispatch("sys.call", &call_args)
-        .unwrap_or_else(|| json!({"ok": false, "error": "sys.call not found"}));
+    let result = dispatch_sys_call(&call_args);
 
     let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
     if !ok {

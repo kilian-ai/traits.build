@@ -199,6 +199,107 @@ class TraitsSDK {
 const sdk = new TraitsSDK();
 window._traitsSDK = sdk;
 
+// ── Trait Components — declarative data-trait → DOM binding ──
+//
+// Attributes on any element:
+//   data-trait="sys.list"          trait path to call
+//   data-call="mount|click"        trigger (default: mount)
+//   data-args='["x"]'              JSON call args
+//   data-bind="field.path"         dot-path into result to extract
+//   data-render="text|html|json"   output mode (default: text)
+//   data-target="#id"              render into another element (default: self)
+//   data-interval="30000"          auto-refresh interval in ms
+//   data-handler="name"            custom handler fn(el, value, meta)
+//   data-loading="…"               placeholder text while loading
+
+const TC = (() => {
+  const _h = {};      // named handlers: { name: fn(el, value, meta) }
+  const _iv = [];     // active setInterval IDs
+  const _cl = [];     // cleanup fns (removeEventListener etc.)
+
+  function on(name, fn) { _h[name] = fn; }
+
+  // Resolve dot-path: "items.length", "version", "0.name"
+  function _get(obj, path) {
+    if (!path) return obj;
+    for (const k of path.split('.')) {
+      if (obj == null) return undefined;
+      if (k === 'length' && (Array.isArray(obj) || typeof obj === 'string'))
+        return obj.length;
+      obj = typeof obj === 'object' ? obj[k] : undefined;
+    }
+    return obj;
+  }
+
+  async function call(el) {
+    const path = el.dataset.trait;
+    if (!path) return;
+    const args = el.dataset.args ? JSON.parse(el.dataset.args) : [];
+    const target = el.dataset.target
+      ? document.querySelector(el.dataset.target) : el;
+    if (el.dataset.loading && target) target.textContent = el.dataset.loading;
+
+    const res = await sdk.call(path, args);
+
+    if (!res.ok) {
+      el.dispatchEvent(new CustomEvent('trait:error',
+        { detail: res, bubbles: true }));
+      return res;
+    }
+
+    // Custom handler gets full control
+    const hName = el.dataset.handler;
+    if (hName && _h[hName]) {
+      await _h[hName](el, res.result, res);
+    } else if (target) {
+      // Auto-bind: extract value, apply to target
+      const val = _get(res.result, el.dataset.bind);
+      const mode = el.dataset.render || 'text';
+      if (mode === 'html') target.innerHTML = String(val ?? '');
+      else if (mode === 'json')
+        target.textContent = JSON.stringify(val, null, 2);
+      else target.textContent = String(val ?? '-');
+    }
+
+    el.dispatchEvent(new CustomEvent('trait:done',
+      { detail: res, bubbles: true }));
+    return res;
+  }
+
+  function scan(root) {
+    if (!root?.querySelectorAll) return;
+    const els = [...root.querySelectorAll('[data-trait]')];
+    if (root.dataset?.trait) els.unshift(root);
+
+    for (const el of els) {
+      if (el._tc) continue;     // already bound
+      el._tc = true;
+      const trigger = el.dataset.call || 'mount';
+
+      if (trigger === 'mount') {
+        call(el);
+        const ms = parseInt(el.dataset.interval);
+        if (ms > 0) _iv.push(setInterval(() => call(el), ms));
+      } else if (trigger === 'click') {
+        const fn = (e) => { e.preventDefault(); call(el); };
+        el.addEventListener('click', fn);
+        _cl.push(() => el.removeEventListener('click', fn));
+      }
+    }
+  }
+
+  function cleanup() {
+    _iv.forEach(id => clearInterval(id));
+    _iv.length = 0;
+    _cl.forEach(fn => fn());
+    _cl.length = 0;
+    for (const k of Object.keys(_h)) delete _h[k];
+  }
+
+  return { on, call, scan, cleanup };
+})();
+window.TC = TC;
+
 // ── DOM refs ──
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -217,6 +318,7 @@ let currentPageCleanup = null;
 
 async function injectPage(fullHtml, route) {
   // Clean up previous page
+  TC.cleanup();
   if (currentPageCleanup) { currentPageCleanup(); currentPageCleanup = null; }
   document.querySelectorAll('style[data-page]').forEach(s => s.remove());
   document.querySelectorAll('link[data-page]').forEach(l => l.remove());
@@ -272,6 +374,9 @@ async function injectPage(fullHtml, route) {
   // Pick up page cleanup callback if set by page scripts
   currentPageCleanup = window._pageCleanup || null;
   window._pageCleanup = null;
+
+  // Activate trait components declared via data-trait attributes
+  TC.scan(frame);
 
   // Update nav active state
   $$('#shell-nav .links a').forEach(a => {

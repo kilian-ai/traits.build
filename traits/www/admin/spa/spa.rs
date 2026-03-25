@@ -32,7 +32,7 @@ pub fn spa(_args: &[Value]) -> Value {
                     }
 
                     div.grid {
-                        section.card {
+                        section.card data-trait="sys.list" data-handler="refreshStats" data-interval="30000" {
                             h2 { "Server stats" }
                             div.status {
                                 div.dot.gray id="spaStatusDot" {}
