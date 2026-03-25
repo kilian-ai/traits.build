@@ -485,7 +485,8 @@ function openApiCommand(command, fragment) {
     location.reload();
     return false;
   }
-  location.assign(apiDocsUrl(suffix));
+  // Cache-bust to ensure fresh page load (avoids bfcache skipping script init)
+  location.assign(`/docs/api?_=${Date.now()}${suffix}`);
   return false;
 }
 
