@@ -360,7 +360,7 @@ const ENV_PFX = 'traits.env.';
 const SHELL_ROUTE_KEY = 'traits.shell.route';
 const PENDING_COMMAND_KEY = 'traits.pending.terminal.command';
 const API_DOCS_FRAGMENT = '#tag/infrastructure/operation/list_traits';
-const isLocalFile = location.protocol === 'file:';
+const isLocalFile = location.protocol === 'file:' || (typeof window.TraitsWasm !== 'undefined');
 const timers = [];
 const memoryStorage = (() => {
   const store = new Map();
