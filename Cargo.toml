@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260325.133732"
+version = "0.260325.134206"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -65,6 +65,7 @@ sha2 = "0.10"
 libc = "0.2"
 pulldown-cmark = "0.12"
 maud = "0.26"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [build-dependencies]
 sha2 = "0.10"

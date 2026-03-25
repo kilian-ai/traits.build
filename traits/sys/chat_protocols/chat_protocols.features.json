@@ -1,0 +1,101 @@
+{
+  "trait": "sys.chat_protocols",
+  "description": "Reads VS Code chat history through an interface-backed provider",
+  "features": [
+    {
+      "name": "Wrapper resolves default provider",
+      "description": "The public wrapper redirects through the chat/protocol-reader interface and returns both extraction methods when available.",
+      "tests": [
+        {
+          "name": "wrapper auto reads fixture workspace",
+          "type": "command",
+          "command": "./target/release/traits call sys.chat_protocols fixture-workspace auto ./traits/sys/chat_protocols/fixtures/workspaceStorage 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "\"ok\": true"
+            },
+            {
+              "type": "contains",
+              "expected": "\"workspace_id\": \"fixture-workspace\""
+            },
+            {
+              "type": "contains",
+              "expected": "\"json\""
+            },
+            {
+              "type": "contains",
+              "expected": "\"state_vscdb\""
+            }
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "input": [
+            "fixture-workspace",
+            "auto",
+            "./traits/sys/chat_protocols/fixtures/workspaceStorage"
+          ],
+          "output": {
+            "contains": [
+              "fixture-workspace",
+              "state_vscdb",
+              "chatSessions"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "SQLite extraction returns active state",
+      "description": "Method 2 reads a copied state.vscdb and exposes the live interactive session payload.",
+      "tests": [
+        {
+          "name": "state_vscdb returns live history",
+          "type": "command",
+          "command": "./target/release/traits call sys.chat_protocols fixture-workspace state_vscdb ./traits/sys/chat_protocols/fixtures/workspaceStorage 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "memento/interactive-session"
+            },
+            {
+              "type": "contains",
+              "expected": "live prompt from sqlite"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Missing workspace returns error",
+      "description": "Unknown workspace IDs fail clearly instead of returning an empty success result.",
+      "tests": [
+        {
+          "name": "missing workspace",
+          "type": "command",
+          "command": "./target/release/traits call sys.chat_protocols does-not-exist auto ./traits/sys/chat_protocols/fixtures/workspaceStorage 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "Workspace storage folder not found"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

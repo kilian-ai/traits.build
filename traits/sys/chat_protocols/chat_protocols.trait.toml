@@ -1,0 +1,45 @@
+[trait]
+description = "Read chat protocol history through a swappable chat/protocol-reader interface"
+version = "v260325.134206"
+checksum = "c4372cdd1c3f96a0d65a4a1e7b41fc9ec5edb03478dd6ebfeff5ccb6525d1ccc"
+author = "system"
+tags = ["sys", "chat", "vscode", "protocols"]
+provides = ["sys/chat_protocols"]
+
+[requires]
+reader = "chat/protocol-reader"
+
+[bindings]
+reader = "sys.chat_protocols.vscode"
+
+[load]
+sys.chat_protocols = "chat/protocol-reader"
+
+[[signature.params]]
+name = "workspace_id"
+type = "string"
+description = "VS Code workspaceStorage hash to inspect"
+example = "c1d008f1cc5c2b413e09715a6b6588dc"
+
+[[signature.params]]
+name = "method"
+type = "string"
+description = "Extraction method: auto | json | state_vscdb | all"
+optional = true
+example = "auto"
+
+[[signature.params]]
+name = "base_dir"
+type = "string"
+description = "Optional workspaceStorage root override for tests or non-standard installs"
+optional = true
+example = "/Users/me/Library/Application Support/Code/User/workspaceStorage"
+
+[signature.returns]
+type = "object"
+description = "Structured chat transcript data from the bound provider"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "chat_protocols"

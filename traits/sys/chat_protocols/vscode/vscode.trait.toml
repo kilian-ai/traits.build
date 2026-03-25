@@ -1,0 +1,37 @@
+[trait]
+description = "Read VS Code chat history from chatSessions JSON logs or copied state.vscdb snapshots"
+version = "v260325.134206"
+checksum = "6a85538ad6f6384a6966442455d19cb4db902958460f8bb10df7daae1293cdf8"
+author = "system"
+tags = ["sys", "chat", "vscode", "sqlite", "logs"]
+provides = ["chat/protocol-reader"]
+priority = 100
+
+[[signature.params]]
+name = "workspace_id"
+type = "string"
+description = "VS Code workspaceStorage hash to inspect"
+example = "c1d008f1cc5c2b413e09715a6b6588dc"
+
+[[signature.params]]
+name = "method"
+type = "string"
+description = "Extraction method: auto | json | state_vscdb | all"
+optional = true
+example = "state_vscdb"
+
+[[signature.params]]
+name = "base_dir"
+type = "string"
+description = "Optional workspaceStorage root override for tests or non-standard installs"
+optional = true
+example = "/Users/me/Library/Application Support/Code/User/workspaceStorage"
+
+[signature.returns]
+type = "object"
+description = "VS Code chat transcript data and metadata"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "vscode"

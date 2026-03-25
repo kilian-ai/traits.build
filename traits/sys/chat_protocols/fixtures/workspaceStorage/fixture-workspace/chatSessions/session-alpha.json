@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "requesterUsername": "fixture-user",
+  "responderUsername": "GitHub Copilot",
+  "initialLocation": "panel",
+  "requests": [
+    {
+      "requestId": "request-fixture-1",
+      "message": {
+        "text": "show me the legacy json log path"
+      },
+      "response": [
+        {
+          "value": "The legacy JSON logs live in chatSessions/*.json under workspaceStorage/<hash>."
+        }
+      ]
+    }
+  ]
+}
