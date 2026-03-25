@@ -312,74 +312,29 @@ var _SECRET_PFX = 'traits.secret.';
   } else {
     h += '<p style="color:#bbb;font-size:0.9rem;">Install the traits runtime to run commands locally.</p>';
     h += '<div class="install-row">';
-    if (os === 'macos') {
-      h += '<button class="primary" onclick="downloadInstaller(\'macos\')">Download Installer</button>';
-    } else if (os === 'windows') {
-      h += '<button class="primary" onclick="downloadInstaller(\'windows\')">Download Installer</button>';
-    } else {
-      h += '<button class="primary" onclick="downloadInstaller(\'linux\')">Download Installer</button>';
-    }
-    h += '<button onclick="downloadInstaller(\'run\')">Run Once (no install)</button>';
+    h += '<button class="primary" onclick="copyCmd(\'install\')">' + icon + ' Install</button>';
+    h += '<button onclick="copyCmd(\'run\')">Run Once (no install)</button>';
     h += '</div>';
-    h += '<div class="install-alt">or: <code onclick="copyInstall(this)">curl -fsSL https://traits.build/local/install.sh | bash</code></div>';
+    h += '<div class="install-alt" id="installHint">Commands are copied to clipboard — paste in Terminal to run.</div>';
   }
 
   el.innerHTML = h;
 })();
 
-function downloadInstaller(mode) {
-  var name, content, mime = 'application/octet-stream';
+function copyCmd(mode) {
+  var cmd = '';
   if (mode === 'run') {
-    name = 'traits.command';
-    content = '#!/bin/bash\n' +
-      '# traits.build — one-shot runner\n' +
-      'curl -fsSL https://traits.build/local/traits.sh | bash\n';
-  } else if (mode === 'macos') {
-    name = 'install-traits.command';
-    content = '#!/bin/bash\n' +
-      '# traits.build — installer for macOS\n' +
-      'curl -fsSL https://traits.build/local/install.sh | bash\n' +
-      'echo ""\n' +
-      'echo "Done! You can close this window."\n' +
-      'echo "Start with: traits serve"\n' +
-      'read -p "Press Enter to close..."\n';
-  } else if (mode === 'windows') {
-    name = 'install-traits.bat';
-    content = '@echo off\r\n' +
-      'echo traits.build installer\r\n' +
-      'echo.\r\n' +
-      'where wsl >nul 2>&1 && (\r\n' +
-      '  echo Installing via WSL...\r\n' +
-      '  wsl curl -fsSL https://traits.build/local/install.sh ^| bash\r\n' +
-      ') || (\r\n' +
-      '  echo WSL not found. Install WSL first:\r\n' +
-      '  echo   wsl --install\r\n' +
-      '  echo Then re-run this installer.\r\n' +
-      ')\r\n' +
-      'pause\r\n';
+    cmd = 'curl -fsSL https://traits.build/local/traits.sh | bash';
   } else {
-    name = 'install-traits.sh';
-    content = '#!/bin/bash\n' +
-      '# traits.build — installer\n' +
-      'curl -fsSL https://traits.build/local/install.sh | bash\n';
+    cmd = 'curl -fsSL https://traits.build/local/install.sh | bash';
   }
-  var blob = new Blob([content], { type: mime });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  log('Downloaded ' + name);
-}
-
-function copyInstall(el) {
-  var text = el.textContent;
-  navigator.clipboard.writeText(text).then(function() {
-    var s = document.createElement('span');
-    s.className = 'copied';
-    s.textContent = 'copied!';
-    el.parentNode.appendChild(s);
-    setTimeout(function() { s.remove(); }, 2000);
+  navigator.clipboard.writeText(cmd).then(function() {
+    var hint = document.getElementById('installHint');
+    if (hint) {
+      hint.innerHTML = '<span class="copied">Copied!</span> Now open <strong>Terminal</strong> and paste with <kbd>⌘V</kbd>';
+      setTimeout(function() { hint.innerHTML = 'Commands are copied to clipboard — paste in Terminal to run.'; }, 4000);
+    }
+    log('Copied to clipboard: ' + cmd);
   });
 }
 
