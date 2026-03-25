@@ -1,6 +1,8 @@
 use serde_json::Value;
 
 // ── Shared trait modules (same .rs files as native, compiled for wasm32) ──
+// These modules are shared with the native build. Many items are only used
+// in the native context, so we suppress dead_code warnings for them here.
 
 #[path = "../../../../sys/checksum/checksum.rs"]
 pub mod checksum;
@@ -11,9 +13,11 @@ pub mod registry;
 #[path = "../../../../sys/version/version.rs"]
 pub mod version;
 
+#[allow(dead_code)]
 #[path = "../../../types/types.rs"]
 pub mod types;
 
+#[allow(dead_code)]
 #[path = "../../../cli/cli.rs"]
 pub mod cli;
 
