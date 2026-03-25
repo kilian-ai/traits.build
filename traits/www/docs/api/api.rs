@@ -172,6 +172,20 @@ const HTML: &str = r##"<!DOCTYPE html>
       }, 120);
     }
   } catch(e) {}
+  // Handle bfcache restoration — re-check for pending commands
+  window.addEventListener('pageshow', function(event) {
+    if (!event.persisted) return;
+    try {
+      var cmd = sessionStorage.getItem(PENDING_COMMAND_KEY);
+      if (cmd && terminalInstance && terminalInstance.term && typeof terminalInstance.term.paste === 'function') {
+        sessionStorage.removeItem(PENDING_COMMAND_KEY);
+        setTimeout(function() {
+          terminalInstance.term.focus();
+          terminalInstance.term.paste(cmd);
+        }, 120);
+      }
+    } catch(e) {}
+  });
 })();
 </script>
 </body>
