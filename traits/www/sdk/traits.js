@@ -1,13 +1,13 @@
 /**
  * traits.js — Unified client SDK for traits.build
  *
- * Routes calls through WASM kernel (instant, local) when available,
- * falls back to REST API for server-only traits.
+ * Dispatch cascade: WASM kernel (instant, local) → helper (localhost) → REST API.
+ * Helper = local Rust binary running on localhost for privileged traits.
  *
  * Usage:
  *   import { Traits } from '/static/www/sdk/traits.js';
  *   const traits = new Traits();         // auto-detects server from current origin
- *   await traits.init();                 // loads WASM kernel
+ *   await traits.init();                 // loads WASM kernel + discovers helper
  *   const hash = await traits.call('sys.checksum', ['hash', 'hello']);
  *   const list = await traits.list();
  *   const info = await traits.info('sys.checksum');
@@ -17,6 +17,64 @@
 let wasm = null;
 let wasmReady = false;
 let wasmCallableSet = new Set();
+
+// ── Local helper state ──
+let helperUrl = null;
+let helperReady = false;
+let helperInfo = null;
+const HELPER_PORTS = [8090, 8091, 9090];
+const HELPER_TIMEOUT = 1500;
+
+async function probeHelper(url, timeout = HELPER_TIMEOUT) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    try {
+        const res = await fetch(`${url}/health`, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (res.ok) return await res.json();
+    } catch(e) { clearTimeout(timer); }
+    return null;
+}
+
+async function discoverHelper() {
+    // Try stored URL first
+    try {
+        const stored = localStorage.getItem('traits.helper.url');
+        if (stored) {
+            const info = await probeHelper(stored, 1000);
+            if (info) { helperUrl = stored; helperInfo = info; helperReady = true; return; }
+        }
+    } catch(e) {}
+    // Auto-discover on common ports
+    for (const port of HELPER_PORTS) {
+        const url = `http://localhost:${port}`;
+        const info = await probeHelper(url);
+        if (info) {
+            helperUrl = url; helperInfo = info; helperReady = true;
+            try { localStorage.setItem('traits.helper.url', url); } catch(e) {}
+            return;
+        }
+    }
+}
+
+async function callHelper(path, args) {
+    if (!helperReady) return null;
+    const rest = path.replace(/\./g, '/');
+    try {
+        const res = await fetch(`${helperUrl}/traits/${rest}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ args }),
+        });
+        const data = await res.json();
+        return {
+            ok: res.ok,
+            result: res.ok ? data.result : undefined,
+            error: res.ok ? undefined : (data.error || `HTTP ${res.status}`),
+            dispatch: 'helper',
+        };
+    } catch(e) { return null; }
+}
 
 async function loadWasm(wasmUrl, jsUrl) {
     try {
@@ -45,10 +103,14 @@ export class Traits {
      * @param {boolean} [opts.wasm]     - Enable WASM dispatch (default: true in browser)
      * @param {string} [opts.wasmUrl]   - WASM binary URL (default: /wasm/traits_wasm_bg.wasm)
      * @param {string} [opts.jsUrl]     - WASM JS glue URL (default: /wasm/traits_wasm.js)
+     * @param {boolean} [opts.helper]   - Enable helper discovery (default: true)
+     * @param {string} [opts.helperUrl] - Override helper URL (skips discovery)
      */
     constructor(opts = {}) {
         this.server = (opts.server || (typeof location !== 'undefined' ? location.origin : '')).replace(/\/$/, '');
         this.useWasm = opts.wasm !== undefined ? opts.wasm : (typeof window !== 'undefined');
+        this.useHelper = opts.helper !== false;
+        this._helperUrlOverride = opts.helperUrl || null;
         this.wasmUrl = opts.wasmUrl || '/wasm/traits_wasm_bg.wasm';
         this.jsUrl = opts.jsUrl || '/wasm/traits_wasm.js';
         this._initPromise = null;
@@ -67,6 +129,13 @@ export class Traits {
     }
 
     async _doInit() {
+        // Run WASM init and helper discovery in parallel
+        const helperPromise = this.useHelper
+            ? (this._helperUrlOverride
+                ? this.connectHelper(this._helperUrlOverride)
+                : discoverHelper())
+            : Promise.resolve();
+
         if (this.useWasm && !wasmReady) {
             const wasmBase = this.server || '';
             this._wasmInfo = await loadWasm(
@@ -74,11 +143,16 @@ export class Traits {
                 wasmBase + this.jsUrl
             );
         }
+
+        await helperPromise;
+
         return {
             wasm: wasmReady,
             traits: this._wasmInfo?.traits_registered || 0,
             callable: this._wasmInfo?.wasm_callable || 0,
             version: this._wasmInfo?.version || null,
+            helper: helperReady,
+            helperUrl: helperUrl,
         };
     }
 
@@ -98,12 +172,23 @@ export class Traits {
         if (!this._initPromise) await this.init();
 
         const forceMode = opts.force;
-        const useLocal = forceMode === 'wasm' ||
-            (forceMode !== 'rest' && wasmReady && wasmCallableSet.has(path));
 
-        if (useLocal) {
+        // 1. WASM (instant, local)
+        if (forceMode === 'wasm' || (forceMode !== 'rest' && forceMode !== 'helper' && wasmReady && wasmCallableSet.has(path))) {
             return this._callWasm(path, args);
         }
+
+        // 2. Local helper (privileged traits on localhost)
+        if (forceMode === 'helper' || (forceMode !== 'rest' && helperReady)) {
+            const t0 = performance.now();
+            const result = await callHelper(path, args);
+            if (result) {
+                result.ms = Math.round((performance.now() - t0) * 10) / 10;
+                return result;
+            }
+        }
+
+        // 3. Server REST
         return this._callRest(path, args, opts);
     }
 
@@ -119,21 +204,50 @@ export class Traits {
     /**
      * Check where a call will be dispatched.
      * @param {string} path
-     * @returns {'wasm'|'rest'|'unknown'}
+     * @returns {'wasm'|'helper'|'rest'|'none'}
      */
     dispatchMode(path) {
         if (wasmReady && wasmCallableSet.has(path)) return 'wasm';
+        if (helperReady) return 'helper';
         if (this.server) return 'rest';
-        return 'unknown';
+        return 'none';
     }
 
     /**
-     * List all traits. Uses WASM registry if available, REST otherwise.
+     * Connect to a specific helper URL. Overrides auto-discovery.
+     * @param {string} url - e.g. 'http://localhost:8090'
+     * @returns {Promise<{ok: boolean, status?: string, version?: string}>}
+     */
+    async connectHelper(url) {
+        const info = await probeHelper(url.replace(/\/$/, ''));
+        if (info) {
+            helperUrl = url.replace(/\/$/, '');
+            helperInfo = info;
+            helperReady = true;
+            try { localStorage.setItem('traits.helper.url', helperUrl); } catch(e) {}
+            return { ok: true, ...info };
+        }
+        return { ok: false, error: 'Helper not reachable at ' + url };
+    }
+
+    /**
+     * Disconnect from helper and clear stored URL.
+     */
+    disconnectHelper() {
+        helperReady = false;
+        helperUrl = null;
+        helperInfo = null;
+        try { localStorage.removeItem('traits.helper.url'); } catch(e) {}
+    }
+
+    /**
+     * List all traits. Uses WASM registry → helper → REST.
      * @returns {Promise<Array>}
      */
     async list() {
-        if (wasmReady) {
-            return JSON.parse(wasm.list_traits());
+        if (wasmReady) return JSON.parse(wasm.list_traits());
+        if (helperReady) {
+            try { const r = await fetch(`${helperUrl}/traits`); if (r.ok) return r.json(); } catch(e) {}
         }
         const res = await fetch(`${this.server}/traits`);
         return res.json();
@@ -150,6 +264,9 @@ export class Traits {
             return raw ? JSON.parse(raw) : null;
         }
         const rest = path.replace(/\./g, '/');
+        if (helperReady) {
+            try { const r = await fetch(`${helperUrl}/traits/${rest}`); if (r.ok) return r.json(); } catch(e) {}
+        }
         const res = await fetch(`${this.server}/traits/${rest}`);
         if (!res.ok) return null;
         return res.json();
@@ -183,7 +300,7 @@ export class Traits {
 
     /**
      * Get kernel status.
-     * @returns {{wasm: boolean, traits: number, callable: number, version: string|null}}
+     * @returns {{wasm: boolean, traits: number, callable: number, version: string|null, helper: boolean, helperUrl: string|null}}
      */
     get status() {
         return {
@@ -191,8 +308,15 @@ export class Traits {
             traits: this._wasmInfo?.traits_registered || 0,
             callable: this._wasmInfo?.wasm_callable || 0,
             version: this._wasmInfo?.version || null,
+            helper: helperReady,
+            helperUrl: helperUrl,
         };
     }
+
+    /** @returns {boolean} */
+    get helperConnected() { return helperReady; }
+    /** @returns {Object|null} */
+    get helperStatus() { return helperReady ? { url: helperUrl, ...helperInfo } : null; }
 
     // ── Page Rendering ──
 

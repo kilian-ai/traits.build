@@ -115,16 +115,83 @@ function decodeBase64Bytes(base64) {
 }
 
 // ── Minimal SDK (inlined for zero-dependency boot) ──
+// Dispatch cascade: WASM local → helper (localhost) → server REST → error
 let wasm = null, wasmReady = false;
 const wasmCallableSet = new Set();
+
+// ── Local Helper (privileged trait runtime on localhost) ──
+let helperUrl = null;      // e.g. "http://localhost:8090"
+let helperReady = false;
+let helperInfo = null;     // { status, version, trait_count, ... }
+const HELPER_PORTS = [8090, 8091, 9090]; // Discovery ports to try
+const HELPER_TIMEOUT = 1500; // ms per probe
+
+async function probeHelper(url, timeout = HELPER_TIMEOUT) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const res = await fetch(`${url}/health`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch(e) { clearTimeout(timer); }
+  return null;
+}
+
+async function discoverHelper() {
+  // Try stored helper URL first
+  try {
+    const stored = localStorage.getItem('traits.helper.url');
+    if (stored) {
+      const info = await probeHelper(stored, 1000);
+      if (info) { helperUrl = stored; helperInfo = info; helperReady = true; return; }
+    }
+  } catch(e) {}
+
+  // Auto-discover on common ports
+  for (const port of HELPER_PORTS) {
+    const url = `http://localhost:${port}`;
+    const info = await probeHelper(url);
+    if (info) {
+      helperUrl = url; helperInfo = info; helperReady = true;
+      try { localStorage.setItem('traits.helper.url', url); } catch(e) {}
+      return;
+    }
+  }
+}
+
+async function callHelper(path, args) {
+  if (!helperReady) return null;
+  const rest = path.replace(/\./g, '/');
+  try {
+    const res = await fetch(`${helperUrl}/traits/${rest}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ args }),
+    });
+    const data = await res.json();
+    return {
+      ok: res.ok,
+      result: res.ok ? data.result : undefined,
+      error: res.ok ? undefined : (data.error || `HTTP ${res.status}`),
+      dispatch: 'helper',
+      ms: 0,
+    };
+  } catch(e) {
+    return null; // Helper unreachable — cascade continues
+  }
+}
 
 class TraitsSDK {
   constructor() { this._origin = location.origin; }
 
   async call(path, args = []) {
-    // Try WASM first
+    const t0 = performance.now();
+
+    // 1. Try WASM (instant, local)
     if (wasmReady && wasmCallableSet.has(path)) {
-      const t0 = performance.now();
       try {
         const raw = wasm.call(path, JSON.stringify(args));
         return { ok: true, result: JSON.parse(raw), dispatch: 'wasm',
@@ -133,43 +200,70 @@ class TraitsSDK {
         return { ok: false, error: e.message || String(e), dispatch: 'wasm' };
       }
     }
-    // REST fallback (skip if no server — file:// mode)
-    if (isLocal) {
-      return { ok: false, error: 'Trait not available in WASM: ' + path, dispatch: 'none' };
+
+    // 2. Try local helper (privileged traits on localhost)
+    if (helperReady) {
+      const helperResult = await callHelper(path, args);
+      if (helperResult) {
+        helperResult.ms = Math.round((performance.now() - t0) * 10) / 10;
+        return helperResult;
+      }
     }
-    const rest = path.replace(/\./g, '/');
-    const t0 = performance.now();
-    try {
-      const res = await fetch(`${this._origin}/traits/${rest}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ args }),
-      });
-      const data = await res.json();
-      return {
-        ok: res.ok,
-        result: res.ok ? data.result : undefined,
-        error: res.ok ? undefined : (data.error || `HTTP ${res.status}`),
-        dispatch: 'rest',
-        ms: Math.round((performance.now() - t0) * 10) / 10,
-      };
-    } catch(e) {
-      return { ok: false, error: e.message || String(e), dispatch: 'rest' };
+
+    // 3. Try server REST (when served from traits.build, not file://)
+    if (!isLocal) {
+      const rest = path.replace(/\./g, '/');
+      try {
+        const res = await fetch(`${this._origin}/traits/${rest}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ args }),
+        });
+        const data = await res.json();
+        return {
+          ok: res.ok,
+          result: res.ok ? data.result : undefined,
+          error: res.ok ? undefined : (data.error || `HTTP ${res.status}`),
+          dispatch: 'rest',
+          ms: Math.round((performance.now() - t0) * 10) / 10,
+        };
+      } catch(e) {
+        return { ok: false, error: e.message || String(e), dispatch: 'rest' };
+      }
     }
+
+    // 4. No dispatch path available
+    return { ok: false, error: `Trait '${path}' requires local helper. Run: npx traits-helper`, dispatch: 'none' };
+  }
+
+  /** Connect to a specific helper URL (overrides auto-discovery). */
+  async connectHelper(url) {
+    const info = await probeHelper(url);
+    if (info) {
+      helperUrl = url.replace(/\/$/, '');
+      helperInfo = info;
+      helperReady = true;
+      try { localStorage.setItem('traits.helper.url', helperUrl); } catch(e) {}
+      return { ok: true, ...info };
+    }
+    return { ok: false, error: 'Helper not reachable at ' + url };
   }
 
   isCallable(path) { return wasmReady && wasmCallableSet.has(path); }
   dispatchMode(path) {
     if (wasmReady && wasmCallableSet.has(path)) return 'wasm';
-    if (this._origin) return 'rest';
-    return 'unknown';
+    if (helperReady) return 'helper';
+    if (!isLocal) return 'rest';
+    return 'none';
   }
 
   async list() {
     if (wasmReady) return JSON.parse(wasm.list_traits());
-    if (isLocal) return [];
-    const r = await fetch(`${this._origin}/traits`);
-    return r.json();
+    if (helperReady) {
+      try { const r = await fetch(`${helperUrl}/traits`); return r.json(); } catch(e) {}
+    }
+    if (!isLocal) { const r = await fetch(`${this._origin}/traits`); return r.json(); }
+    return [];
   }
 
   async info(path) {
@@ -177,10 +271,15 @@ class TraitsSDK {
       const raw = wasm.get_trait_info(path);
       return raw ? JSON.parse(raw) : null;
     }
-    if (isLocal) return null;
     const rest = path.replace(/\./g, '/');
-    const res = await fetch(`${this._origin}/traits/${rest}`);
-    return res.ok ? res.json() : null;
+    if (helperReady) {
+      try { const r = await fetch(`${helperUrl}/traits/${rest}`); if (r.ok) return r.json(); } catch(e) {}
+    }
+    if (!isLocal) {
+      const res = await fetch(`${this._origin}/traits/${rest}`);
+      return res.ok ? res.json() : null;
+    }
+    return null;
   }
 
   async search(query) {
@@ -191,8 +290,10 @@ class TraitsSDK {
   }
 
   get callableTraits() { return [...wasmCallableSet]; }
+  get helperConnected() { return helperReady; }
+  get helperStatus() { return helperReady ? { url: helperUrl, ...helperInfo } : null; }
   get status() {
-    return { wasm: wasmReady, callable: wasmCallableSet.size };
+    return { wasm: wasmReady, callable: wasmCallableSet.size, helper: helperReady, helperUrl };
   }
 }
 
@@ -485,8 +586,27 @@ window.addEventListener('hashchange', () => {
   if (hash && ROUTES[hash]) navigate(hash, false);
 });
 
+function updateStatusBar() {
+  const parts = [];
+  if (wasmReady) parts.push(`WASM (${wasmCallableSet.size})`);
+  if (helperReady) parts.push(`helper`);
+  else if (!isLocal) parts.push('REST');
+
+  if (wasmReady || helperReady) {
+    dot.className = 'dot ok';
+  } else if (!isLocal) {
+    dot.className = 'dot ok';
+  } else {
+    dot.className = 'dot off';
+  }
+  statusText.textContent = parts.join(' + ') || 'offline';
+}
+
 // ── Boot sequence ──
 async function boot() {
+  // Start helper discovery in parallel with WASM init (non-blocking)
+  const helperPromise = discoverHelper();
+
   try {
     await loadScript(runtimeScriptPath());
     const mod = window.TraitsWasm;
@@ -497,19 +617,19 @@ async function boot() {
     wasm = mod;
     wasmReady = true;
 
-    dot.className = 'dot ok';
-    statusText.textContent = `${info.traits_registered} traits · WASM`;
-
     // Pre-load terminal as classic script (import() blocked in file:// mode)
     try {
       const termSrc = isLocal ? `./terminal-runtime.js?v=${Date.now()}` : '/static/www/static/terminal-runtime.js';
       await loadScript(termSrc);
     } catch(e) { console.warn('Terminal pre-load failed:', e); }
   } catch(e) {
-    console.warn('WASM init failed, using REST only:', e);
-    dot.className = 'dot off';
-    statusText.textContent = isLocal ? 'WASM load failed' : 'REST mode';
+    console.warn('WASM init failed:', e);
   }
+
+  // Wait for helper discovery to finish (has its own timeout)
+  await helperPromise;
+
+  updateStatusBar();
 
   // Show nav, hide overlay
   nav.style.display = '';
