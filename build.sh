@@ -197,6 +197,11 @@ out_path.write_text(html)
 PY
 fi
 
+if [[ -f "$INDEX_STANDALONE_HTML" ]]; then
+    cp "$INDEX_STANDALONE_HTML" index.html
+    echo "Copied $INDEX_STANDALONE_HTML → index.html"
+fi
+
 echo "Copying dylibs..."
 copy_dylib "trait_www_traits_build" "traits/www/traits/build" "build"
 copy_dylib "trait_sys_checksum"     "traits/sys/checksum"     "checksum"

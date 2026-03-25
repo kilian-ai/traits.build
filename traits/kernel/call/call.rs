@@ -15,7 +15,13 @@ pub fn call(args: &[Value]) -> Value {
         return serde_json::json!({ "error": "trait_path is required" });
     }
 
-    match crate::dispatcher::compiled::dispatch(trait_path, &call_args) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let result = crate::dispatcher::compiled::dispatch(trait_path, &call_args);
+
+    #[cfg(target_arch = "wasm32")]
+    let result = crate::wasm_traits::dispatch(trait_path, &call_args);
+
+    match result {
         Some(v) => v,
         None => serde_json::json!({
             "error": format!("Trait '{}' not found", trait_path)

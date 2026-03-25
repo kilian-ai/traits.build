@@ -41,6 +41,18 @@ pub mod www_admin_spa;
 #[path = "../../../../www/static/static.rs"]
 pub mod www_static;
 
+#[path = "../../../../www/playground/playground.rs"]
+pub mod www_playground;
+
+#[path = "../../../../www/wasm/wasm.rs"]
+pub mod www_wasm;
+
+#[path = "../../../../www/chat_logs/chat_logs.rs"]
+pub mod www_chat_logs;
+
+#[path = "../../../../www/llm_test/llm_test.rs"]
+pub mod www_llm_test;
+
 #[path = "../../../../sys/openapi/openapi.rs"]
 pub mod openapi;
 
@@ -50,8 +62,12 @@ pub mod test_runner;
 #[path = "../../../../sys/cli/wasm/wasm_impl.rs"]
 pub mod wasm_impl;
 
+#[path = "../../../call/call.rs"]
+pub mod call;
+
 /// WASM-callable trait paths (curated list of pure-computation traits).
 pub const WASM_CALLABLE: &[&str] = &[
+    "kernel.call",
     "kernel.types",
     "sys.checksum",
     "sys.cli.wasm",
@@ -61,17 +77,22 @@ pub const WASM_CALLABLE: &[&str] = &[
     "sys.registry",
     "sys.test_runner",
     "sys.version",
-    "www.traits.build",
-    "www.docs",
-    "www.docs.api",
     "www.admin",
     "www.admin.spa",
+    "www.chat_logs",
+    "www.docs",
+    "www.docs.api",
+    "www.llm_test",
+    "www.playground",
     "www.static",
+    "www.traits.build",
+    "www.wasm",
 ];
 
 /// Dispatch a trait call by path. Returns None if the path isn't WASM-callable.
 pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
     match trait_path {
+        "kernel.call" => Some(call::call(args)),
         "kernel.types" => Some(types::types(args)),
         "sys.checksum" => Some(checksum::checksum_dispatch(args)),
         "sys.cli.wasm" => Some(wasm_impl::wasm_dispatch(args)),
@@ -81,12 +102,16 @@ pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
         "sys.registry" => Some(registry::registry(args)),
         "sys.test_runner" => Some(test_runner::test_runner(args)),
         "sys.version" => Some(version::version(args)),
-        "www.traits.build" => Some(www_build::website(args)),
-        "www.docs" => Some(www_docs::docs(args)),
-        "www.docs.api" => Some(www_docs_api::api_docs(args)),
         "www.admin" => Some(www_admin::admin(args)),
         "www.admin.spa" => Some(www_admin_spa::spa(args)),
+        "www.chat_logs" => Some(www_chat_logs::chat_logs(args)),
+        "www.docs" => Some(www_docs::docs(args)),
+        "www.docs.api" => Some(www_docs_api::api_docs(args)),
+        "www.llm_test" => Some(www_llm_test::llm_test(args)),
+        "www.playground" => Some(www_playground::playground(args)),
         "www.static" => Some(www_static::static_page(args)),
+        "www.traits.build" => Some(www_build::website(args)),
+        "www.wasm" => Some(www_wasm::wasm_page(args)),
         _ => None,
     }
 }
