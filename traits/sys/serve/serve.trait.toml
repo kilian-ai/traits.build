@@ -1,8 +1,8 @@
 [trait]
 description = "Start the HTTP API server"
-version = "v260325"
+version = "v260325.200917"
 epoch = 0
-checksum = "2f4561e00eeadf2f2b0eeaa46512c6c097df15954d87617bb53df0d67eae09d2"
+checksum = "4519d418dc8ae32748b0676de97d7934d16606409da0ac0f12ba81b81cd60522"
 author = "system"
 tags = ["sys", "server"]
 background = true
@@ -15,6 +15,7 @@ provides = ["sys/serve"]
 "/wasm" = "www/webpage"
 "/static" = "www/webpage"
 "/admin" = "www/webpage"
+"/settings" = "www/webpage"
 "/docs" = "www/webpage"
 "/docs/api" = "www/webpage"
 "/chat-logs" = "www/webpage"
@@ -33,6 +34,7 @@ secrets = "sys/secrets"
 "/wasm" = "www.wasm"
 "/static" = "www.static"
 "/admin" = "www.admin"
+"/settings" = "www.admin"
 "/docs" = "www.docs"
 "/docs/api" = "www.docs.api"
 "/chat-logs" = "www.chat_logs"

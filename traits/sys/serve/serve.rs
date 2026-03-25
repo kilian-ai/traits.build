@@ -383,8 +383,8 @@ async fn serve_wasm_asset(req: HttpRequest) -> HttpResponse {
 async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
     let url_path = req.path();
 
-    // Protect /admin and /llm-test paths with HTTP Basic Auth
-    if url_path.starts_with("/admin") || url_path.starts_with("/llm-test") {
+    // Protect /admin, /settings, and /llm-test paths with HTTP Basic Auth
+    if url_path.starts_with("/admin") || url_path.starts_with("/settings") || url_path.starts_with("/llm-test") {
         if let Err(resp) = check_basic_auth(&req) {
             return resp;
         }

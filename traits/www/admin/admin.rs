@@ -18,13 +18,38 @@ pub fn admin(_args: &[Value]) -> Value {
             head {
                 meta charset="UTF-8";
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
-                title { "traits.build \u{2014} Admin" }
+                title { "traits.build \u{2014} Settings" }
                 style { (PreEscaped(CSS)) }
             }
             body {
                 div.container {
-                    h1 { "traits.build " span { "admin" } }
-                    p.subtitle { "Deployment control panel \u{2014} Fly.io \u{00B7} iad region" }
+                    h1 { "traits.build " span { "settings" } }
+                    p.subtitle { "Setup, run commands, and manage your deployment" }
+
+                    // Setup
+                    div.card id="setupCard" {
+                        h2 { "Setup" }
+                        div id="platformInfo" {}
+                    }
+
+                    // Run Command
+                    div.card {
+                        h2 { "Run" }
+                        div style="display:flex;gap:0.5rem;align-items:center;" {
+                            span style="color:#555;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.95rem;" { "traits" }
+                            input id="cmdInput" type="text" placeholder="list" autocomplete="off" spellcheck="false"
+                                style="flex:1;background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:0.5rem 0.7rem;color:#e0e0e0;font-family:'Berkeley Mono','SF Mono',monospace;font-size:0.9rem;" {}
+                            button.primary id="btnRun" onclick="runCommand()" { "Run" }
+                        }
+                        div.examples style="margin-top:0.5rem;" {
+                            span.example onclick="setCmd('list')" { "list" }
+                            span.example onclick="setCmd('info sys.checksum')" { "info" }
+                            span.example onclick="setCmd('checksum hash hello')" { "checksum" }
+                            span.example onclick="setCmd('test_runner *')" { "test" }
+                            span.example onclick="setCmd('version')" { "version" }
+                        }
+                        div.log id="cmdLog" style="display:none;margin-top:1rem;" {}
+                    }
 
                     // Server Status
                     div.card {
@@ -239,6 +264,16 @@ const CSS: &str = r##"
   .step-text { color: #bbb; }
   .step-text code { font-size: 0.82rem; }
   .note { color: #888; font-size: 0.82rem; font-style: italic; margin-top: 0.5rem; }
+  .examples { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .example { color: #557; font-size: 0.78rem; cursor: pointer; padding: 0.15rem 0.5rem; border: 1px solid #252525; border-radius: 3px; transition: all 0.15s; }
+  .example:hover { color: #8af; border-color: #446; }
+  .platform-badge { display: inline-flex; align-items: center; gap: 0.5rem; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 6px; padding: 0.4rem 0.8rem; font-size: 0.85rem; margin-bottom: 1rem; }
+  .platform-badge .icon { font-size: 1.1rem; }
+  .install-row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-top: 0.75rem; }
+  .install-alt { color: #555; font-size: 0.78rem; margin-top: 0.75rem; }
+  .install-alt code { font-size: 0.75rem; cursor: pointer; }
+  .install-alt code:hover { color: #aeb; }
+  .install-alt .copied { color: #6b9; font-size: 0.75rem; margin-left: 0.5rem; }
 "##;
 
 const JS: &str = r##"
@@ -247,6 +282,185 @@ var _bootTime = Date.now();
 var _isLocal = location.protocol === 'file:';
 var _jsProviders = {};
 var _SECRET_PFX = 'traits.secret.';
+
+// ═══════════════════════════════════════════════════════════════
+// Setup — platform detection + one-click install
+// ═══════════════════════════════════════════════════════════════
+(function setupCard() {
+  var ua = navigator.userAgent || '';
+  var p = navigator.platform || '';
+  var os = 'unknown', icon = '💻', label = 'Unknown';
+  if (/iPhone|iPad|iPod/.test(ua) || (/Mac/.test(p) && 'ontouchend' in document)) { os = 'ios'; icon = '📱'; label = 'iPhone / iPad'; }
+  else if (/Android/.test(ua)) { os = 'android'; icon = '📱'; label = 'Android'; }
+  else if (/Mac/.test(p) || /Mac/.test(ua)) { os = 'macos'; icon = '🍎'; label = 'macOS'; }
+  else if (/Win/.test(p) || /Win/.test(ua)) { os = 'windows'; icon = '🪟'; label = 'Windows'; }
+  else if (/Linux/.test(p) || /Linux/.test(ua)) { os = 'linux'; icon = '🐧'; label = 'Linux'; }
+  else if (/CrOS/.test(ua)) { os = 'chromeos'; icon = '💻'; label = 'ChromeOS'; }
+
+  var el = document.getElementById('platformInfo');
+  if (!el) return;
+
+  var h = '<div class="platform-badge"><span class="icon">' + icon + '</span> ' + label + '</div>';
+
+  if (os === 'ios' || os === 'android') {
+    h += '<p style="color:#bbb;font-size:0.9rem;">No install needed — everything runs in your browser.</p>';
+    h += '<div class="install-row">';
+    h += '<button class="primary" onclick="addToHomeScreen()">Add to Home Screen</button>';
+    h += '<button onclick="location.href=\'/\'">Open traits.build</button>';
+    h += '</div>';
+    h += '<p class="note" style="margin-top:1rem;">Traits run via the remote API. For heavy workloads, set up a local server on a desktop machine.</p>';
+  } else {
+    h += '<p style="color:#bbb;font-size:0.9rem;">Install the traits runtime to run commands locally.</p>';
+    h += '<div class="install-row">';
+    if (os === 'macos') {
+      h += '<button class="primary" onclick="downloadInstaller(\'macos\')">Download Installer</button>';
+    } else if (os === 'windows') {
+      h += '<button class="primary" onclick="downloadInstaller(\'windows\')">Download Installer</button>';
+    } else {
+      h += '<button class="primary" onclick="downloadInstaller(\'linux\')">Download Installer</button>';
+    }
+    h += '<button onclick="downloadInstaller(\'run\')">Run Once (no install)</button>';
+    h += '</div>';
+    h += '<div class="install-alt">or: <code onclick="copyInstall(this)">curl -fsSL https://traits.build/local/install.sh | bash</code></div>';
+  }
+
+  el.innerHTML = h;
+})();
+
+function downloadInstaller(mode) {
+  var name, content, mime = 'application/octet-stream';
+  if (mode === 'run') {
+    name = 'traits.command';
+    content = '#!/bin/bash\n' +
+      '# traits.build — one-shot runner\n' +
+      'curl -fsSL https://traits.build/local/traits.sh | bash\n';
+  } else if (mode === 'macos') {
+    name = 'install-traits.command';
+    content = '#!/bin/bash\n' +
+      '# traits.build — installer for macOS\n' +
+      'curl -fsSL https://traits.build/local/install.sh | bash\n' +
+      'echo ""\n' +
+      'echo "Done! You can close this window."\n' +
+      'echo "Start with: traits serve"\n' +
+      'read -p "Press Enter to close..."\n';
+  } else if (mode === 'windows') {
+    name = 'install-traits.bat';
+    content = '@echo off\r\n' +
+      'echo traits.build installer\r\n' +
+      'echo.\r\n' +
+      'where wsl >nul 2>&1 && (\r\n' +
+      '  echo Installing via WSL...\r\n' +
+      '  wsl curl -fsSL https://traits.build/local/install.sh ^| bash\r\n' +
+      ') || (\r\n' +
+      '  echo WSL not found. Install WSL first:\r\n' +
+      '  echo   wsl --install\r\n' +
+      '  echo Then re-run this installer.\r\n' +
+      ')\r\n' +
+      'pause\r\n';
+  } else {
+    name = 'install-traits.sh';
+    content = '#!/bin/bash\n' +
+      '# traits.build — installer\n' +
+      'curl -fsSL https://traits.build/local/install.sh | bash\n';
+  }
+  var blob = new Blob([content], { type: mime });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('Downloaded ' + name);
+}
+
+function copyInstall(el) {
+  var text = el.textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    var s = document.createElement('span');
+    s.className = 'copied';
+    s.textContent = 'copied!';
+    el.parentNode.appendChild(s);
+    setTimeout(function() { s.remove(); }, 2000);
+  });
+}
+
+function addToHomeScreen() {
+  if (window.deferredPrompt) {
+    window.deferredPrompt.prompt();
+  } else {
+    var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (isIOS) {
+      alert('Tap the Share button (↑) then "Add to Home Screen"');
+    } else {
+      alert('Open browser menu (⋮) and tap "Add to Home Screen"');
+    }
+  }
+}
+window.addEventListener('beforeinstallprompt', function(e) { e.preventDefault(); window.deferredPrompt = e; });
+
+// ═══════════════════════════════════════════════════════════════
+// Run Command — universal trait runner
+// ═══════════════════════════════════════════════════════════════
+function setCmd(cmd) {
+  document.getElementById('cmdInput').value = cmd;
+  document.getElementById('cmdInput').focus();
+}
+
+document.getElementById('cmdInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') runCommand();
+});
+
+function cmdLog(msg, type) {
+  var el = document.getElementById('cmdLog');
+  el.style.display = 'block';
+  var t = new Date().toTimeString().slice(0,8);
+  var cls = type || 'info';
+  el.innerHTML += '\n<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function runCommand() {
+  var raw = document.getElementById('cmdInput').value.trim();
+  if (!raw) return;
+  // Parse: first word is the subcommand (trait name without sys.), rest are args
+  // e.g. "checksum hash hello" → sys.checksum ["hash", "hello"]
+  // e.g. "list" → sys.list []
+  // e.g. "sys.checksum hash hello" → sys.checksum ["hash", "hello"]
+  var parts = [];
+  var rx = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)/g;
+  var m;
+  while ((m = rx.exec(raw)) !== null) {
+    var tok = m[1];
+    if ((tok[0] === '"' || tok[0] === "'") && tok[tok.length-1] === tok[0])
+      tok = tok.slice(1, -1);
+    parts.push(tok);
+  }
+  if (parts.length === 0) return;
+  var cmd = parts[0];
+  var args = parts.slice(1);
+  // Resolve trait path
+  var traitPath = cmd;
+  if (cmd.indexOf('.') === -1) {
+    traitPath = 'sys.' + cmd;  // bare name → sys.*
+  }
+  document.getElementById('btnRun').disabled = true;
+  document.getElementById('btnRun').textContent = '...';
+  cmdLog('$ traits ' + raw);
+  try {
+    var r = await callTrait(traitPath, args);
+    if (r.error) {
+      cmdLog('Error: ' + r.error, 'error');
+    } else {
+      var d = r.result;
+      if (typeof d === 'string') {
+        d.split('\n').forEach(function(line) { cmdLog(line); });
+      } else if (d !== null && d !== undefined) {
+        JSON.stringify(d, null, 2).split('\n').forEach(function(line) { cmdLog(line); });
+      }
+    }
+  } catch(e) { cmdLog('Error: ' + e.message, 'error'); }
+  document.getElementById('btnRun').disabled = false;
+  document.getElementById('btnRun').textContent = 'Run';
+}
 
 function log(msg, type) {
   const el = document.getElementById('log');
