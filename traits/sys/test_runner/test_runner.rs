@@ -220,6 +220,11 @@ fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
 
     let mut results = Vec::new();
     for &(trait_path, features_json) in crate::BUILTIN_FEATURES {
+        // Only test traits that can actually be dispatched in WASM
+        if !crate::wasm_traits::WASM_CALLABLE.contains(&trait_path) {
+            continue;
+        }
+
         let parts: Vec<&str> = trait_path.splitn(2, '.').collect();
         if parts.len() != 2 { continue; }
         let (ns, name) = (parts[0], parts[1]);
