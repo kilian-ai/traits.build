@@ -454,6 +454,40 @@ fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
         }
     }
 
+    // Also sync to WASM kernel Cargo.toml
+    let wasm_cargo_path = manifest_dir.join("traits/kernel/wasm/Cargo.toml");
+    if let Ok(wasm_content) = fs::read_to_string(&wasm_cargo_path) {
+        let ver_str = new_ver.strip_prefix('v').unwrap_or(&new_ver);
+        let cargo_ver = if let Some((date, time)) = ver_str.split_once('.') {
+            let patch: u32 = time.parse().unwrap_or(0);
+            format!("0.{}.{}", date, patch)
+        } else {
+            format!("0.{}.0", ver_str)
+        };
+        let mut in_package = false;
+        let mut replaced = false;
+        let updated: String = wasm_content
+            .lines()
+            .map(|line| {
+                if line.trim() == "[package]" {
+                    in_package = true;
+                } else if line.trim().starts_with('[') {
+                    in_package = false;
+                }
+                if in_package && !replaced && line.trim().starts_with("version") && line.contains('=') {
+                    replaced = true;
+                    format!("version = \"{}\"", cargo_ver)
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if updated != wasm_content {
+            let _ = fs::write(&wasm_cargo_path, updated);
+        }
+    }
+
     new_ver
 }
 

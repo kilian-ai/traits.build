@@ -1,25 +1,20 @@
-const API = window.location.origin + '/traits';
 var allTraits = [];
 var selectedTrait = null;
 var dropdownIdx = -1;
 
-// ── Bootstrap ──
-(async function() {
-  try {
-    const r = await fetch(API);
-    allTraits = await r.json();
-    // Sort by path
-    allTraits.sort((a, b) => (a.path || '').localeCompare(b.path || ''));
-  } catch(e) { console.error('Failed to load traits', e); }
-
+// ── Bootstrap (via TC: data-trait="sys.list" on container) ──
+TC.on('initPlayground', function(el, traits) {
+  allTraits = (traits || []).sort(function(a, b) {
+    return (a.path || '').localeCompare(b.path || '');
+  });
   // If URL has ?trait=xxx, auto-select
-  const p = new URLSearchParams(window.location.search);
+  var p = new URLSearchParams(window.location.search);
   if (p.get('trait')) {
-    const t = allTraits.find(t => t.path === p.get('trait'));
+    var t = allTraits.find(function(t) { return t.path === p.get('trait'); });
     if (t) selectTrait(t);
     document.getElementById('traitSearch').value = p.get('trait');
   }
-})();
+});
 
 // ── Search + Dropdown ──
 const searchEl = document.getElementById('traitSearch');
@@ -169,24 +164,18 @@ async function runTrait() {
   }, 100);
 
   try {
-    const path = selectedTrait.path.replace(/\./g, '/');
-    const res = await fetch(API + '/' + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ args: args })
-    });
+    const res = await window._traitsSDK.call(selectedTrait.path, args);
     clearInterval(timer);
     const elapsed = ((Date.now() - start) / 1000).toFixed(2);
-    elapsedEl.textContent = elapsed + 's';
+    elapsedEl.textContent = elapsed + 's (' + (res.dispatch || '?') + ')';
 
-    const data = await res.json();
     const resultEl = document.getElementById('resultOutput');
     document.getElementById('resultPanel').hidden = false;
 
-    if (data.error) {
-      resultEl.innerHTML = '<span class="err">' + esc(data.error) + '</span>';
+    if (!res.ok) {
+      resultEl.innerHTML = '<span class="err">' + esc(res.error) + '</span>';
     } else {
-      const val = data.result !== undefined ? data.result : data;
+      const val = res.result;
       resultEl.textContent = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
     }
     resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

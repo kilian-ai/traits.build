@@ -60,34 +60,15 @@ const HTML: &str = r##"<!DOCTYPE html>
 </head>
 <body>
 <div id="loading">Loading API documentation…</div>
-<div id="redoc"></div>
+<div id="redoc" data-trait="sys.openapi" data-handler="initRedoc"></div>
 <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
 <script>
-(async function() {
-  var spec = null;
-  // Use SDK if available (WASM-first, REST-fallback)
-  if (window._traitsSDK) {
-    try {
-      var r = await window._traitsSDK.call('sys.openapi', []);
-      if (r.ok) spec = r.result;
-    } catch(e) { console.warn('SDK openapi failed:', e); }
-  }
-  // Fallback to direct REST
-  if (!spec) {
-    try {
-      var res = await fetch('/traits/sys/openapi', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ args: [] })
-      });
-      var data = await res.json();
-      spec = data.result;
-    } catch(e) {}
-  }
+// ── Spec loading via TC (data-trait="sys.openapi" on #redoc) ──
+TC.on('initRedoc', function(el, spec) {
   document.getElementById('loading').className = 'hidden';
   if (!spec || !spec.openapi) {
     var isLocal = location.protocol === 'file:';
-    document.getElementById('redoc').innerHTML = isLocal
+    el.innerHTML = isLocal
       ? '<div style="padding:2rem;text-align:center;color:var(--fg,#c9d1d9)">' +
         '<h2 style="margin-bottom:1rem;color:#f0f6fc">API Reference</h2>' +
         '<p style="color:#8b949e;max-width:480px;margin:0 auto">The interactive API documentation requires a running server to generate the OpenAPI spec.</p>' +
@@ -128,8 +109,20 @@ const HTML: &str = r##"<!DOCTYPE html>
       expandResponses: '200',
       hideDownloadButton: false,
       sortPropsAlphabetically: true
-    }, document.getElementById('redoc'));
-})();
+    }, el);
+});
+// Handle trait call failure (network error, no dispatch path, etc.)
+document.getElementById('redoc').addEventListener('trait:error', function() {
+  document.getElementById('loading').className = 'hidden';
+  var isLocal = location.protocol === 'file:';
+  this.innerHTML = isLocal
+    ? '<div style="padding:2rem;text-align:center;color:var(--fg,#c9d1d9)">' +
+      '<h2 style="margin-bottom:1rem;color:#f0f6fc">API Reference</h2>' +
+      '<p style="color:#8b949e;max-width:480px;margin:0 auto">The interactive API documentation requires a running server to generate the OpenAPI spec.</p>' +
+      '<p style="margin-top:1rem"><code style="background:#161b22;padding:0.3rem 0.6rem;border-radius:4px;color:#8bdb8b">./target/release/traits serve -p 8091</code></p>' +
+      '<p style="margin-top:0.5rem;color:#8b949e">Then visit <a href="http://127.0.0.1:8091/docs/api">http://127.0.0.1:8091/docs/api</a></p></div>'
+    : '<div style="padding:2rem;color:#f85149">Failed to load OpenAPI spec.</div>';
+});
 </script>
 
 <div class="terminal-wrap" id="termWrap" style="display:none">

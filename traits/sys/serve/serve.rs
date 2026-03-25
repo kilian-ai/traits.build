@@ -378,6 +378,27 @@ async fn serve_wasm_asset(req: HttpRequest) -> HttpResponse {
     }
 }
 
+/// Serve the running binary for download.
+/// Returns the current executable as application/octet-stream with platform headers.
+async fn serve_binary() -> HttpResponse {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return HttpResponse::InternalServerError()
+            .body("Cannot determine executable path"),
+    };
+    let binary = match std::fs::read(&exe) {
+        Ok(b) => b,
+        Err(_) => return HttpResponse::InternalServerError()
+            .body("Cannot read executable"),
+    };
+    HttpResponse::Ok()
+        .content_type("application/octet-stream")
+        .insert_header(("X-Traits-OS", std::env::consts::OS))
+        .insert_header(("X-Traits-Arch", std::env::consts::ARCH))
+        .insert_header(("Content-Disposition", "attachment; filename=\"traits\""))
+        .body(binary)
+}
+
 /// Serve pages by resolving keyed interface bindings from sys.serve's [requires]/[bindings].
 /// Each key is a URL path (e.g. "/", "/admin"), resolved to a page trait.
 async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
@@ -458,6 +479,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
             .route("/traits/{path:.*}", web::get().to(get_trait_info))
             .route("/static/{path:.*}", web::get().to(serve_static))
             .route("/wasm/{path:.*}", web::get().to(serve_wasm_asset))
+            .route("/local/binary", web::get().to(serve_binary))
             .default_service(web::to(serve_page))
     })
     .workers(2)

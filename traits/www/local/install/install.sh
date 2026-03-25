@@ -17,6 +17,17 @@ case "$ARCH" in
     aarch64|arm64) ARCH="arm64" ;;
 esac
 
+# Normalize to Rust platform names for server matching
+RUST_OS="$OS"
+RUST_ARCH="$ARCH"
+case "$OS" in
+    darwin) RUST_OS="macos" ;;
+esac
+case "$ARCH" in
+    amd64) RUST_ARCH="x86_64" ;;
+    arm64) RUST_ARCH="aarch64" ;;
+esac
+
 echo ""
 echo "  traits.build — installer"
 echo "  Platform: $OS/$ARCH"
@@ -25,8 +36,25 @@ echo ""
 
 mkdir -p "$INSTALL_DIR"
 
-# ── 1. Try GitHub releases ──
+# ── 1. Try traits.build server binary ──
 INSTALLED=false
+HEADERS="$(curl -fsSL -D - -o "$INSTALL_DIR/traits.tmp" "https://traits.build/local/binary" 2>/dev/null || true)"
+if [ -f "$INSTALL_DIR/traits.tmp" ] && [ -s "$INSTALL_DIR/traits.tmp" ]; then
+    REMOTE_OS="$(echo "$HEADERS" | grep -i 'X-Traits-OS:' | tr -d '\r' | awk '{print $2}')"
+    REMOTE_ARCH="$(echo "$HEADERS" | grep -i 'X-Traits-Arch:' | tr -d '\r' | awk '{print $2}')"
+    if [ "$REMOTE_OS" = "$RUST_OS" ] && [ "$REMOTE_ARCH" = "$RUST_ARCH" ]; then
+        mv "$INSTALL_DIR/traits.tmp" "$INSTALL_DIR/traits"
+        chmod +x "$INSTALL_DIR/traits"
+        INSTALLED=true
+        echo "✓ Installed traits ($REMOTE_OS/$REMOTE_ARCH) → $INSTALL_DIR/traits"
+    else
+        echo "  Server binary is $REMOTE_OS/$REMOTE_ARCH — need $RUST_OS/$RUST_ARCH"
+        rm -f "$INSTALL_DIR/traits.tmp"
+    fi
+fi
+
+# ── 2. Try GitHub releases ──
+if [ "$INSTALLED" = false ]; then
 LATEST="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
     | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
 
@@ -40,6 +68,7 @@ if [ -n "$LATEST" ]; then
     else
         echo "  (no prebuilt binary for $OS/$ARCH)"
     fi
+fi
 fi
 
 # ── 2. Fallback: build from source ──

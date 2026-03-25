@@ -1,7 +1,7 @@
 [trait]
 description = "Serve the API documentation page (Redoc)"
-version = "v260325.050525"
-checksum = "4da78b17463a2bd809afc7a46de0bb437dfbe8fa6ec7265df574b9e4b1866564"
+version = "v260325.225308"
+checksum = "58d1cfe88533ac4622d4fb56f1382d48d4292219295d5502ea231c9f37556b02"
 author = "system"
 tags = ["www", "docs", "api"]
 provides = ["www/webpage"]
