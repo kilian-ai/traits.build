@@ -262,17 +262,14 @@ var _statusPaused = false;
 
 async function callTrait(path, args) {
   args = args || [];
-  // 1. SDK dispatch (WASM kernel → REST server cascade)
+  // 1. WASM + REST via SDK (SPA shell provides _traitsSDK)
   if (window._traitsSDK) {
     var r = await window._traitsSDK.call(path, args);
     if (r.ok) return { result: r.result };
+    // SDK tried REST and got a server error — propagate, don't retry
+    if (r.dispatch === 'rest') return { error: r.error };
   }
-  // 2. JS-native provider (browser OS layer: localStorage, Fly API, etc.)
-  if (_jsProviders[path]) {
-    try { return { result: await _jsProviders[path](args) }; }
-    catch(e) { return { error: e.message || String(e) }; }
-  }
-  // 3. Direct REST fallback (no SDK)
+  // 2. Direct REST (standalone page served by server, no SDK)
   if (!_isLocal) {
     try {
       var res = await fetch(API + '/' + path, {
@@ -281,7 +278,12 @@ async function callTrait(path, args) {
         body: JSON.stringify({ args: args })
       });
       return await res.json();
-    } catch(e) { return { error: e.message }; }
+    } catch(e) { /* server unreachable — fall through to JS providers */ }
+  }
+  // 3. JS-native provider (browser-only fallback: localStorage, etc.)
+  if (_jsProviders[path]) {
+    try { return { result: await _jsProviders[path](args) }; }
+    catch(e) { return { error: e.message || String(e) }; }
   }
   return { error: 'No provider for ' + path };
 }
@@ -315,72 +317,15 @@ _jsProviders['sys.secrets'] = async function(args) {
   return { ok: false, error: 'Unknown action: ' + action };
 };
 
-// ── Fly.io Machines API helpers ──
-function _flyToken() { return localStorage.getItem(_SECRET_PFX + 'fly_api_token') || ''; }
-function _flyApp() { return (document.getElementById('cfgFlyApp') || {}).textContent || 'polygrait-api'; }
-function _flyBase() { return 'https://api.machines.dev/v1/apps/' + encodeURIComponent(_flyApp()); }
-function _flyHdr() { return { 'Authorization': 'Bearer ' + _flyToken(), 'Content-Type': 'application/json' }; }
-async function _flyMachines() {
-  var r = await fetch(_flyBase() + '/machines', { headers: _flyHdr() });
-  if (!r.ok) throw new Error('Fly API HTTP ' + r.status);
-  return r.json();
-}
-
-// ── www.admin.deploy → Fly Machines API ──
-_jsProviders['www.admin.deploy'] = async function(args) {
-  var mode = String(args[0] || '');
-  if (!_flyToken()) return { ok: false, error: 'Set fly_api_token in Secrets below' };
-  if (mode === 'status') {
-    var ml = await _flyMachines();
-    return { ok: true, machines: ml.map(function(m) {
-      return { id: m.id, state: m.state, region: m.region, image: (m.config && m.config.image) || '\u2014' };
-    })};
-  }
-  var ml = await _flyMachines();
-  var results = [];
-  for (var i = 0; i < ml.length; i++) {
-    if (ml[i].state === 'started') {
-      await fetch(_flyBase() + '/machines/' + ml[i].id + '/stop', { method: 'POST', headers: _flyHdr() });
-      await new Promise(function(ok) { setTimeout(ok, 3000); });
-    }
-    await fetch(_flyBase() + '/machines/' + ml[i].id + '/start', { method: 'POST', headers: _flyHdr() });
-    results.push(ml[i].id + ': restarted');
-  }
-  return { ok: true, machines: ml.length, results: results };
+// ── Fly.io admin traits — server-only (CORS prevents direct browser API access) ──
+_jsProviders['www.admin.deploy'] = async function() {
+  throw new Error('Fly.io management requires a running traits server');
 };
-
-// ── www.admin.scale → Fly Machines API ──
-_jsProviders['www.admin.scale'] = async function(args) {
-  var n = parseInt(args[0]) || 0;
-  if (!_flyToken()) return { ok: false, error: 'fly_api_token not set' };
-  var ml = await _flyMachines();
-  var results = [];
-  for (var i = 0; i < ml.length; i++) {
-    if (n === 0 && ml[i].state === 'started') {
-      await fetch(_flyBase() + '/machines/' + ml[i].id + '/stop', { method: 'POST', headers: _flyHdr() });
-      results.push(ml[i].id + ': stopped');
-    } else if (n > 0 && ml[i].state !== 'started') {
-      await fetch(_flyBase() + '/machines/' + ml[i].id + '/start', { method: 'POST', headers: _flyHdr() });
-      results.push(ml[i].id + ': started');
-    }
-  }
-  return { ok: true, action: n === 0 ? 'Stopped' : 'Started', results: results };
+_jsProviders['www.admin.scale'] = async function() {
+  throw new Error('Fly.io scaling requires a running traits server');
 };
-
-// ── www.admin.destroy → Fly Machines API ──
 _jsProviders['www.admin.destroy'] = async function() {
-  if (!_flyToken()) return { ok: false, error: 'fly_api_token not set' };
-  var ml = await _flyMachines();
-  var results = [];
-  for (var i = 0; i < ml.length; i++) {
-    if (ml[i].state === 'started') {
-      await fetch(_flyBase() + '/machines/' + ml[i].id + '/stop', { method: 'POST', headers: _flyHdr() });
-      await new Promise(function(ok) { setTimeout(ok, 2000); });
-    }
-    await fetch(_flyBase() + '/machines/' + ml[i].id + '?force=true', { method: 'DELETE', headers: _flyHdr() });
-    results.push(ml[i].id + ': destroyed');
-  }
-  return { ok: true, machines_destroyed: ml.length, results: results };
+  throw new Error('Fly.io management requires a running traits server');
 };
 
 // ── www.admin.save_config → localStorage ──
