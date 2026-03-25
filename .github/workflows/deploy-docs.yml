@@ -1,10 +1,13 @@
-name: Deploy Docs
+name: Deploy Site
 
 on:
   push:
     branches: [main]
     paths:
-      - 'site/**'
+      - 'traits/www/static/**'
+      - 'traits/www/local/**'
+      - 'traits/www/sdk/**'
+      - 'CNAME'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 
@@ -20,28 +23,34 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: site
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
+      - name: Assemble site
+        run: |
+          mkdir -p _site/local
+          # SPA files
+          cp traits/www/static/index.html _site/index.html
+          cp traits/www/static/index.standalone.html _site/standalone.html
+          cp traits/www/static/wasm-runtime.js _site/wasm-runtime.js
+          cp traits/www/static/terminal-runtime.js _site/terminal-runtime.js
+          # SDK
+          if [ -d traits/www/sdk ]; then
+            mkdir -p _site/sdk
+            cp traits/www/sdk/*.js _site/sdk/ 2>/dev/null || true
+          fi
+          # Install scripts
+          cp traits/www/local/helper/helper.sh _site/local/helper.sh
+          cp traits/www/local/install/install.sh _site/local/install.sh
+          # Custom domain
+          cp CNAME _site/CNAME
+          # 404 fallback to SPA
+          cp _site/index.html _site/404.html
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site/build
+          path: _site
 
   deploy:
     environment:
