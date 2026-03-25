@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 
 mod registry;
 mod wasm_traits;
+mod test_runner;
 
 // Include generated trait definitions (for registry browsing)
 include!(concat!(env!("OUT_DIR"), "/wasm_builtin_traits.rs"));
@@ -148,6 +149,18 @@ pub fn callable_traits() -> String {
 #[wasm_bindgen]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Run trait tests matching a glob pattern. Returns JSON results.
+/// Only example-based tests run in WASM; shell command tests are skipped.
+#[wasm_bindgen]
+pub fn run_tests(pattern: &str, verbose: bool) -> String {
+    let args = vec![
+        serde_json::Value::String(pattern.to_string()),
+        serde_json::Value::Bool(verbose),
+    ];
+    let result = test_runner::test_runner(&args);
+    serde_json::to_string(&result).unwrap_or_default()
 }
 
 // ═══════════════════════════════════════════
