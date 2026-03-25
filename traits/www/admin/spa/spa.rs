@@ -55,38 +55,32 @@ pub fn spa(_args: &[Value]) -> Value {
                             h2 { "System tools" }
                             p.note id="terminalNote" {
                                 "Every tool below can be tested in the browser terminal. "
-                                a href="/wasm" target="_blank" rel="noopener" id="terminalLink" { "Open terminal" }
+                            a href="/docs/api#tag/infrastructure/operation/list_traits" target="_blank" rel="noopener" id="terminalLink" onclick="return openApiCommand('traits list', '#tag/infrastructure/operation/list_traits')" { "Open terminal" }
                             }
                             table.tools {
                                 tr {
                                     td { "List traits" }
-                                    td { code { "traits list" } }
-                                    td { button onclick="copyCommand('traits list')" { "Copy" } }
+                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits list', '#tag/infrastructure/operation/list_traits')" { code { "traits list" } } }
                                 }
                                 tr {
                                     td { "Version" }
-                                    td { code { "traits version" } }
-                                    td { button onclick="copyCommand('traits version')" { "Copy" } }
+                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits version', '#tag/infrastructure/operation/list_traits')" { code { "traits version" } } }
                                 }
                                 tr {
                                     td { "Registry" }
-                                    td { code { "traits registry" } }
-                                    td { button onclick="copyCommand('traits registry')" { "Copy" } }
+                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits registry', '#tag/infrastructure/operation/list_traits')" { code { "traits registry" } } }
                                 }
                                 tr {
                                     td { "Processes" }
-                                    td { code { "traits ps" } }
-                                    td { button onclick="copyCommand('traits ps')" { "Copy" } }
+                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits ps', '#tag/infrastructure/operation/list_traits')" { code { "traits ps" } } }
                                 }
                                 tr {
                                     td { "Run tests" }
-                                    td { code { "traits test_runner 'sys.*'" } }
-                                    td { button onclick="copyCommand(\"traits test_runner 'sys.*'\")" { "Copy" } }
+                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand(\"traits test_runner 'sys.*'\", '#tag/infrastructure/operation/list_traits')" { code { "traits test_runner 'sys.*'" } } }
                                 }
                                 tr {
                                     td { "Reload registry" }
-                                    td { code { "traits call kernel.reload" } }
-                                    td { button onclick="copyCommand('traits call kernel.reload')" { "Copy" } }
+                              td colspan="2" { a href="/docs/api#tag/infrastructure/operation/list_traits" class="command-link" onclick="return openApiCommand('traits call kernel.reload', '#tag/infrastructure/operation/list_traits')" { code { "traits call kernel.reload" } } }
                                 }
                             }
                         }
@@ -282,6 +276,19 @@ td:first-child {
 #secretTable td:last-child {
   text-align: right;
 }
+.command-link {
+  display: inline-block;
+  text-decoration: none;
+}
+.command-link code {
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  border: 1px solid transparent;
+}
+.command-link:hover code {
+  transform: translateY(-1px);
+  border-color: rgba(89, 213, 176, 0.28);
+  background: rgba(16, 32, 38, 0.96);
+}
 .form-row {
   display: flex;
   flex-wrap: wrap;
@@ -350,6 +357,9 @@ a { color: #8be3cb; }
 const JS: &str = r##"
 const SECRET_PFX = 'traits.secret.';
 const ENV_PFX = 'traits.env.';
+const SHELL_ROUTE_KEY = 'traits.shell.route';
+const PENDING_COMMAND_KEY = 'traits.pending.terminal.command';
+const API_DOCS_FRAGMENT = '#tag/infrastructure/operation/list_traits';
 const isLocalFile = location.protocol === 'file:';
 const timers = [];
 
@@ -422,14 +432,26 @@ function previewValue(value) {
   return `<span class="preview">${esc(value.slice(0, 28))} ... ${esc(value.slice(-12))}</span>`;
 }
 
-function copyCommand(command) {
-  if (!navigator.clipboard || !navigator.clipboard.writeText) {
-    log('Clipboard API is unavailable in this browser.', 'error');
-    return;
+function apiDocsUrl(fragment) {
+  const suffix = fragment || API_DOCS_FRAGMENT;
+  if (isLocalFile) return `${location.pathname}${suffix}`;
+  return `/docs/api${suffix}`;
+}
+
+function openApiCommand(command, fragment) {
+  const suffix = fragment || API_DOCS_FRAGMENT;
+  try {
+    sessionStorage.setItem(SHELL_ROUTE_KEY, '/docs/api');
+    sessionStorage.setItem(PENDING_COMMAND_KEY, `${command}\r`);
+  } catch (_error) {
   }
-  navigator.clipboard.writeText(command)
-    .then(() => log(`Copied command: ${command}`))
-    .catch((error) => log(`Clipboard error: ${error.message || error}`, 'error'));
+  if (isLocalFile) {
+    location.hash = suffix;
+    location.reload();
+    return false;
+  }
+  location.assign(apiDocsUrl(suffix));
+  return false;
 }
 
 async function refreshStats() {
@@ -564,10 +586,15 @@ function deleteEnvVar(key) {
 }
 
 function configureLinks() {
+  const terminalLink = $('terminalLink');
   if (isLocalFile) {
     $('serverAdminNote').innerHTML = 'Deployment controls stay on the secured localhost admin page when you run a local server.';
-    $('terminalNote').innerHTML = 'Every tool below can be tested in the browser terminal once you run the local server at <code>/wasm</code>.';
-    $('terminalLink').removeAttribute('href');
+    if (terminalLink) {
+      terminalLink.setAttribute('href', apiDocsUrl(API_DOCS_FRAGMENT));
+    }
+    $('terminalNote').innerHTML = 'Every tool below can be tested in the API page terminal. <a href="' + apiDocsUrl(API_DOCS_FRAGMENT) + '" target="_blank" rel="noopener" onclick="return openApiCommand(\'traits list\', \'#tag/infrastructure/operation/list_traits\')">Open terminal</a>';
+  } else if (terminalLink) {
+    terminalLink.setAttribute('href', apiDocsUrl(API_DOCS_FRAGMENT));
   }
 }
 

@@ -79,6 +79,8 @@ const ROUTES = {
   '/admin':    'www.admin.spa',
 };
 
+const LOCAL_ROUTE_KEY = 'traits.shell.route';
+
 const isLocal = location.protocol === 'file:';
 
 function runtimeScriptPath() {
@@ -295,7 +297,15 @@ async function injectPage(fullHtml, route) {
 function currentRouteFromLocation() {
   if (isLocal) {
     const hash = location.hash.slice(1) || '/';
-    return ROUTES[hash] ? hash : '/';
+    if (ROUTES[hash]) {
+      try { sessionStorage.setItem(LOCAL_ROUTE_KEY, hash); } catch(e) {}
+      return hash;
+    }
+    try {
+      const storedRoute = sessionStorage.getItem(LOCAL_ROUTE_KEY);
+      if (storedRoute && ROUTES[storedRoute]) return storedRoute;
+    } catch(e) {}
+    return '/';
   }
   const path = location.pathname === '' || location.pathname === '/static' ? '/' : location.pathname;
   return ROUTES[path] ? path : '/';
@@ -330,7 +340,10 @@ async function navigate(route, pushState = true) {
   }
 
   if (pushState) {
-    if (isLocal) history.pushState({ route }, '', '#' + route);
+    if (isLocal) {
+      try { sessionStorage.setItem(LOCAL_ROUTE_KEY, route); } catch(e) {}
+      history.pushState({ route }, '', '#' + route);
+    }
     else history.pushState({ route }, '', route);
   }
 }

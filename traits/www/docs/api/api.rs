@@ -145,6 +145,7 @@ const HTML: &str = r##"<!DOCTYPE html>
 <script>
 // Load terminal dynamically — hide wrapper if it fails to load.
 (async function() {
+  const PENDING_COMMAND_KEY = 'traits.pending.terminal.command';
   var createTerminal = window.createTerminal; // Pre-loaded by SPA shell (terminal-runtime.js)
   if (!createTerminal) {
     // Fallback: import() (works on HTTP server, not file:// mode)
@@ -155,12 +156,22 @@ const HTML: &str = r##"<!DOCTYPE html>
   }
   if (!createTerminal) return; // Terminal unavailable — wrapper stays hidden
   document.getElementById('termWrap').style.display = '';
-  createTerminal(document.getElementById('xterm'), {
+  var terminalInstance = await createTerminal(document.getElementById('xterm'), {
     header: document.getElementById('termHeader'),
     container: document.getElementById('termContainer'),
     toggleBtn: document.getElementById('btnToggleTerm'),
     statusEl: document.getElementById('termStatus'),
   });
+  try {
+    var pendingCommand = sessionStorage.getItem(PENDING_COMMAND_KEY);
+    if (pendingCommand && terminalInstance && terminalInstance.term && typeof terminalInstance.term.paste === 'function') {
+      sessionStorage.removeItem(PENDING_COMMAND_KEY);
+      setTimeout(function() {
+        terminalInstance.term.focus();
+        terminalInstance.term.paste(pendingCommand);
+      }, 120);
+    }
+  } catch(e) {}
 })();
 </script>
 </body>
