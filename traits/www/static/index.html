@@ -71,12 +71,12 @@ a:hover{text-decoration:underline}
 // (WASM-first, REST-fallback — transparent to pages)
 // ═══════════════════════════════════════════════════════════════
 
-// ── Route table (mirrors serve.trait.toml bindings) ──
+// ── Route table (mostly mirrors serve.trait.toml bindings; /admin is SPA-specific) ──
 const ROUTES = {
   '/':         'www.traits.build',
   '/docs':     'www.docs',
   '/docs/api': 'www.docs.api',
-  '/admin':    'www.admin',
+  '/admin':    'www.admin.spa',
 };
 
 const isLocal = location.protocol === 'file:';

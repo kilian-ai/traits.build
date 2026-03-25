@@ -1,0 +1,22 @@
+{
+  "trait": "www.admin.spa",
+  "description": "SPA-only local admin workspace",
+  "features": [
+    {
+      "name": "Returns SPA admin HTML",
+      "description": "Calling www.admin.spa returns the browser-local admin workspace",
+      "tests": [
+        {
+          "name": "returns html with local admin workspace heading",
+          "type": "command",
+          "command": "./target/release/traits call www.admin.spa 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "<!DOCTYPE html>" },
+            { "type": "contains", "expected": "Local operator workspace" }
+          ]
+        }
+      ]
+    }
+  ]
+}

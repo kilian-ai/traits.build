@@ -1,0 +1,18 @@
+[trait]
+description = "SPA-only local admin workspace"
+version = "v260325.004036"
+checksum = "cfb16d747bfc85b87f282d6b4f63fc501856435c9dd6397c6beeabbfeebc8c52"
+author = "system"
+tags = ["www", "admin", "spa", "local"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML SPA admin workspace"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "spa"

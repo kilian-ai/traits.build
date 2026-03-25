@@ -35,6 +35,9 @@ pub mod www_docs_api;
 #[path = "../../../../www/admin/admin.rs"]
 pub mod www_admin;
 
+#[path = "../../../../www/admin/spa/spa.rs"]
+pub mod www_admin_spa;
+
 #[path = "../../../../www/static/static.rs"]
 pub mod www_static;
 
@@ -58,6 +61,7 @@ pub const WASM_CALLABLE: &[&str] = &[
     "www.docs",
     "www.docs.api",
     "www.admin",
+    "www.admin.spa",
     "www.static",
 ];
 
@@ -76,6 +80,7 @@ pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
         "www.docs" => Some(www_docs::docs(args)),
         "www.docs.api" => Some(www_docs_api::api_docs(args)),
         "www.admin" => Some(www_admin::admin(args)),
+        "www.admin.spa" => Some(www_admin_spa::spa(args)),
         "www.static" => Some(www_static::static_page(args)),
         _ => None,
     }
