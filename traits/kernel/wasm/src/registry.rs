@@ -23,11 +23,13 @@ pub struct WasmRegistry {
     traits: HashMap<String, WasmTraitEntry>,
     /// Per-trait bindings: key is "trait_path/binding_key", value is the bound trait path.
     bindings: HashMap<String, String>,
+    /// Per-trait requires: key is "trait_path/require_key", value is the interface path.
+    requires: HashMap<String, String>,
 }
 
 impl WasmRegistry {
     pub fn new() -> Self {
-        Self { traits: HashMap::new(), bindings: HashMap::new() }
+        Self { traits: HashMap::new(), bindings: HashMap::new(), requires: HashMap::new() }
     }
 
     /// Load from the build.rs-generated BUILTIN_TRAIT_DEFS array.
@@ -43,6 +45,14 @@ impl WasmRegistry {
                     for (key, val) in table {
                         if let Some(s) = val.as_str() {
                             self.bindings.insert(format!("{}/{}", path, key), s.to_string());
+                        }
+                    }
+                }
+                // Extract [requires] section
+                if let Some(table) = parsed.get("requires").and_then(|v| v.as_table()) {
+                    for (key, val) in table {
+                        if let Some(s) = val.as_str() {
+                            self.requires.insert(format!("{}/{}", path, key), s.to_string());
                         }
                     }
                 }
@@ -70,10 +80,26 @@ impl WasmRegistry {
         self.traits.len()
     }
 
-    /// Resolve a keyed binding for a trait (e.g., resolve_binding("kernel.cli", "backend")).
-    /// Returns the bound trait path from [bindings].
-    pub fn resolve_binding(&self, trait_path: &str, key: &str) -> Option<String> {
-        self.bindings.get(&format!("{}/{}", trait_path, key)).cloned()
+    /// Resolve a keyed binding for a trait.
+    /// Resolution: bindings[key] → requires[key] → interface auto-discover.
+    pub fn resolve_keyed(&self, caller_path: &str, key: &str) -> Option<String> {
+        let compound = format!("{}/{}", caller_path, key);
+        // 1. Check bindings for this key
+        if let Some(impl_path) = self.bindings.get(&compound) {
+            return Some(impl_path.clone());
+        }
+        // 2. Fallback: resolve interface from requires[key] → find provider
+        if let Some(interface_path) = self.requires.get(&compound) {
+            // Find the unique trait that provides this interface
+            let providers: Vec<&str> = self.traits.values()
+                .filter(|e| e.provides.iter().any(|p| p == interface_path))
+                .map(|e| e.path.as_str())
+                .collect();
+            if providers.len() == 1 {
+                return Some(providers[0].to_string());
+            }
+        }
+        None
     }
 }
 

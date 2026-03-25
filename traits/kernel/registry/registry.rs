@@ -701,6 +701,21 @@ impl Registry {
         None
     }
 
+    /// Resolve a keyed binding for a trait.
+    /// Resolution: bindings[key] → requires[key] → interface auto-discover.
+    pub fn resolve_keyed(&self, caller_path: &str, key: &str) -> Option<String> {
+        let entry = self.get(caller_path)?;
+        // 1. Check caller's bindings for this key
+        if let Some(impl_path) = entry.trait_bindings.get(key) {
+            return Some(impl_path.clone());
+        }
+        // 2. Fallback: resolve interface from requires[key]
+        if let Some(interface_path) = entry.requires.get(key) {
+            return self.resolve_interface(interface_path, &CallConfig::default());
+        }
+        None
+    }
+
     /// Add a keyed interface requirement to a trait at runtime.
     pub fn add_require(&self, trait_path: &str, key: String, interface: String) -> bool {
         if let Some(mut entry) = self.traits.get_mut(trait_path) {

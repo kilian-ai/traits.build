@@ -243,6 +243,10 @@ const CSS: &str = r##"
 
 const JS: &str = r##"
 const API = window.location.origin + '/traits';
+var _bootTime = Date.now();
+var _isLocal = location.protocol === 'file:';
+var _jsProviders = {};
+var _SECRET_PFX = 'traits.secret.';
 
 function log(msg, type) {
   const el = document.getElementById('log');
@@ -257,19 +261,144 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 var _statusPaused = false;
 
 async function callTrait(path, args) {
-  // Use SDK if available (WASM-first, REST-fallback)
+  args = args || [];
+  // 1. SDK dispatch (WASM kernel → REST server cascade)
   if (window._traitsSDK) {
-    const r = await window._traitsSDK.call(path, args || []);
+    var r = await window._traitsSDK.call(path, args);
     if (r.ok) return { result: r.result };
-    return { error: r.error || 'SDK call failed' };
   }
-  const res = await fetch(API + '/' + path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ args: args || [] })
-  });
-  return res.json();
+  // 2. JS-native provider (browser OS layer: localStorage, Fly API, etc.)
+  if (_jsProviders[path]) {
+    try { return { result: await _jsProviders[path](args) }; }
+    catch(e) { return { error: e.message || String(e) }; }
+  }
+  // 3. Direct REST fallback (no SDK)
+  if (!_isLocal) {
+    try {
+      var res = await fetch(API + '/' + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: args })
+      });
+      return await res.json();
+    } catch(e) { return { error: e.message }; }
+  }
+  return { error: 'No provider for ' + path };
 }
+
+// ═══════════════════════════════════════════════════════════════
+// JS-native providers — browser OS layer for the WASM kernel.
+// Provides localStorage secrets, direct Fly Machines API, etc.
+// Active when WASM + REST both can't serve a trait.
+// ═══════════════════════════════════════════════════════════════
+
+// ── sys.secrets → localStorage ──
+_jsProviders['sys.secrets'] = async function(args) {
+  var action = String(args[0] || 'list');
+  if (action === 'list') {
+    var secrets = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k.indexOf(_SECRET_PFX) === 0) secrets.push(k.slice(_SECRET_PFX.length));
+    }
+    return { ok: true, secrets: secrets };
+  }
+  if (action === 'set') {
+    if (!args[1] || !args[2]) return { ok: false, error: 'ID and value required' };
+    localStorage.setItem(_SECRET_PFX + args[1], String(args[2]));
+    return { ok: true };
+  }
+  if (action === 'delete') {
+    localStorage.removeItem(_SECRET_PFX + (args[1] || ''));
+    return { ok: true };
+  }
+  return { ok: false, error: 'Unknown action: ' + action };
+};
+
+// ── Fly.io Machines API helpers ──
+function _flyToken() { return localStorage.getItem(_SECRET_PFX + 'fly_api_token') || ''; }
+function _flyApp() { return (document.getElementById('cfgFlyApp') || {}).textContent || 'polygrait-api'; }
+function _flyBase() { return 'https://api.machines.dev/v1/apps/' + encodeURIComponent(_flyApp()); }
+function _flyHdr() { return { 'Authorization': 'Bearer ' + _flyToken(), 'Content-Type': 'application/json' }; }
+async function _flyMachines() {
+  var r = await fetch(_flyBase() + '/machines', { headers: _flyHdr() });
+  if (!r.ok) throw new Error('Fly API HTTP ' + r.status);
+  return r.json();
+}
+
+// ── www.admin.deploy → Fly Machines API ──
+_jsProviders['www.admin.deploy'] = async function(args) {
+  var mode = String(args[0] || '');
+  if (!_flyToken()) return { ok: false, error: 'Set fly_api_token in Secrets below' };
+  if (mode === 'status') {
+    var ml = await _flyMachines();
+    return { ok: true, machines: ml.map(function(m) {
+      return { id: m.id, state: m.state, region: m.region, image: (m.config && m.config.image) || '\u2014' };
+    })};
+  }
+  var ml = await _flyMachines();
+  var results = [];
+  for (var i = 0; i < ml.length; i++) {
+    if (ml[i].state === 'started') {
+      await fetch(_flyBase() + '/machines/' + ml[i].id + '/stop', { method: 'POST', headers: _flyHdr() });
+      await new Promise(function(ok) { setTimeout(ok, 3000); });
+    }
+    await fetch(_flyBase() + '/machines/' + ml[i].id + '/start', { method: 'POST', headers: _flyHdr() });
+    results.push(ml[i].id + ': restarted');
+  }
+  return { ok: true, machines: ml.length, results: results };
+};
+
+// ── www.admin.scale → Fly Machines API ──
+_jsProviders['www.admin.scale'] = async function(args) {
+  var n = parseInt(args[0]) || 0;
+  if (!_flyToken()) return { ok: false, error: 'fly_api_token not set' };
+  var ml = await _flyMachines();
+  var results = [];
+  for (var i = 0; i < ml.length; i++) {
+    if (n === 0 && ml[i].state === 'started') {
+      await fetch(_flyBase() + '/machines/' + ml[i].id + '/stop', { method: 'POST', headers: _flyHdr() });
+      results.push(ml[i].id + ': stopped');
+    } else if (n > 0 && ml[i].state !== 'started') {
+      await fetch(_flyBase() + '/machines/' + ml[i].id + '/start', { method: 'POST', headers: _flyHdr() });
+      results.push(ml[i].id + ': started');
+    }
+  }
+  return { ok: true, action: n === 0 ? 'Stopped' : 'Started', results: results };
+};
+
+// ── www.admin.destroy → Fly Machines API ──
+_jsProviders['www.admin.destroy'] = async function() {
+  if (!_flyToken()) return { ok: false, error: 'fly_api_token not set' };
+  var ml = await _flyMachines();
+  var results = [];
+  for (var i = 0; i < ml.length; i++) {
+    if (ml[i].state === 'started') {
+      await fetch(_flyBase() + '/machines/' + ml[i].id + '/stop', { method: 'POST', headers: _flyHdr() });
+      await new Promise(function(ok) { setTimeout(ok, 2000); });
+    }
+    await fetch(_flyBase() + '/machines/' + ml[i].id + '?force=true', { method: 'DELETE', headers: _flyHdr() });
+    results.push(ml[i].id + ': destroyed');
+  }
+  return { ok: true, machines_destroyed: ml.length, results: results };
+};
+
+// ── www.admin.save_config → localStorage ──
+_jsProviders['www.admin.save_config'] = async function(args) {
+  localStorage.setItem('traits.config.fly_app', args[0] || '');
+  localStorage.setItem('traits.config.fly_region', args[1] || '');
+  return { ok: true };
+};
+
+// ── Server-only traits (helpful error in browser) ──
+_jsProviders['www.admin.fast_deploy'] = async function() {
+  return { ok: false, error: 'Fast deploy requires a running traits server' };
+};
+_jsProviders['kernel.reload'] = async function() {
+  var c = (window._traitsSDK && window._traitsSDK.status) ? window._traitsSDK.status.callable : 0;
+  return { ok: true, trait_count: c, note: 'WASM registry is static' };
+};
+_jsProviders['sys.ps'] = async function() { return { processes: [] }; };
 
 async function checkStatus() {
   if (_statusPaused) return;
@@ -306,7 +435,9 @@ async function checkStatus() {
       var vr = await callTrait('sys.version', []);
       if (vr.result) document.getElementById('version').textContent = vr.result.version || vr.result;
     } catch(e2) {}
-    document.getElementById('uptime').textContent = 'n/a';
+    var _el = Math.floor((Date.now() - _bootTime) / 1000);
+    var _mm = Math.floor(_el / 60), _ss = _el % 60;
+    document.getElementById('uptime').textContent = _mm + 'm ' + _ss + 's (session)';
   } else {
     document.getElementById('admStatusDot').className = 'dot red';
     document.getElementById('admStatusText').textContent = 'Unreachable';

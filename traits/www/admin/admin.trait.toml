@@ -1,7 +1,7 @@
 [trait]
 description = "Admin dashboard for traits.build deployment"
-version = "v260324.235502"
-checksum = "8944cb8bc847f89592895b4fd8f8195134e974f308cd1ae7d9ccda78f5ca13c4"
+version = "v260325"
+checksum = "6b1e4ed0c9fa66ee5a6f0e1063ce067041bb4c6c1bf3a05e1c3f72f3360815ba"
 epoch = 0
 author = "system"
 tags = ["www", "admin", "deployment"]
@@ -16,11 +16,17 @@ description = "HTML admin dashboard"
 
 [requires]
 config = "kernel/config"
-secrets = "sys/secrets"
+secrets = "storage/secrets"
+fly_api = "fly/machines"
 
 [bindings]
 config = "kernel.config"
 secrets = "sys.secrets"
+fly_api = "www.admin.deploy"
+# Browser bindings (JS providers — active in WASM/file:// mode):
+#   secrets  → localStorage (traits.secret.* keys)
+#   fly_api  → direct Fly Machines API (api.machines.dev)
+#   config   → localStorage (traits.config.* keys)
 
 [config]
 fly_app = ""
