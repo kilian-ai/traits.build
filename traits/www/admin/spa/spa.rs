@@ -406,12 +406,12 @@ function esc(value) {
   return div.innerHTML;
 }
 
-function $(id) {
+function byId(id) {
   return document.getElementById(id);
 }
 
 function log(message, type) {
-  const el = $('activityLog');
+  const el = byId('activityLog');
   if (!el) return;
   const t = new Date().toTimeString().slice(0, 8);
   const safe = esc(message);
@@ -472,7 +472,7 @@ function previewValue(value) {
 
 function apiDocsUrl(fragment) {
   const suffix = fragment || API_DOCS_FRAGMENT;
-  if (isLocalFile) return `${location.pathname}${suffix}`;
+  if (isLocalFile) return `#/docs/api`;
   return `/docs/api${suffix}`;
 }
 
@@ -490,8 +490,8 @@ function openApiCommand(command, fragment) {
 }
 
 async function refreshStats() {
-  const dot = $('spaStatusDot');
-  const text = $('spaStatusText');
+  const dot = byId('spaStatusDot');
+  const text = byId('spaStatusText');
   try {
     const listResult = await callTrait('sys.list', []);
     if (!listResult.ok || !Array.isArray(listResult.result)) {
@@ -504,19 +504,19 @@ async function refreshStats() {
       ? (versionResult.result.version || versionResult.result.date || JSON.stringify(versionResult.result))
       : '-';
 
-    $('runtimeMode').textContent = listResult.dispatch || (isLocalFile ? 'wasm' : 'rest');
-    $('traitCount').textContent = String(traits.length);
-    $('namespaceCount').textContent = String(namespaces.size);
-    $('buildVersion').textContent = String(version || '-');
-    $('uptimeHuman').textContent = '-';
+    byId('runtimeMode').textContent = listResult.dispatch || (isLocalFile ? 'wasm' : 'rest');
+    byId('traitCount').textContent = String(traits.length);
+    byId('namespaceCount').textContent = String(namespaces.size);
+    byId('buildVersion').textContent = String(version || '-');
+    byId('uptimeHuman').textContent = '-';
 
     if (!isLocalFile) {
       try {
         const response = await fetch(`${location.origin}/health`);
         const health = await response.json();
         if (health && response.ok) {
-          $('uptimeHuman').textContent = health.uptime_human || '-';
-          if (health.version) $('buildVersion').textContent = health.version;
+          byId('uptimeHuman').textContent = health.uptime_human || '-';
+          if (health.version) byId('buildVersion').textContent = health.version;
           dot.className = 'dot green';
           text.textContent = 'Healthy';
           return;
@@ -530,18 +530,18 @@ async function refreshStats() {
   } catch (error) {
     dot.className = 'dot red';
     text.textContent = 'Unavailable';
-    $('runtimeMode').textContent = isLocalFile ? 'file' : 'rest';
-    $('traitCount').textContent = '-';
-    $('namespaceCount').textContent = '-';
-    $('buildVersion').textContent = '-';
-    $('uptimeHuman').textContent = '-';
+    byId('runtimeMode').textContent = isLocalFile ? 'file' : 'rest';
+    byId('traitCount').textContent = '-';
+    byId('namespaceCount').textContent = '-';
+    byId('buildVersion').textContent = '-';
+    byId('uptimeHuman').textContent = '-';
     log(`Stats error: ${error.message || error}`, 'error');
   }
 }
 
 function renderSecrets() {
   const rows = storageEntries(SECRET_PFX);
-  const table = $('secretTable');
+  const table = byId('secretTable');
   if (!rows.length) {
     table.innerHTML = '<tr><td colspan="3">No local secrets stored</td></tr>';
     return;
@@ -554,7 +554,7 @@ function renderSecrets() {
 
 function renderEnvVars() {
   const rows = storageEntries(ENV_PFX);
-  const table = $('envTable');
+  const table = byId('envTable');
   if (!rows.length) {
     table.innerHTML = '<tr><td colspan="4">No local environment variables stored</td></tr>';
     return;
@@ -577,15 +577,15 @@ function setStatus(elId, message, isError) {
 }
 
 function saveSecret() {
-  const key = $('secretKey').value.trim();
-  const value = $('secretValue').value;
+  const key = byId('secretKey').value.trim();
+  const value = byId('secretValue').value;
   if (!key || !value) {
     setStatus('secretStatus', 'Secret ID and value are required.', true);
     return;
   }
   storage.setItem(SECRET_PFX + key, value);
-  $('secretKey').value = '';
-  $('secretValue').value = '';
+  byId('secretKey').value = '';
+  byId('secretValue').value = '';
   renderSecrets();
   setStatus('secretStatus', storageState.persistent ? 'Stored locally.' : 'Stored for this session only.');
   log(`Stored local secret: ${key}`);
@@ -599,15 +599,15 @@ function deleteSecret(key) {
 }
 
 function saveEnvVar() {
-  const key = $('envKey').value.trim();
-  const value = $('envValue').value;
+  const key = byId('envKey').value.trim();
+  const value = byId('envValue').value;
   if (!key) {
     setStatus('envStatus', 'Variable name is required.', true);
     return;
   }
   storage.setItem(ENV_PFX + key, value);
-  $('envKey').value = '';
-  $('envValue').value = '';
+  byId('envKey').value = '';
+  byId('envValue').value = '';
   renderEnvVars();
   setStatus('envStatus', storageState.persistent ? 'Stored locally.' : 'Stored for this session only.');
   log(`Stored local environment variable: ${key}`);
@@ -621,18 +621,18 @@ function deleteEnvVar(key) {
 }
 
 function configureLinks() {
-  const terminalLink = $('terminalLink');
+  const terminalLink = byId('terminalLink');
   const commandLinks = Array.from(document.querySelectorAll('.command-link'));
   commandLinks.forEach((link) => {
     const fragment = link.getAttribute('data-fragment') || API_DOCS_FRAGMENT;
     link.setAttribute('href', apiDocsUrl(fragment));
   });
   if (isLocalFile) {
-    $('serverAdminNote').innerHTML = 'Deployment controls stay on the secured localhost admin page when you run a local server.';
+    byId('serverAdminNote').innerHTML = 'Deployment controls stay on the secured localhost admin page when you run a local server.';
     if (terminalLink) {
       terminalLink.setAttribute('href', apiDocsUrl(API_DOCS_FRAGMENT));
     }
-    $('terminalNote').innerHTML = 'Every tool below can be tested in the API page terminal. <a href="' + apiDocsUrl(API_DOCS_FRAGMENT) + '" target="_blank" rel="noopener" onclick="return openApiCommand(\'traits list\', \'#tag/infrastructure/operation/list_traits\')">Open terminal</a>';
+    byId('terminalNote').innerHTML = 'Every tool below can be tested in the API page terminal. <a href="' + apiDocsUrl(API_DOCS_FRAGMENT) + '" target="_blank" rel="noopener" onclick="return openApiCommand(\'traits list\', \'#tag/infrastructure/operation/list_traits\')">Open terminal</a>';
   } else if (terminalLink) {
     terminalLink.setAttribute('href', apiDocsUrl(API_DOCS_FRAGMENT));
   }
