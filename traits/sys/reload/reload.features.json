@@ -9,7 +9,7 @@
         {
           "name": "reload returns ok with count",
           "type": "command",
-          "command": "./target/release/traits call kernel.reload 2>/dev/null",
+          "command": "./target/release/traits call sys.reload 2>/dev/null",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "ok" },
