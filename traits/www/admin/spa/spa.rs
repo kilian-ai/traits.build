@@ -361,7 +361,6 @@ const SHELL_ROUTE_KEY = 'traits.shell.route';
 const PENDING_COMMAND_KEY = 'traits.pending.terminal.command';
 const API_DOCS_FRAGMENT = '#tag/infrastructure/operation/list_traits';
 const isLocalFile = location.protocol === 'file:' || (typeof window.TraitsWasm !== 'undefined');
-const timers = [];
 const memoryStorage = (() => {
   const store = new Map();
   return {
@@ -490,55 +489,56 @@ function openApiCommand(command, fragment) {
   return false;
 }
 
-async function refreshStats() {
+// ── Stats via TC (Trait Component) ──
+// The section.card has data-trait="sys.list" data-handler="refreshStats" data-interval="30000"
+// TC auto-calls sys.list on mount + every 30s, passes result to this handler.
+
+TC.on('refreshStats', async (el, traits, meta) => {
+  const ns = new Set(traits.map(t => (t.path || '').split('.')[0]).filter(Boolean));
+  const ver = await callTrait('sys.version', []);
+  const version = ver.ok
+    ? (ver.result.version || ver.result.date || JSON.stringify(ver.result))
+    : '-';
+
+  byId('runtimeMode').textContent = meta.dispatch || (isLocalFile ? 'wasm' : 'rest');
+  byId('traitCount').textContent = String(traits.length);
+  byId('namespaceCount').textContent = String(ns.size);
+  byId('buildVersion').textContent = String(version || '-');
+  byId('uptimeHuman').textContent = '-';
+
   const dot = byId('spaStatusDot');
   const text = byId('spaStatusText');
-  try {
-    const listResult = await callTrait('sys.list', []);
-    if (!listResult.ok || !Array.isArray(listResult.result)) {
-      throw new Error(listResult.error || 'Unable to load trait list');
-    }
-    const traits = listResult.result;
-    const namespaces = new Set(traits.map((trait) => String(trait.path || '').split('.')[0]).filter(Boolean));
-    const versionResult = await callTrait('sys.version', []);
-    const version = versionResult.ok
-      ? (versionResult.result.version || versionResult.result.date || JSON.stringify(versionResult.result))
-      : '-';
 
-    byId('runtimeMode').textContent = listResult.dispatch || (isLocalFile ? 'wasm' : 'rest');
-    byId('traitCount').textContent = String(traits.length);
-    byId('namespaceCount').textContent = String(namespaces.size);
-    byId('buildVersion').textContent = String(version || '-');
-    byId('uptimeHuman').textContent = '-';
-
-    if (!isLocalFile) {
-      try {
-        const response = await fetch(`${location.origin}/health`);
-        const health = await response.json();
-        if (health && response.ok) {
-          byId('uptimeHuman').textContent = health.uptime_human || '-';
-          if (health.version) byId('buildVersion').textContent = health.version;
-          dot.className = 'dot green';
-          text.textContent = 'Healthy';
-          return;
-        }
-      } catch (_error) {
+  if (!isLocalFile) {
+    try {
+      const resp = await fetch(`${location.origin}/health`);
+      const health = await resp.json();
+      if (health && resp.ok) {
+        byId('uptimeHuman').textContent = health.uptime_human || '-';
+        if (health.version) byId('buildVersion').textContent = health.version;
+        dot.className = 'dot green';
+        text.textContent = 'Healthy';
+        return;
       }
-    }
+    } catch (_) {}
+  }
 
-    dot.className = isLocalFile ? 'dot yellow' : 'dot green';
-    text.textContent = isLocalFile ? 'Local browser mode' : 'Reachable';
-  } catch (error) {
-    dot.className = 'dot red';
-    text.textContent = 'Unavailable';
+  dot.className = isLocalFile ? 'dot yellow' : 'dot green';
+  text.textContent = isLocalFile ? 'Local browser mode' : 'Reachable';
+});
+
+// Error fallback for stats loading
+document.querySelector('[data-handler="refreshStats"]')
+  ?.addEventListener('trait:error', (e) => {
+    byId('spaStatusDot').className = 'dot red';
+    byId('spaStatusText').textContent = 'Unavailable';
     byId('runtimeMode').textContent = isLocalFile ? 'file' : 'rest';
     byId('traitCount').textContent = '-';
     byId('namespaceCount').textContent = '-';
     byId('buildVersion').textContent = '-';
     byId('uptimeHuman').textContent = '-';
-    log(`Stats error: ${error.message || error}`, 'error');
-  }
-}
+    log('Stats error: ' + (e.detail?.error || 'Unknown'), 'error');
+  });
 
 function renderSecrets() {
   const rows = storageEntries(SECRET_PFX);
@@ -645,7 +645,7 @@ try {
   log(`Link setup error: ${error.message || error}`, 'error');
 }
 
-refreshStats();
+// Stats loading is handled automatically by TC via data-trait="sys.list" on mount + interval
 
 try {
   renderSecrets();
@@ -657,8 +657,5 @@ try {
   log(`Storage UI error: ${error.message || error}`, 'error');
 }
 
-timers.push(setInterval(refreshStats, 30000));
-window._pageCleanup = function() {
-  while (timers.length) clearInterval(timers.pop());
-};
+// TC handles interval cleanup automatically via TC.cleanup() in injectPage
 "##;
