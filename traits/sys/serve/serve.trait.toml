@@ -7,7 +7,6 @@ author = "system"
 tags = ["sys", "server"]
 background = true
 provides = ["sys/serve"]
-kernel_module = true
 
 [requires]
 "/" = "www/webpage"
@@ -56,4 +55,3 @@ description = "Server status (never returns while running)"
 language = "rust"
 source = "builtin"
 entry = "serve"
-kernel_module = true
