@@ -220,11 +220,6 @@ fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
 
     let mut results = Vec::new();
     for &(trait_path, features_json) in crate::BUILTIN_FEATURES {
-        // Only test traits that can actually be dispatched in WASM
-        if !crate::wasm_traits::WASM_CALLABLE.contains(&trait_path) {
-            continue;
-        }
-
         let parts: Vec<&str> = trait_path.splitn(2, '.').collect();
         if parts.len() != 2 { continue; }
         let (ns, name) = (parts[0], parts[1]);
@@ -353,7 +348,33 @@ fn dispatch_trait(trait_path: &str, args: &[Value]) -> Option<Value> {
 
 #[cfg(target_arch = "wasm32")]
 fn dispatch_trait(trait_path: &str, args: &[Value]) -> Option<Value> {
-    crate::wasm_traits::dispatch(trait_path, args)
+    // Try local WASM dispatch first
+    if let Some(v) = crate::wasm_traits::dispatch(trait_path, args) {
+        return Some(v);
+    }
+    // Fall back to REST via synchronous XHR
+    dispatch_rest(trait_path, args)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn dispatch_rest(trait_path: &str, args: &[Value]) -> Option<Value> {
+    use web_sys::XmlHttpRequest;
+
+    let url = format!("/traits/{}", trait_path.replace('.', "/"));
+    let body = serde_json::json!({ "args": args }).to_string();
+
+    let xhr = XmlHttpRequest::new().ok()?;
+    xhr.open_with_async("POST", &url, false).ok()?;
+    xhr.set_request_header("Content-Type", "application/json").ok()?;
+    xhr.send_with_opt_str(Some(&body)).ok()?;
+
+    let status = xhr.status().unwrap_or(0);
+    if status != 200 {
+        return None;
+    }
+
+    let text = xhr.response_text().ok()??;
+    serde_json::from_str(&text).ok()
 }
 
 // ═════════════════════════════════════════════════════════════
