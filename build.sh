@@ -176,6 +176,12 @@ if term_src_old not in html:
 html = html.replace(runtime_fn_old, runtime_fn)
 html = html.replace(term_src_old, term_src_new)
 
+# Standalone is always "local" (hash routing) — no server to handle pushState paths
+html = html.replace(
+    "const isLocal = location.protocol === 'file:';",
+    "const isLocal = true; // standalone: always use hash routing"
+)
+
 def escape_script(code: str) -> str:
     return code.replace('</script>', '<\\/script>')
 
