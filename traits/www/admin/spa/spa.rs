@@ -8,27 +8,46 @@ pub fn spa(_args: &[Value]) -> Value {
             head {
                 meta charset="UTF-8";
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
-                title { "traits.build - Admin Workspace" }
+                title { "traits.build - Settings" }
                 style { (PreEscaped(CSS)) }
             }
             body {
                 div.page {
                     section.hero.card {
-                        p.eyebrow { "SPA admin workspace" }
-                        h1 { "Local operator workspace" }
+                        p.eyebrow { "settings" }
+                        h1 { "traits.build" }
                         p.subtitle {
-                            "Browser-only tools for diagnostics, secrets, and environment variables. "
-                            "This page stores user data in localStorage and does not expose Fly.io controls."
+                            "Setup, run commands, and configure your environment."
                         }
                         div.badges {
+                            span.badge id="platformBadge" { "detecting..." }
                             span.badge { "browser-local" }
-                            span.badge { "no auth" }
                             span.badge { "localStorage" }
                         }
-                        p.notice id="serverAdminNote" {
-                            "Deployment controls remain on the secured localhost admin page. "
-                            a href="/admin?server=1" target="_blank" rel="noopener" { "Open localhost admin" }
+                    }
+
+                    // Setup
+                    section.card id="setupCard" {
+                        h2 { "Setup" }
+                        div id="platformInfo" {}
+                    }
+
+                    // Run Command
+                    section.card {
+                        h2 { "Run" }
+                        div.form-row style="align-items:center;" {
+                            span style="color:var(--muted);font-family:'Iosevka Etoile','IBM Plex Mono',monospace;font-size:0.95rem;white-space:nowrap;" { "traits" }
+                            input id="cmdInput" type="text" placeholder="list" autocomplete="off" spellcheck="false" style="flex:1;" {}
+                            button.primary id="btnRun" onclick="runCmd()" { "Run" }
                         }
+                        div.chip-row id="cmdChips" {
+                            span.chip onclick="setCmd('list')" { "list" }
+                            span.chip onclick="setCmd('info sys.checksum')" { "info" }
+                            span.chip onclick="setCmd('checksum hash hello')" { "checksum" }
+                            span.chip onclick="setCmd('test_runner sys.*')" { "test" }
+                            span.chip onclick="setCmd('version')" { "version" }
+                        }
+                        div.log id="cmdLog" style="display:none;margin-top:14px;" {}
                     }
 
                     div.grid {
@@ -54,33 +73,32 @@ pub fn spa(_args: &[Value]) -> Value {
                         section.card {
                             h2 { "System tools" }
                             p.note id="terminalNote" {
-                              "Every tool below can be tested in the browser terminal. "
-                              a href="#" target="_blank" rel="noopener" id="terminalLink" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('list', '#tag/infrastructure/operation/list_traits')" { "Open terminal" }
+                              "Click any command to run it, or type your own above."
                             }
                             table.tools {
                                 tr {
                                     td { "List traits" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('list', '#tag/infrastructure/operation/list_traits')" { code { "traits list" } } }
+                                td colspan="2" { a href="#" onclick="setCmd('list');runCmd();return false" { code { "traits list" } } }
                                 }
                                 tr {
                                     td { "Version" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('version', '#tag/infrastructure/operation/list_traits')" { code { "traits version" } } }
+                                td colspan="2" { a href="#" onclick="setCmd('version');runCmd();return false" { code { "traits version" } } }
                                 }
                                 tr {
                                     td { "Registry" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('registry', '#tag/infrastructure/operation/list_traits')" { code { "traits registry" } } }
+                                td colspan="2" { a href="#" onclick="setCmd('registry');runCmd();return false" { code { "traits registry" } } }
                                 }
                                 tr {
                                     td { "Processes" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('ps', '#tag/infrastructure/operation/list_traits')" { code { "traits ps" } } }
+                                td colspan="2" { a href="#" onclick="setCmd('ps');runCmd();return false" { code { "traits ps" } } }
                                 }
                                 tr {
                                     td { "Run tests" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand(\"test_runner 'sys.*'\", '#tag/infrastructure/operation/list_traits')" { code { "traits test_runner 'sys.*'" } } }
+                                td colspan="2" { a href="#" onclick="setCmd(\"test_runner 'sys.*'\");runCmd();return false" { code { "traits test_runner 'sys.*'" } } }
                                 }
                                 tr {
                                     td { "Reload registry" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('call kernel.reload', '#tag/infrastructure/operation/list_traits')" { code { "traits call kernel.reload" } } }
+                                td colspan="2" { a href="#" onclick="setCmd('call kernel.reload');runCmd();return false" { code { "traits call kernel.reload" } } }
                                 }
                             }
                         }
@@ -345,6 +363,23 @@ code {
 .time { color: #5f7583; margin-right: 6px; }
 a { color: #8be3cb; }
 .preview { color: #c9d7e0; word-break: break-all; }
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.chip {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  transition: all 0.12s;
+}
+.chip:hover { color: var(--accent); border-color: rgba(89, 213, 176, 0.3); }
+.platform-icon { font-size: 1.3rem; margin-right: 6px; vertical-align: middle; }
+.install-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.install-alt { color: var(--muted); font-size: 13px; margin-top: 12px; }
+.install-alt code { cursor: pointer; transition: color 0.12s; }
+.install-alt code:hover { color: var(--accent); }
+.install-alt .copied { color: var(--accent); font-size: 12px; margin-left: 6px; }
 
 @media (max-width: 720px) {
   .page { padding: 18px 14px 32px; }
@@ -355,6 +390,159 @@ a { color: #8be3cb; }
 "##;
 
 const JS: &str = r##"
+// ═══════════════════════════════════════════════════════════════
+// Platform detection + Setup card
+// ═══════════════════════════════════════════════════════════════
+(function setupCard() {
+  var ua = navigator.userAgent || '';
+  var p = navigator.platform || '';
+  var os = 'unknown', icon = '💻', label = 'Unknown';
+  if (/iPhone|iPad|iPod/.test(ua) || (/Mac/.test(p) && 'ontouchend' in document)) { os = 'ios'; icon = '📱'; label = 'iPhone / iPad'; }
+  else if (/Android/.test(ua)) { os = 'android'; icon = '📱'; label = 'Android'; }
+  else if (/Mac/.test(p) || /Mac/.test(ua)) { os = 'macos'; icon = '🍎'; label = 'macOS'; }
+  else if (/Win/.test(p) || /Win/.test(ua)) { os = 'windows'; icon = '🪟'; label = 'Windows'; }
+  else if (/Linux/.test(p) || /Linux/.test(ua)) { os = 'linux'; icon = '🐧'; label = 'Linux'; }
+  else if (/CrOS/.test(ua)) { os = 'chromeos'; icon = '💻'; label = 'ChromeOS'; }
+
+  var badge = document.getElementById('platformBadge');
+  if (badge) badge.textContent = label;
+
+  var el = document.getElementById('platformInfo');
+  if (!el) return;
+
+  var h = '<span class="platform-icon">' + icon + '</span> <strong>' + label + '</strong><br>';
+
+  if (os === 'ios' || os === 'android') {
+    h += '<p class="note" style="margin-top:8px;">No install needed — everything runs in your browser.</p>';
+    h += '<div class="install-row">';
+    h += '<button class="primary" onclick="addToHomeScreen()">Add to Home Screen</button>';
+    h += '</div>';
+    h += '<p class="note" style="margin-top:12px;">Traits run via the remote API. For heavy workloads, set up a local server on a desktop machine.</p>';
+  } else {
+    h += '<p class="note" style="margin-top:8px;">Install the traits runtime to run commands locally.</p>';
+    h += '<div class="install-row">';
+    if (os === 'macos') {
+      h += '<button class="primary" onclick="downloadInstaller(\'macos\')">Download Installer</button>';
+    } else if (os === 'windows') {
+      h += '<button class="primary" onclick="downloadInstaller(\'windows\')">Download Installer</button>';
+    } else {
+      h += '<button class="primary" onclick="downloadInstaller(\'linux\')">Download Installer</button>';
+    }
+    h += '<button onclick="downloadInstaller(\'run\')">Run Once (no install)</button>';
+    h += '</div>';
+    h += '<div class="install-alt">or: <code onclick="copyInstall(this)">curl -fsSL https://traits.build/local/install.sh | bash</code></div>';
+  }
+
+  el.innerHTML = h;
+})();
+
+function downloadInstaller(mode) {
+  var name, content, mime = 'application/octet-stream';
+  if (mode === 'run') {
+    name = 'traits.command';
+    content = '#!/bin/bash\n# traits.build — one-shot runner\ncurl -fsSL https://traits.build/local/traits.sh | bash\n';
+  } else if (mode === 'macos') {
+    name = 'install-traits.command';
+    content = '#!/bin/bash\n# traits.build — installer for macOS\ncurl -fsSL https://traits.build/local/install.sh | bash\necho ""\necho "Done! You can close this window."\necho "Start with: traits serve"\nread -p "Press Enter to close..."\n';
+  } else if (mode === 'windows') {
+    name = 'install-traits.bat';
+    content = '@echo off\r\necho traits.build installer\r\necho.\r\nwhere wsl >nul 2>&1 && (\r\n  echo Installing via WSL...\r\n  wsl curl -fsSL https://traits.build/local/install.sh ^| bash\r\n) || (\r\n  echo WSL not found. Install WSL first:\r\n  echo   wsl --install\r\n  echo Then re-run this installer.\r\n)\r\npause\r\n';
+  } else {
+    name = 'install-traits.sh';
+    content = '#!/bin/bash\n# traits.build — installer\ncurl -fsSL https://traits.build/local/install.sh | bash\n';
+  }
+  var blob = new Blob([content], { type: mime });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('Downloaded ' + name);
+}
+
+function copyInstall(el) {
+  var text = el.textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    var s = document.createElement('span');
+    s.className = 'copied';
+    s.textContent = 'copied!';
+    el.parentNode.appendChild(s);
+    setTimeout(function() { s.remove(); }, 2000);
+  });
+}
+
+function addToHomeScreen() {
+  if (window.deferredPrompt) {
+    window.deferredPrompt.prompt();
+  } else {
+    var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (isIOS) alert('Tap the Share button then "Add to Home Screen"');
+    else alert('Open browser menu and tap "Add to Home Screen"');
+  }
+}
+window.addEventListener('beforeinstallprompt', function(e) { e.preventDefault(); window.deferredPrompt = e; });
+
+// ═══════════════════════════════════════════════════════════════
+// Run Command
+// ═══════════════════════════════════════════════════════════════
+function setCmd(cmd) {
+  document.getElementById('cmdInput').value = cmd;
+  document.getElementById('cmdInput').focus();
+}
+
+document.getElementById('cmdInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') runCmd();
+});
+
+function cmdLog(msg, type) {
+  var el = document.getElementById('cmdLog');
+  el.style.display = 'block';
+  var t = new Date().toTimeString().slice(0,8);
+  var cls = type || '';
+  el.innerHTML += '\n<span class="entry"><span class="time">[' + t + ']</span> <span' + (cls ? ' class="'+cls+'"' : '') + '>' + esc(msg) + '</span></span>';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function runCmd() {
+  var raw = document.getElementById('cmdInput').value.trim();
+  if (!raw) return;
+  var parts = [];
+  var rx = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)/g;
+  var m;
+  while ((m = rx.exec(raw)) !== null) {
+    var tok = m[1];
+    if ((tok[0] === '"' || tok[0] === "'") && tok[tok.length-1] === tok[0])
+      tok = tok.slice(1, -1);
+    parts.push(tok);
+  }
+  if (parts.length === 0) return;
+  var cmd = parts[0];
+  var args = parts.slice(1);
+  var traitPath = cmd;
+  if (cmd.indexOf('.') === -1) traitPath = 'sys.' + cmd;
+  document.getElementById('btnRun').disabled = true;
+  document.getElementById('btnRun').textContent = '...';
+  cmdLog('$ traits ' + raw);
+  try {
+    var r = await callTrait(traitPath, args);
+    if (r.error) {
+      cmdLog('Error: ' + (r.error || 'Unknown'), 'error');
+    } else {
+      var d = r.result;
+      if (typeof d === 'string') {
+        d.split('\n').forEach(function(line) { cmdLog(line); });
+      } else if (d !== null && d !== undefined) {
+        JSON.stringify(d, null, 2).split('\n').forEach(function(line) { cmdLog(line); });
+      }
+    }
+  } catch(e) { cmdLog('Error: ' + e.message, 'error'); }
+  document.getElementById('btnRun').disabled = false;
+  document.getElementById('btnRun').textContent = 'Run';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Secrets, Env, and Status
+// ═══════════════════════════════════════════════════════════════
 const SECRET_PFX = 'traits.secret.';
 const ENV_PFX = 'traits.env.';
 const SHELL_ROUTE_KEY = 'traits.shell.route';
@@ -473,20 +661,6 @@ function apiDocsUrl(fragment) {
   const suffix = fragment || API_DOCS_FRAGMENT;
   if (isLocalFile) return `#/docs/api`;
   return `/docs/api${suffix}`;
-}
-
-function openApiCommand(command, fragment) {
-  const suffix = fragment || API_DOCS_FRAGMENT;
-  safeSessionSet(SHELL_ROUTE_KEY, '/docs/api');
-  safeSessionSet(PENDING_COMMAND_KEY, `${command}\r`);
-  if (isLocalFile) {
-    location.hash = suffix;
-    location.reload();
-    return false;
-  }
-  // Cache-bust to ensure fresh page load (avoids bfcache skipping script init)
-  location.assign(`/docs/api?_=${Date.now()}${suffix}`);
-  return false;
 }
 
 // ── Stats via TC (Trait Component) ──
@@ -622,21 +796,7 @@ function deleteEnvVar(key) {
 }
 
 function configureLinks() {
-  const terminalLink = byId('terminalLink');
-  const commandLinks = Array.from(document.querySelectorAll('.command-link'));
-  commandLinks.forEach((link) => {
-    const fragment = link.getAttribute('data-fragment') || API_DOCS_FRAGMENT;
-    link.setAttribute('href', apiDocsUrl(fragment));
-  });
-  if (isLocalFile) {
-    byId('serverAdminNote').innerHTML = 'Deployment controls stay on the secured localhost admin page when you run a local server.';
-    if (terminalLink) {
-      terminalLink.setAttribute('href', apiDocsUrl(API_DOCS_FRAGMENT));
-    }
-    byId('terminalNote').innerHTML = 'Every tool below can be tested in the API page terminal. <a href="' + apiDocsUrl(API_DOCS_FRAGMENT) + '" target="_blank" rel="noopener" onclick="return openApiCommand(\'list\', \'#tag/infrastructure/operation/list_traits\')">Open terminal</a>';
-  } else if (terminalLink) {
-    terminalLink.setAttribute('href', apiDocsUrl(API_DOCS_FRAGMENT));
-  }
+  // Links now use setCmd+runCmd directly; no special configuration needed.
 }
 
 try {
