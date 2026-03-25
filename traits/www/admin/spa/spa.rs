@@ -390,6 +390,7 @@ a { color: #8be3cb; }
 "##;
 
 const JS: &str = r##"
+(function() {
 // ═══════════════════════════════════════════════════════════════
 // Platform detection + Setup card
 // ═══════════════════════════════════════════════════════════════
@@ -793,5 +794,16 @@ try {
   log(`Storage UI error: ${error.message || error}`, 'error');
 }
 
+// Expose functions to onclick handlers in HTML
+window.copyCmd = copyCmd;
+window.addToHomeScreen = addToHomeScreen;
+window.setCmd = setCmd;
+window.runCmd = runCmd;
+window.saveSecret = saveSecret;
+window.deleteSecret = deleteSecret;
+window.saveEnvVar = saveEnvVar;
+window.deleteEnvVar = deleteEnvVar;
+
 // TC handles interval cleanup automatically via TC.cleanup() in injectPage
+})();
 "##;
