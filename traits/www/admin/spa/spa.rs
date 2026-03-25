@@ -55,32 +55,32 @@ pub fn spa(_args: &[Value]) -> Value {
                             h2 { "System tools" }
                             p.note id="terminalNote" {
                               "Every tool below can be tested in the browser terminal. "
-                              a href="#" target="_blank" rel="noopener" id="terminalLink" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits list', '#tag/infrastructure/operation/list_traits')" { "Open terminal" }
+                              a href="#" target="_blank" rel="noopener" id="terminalLink" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('list', '#tag/infrastructure/operation/list_traits')" { "Open terminal" }
                             }
                             table.tools {
                                 tr {
                                     td { "List traits" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits list', '#tag/infrastructure/operation/list_traits')" { code { "traits list" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('list', '#tag/infrastructure/operation/list_traits')" { code { "traits list" } } }
                                 }
                                 tr {
                                     td { "Version" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits version', '#tag/infrastructure/operation/list_traits')" { code { "traits version" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('version', '#tag/infrastructure/operation/list_traits')" { code { "traits version" } } }
                                 }
                                 tr {
                                     td { "Registry" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits registry', '#tag/infrastructure/operation/list_traits')" { code { "traits registry" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('registry', '#tag/infrastructure/operation/list_traits')" { code { "traits registry" } } }
                                 }
                                 tr {
                                     td { "Processes" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits ps', '#tag/infrastructure/operation/list_traits')" { code { "traits ps" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('ps', '#tag/infrastructure/operation/list_traits')" { code { "traits ps" } } }
                                 }
                                 tr {
                                     td { "Run tests" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand(\"traits test_runner 'sys.*'\", '#tag/infrastructure/operation/list_traits')" { code { "traits test_runner 'sys.*'" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand(\"test_runner 'sys.*'\", '#tag/infrastructure/operation/list_traits')" { code { "traits test_runner 'sys.*'" } } }
                                 }
                                 tr {
                                     td { "Reload registry" }
-                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('traits call kernel.reload', '#tag/infrastructure/operation/list_traits')" { code { "traits call kernel.reload" } } }
+                                td colspan="2" { a href="#" class="command-link" data-fragment="#tag/infrastructure/operation/list_traits" onclick="return openApiCommand('call kernel.reload', '#tag/infrastructure/operation/list_traits')" { code { "traits call kernel.reload" } } }
                                 }
                             }
                         }
@@ -632,7 +632,7 @@ function configureLinks() {
     if (terminalLink) {
       terminalLink.setAttribute('href', apiDocsUrl(API_DOCS_FRAGMENT));
     }
-    byId('terminalNote').innerHTML = 'Every tool below can be tested in the API page terminal. <a href="' + apiDocsUrl(API_DOCS_FRAGMENT) + '" target="_blank" rel="noopener" onclick="return openApiCommand(\'traits list\', \'#tag/infrastructure/operation/list_traits\')">Open terminal</a>';
+    byId('terminalNote').innerHTML = 'Every tool below can be tested in the API page terminal. <a href="' + apiDocsUrl(API_DOCS_FRAGMENT) + '" target="_blank" rel="noopener" onclick="return openApiCommand(\'list\', \'#tag/infrastructure/operation/list_traits\')">Open terminal</a>';
   } else if (terminalLink) {
     terminalLink.setAttribute('href', apiDocsUrl(API_DOCS_FRAGMENT));
   }
