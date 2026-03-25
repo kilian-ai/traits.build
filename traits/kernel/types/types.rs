@@ -1,7 +1,7 @@
 // Re-export shared types from kernel-logic
-pub use kernel_logic::types::{
-    TraitType, TraitValue, ParamDef, ReturnDef, TraitSignature, Language,
-};
+#[cfg_attr(target_arch = "wasm32", allow(unused_imports))]
+pub use kernel_logic::types::{Language, ParamDef, ReturnDef, TraitSignature, TraitType};
+pub use kernel_logic::types::TraitValue;
 
 use serde::{Deserialize, Serialize};
 
