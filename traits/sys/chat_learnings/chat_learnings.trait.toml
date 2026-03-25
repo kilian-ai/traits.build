@@ -1,7 +1,7 @@
 [trait]
 description = "Extract durable learnings from chat history and append them to LEARNINGS.md"
-version = "v260325.141050"
-checksum = "99455466ecce16acc0e10e9e246c763474545878da6a9f1364aaf3a8f116db37"
+version = "v260325.143538"
+checksum = "fb6832ed8ff56049c408a08488e2840ce33a6341aa42dc7c80becc691e626f62"
 author = "system"
 tags = ["sys", "chat", "learnings", "llm", "memory"]
 
