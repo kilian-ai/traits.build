@@ -1,11 +1,24 @@
 use serde_json::{json, Value};
+
+// ── Platform-specific imports ────────────────────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(not(target_arch = "wasm32"))]
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
-/// Entry: test_runner(pattern, verbose?)
+// ═════════════════════════════════════════════════════════════
+// ── Entry point ─────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn test_runner(args: &[Value]) -> Value {
     // Prevent recursive calls (test_runner testing itself)
     if RUNNING.swap(true, Ordering::SeqCst) {
@@ -16,17 +29,28 @@ pub fn test_runner(args: &[Value]) -> Value {
     result
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn test_runner(args: &[Value]) -> Value {
+    test_runner_inner(args)
+}
+
+// ═════════════════════════════════════════════════════════════
+// ── Main test loop (shared) ─────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
+/// A discovered trait with its features JSON and parameter names.
+struct DiscoveredTrait {
+    path: String,
+    features: Vec<Value>,
+    param_names: Vec<String>,
+}
+
 fn test_runner_inner(args: &[Value]) -> Value {
     let pattern = args.first().and_then(|v| v.as_str()).unwrap_or("*").trim();
     let verbose = args.get(1).and_then(|v| v.as_bool()).unwrap_or(false);
     let skip_commands = args.get(2).and_then(|v| v.as_bool()).unwrap_or(false);
 
-    // If pattern looks like a filesystem path, discover features.json from disk
-    let traits = if pattern.contains('/') || pattern.starts_with('.') {
-        discover_fs_features(pattern)
-    } else {
-        discover_traits(pattern)
-    };
+    let traits = discover(pattern);
     if traits.is_empty() {
         return json!({
             "ok": false,
@@ -40,20 +64,17 @@ fn test_runner_inner(args: &[Value]) -> Value {
     let mut total_ex_failed = 0u32;
     let mut total_cmd_passed = 0u32;
     let mut total_cmd_failed = 0u32;
+    let mut total_cmd_skipped = 0u32;
     let mut total_skipped = 0u32;
 
-    for (trait_path, features_path, params) in &traits {
-        let features = match load_features(features_path) {
-            Some(f) => f,
-            None => continue,
-        };
-        if features.is_empty() {
+    for dt in &traits {
+        if dt.features.is_empty() {
             total_skipped += 1;
             continue;
         }
 
-        let ex_results = run_example_tests(trait_path, &features, params, verbose);
-        let cmd_results = if skip_commands { vec![] } else { run_command_tests(&features, verbose) };
+        let ex_results = run_example_tests(&dt.path, &dt.features, &dt.param_names, verbose);
+        let cmd_results = run_command_tests_platform(&dt.features, verbose, skip_commands, &mut total_cmd_skipped);
 
         let ex_p = ex_results.iter().filter(|r| r["passed"].as_bool() == Some(true)).count() as u32;
         let ex_f = ex_results.iter().filter(|r| r["passed"].as_bool() != Some(true)).count() as u32;
@@ -65,23 +86,26 @@ fn test_runner_inner(args: &[Value]) -> Value {
         total_cmd_passed += cmd_p;
         total_cmd_failed += cmd_f;
 
-        if ex_results.is_empty() && cmd_results.is_empty() {
+        if ex_results.is_empty() && cmd_results.is_empty() && total_cmd_skipped == 0 {
             total_skipped += 1;
             continue;
         }
 
         let mut trait_result = json!({
-            "trait": trait_path,
+            "trait": dt.path,
             "ok": ex_f == 0 && cmd_f == 0,
             "examples": { "passed": ex_p, "failed": ex_f },
-            "commands": { "passed": cmd_p, "failed": cmd_f },
         });
+
+        add_command_summary(&mut trait_result, cmd_p, cmd_f, total_cmd_skipped);
 
         let all_details: Vec<Value> = ex_results.into_iter().chain(cmd_results).collect();
         if verbose {
             trait_result["details"] = Value::Array(all_details);
         } else {
-            let failures: Vec<Value> = all_details.into_iter().filter(|d| d["passed"].as_bool() != Some(true)).collect();
+            let failures: Vec<Value> = all_details.into_iter()
+                .filter(|d| d["passed"].as_bool() != Some(true))
+                .collect();
             if !failures.is_empty() {
                 trait_result["failures"] = Value::Array(failures);
             }
@@ -93,39 +117,59 @@ fn test_runner_inner(args: &[Value]) -> Value {
     let total_passed = total_ex_passed + total_cmd_passed;
     let total_failed = total_ex_failed + total_cmd_failed;
 
-    json!({
+    let mut result = json!({
         "ok": total_failed == 0,
         "pattern": pattern,
         "summary": {
             "traits": all_results.len(),
             "examples": { "passed": total_ex_passed, "failed": total_ex_failed },
-            "commands": { "passed": total_cmd_passed, "failed": total_cmd_failed },
             "skipped": total_skipped,
             "total_passed": total_passed,
             "total_failed": total_failed,
         },
         "results": all_results,
-    })
+    });
+
+    add_summary_platform(&mut result, total_cmd_passed, total_cmd_failed, total_cmd_skipped);
+
+    result
 }
 
-// ── Discover traits with .features.json ─────────────────────
-// Returns Vec<(trait_path, features_json_path, params)>
-fn discover_traits(pattern: &str) -> Vec<(String, String, Vec<(String, String)>)> {
+// ═════════════════════════════════════════════════════════════
+// ── Platform: discovery ─────────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
+fn discover(pattern: &str) -> Vec<DiscoveredTrait> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if pattern.contains('/') || pattern.starts_with('.') {
+        return discover_fs_features(pattern);
+    }
+    discover_traits(pattern)
+}
+
+/// Shared pattern parsing: "sys.*" -> ("sys", "*"), "*" -> ("", "*")
+fn parse_pattern(pattern: &str) -> (&str, &str) {
+    if pattern.contains('.') {
+        let parts: Vec<&str> = pattern.splitn(2, '.').collect();
+        (parts[0], parts[1])
+    } else {
+        ("", pattern)
+    }
+}
+
+// ── Native discovery: from globals::REGISTRY + filesystem ──
+
+#[cfg(not(target_arch = "wasm32"))]
+fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
     let registry = match crate::globals::REGISTRY.get() {
         Some(r) => r,
         None => return vec![],
     };
 
-    let (ns_filter, name_filter) = if pattern.contains('.') {
-        let parts: Vec<&str> = pattern.splitn(2, '.').collect();
-        (parts[0], parts[1])
-    } else {
-        ("", pattern)
-    };
+    let (ns_filter, name_filter) = parse_pattern(pattern);
 
     let mut results = Vec::new();
     for entry in registry.all() {
-        // Match against pattern
         let parts: Vec<&str> = entry.path.splitn(2, '.').collect();
         if parts.len() != 2 { continue; }
         let (ns, name) = (parts[0], parts[1]);
@@ -139,7 +183,6 @@ fn discover_traits(pattern: &str) -> Vec<(String, String, Vec<(String, String)>)
             None => continue,
         };
         let features_path = toml_dir.join(format!("{}.features.json", name));
-        // For nested traits like sys.docs.skills, try the leaf name (skills.features.json)
         let features_path = if features_path.exists() {
             features_path
         } else if let Some(leaf) = name.rsplit('.').next() {
@@ -149,34 +192,93 @@ fn discover_traits(pattern: &str) -> Vec<(String, String, Vec<(String, String)>)
             continue;
         };
 
-        let params: Vec<(String, String)> = entry.signature.params.iter()
-            .map(|p| (p.name.clone(), format!("{:?}", p.param_type)))
+        let features = match load_features_from_file(&features_path) {
+            Some(f) => f,
+            None => continue,
+        };
+
+        let param_names: Vec<String> = entry.signature.params.iter()
+            .map(|p| p.name.clone())
             .collect();
 
-        results.push((
-            entry.path.clone(),
-            features_path.to_string_lossy().to_string(),
-            params,
-        ));
+        results.push(DiscoveredTrait {
+            path: entry.path.clone(),
+            features,
+            param_names,
+        });
     }
-    results.sort_by(|a, b| a.0.cmp(&b.0));
+    results.sort_by(|a, b| a.path.cmp(&b.path));
     results
 }
 
-// ── Discover features.json from filesystem glob / path ──────
-// Pattern like './src/*', './src/cli.features.json', or './src/'
-// Returns entries with empty params (no trait signature → example tests skipped).
-fn discover_fs_features(pattern: &str) -> Vec<(String, String, Vec<(String, String)>)> {
+// ── WASM discovery: from embedded BUILTIN_FEATURES ──
+
+#[cfg(target_arch = "wasm32")]
+fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
+    let (ns_filter, name_filter) = parse_pattern(pattern);
+    let reg = crate::get_registry();
+
+    let mut results = Vec::new();
+    for &(trait_path, features_json) in crate::BUILTIN_FEATURES {
+        let parts: Vec<&str> = trait_path.splitn(2, '.').collect();
+        if parts.len() != 2 { continue; }
+        let (ns, name) = (parts[0], parts[1]);
+
+        if !ns_filter.is_empty() && ns_filter != "*" && ns != ns_filter { continue; }
+        if name_filter != "*" && name != name_filter { continue; }
+
+        let features = match parse_features_json(features_json) {
+            Some(f) => f,
+            None => continue,
+        };
+
+        let param_names: Vec<String> = reg.get(trait_path)
+            .map(|e| {
+                e.params.iter()
+                    .filter_map(|p| p.get("name").and_then(|v| v.as_str()).map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        results.push(DiscoveredTrait {
+            path: trait_path.to_string(),
+            features,
+            param_names,
+        });
+    }
+    results.sort_by(|a, b| a.path.cmp(&b.path));
+    results
+}
+
+// ═════════════════════════════════════════════════════════════
+// ── Platform: features loading ──────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_features_from_file(path: &std::path::Path) -> Option<Vec<Value>> {
+    let text = fs::read_to_string(path).ok()?;
+    parse_features_json(&text)
+}
+
+fn parse_features_json(json_str: &str) -> Option<Vec<Value>> {
+    let parsed: Value = serde_json::from_str(json_str).ok()?;
+    parsed.get("features").and_then(|f| f.as_array()).cloned()
+}
+
+// ═════════════════════════════════════════════════════════════
+// ── Platform: filesystem discovery (native only) ────────────
+// ═════════════════════════════════════════════════════════════
+
+#[cfg(not(target_arch = "wasm32"))]
+fn discover_fs_features(pattern: &str) -> Vec<DiscoveredTrait> {
     use std::path::{Path, PathBuf};
 
     let mut files: Vec<PathBuf> = Vec::new();
 
-    // If the pattern literally names a .features.json file, use it directly
     let p = Path::new(pattern);
     if p.is_file() && pattern.ends_with(".features.json") {
         files.push(p.to_path_buf());
     } else if p.is_dir() {
-        // Directory: find all *.features.json inside it (non-recursive)
         if let Ok(rd) = fs::read_dir(p) {
             for e in rd.flatten() {
                 let ep = e.path();
@@ -186,12 +288,8 @@ fn discover_fs_features(pattern: &str) -> Vec<(String, String, Vec<(String, Stri
             }
         }
     } else {
-        // Glob: expand by walking parent dir and matching the filename pattern.
-        // e.g. './src/*' → parent=./src, pattern=*
-        // e.g. './src/*.features.json' → parent=./src, pattern=*.features.json
         let parent = p.parent().unwrap_or(Path::new("."));
         let glob_part = p.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
-
         if parent.is_dir() {
             collect_features_recursive(parent, &glob_part, &mut files);
         }
@@ -199,20 +297,23 @@ fn discover_fs_features(pattern: &str) -> Vec<(String, String, Vec<(String, Stri
 
     files.sort();
     files.iter().filter_map(|fp| {
-        let fname = fp.file_stem()?.to_string_lossy().to_string(); // e.g. "cli.features"
+        let features = load_features_from_file(fp)?;
+        let fname = fp.file_stem()?.to_string_lossy().to_string();
         let label = fname.strip_suffix(".features").unwrap_or(&fname);
-        // Build a display path: dir/name, e.g. "src/cli"
         let dir_name = fp.parent()
             .and_then(|d| d.file_name())
             .map(|d| d.to_string_lossy().to_string())
             .unwrap_or_default();
         let display = if dir_name.is_empty() { label.to_string() } else { format!("{}/{}", dir_name, label) };
-        Some((display, fp.to_string_lossy().to_string(), vec![]))
+        Some(DiscoveredTrait {
+            path: display,
+            features,
+            param_names: vec![],
+        })
     }).collect()
 }
 
-/// Recursively collect *.features.json files under `dir`.
-/// If `glob_part` is "*", collect all; otherwise match the prefix.
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_features_recursive(dir: &std::path::Path, glob_part: &str, out: &mut Vec<std::path::PathBuf>) {
     let rd = match fs::read_dir(dir) {
         Ok(rd) => rd,
@@ -227,7 +328,6 @@ fn collect_features_recursive(dir: &std::path::Path, glob_part: &str, out: &mut 
                 out.push(ep);
             } else if let Some(fname) = ep.file_name() {
                 let fname_s = fname.to_string_lossy();
-                // Simple prefix glob: "cli*" matches "cli.features.json"
                 let prefix = glob_part.trim_end_matches('*');
                 if prefix.is_empty() || fname_s.starts_with(prefix) {
                     out.push(ep);
@@ -237,18 +337,78 @@ fn collect_features_recursive(dir: &std::path::Path, glob_part: &str, out: &mut 
     }
 }
 
-// ── Load features from JSON ─────────────────────────────────
-fn load_features(path: &str) -> Option<Vec<Value>> {
-    let text = fs::read_to_string(path).ok()?;
-    let parsed: Value = serde_json::from_str(&text).ok()?;
-    parsed.get("features").and_then(|f| f.as_array()).cloned()
+// ═════════════════════════════════════════════════════════════
+// ── Platform: trait dispatch ────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
+#[cfg(not(target_arch = "wasm32"))]
+fn dispatch_trait(trait_path: &str, args: &[Value]) -> Option<Value> {
+    crate::dispatcher::compiled::dispatch(trait_path, args)
 }
 
-// ── Run example-based tests (internal dispatch) ─────────────
+#[cfg(target_arch = "wasm32")]
+fn dispatch_trait(trait_path: &str, args: &[Value]) -> Option<Value> {
+    crate::wasm_traits::dispatch(trait_path, args)
+}
+
+// ═════════════════════════════════════════════════════════════
+// ── Platform: command tests ─────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
+#[cfg(not(target_arch = "wasm32"))]
+fn run_command_tests_platform(
+    features: &[Value],
+    verbose: bool,
+    skip_commands: bool,
+    _skipped: &mut u32,
+) -> Vec<Value> {
+    if skip_commands { vec![] } else { run_command_tests(features, verbose) }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn run_command_tests_platform(
+    features: &[Value],
+    _verbose: bool,
+    _skip_commands: bool,
+    skipped: &mut u32,
+) -> Vec<Value> {
+    for feature in features {
+        if let Some(tests) = feature.get("tests").and_then(|t| t.as_array()) {
+            *skipped += tests.len() as u32;
+        }
+    }
+    vec![]
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn add_command_summary(trait_result: &mut Value, cmd_p: u32, cmd_f: u32, _skipped: u32) {
+    trait_result["commands"] = json!({ "passed": cmd_p, "failed": cmd_f });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn add_command_summary(trait_result: &mut Value, _cmd_p: u32, _cmd_f: u32, skipped: u32) {
+    trait_result["commands"] = json!({ "skipped": skipped, "note": "shell commands unavailable in WASM" });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn add_summary_platform(result: &mut Value, cmd_p: u32, cmd_f: u32, _skipped: u32) {
+    result["summary"]["commands"] = json!({ "passed": cmd_p, "failed": cmd_f });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn add_summary_platform(result: &mut Value, _cmd_p: u32, _cmd_f: u32, skipped: u32) {
+    result["summary"]["commands"] = json!({ "skipped": skipped, "note": "shell commands unavailable in WASM" });
+    result["runtime"] = json!("wasm");
+}
+
+// ═════════════════════════════════════════════════════════════
+// ── Shared: example test runner ─────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
 fn run_example_tests(
     trait_path: &str,
     features: &[Value],
-    params: &[(String, String)],
+    param_names: &[String],
     verbose: bool,
 ) -> Vec<Value> {
     let mut results = Vec::new();
@@ -262,10 +422,9 @@ fn run_example_tests(
 
         for example in examples {
             let input = example.get("input");
-            let args = input_to_args(input, params);
+            let args = input_to_args(input, param_names);
 
-            // Call trait via internal dispatch
-            let (output, error) = match crate::dispatcher::compiled::dispatch(trait_path, &args) {
+            let (output, error) = match dispatch_trait(trait_path, &args) {
                 Some(v) => {
                     if let Some(e) = v.get("error").and_then(|e| e.as_str()) {
                         (v.clone(), Some(e.to_string()))
@@ -273,7 +432,7 @@ fn run_example_tests(
                         (v, None)
                     }
                 }
-                None => (Value::Null, Some(format!("Trait '{}' not found in compiled dispatch", trait_path))),
+                None => (Value::Null, Some(format!("Trait '{}' not found in dispatch", trait_path))),
             };
 
             let output_str = if let Some(ref e) = error {
@@ -284,7 +443,11 @@ fn run_example_tests(
 
             let expected = example.get("output").cloned().unwrap_or(json!({}));
             let checks = run_checks(&expected, &output_str, &output, error.as_deref());
-            let passed = if checks.is_empty() { error.is_none() } else { checks.iter().all(|c| c["ok"].as_bool() == Some(true)) };
+            let passed = if checks.is_empty() {
+                error.is_none()
+            } else {
+                checks.iter().all(|c| c["ok"].as_bool() == Some(true))
+            };
 
             let mut entry = json!({
                 "type": "example",
@@ -301,7 +464,11 @@ fn run_example_tests(
                 entry["checks"] = Value::Array(checks);
             } else if !passed {
                 entry["input"] = input.cloned().unwrap_or(Value::Null);
-                entry["failing_checks"] = Value::Array(checks.into_iter().filter(|c| c["ok"].as_bool() != Some(true)).collect());
+                entry["failing_checks"] = Value::Array(
+                    checks.into_iter()
+                        .filter(|c| c["ok"].as_bool() != Some(true))
+                        .collect()
+                );
             }
 
             results.push(entry);
@@ -310,23 +477,24 @@ fn run_example_tests(
     results
 }
 
-// ── Map object/array input to positional args ───────────────
-fn input_to_args(input: Option<&Value>, params: &[(String, String)]) -> Vec<Value> {
+// ═════════════════════════════════════════════════════════════
+// ── Shared: input mapping ───────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
+fn input_to_args(input: Option<&Value>, param_names: &[String]) -> Vec<Value> {
     match input {
         Some(Value::Array(arr)) => arr.clone(),
         Some(Value::Object(obj)) => {
-            // Find last param index referenced in input
             let mut last_used: i32 = -1;
-            for (i, (name, _)) in params.iter().enumerate() {
+            for (i, name) in param_names.iter().enumerate() {
                 if obj.contains_key(name) {
                     last_used = i as i32;
                 }
             }
             let mut args = Vec::new();
             for i in 0..=(last_used as usize) {
-                if i < params.len() {
-                    let (name, _ptype) = &params[i];
-                    args.push(obj.get(name).cloned().unwrap_or(Value::Null));
+                if i < param_names.len() {
+                    args.push(obj.get(&param_names[i]).cloned().unwrap_or(Value::Null));
                 }
             }
             args
@@ -336,7 +504,10 @@ fn input_to_args(input: Option<&Value>, params: &[(String, String)]) -> Vec<Valu
     }
 }
 
-// ── Run contains/not_contains checks ────────────────────────
+// ═════════════════════════════════════════════════════════════
+// ── Shared: check runners ───────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+
 fn run_checks(expected: &Value, output_str: &str, output: &Value, error: Option<&str>) -> Vec<Value> {
     let mut checks = Vec::new();
 
@@ -355,7 +526,10 @@ fn run_checks(expected: &Value, output_str: &str, output: &Value, error: Option<
             };
             checks.push(json!({
                 "type": "contains",
-                "value": match needle { Value::String(s) => s.clone(), _ => serde_json::to_string(needle).unwrap_or_default() },
+                "value": match needle {
+                    Value::String(s) => s.clone(),
+                    _ => serde_json::to_string(needle).unwrap_or_default(),
+                },
                 "ok": ok,
             }));
         }
@@ -376,7 +550,10 @@ fn run_checks(expected: &Value, output_str: &str, output: &Value, error: Option<
             };
             checks.push(json!({
                 "type": "not_contains",
-                "value": match needle { Value::String(s) => s.clone(), _ => serde_json::to_string(needle).unwrap_or_default() },
+                "value": match needle {
+                    Value::String(s) => s.clone(),
+                    _ => serde_json::to_string(needle).unwrap_or_default(),
+                },
                 "ok": ok,
             }));
         }
@@ -385,18 +562,12 @@ fn run_checks(expected: &Value, output_str: &str, output: &Value, error: Option<
     checks
 }
 
-// ── Deep equality ───────────────────────────────────────────
-fn deep_equals(a: &Value, b: &Value) -> bool {
-    a == b
-}
-
-// ── Partial object match (needle keys ⊂ haystack) ──────────
 fn object_contains(needle: &Value, haystack: &Value) -> bool {
     match (needle, haystack) {
         (Value::Object(n), Value::Object(h)) => {
-            n.iter().all(|(k, v)| h.get(k).map_or(false, |hv| deep_equals(v, hv)))
+            n.iter().all(|(k, v)| h.get(k).map_or(false, |hv| v == hv))
         }
-        _ => deep_equals(needle, haystack),
+        _ => needle == haystack,
     }
 }
 
@@ -408,11 +579,14 @@ fn object_needle_match(needle: &Value, output: &Value) -> bool {
     }
 }
 
-// ── Run shell command tests ─────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+// ── Native only: shell command tests ────────────────────────
+// ═════════════════════════════════════════════════════════════
+
+#[cfg(not(target_arch = "wasm32"))]
 fn run_command_tests(features: &[Value], verbose: bool) -> Vec<Value> {
     let mut results = Vec::new();
 
-    // Determine cwd — use TRAITS_DIR parent or CARGO_MANIFEST_DIR
     let cwd = crate::globals::TRAITS_DIR.get()
         .map(|p| p.parent().unwrap_or(p).to_path_buf())
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
@@ -453,7 +627,6 @@ fn run_command_tests(features: &[Value], verbose: bool) -> Vec<Value> {
             let mut check_results: Vec<Value> = Vec::new();
 
             if let Some(checks) = checks_arr {
-                // Structured checks format
                 for check in checks {
                     let ctype = check.get("type").and_then(|t| t.as_str()).unwrap_or("");
                     let expected = &check["expected"];
@@ -488,7 +661,6 @@ fn run_command_tests(features: &[Value], verbose: bool) -> Vec<Value> {
                     }));
                 }
             } else if !expect.is_empty() {
-                // Legacy expect string format
                 let exits_zero = regex_match(r"exits?\s+0\b", expect) && !regex_match(r"non.?zero", expect);
                 if exits_zero && exit_code != 0 {
                     passed = false;
@@ -552,9 +724,10 @@ fn run_command_tests(features: &[Value], verbose: bool) -> Vec<Value> {
     results
 }
 
-// ── Simple regex helpers (avoid pulling in regex crate) ─────
+// ── Native only: regex helpers ──────────────────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
 fn regex_match(pattern: &str, text: &str) -> bool {
-    // Use simple string matching for the patterns we need
     match pattern {
         r"exits?\s+0\b" => {
             text.contains("exit 0") || text.contains("exits 0")
@@ -570,8 +743,8 @@ fn regex_match(pattern: &str, text: &str) -> bool {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn regex_find_all(pattern: &str, text: &str) -> Vec<String> {
-    // For contains "X" patterns, parse manually
     if pattern.contains("contains") {
         let mut results = Vec::new();
         let lower = text.to_lowercase();
@@ -580,7 +753,6 @@ fn regex_find_all(pattern: &str, text: &str) -> Vec<String> {
             let mut pos = 0;
             while let Some(idx) = lower[pos..].find(prefix) {
                 let start = pos + idx + prefix.len();
-                // Skip whitespace
                 let rest = &text[start..];
                 let trimmed = rest.trim_start();
                 if let Some(quote) = trimmed.chars().next() {
@@ -602,11 +774,11 @@ fn regex_find_all(pattern: &str, text: &str) -> Vec<String> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_count_check(text: &str) -> Option<(String, i64)> {
     let lower = text.to_lowercase();
     if let Some(idx) = lower.find("count") {
         let rest = &text[idx + 5..].trim_start();
-        // Parse operator
         let ops = [">=", "<=", "==", ">", "<", "="];
         for op in &ops {
             if rest.starts_with(op) {

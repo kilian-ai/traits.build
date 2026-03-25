@@ -44,6 +44,9 @@ pub mod www_static;
 #[path = "../../../../sys/openapi/openapi.rs"]
 pub mod openapi;
 
+#[path = "../../../../sys/test_runner/test_runner.rs"]
+pub mod test_runner;
+
 #[path = "../../../../sys/cli/wasm/wasm_impl.rs"]
 pub mod wasm_impl;
 
@@ -76,7 +79,7 @@ pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
         "sys.list" => Some(registry::list(args)),
         "sys.openapi" => Some(openapi::openapi(args)),
         "sys.registry" => Some(registry::registry(args)),
-        "sys.test_runner" => Some(crate::test_runner::test_runner(args)),
+        "sys.test_runner" => Some(test_runner::test_runner(args)),
         "sys.version" => Some(version::version(args)),
         "www.traits.build" => Some(www_build::website(args)),
         "www.docs" => Some(www_docs::docs(args)),
