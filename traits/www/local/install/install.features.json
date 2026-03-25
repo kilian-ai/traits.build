@@ -1,0 +1,15 @@
+{
+  "trait": "www.local.install",
+  "examples": [
+    {
+      "description": "Returns a shell script starting with shebang",
+      "args": [],
+      "checks": [
+        { "type": "contains", "value": "#!/bin/bash" },
+        { "type": "contains", "value": "INSTALL_DIR" },
+        { "type": "contains", "value": "traits serve" },
+        { "type": "contains", "value": "launchctl" }
+      ]
+    }
+  ]
+}

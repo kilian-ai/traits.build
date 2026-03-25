@@ -399,8 +399,14 @@ async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
 
     match state.dispatcher.call(&trait_path, vec![], &CallConfig::default()).await {
         Ok(TraitValue::String(html)) => {
+            // Detect shell scripts (shebang) and serve as text/plain
+            let content_type = if html.starts_with("#!/") {
+                "text/plain; charset=utf-8"
+            } else {
+                "text/html; charset=utf-8"
+            };
             HttpResponse::Ok()
-                .content_type("text/html; charset=utf-8")
+                .content_type(content_type)
                 .body(html)
         }
         Ok(other) => {

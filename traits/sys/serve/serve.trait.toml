@@ -1,8 +1,8 @@
 [trait]
 description = "Start the HTTP API server"
-version = "v260324.142848"
+version = "v260325"
 epoch = 0
-checksum = "111b018fa475fba4c271bbeeffa2ed5f709c6b7ec08f8a604814af26ac330f13"
+checksum = "2f4561e00eeadf2f2b0eeaa46512c6c097df15954d87617bb53df0d67eae09d2"
 author = "system"
 tags = ["sys", "server"]
 background = true
@@ -21,6 +21,8 @@ kernel_module = true
 "/chat-logs" = "www/webpage"
 "/llm-openai" = "www/webpage"
 "/llm-test" = "www/webpage"
+"/local/helper.sh" = "www/webpage"
+"/local/install.sh" = "www/webpage"
 dispatcher = "kernel/dispatcher"
 secrets = "sys/secrets"
 
@@ -36,6 +38,8 @@ secrets = "sys/secrets"
 "/chat-logs" = "www.chat_logs"
 "/llm-openai" = "www.llm.openai"
 "/llm-test" = "www.llm_test"
+"/local/helper.sh" = "www.local.helper"
+"/local/install.sh" = "www.local.install"
 dispatcher = "kernel.dispatcher"
 secrets = "sys.secrets"
 

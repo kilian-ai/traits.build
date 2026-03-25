@@ -1,0 +1,19 @@
+[trait]
+description = "Shell script to install the traits helper permanently"
+version = "v260325.184451"
+checksum = "4e54f84eee4cbc21b064ef6ba6dd5b995727814bcbd1356d3af49930dcd59ad9"
+author = "system"
+tags = ["www", "local", "install"]
+provides = ["www/webpage"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "string"
+description = "Shell script content (text/plain)"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "install"
