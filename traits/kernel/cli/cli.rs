@@ -1069,18 +1069,19 @@ fn format_search(backend: &dyn CliBackend, query: &str) -> String {
 pub fn parse_command(line: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
-    let mut in_quote = false;
+    let mut in_quote: Option<char> = None;
 
     for ch in line.chars() {
-        if ch == '"' {
-            in_quote = !in_quote;
-        } else if ch == ' ' && !in_quote {
-            if !current.is_empty() {
-                parts.push(current.clone());
-                current.clear();
+        match (ch, in_quote) {
+            ('"', None) | ('\'', None) => in_quote = Some(ch),
+            (c, Some(q)) if c == q => in_quote = None,
+            (' ', None) => {
+                if !current.is_empty() {
+                    parts.push(current.clone());
+                    current.clear();
+                }
             }
-        } else {
-            current.push(ch);
+            _ => current.push(ch),
         }
     }
     if !current.is_empty() {

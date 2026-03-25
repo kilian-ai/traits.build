@@ -1,0 +1,31 @@
+{
+  "trait": "sys.chat_learnings",
+  "features": [
+    {
+      "name": "Appends learnings from new comments",
+      "description": "Scans chat history, deduplicates user comments, and appends model output to a markdown file.",
+      "tests": [
+        {
+          "name": "writes fixture learnings",
+          "type": "command",
+          "command": "rm -f /tmp/traits-chat-learnings.md /tmp/.traits-chat-learnings.state.json && ./target/release/traits call sys.chat_learnings fixture-workspace 'Extract stable instructions only.' /tmp/traits-chat-learnings.md ./traits/sys/chat_protocols/fixtures/workspaceStorage all gpt-4o-mini '- remember the legacy json path\n- store durable instructions in LEARNINGS.md' 2>/dev/null && cat /tmp/traits-chat-learnings.md",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "# LEARNINGS" },
+            { "type": "contains", "expected": "remember the legacy json path" },
+            { "type": "contains", "expected": "store durable instructions in LEARNINGS.md" }
+          ]
+        },
+        {
+          "name": "second scan is incremental",
+          "type": "command",
+          "command": "./target/release/traits call sys.chat_learnings fixture-workspace 'Extract stable instructions only.' /tmp/traits-chat-learnings.md ./traits/sys/chat_protocols/fixtures/workspaceStorage all gpt-4o-mini '- should not be appended twice' 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"new_comment_count\": 0" }
+          ]
+        }
+      ]
+    }
+  ]
+}

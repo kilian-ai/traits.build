@@ -35,6 +35,10 @@
                 },
                 {
                     "args": [],
+                    "test": { "type": "contains", "value": "www.chat_logs" }
+                },
+                {
+                    "args": [],
                     "test": { "type": "contains", "value": "www.admin" }
                 }
             ]

@@ -1,0 +1,21 @@
+{
+  "trait": "www.chat_logs",
+  "features": [
+    {
+      "name": "Serves chat log page",
+      "tests": [
+        {
+          "name": "returns chat log HTML",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/www/chat_logs",
+          "body": { "args": [] },
+          "expect": {
+            "status": 200,
+            "contains": "Chat logs and durable learnings"
+          }
+        }
+      ]
+    }
+  ]
+}

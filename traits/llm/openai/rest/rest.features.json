@@ -1,0 +1,24 @@
+{
+  "trait": "llm.openai.rest",
+  "features": [
+    {
+      "name": "REST provider returns text completions",
+      "description": "The concrete provider behind llm/openai can still be called directly when needed.",
+      "tests": [
+        {
+          "name": "returns string response",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/llm/openai/rest",
+          "body": { "args": ["Respond with exactly the word: provider"] },
+          "expect": {
+            "status": 200,
+            "json_path": "$.result",
+            "contains": "provider"
+          },
+          "requires_secret": "openai_api_key"
+        }
+      ]
+    }
+  ]
+}

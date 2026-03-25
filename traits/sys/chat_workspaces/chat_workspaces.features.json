@@ -1,0 +1,22 @@
+{
+  "trait": "sys.chat_workspaces",
+  "features": [
+    {
+      "name": "Lists fixture workspace roots",
+      "description": "Enumerates workspaceStorage directories and reports available chat artifacts.",
+      "tests": [
+        {
+          "name": "lists fixture workspace",
+          "type": "command",
+          "command": "./target/release/traits call sys.chat_workspaces ./traits/sys/chat_protocols/fixtures/workspaceStorage 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"workspace_id\": \"fixture-workspace\"" },
+            { "type": "contains", "expected": "\"has_state_vscdb\": true" },
+            { "type": "contains", "expected": "\"chat_session_count\": 1" }
+          ]
+        }
+      ]
+    }
+  ]
+}

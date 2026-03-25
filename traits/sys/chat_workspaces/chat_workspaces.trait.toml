@@ -1,0 +1,20 @@
+[trait]
+description = "List VS Code workspaceStorage folders that contain chat-related data"
+version = "v260325.140954"
+checksum = "86151c53fdacf230d12b21ce9a9c73b9f002b6b31f4db46b94df023db567d363"
+author = "system"
+tags = ["sys", "chat", "vscode", "workspaces"]
+
+[signature]
+params = [
+  { name = "base_dir", type = "string", description = "Optional workspaceStorage root override", optional = true }
+]
+
+[signature.returns]
+type = "object"
+description = "Workspace storage directories and available chat artifacts"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "chat_workspaces"

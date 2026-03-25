@@ -1,0 +1,26 @@
+[trait]
+description = "Extract durable learnings from chat history and append them to LEARNINGS.md"
+version = "v260325.141050"
+checksum = "99455466ecce16acc0e10e9e246c763474545878da6a9f1364aaf3a8f116db37"
+author = "system"
+tags = ["sys", "chat", "learnings", "llm", "memory"]
+
+[signature]
+params = [
+  { name = "workspace_id", type = "string", description = "VS Code workspaceStorage hash to inspect", required = true },
+  { name = "instruction", type = "string", description = "Prompt that tells the LLM what durable learnings to extract", required = true },
+  { name = "output_path", type = "string", description = "Markdown file to append learnings to", optional = true, example = "LEARNINGS.md" },
+  { name = "base_dir", type = "string", description = "Optional workspaceStorage root override", optional = true },
+  { name = "method", type = "string", description = "Extraction method: auto | json | state_vscdb | all", optional = true },
+  { name = "model", type = "string", description = "Model passed to the llm/openai interface", optional = true },
+  { name = "mock_response", type = "string", description = "Optional deterministic markdown response for tests", optional = true }
+]
+
+[signature.returns]
+type = "object"
+description = "Learning extraction status, appended response, and tracked comment hashes"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "chat_learnings"
