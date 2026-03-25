@@ -46,6 +46,10 @@ pub fn chat_logs(_args: &[Value]) -> Value {
                                 span { "Base dir override" }
                                 input id="baseDirInput" type="text" placeholder="Optional workspaceStorage root";
                             }
+                            label.field {
+                              span { "Server origin" }
+                              input id="serverOriginInput" type="text" placeholder="Auto-detect localhost server";
+                            }
                         }
                         div.button-row {
                             button id="refreshWorkspacesBtn" onclick="refreshWorkspaces()" { "Refresh workspaces" }
@@ -360,18 +364,86 @@ let workspaceEntries = [];
 let normalizedSessions = [];
 let selectedSessionId = null;
 let autoScanTimer = null;
+const SERVER_ORIGIN_KEY = 'traits.chatLogs.serverOrigin';
+
+function traitPathToDot(path) {
+  return path.includes('/') ? path.replaceAll('/', '.') : path;
+}
+
+function traitPathToRest(path) {
+  return path.includes('/') ? path : path.replaceAll('.', '/');
+}
+
+function readServerOriginInput() {
+  return document.getElementById('serverOriginInput').value.trim();
+}
+
+function writeServerOriginInput(value) {
+  document.getElementById('serverOriginInput').value = value || '';
+}
+
+function isLikelyReachableOrigin(value) {
+  return /^https?:\/\//.test(value || '');
+}
+
+function candidateServerOrigins() {
+  const candidates = [];
+  const explicit = readServerOriginInput();
+  const stored = (() => {
+    try { return localStorage.getItem(SERVER_ORIGIN_KEY) || ''; } catch (_) { return ''; }
+  })();
+  const current = location.protocol.startsWith('http') ? location.origin : '';
+  const defaults = ['http://127.0.0.1:8090', 'http://127.0.0.1:8091', 'http://127.0.0.1:8092'];
+
+  for (const value of [explicit, stored, current, ...defaults]) {
+    if (!isLikelyReachableOrigin(value)) continue;
+    if (!candidates.includes(value)) candidates.push(value);
+  }
+  return candidates;
+}
+
+function persistServerOrigin(value) {
+  if (!isLikelyReachableOrigin(value)) return;
+  writeServerOriginInput(value);
+  try { localStorage.setItem(SERVER_ORIGIN_KEY, value); } catch (_) {}
+}
 
 async function traitsCall(path, args) {
-  const res = await fetch(`/traits/${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ args })
-  });
-  const payload = await res.json();
-  if (!res.ok || payload.error) {
-    throw new Error(payload.error || `Request failed (${res.status})`);
+  const dotPath = traitPathToDot(path);
+  const restPath = traitPathToRest(path);
+  const sdk = window._traitsSDK;
+
+  if (sdk && typeof sdk.call === 'function' && location.protocol.startsWith('http')) {
+    const desiredOrigin = readServerOriginInput() || location.origin;
+    if (desiredOrigin === location.origin) {
+      const result = await sdk.call(dotPath, args);
+      if (result?.ok) {
+        persistServerOrigin(location.origin);
+        return result.result;
+      }
+    }
   }
-  return payload.result;
+
+  let lastError = 'NetworkError when attempting to fetch resource.';
+  for (const origin of candidateServerOrigins()) {
+    try {
+      const res = await fetch(`${origin}/traits/${restPath}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args })
+      });
+      const payload = await res.json();
+      if (!res.ok || payload.error) {
+        throw new Error(payload.error || `Request failed (${res.status})`);
+      }
+      persistServerOrigin(origin);
+      return payload.result;
+    } catch (error) {
+      lastError = `${error.message || String(error)} Tried: ${origin}`;
+    }
+  }
+
+  throw new Error(`${lastError} Set Server origin to a running traits server, for example http://127.0.0.1:8090.`);
 }
 
 function workspaceBaseDir() {
@@ -589,4 +661,13 @@ refreshWorkspaces().then(() => {
     loadChats();
   }
 });
+
+writeServerOriginInput((() => {
+  try {
+    const stored = localStorage.getItem(SERVER_ORIGIN_KEY);
+    if (stored) return stored;
+  } catch (_) {}
+  if (location.protocol.startsWith('http')) return location.origin;
+  return 'http://127.0.0.1:8090';
+})());
 "##;
