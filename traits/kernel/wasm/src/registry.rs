@@ -1,3 +1,4 @@
+use kernel_logic::registry::TraitToml;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -36,25 +37,24 @@ impl WasmRegistry {
     /// Each entry is (trait_path, rel_path, toml_content).
     pub fn load_builtins(&mut self, defs: &[(&str, &str, &str)]) {
         for (path, _rel, toml_content) in defs {
-            if let Ok(parsed) = toml_content.parse::<toml::Value>() {
-                let entry = parse_trait_toml(path, &parsed);
-                self.traits.insert(path.to_string(), entry);
+            let toml: TraitToml = match toml::from_str(toml_content) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
 
-                // Extract [bindings] section
-                if let Some(table) = parsed.get("bindings").and_then(|v| v.as_table()) {
-                    for (key, val) in table {
-                        if let Some(s) = val.as_str() {
-                            self.bindings.insert(format!("{}/{}", path, key), s.to_string());
-                        }
-                    }
+            let entry = wasm_entry_from_toml(path, &toml);
+            self.traits.insert(path.to_string(), entry);
+
+            // Extract [bindings] section
+            if let Some(ref bindings) = toml.bindings {
+                for (key, val) in bindings {
+                    self.bindings.insert(format!("{}/{}", path, key), val.clone());
                 }
-                // Extract [requires] section
-                if let Some(table) = parsed.get("requires").and_then(|v| v.as_table()) {
-                    for (key, val) in table {
-                        if let Some(s) = val.as_str() {
-                            self.requires.insert(format!("{}/{}", path, key), s.to_string());
-                        }
-                    }
+            }
+            // Extract [requires] section
+            if let Some(ref requires) = toml.requires {
+                for (key, val) in requires {
+                    self.requires.insert(format!("{}/{}", path, key), val.clone());
                 }
             }
         }
@@ -103,99 +103,56 @@ impl WasmRegistry {
     }
 }
 
-fn parse_trait_toml(path: &str, toml: &toml::Value) -> WasmTraitEntry {
-    let trait_def = toml.get("trait").unwrap_or(toml);
-    let impl_def = toml.get("implementation");
-    let sig = toml.get("signature");
-    let http_defaults = trait_def
-        .get("http")
-        .and_then(|h| h.get("defaults"));
+/// Convert a parsed TraitToml into a WASM registry entry.
+fn wasm_entry_from_toml(path: &str, toml: &TraitToml) -> WasmTraitEntry {
+    let http_defaults = toml.trait_def.http.as_ref()
+        .map(|h| &h.defaults);
 
-    let description = trait_def.get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    let version = trait_def.get("version")
-        .and_then(|v| v.as_str())
-        .unwrap_or("v0")
-        .to_string();
-
-    let author = trait_def.get("author")
-        .and_then(|v| v.as_str())
-        .unwrap_or("system")
-        .to_string();
-
-    let tags: Vec<String> = trait_def.get("tags")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-        .unwrap_or_default();
-
-    let provides: Vec<String> = trait_def.get("provides")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-        .unwrap_or_default();
-
-    let language = impl_def
-        .and_then(|i| i.get("language"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("rust")
-        .to_string();
-
-    let source_type = impl_def
-        .and_then(|i| i.get("source"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("builtin")
-        .to_string();
-
-    // Parse params
-    let params: Vec<Value> = sig
-        .and_then(|s| s.get("params"))
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter().map(|p| {
-                let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let required = p.get("required")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or_else(|| !p.get("optional").and_then(|v| v.as_bool()).unwrap_or(false));
-                let default_val = p.get("default")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| http_defaults.and_then(|d| d.get(name)).and_then(|v| v.as_str()))
-                    .unwrap_or("");
+    let params: Vec<Value> = toml.signature.as_ref()
+        .map(|sig| {
+            sig.params.iter().map(|p| {
+                let default_val = p.default.as_ref()
+                    .map(|v| match v {
+                        toml::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    })
+                    .or_else(|| http_defaults
+                        .and_then(|d| d.get(&p.name).cloned()))
+                    .unwrap_or_default();
                 serde_json::json!({
-                    "name": name,
-                    "type": p.get("type").and_then(|v| v.as_str()).unwrap_or("any"),
-                    "description": p.get("description").and_then(|v| v.as_str()).unwrap_or(""),
-                    "required": required,
+                    "name": p.name,
+                    "type": p.param_type,
+                    "description": p.description,
+                    "required": !p.is_optional(),
                     "default": default_val,
                 })
             }).collect()
         })
         .unwrap_or_default();
 
-    let returns_type = sig
-        .and_then(|s| s.get("returns"))
-        .and_then(|r| r.get("type").or(Some(r)))
-        .and_then(|v| v.as_str())
-        .unwrap_or("any")
-        .to_string();
+    let (returns_type, returns_description) = toml.signature.as_ref()
+        .map(|sig| (sig.returns.return_type.clone(), sig.returns.description.clone()))
+        .unwrap_or_else(|| ("any".to_string(), String::new()));
 
-    let returns_description = sig
-        .and_then(|s| s.get("returns"))
-        .and_then(|r| r.get("description"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let author = if toml.trait_def.author.is_empty() {
+        "system".to_string()
+    } else {
+        toml.trait_def.author.clone()
+    };
 
     WasmTraitEntry {
         path: path.to_string(),
-        description,
-        version,
+        description: toml.trait_def.description.clone(),
+        version: toml.trait_def.version.clone(),
         author,
-        tags,
-        provides,
-        language,
-        source_type,
+        tags: toml.trait_def.tags.clone(),
+        provides: toml.trait_def.provides.clone(),
+        language: toml.implementation.as_ref()
+            .map(|i| i.language.clone())
+            .unwrap_or_else(|| "rust".to_string()),
+        source_type: toml.implementation.as_ref()
+            .map(|i| i.source.clone())
+            .unwrap_or_else(|| "builtin".to_string()),
         params,
         returns_type,
         returns_description,

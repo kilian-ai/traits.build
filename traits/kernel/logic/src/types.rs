@@ -196,6 +196,24 @@ pub struct TraitSignature {
     pub returns: ReturnDef,
 }
 
+impl std::fmt::Display for TraitType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TraitType::Int => write!(f, "int"),
+            TraitType::Float => write!(f, "float"),
+            TraitType::String => write!(f, "string"),
+            TraitType::Bool => write!(f, "bool"),
+            TraitType::Bytes => write!(f, "bytes"),
+            TraitType::Null => write!(f, "null"),
+            TraitType::Any => write!(f, "any"),
+            TraitType::Handle => write!(f, "handle"),
+            TraitType::List(inner) => write!(f, "list<{}>", inner),
+            TraitType::Map(k, v) => write!(f, "map<{}, {}>", k, v),
+            TraitType::Optional(inner) => write!(f, "{}?", inner),
+        }
+    }
+}
+
 /// Supported implementation languages
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]

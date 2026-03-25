@@ -128,6 +128,9 @@ pub struct ParamToml {
     pub pipe: bool,
     #[serde(default)]
     pub example: Option<toml::Value>,
+    /// Default value for the parameter (used by WASM registry / OpenAPI).
+    #[serde(default)]
+    pub default: Option<toml::Value>,
 }
 
 fn default_required() -> bool { true }
