@@ -196,6 +196,26 @@ async function callHelper(path, args) {
   }
 }
 
+// ── WebLLM engine (lazy-loaded) ──
+let _webllmLib = null, _webllmEngine = null, _webllmModel = '', _webllmLoading = null;
+const WEBLLM_DEFAULT_MODEL = 'SmolLM2-360M-Instruct-q4f16_1-MLC';
+async function _ensureWebLLM(model) {
+  model = model || WEBLLM_DEFAULT_MODEL;
+  if (_webllmEngine && _webllmModel === model) return _webllmEngine;
+  if (_webllmLoading) { await _webllmLoading; if (_webllmModel === model) return _webllmEngine; }
+  _webllmLoading = (async () => {
+    if (!_webllmLib) {
+      _webllmLib = await import('https://esm.run/@mlc-ai/web-llm');
+    }
+    if (_webllmEngine) { await _webllmEngine.unload(); }
+    _webllmEngine = await _webllmLib.CreateMLCEngine(model);
+    _webllmModel = model;
+  })();
+  await _webllmLoading;
+  _webllmLoading = null;
+  return _webllmEngine;
+}
+
 class TraitsSDK {
   constructor() { this._origin = location.origin; }
 
@@ -207,7 +227,12 @@ class TraitsSDK {
     if (wasmReady && wasmCallableSet.has(path)) {
       try {
         const raw = wasm.call(path, JSON.stringify(args));
-        return { ok: true, result: JSON.parse(raw), dispatch: 'wasm',
+        const parsed = JSON.parse(raw);
+        // Intercept WebLLM dispatch sentinel — route to JS-side WebLLM engine
+        if (parsed && parsed.dispatch === 'webllm') {
+          return this._callWebLLM(parsed.prompt, parsed.model);
+        }
+        return { ok: true, result: parsed, dispatch: 'wasm',
                  ms: Math.round((performance.now() - t0) * 10) / 10 };
       } catch(e) {
         wasmError = e; // WASM declined — cascade to helper/REST
@@ -264,6 +289,22 @@ class TraitsSDK {
       return { ok: true, ...info };
     }
     return { ok: false, error: 'Helper not reachable at ' + url };
+  }
+
+  async _callWebLLM(prompt, model) {
+    const t0 = performance.now();
+    try {
+      const engine = await _ensureWebLLM(model);
+      const reply = await engine.chat.completions.create({
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7, max_tokens: 1024,
+      });
+      const content = reply.choices?.[0]?.message?.content || '';
+      return { ok: true, result: content, dispatch: 'webllm', model: _webllmModel,
+               ms: Math.round((performance.now() - t0) * 10) / 10 };
+    } catch(e) {
+      return { ok: false, error: e.message || String(e), dispatch: 'webllm' };
+    }
   }
 
   isCallable(path) { return wasmReady && wasmCallableSet.has(path); }
