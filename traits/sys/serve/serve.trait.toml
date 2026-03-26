@@ -30,7 +30,7 @@ secrets = "sys/secrets"
 [bindings]
 "/" = "www.traits.build"
 "/copy" = "www.traits.build"
-"/playground" = "www.playground"
+"/playground" = "www.docs.api"
 "/wasm" = "www.wasm"
 "/static" = "www.static"
 "/admin" = "www.admin"

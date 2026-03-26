@@ -22,6 +22,49 @@ const HTML: &str = r##"<!DOCTYPE html>
     margin: 0; padding: 0; background: #0d1117; color: #c9d1d9;
     font-family: system-ui, -apple-system, sans-serif;
   }
+  .playground-banner {
+    display: none;
+    gap: 1rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    margin: 1rem;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    background: #161b22;
+  }
+  .playground-banner.show { display: flex; }
+  .playground-copy h2 {
+    margin: 0 0 0.35rem 0;
+    font-size: 1rem;
+    color: #f0f6fc;
+  }
+  .playground-copy p {
+    margin: 0;
+    color: #8b949e;
+    font-size: 0.92rem;
+  }
+  .playground-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .playground-btn {
+    padding: 0.65rem 0.9rem;
+    border-radius: 8px;
+    border: 1px solid #30363d;
+    background: #0d1117;
+    color: #f0f6fc;
+    font: inherit;
+    cursor: pointer;
+  }
+  .playground-btn.primary {
+    background: #f97316;
+    border-color: #f97316;
+    color: #0d1117;
+    font-weight: 600;
+  }
+  @media (max-width: 720px) {
+    .playground-banner { flex-direction: column; align-items: stretch; }
+    .playground-actions { width: 100%; }
+    .playground-btn { width: 100%; }
+  }
   #loading {
     display: flex; align-items: center; justify-content: center;
     height: 100vh; font-size: 1.1rem; color: #8b949e;
@@ -59,10 +102,44 @@ const HTML: &str = r##"<!DOCTYPE html>
 </style>
 </head>
 <body>
+<div id="playgroundBanner" class="playground-banner">
+  <div class="playground-copy">
+    <h2>Playground moved here</h2>
+    <p>Use the embedded terminal below as the interactive playground while browsing the API reference.</p>
+  </div>
+  <div class="playground-actions">
+    <button id="btnOpenPlaygroundTerm" class="playground-btn primary" type="button">Open Terminal</button>
+    <button id="btnGoApi" class="playground-btn" type="button">Stay in API Docs</button>
+  </div>
+</div>
 <div id="loading">Loading API documentation…</div>
 <div id="redoc" data-trait="sys.openapi" data-handler="initRedoc"></div>
 <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
 <script>
+function isPlaygroundRoute() {
+  return location.pathname === '/playground' || location.hash === '#/playground';
+}
+
+function toggleTerminal(forceOpen) {
+  var btn = document.getElementById('btnToggleTerm');
+  if (!btn) return;
+  var wantsOpen = forceOpen !== false;
+  if (wantsOpen && /^▶/.test(btn.textContent || '')) btn.click();
+}
+
+function initPlaygroundBanner() {
+  var banner = document.getElementById('playgroundBanner');
+  if (!banner || !isPlaygroundRoute()) return;
+  banner.classList.add('show');
+  var openBtn = document.getElementById('btnOpenPlaygroundTerm');
+  var apiBtn = document.getElementById('btnGoApi');
+  if (openBtn) openBtn.addEventListener('click', function() { toggleTerminal(true); });
+  if (apiBtn) apiBtn.addEventListener('click', function() {
+    if (location.hash === '#/playground') location.hash = '#/docs/api';
+    else location.pathname = '/docs/api';
+  });
+}
+
 // ── Spec loading via TC (data-trait="sys.openapi" on #redoc) ──
 TC.on('initRedoc', function(el, spec) {
   document.getElementById('loading').className = 'hidden';
@@ -149,12 +226,16 @@ document.getElementById('redoc').addEventListener('trait:error', function() {
   }
   if (!createTerminal) return; // Terminal unavailable — wrapper stays hidden
   document.getElementById('termWrap').style.display = '';
+  initPlaygroundBanner();
   var terminalInstance = await createTerminal(document.getElementById('xterm'), {
     header: document.getElementById('termHeader'),
     container: document.getElementById('termContainer'),
     toggleBtn: document.getElementById('btnToggleTerm'),
     statusEl: document.getElementById('termStatus'),
   });
+  if (isPlaygroundRoute()) {
+    setTimeout(function() { toggleTerminal(true); }, 80);
+  }
   try {
     var pendingCommand = sessionStorage.getItem(PENDING_COMMAND_KEY);
     if (pendingCommand && terminalInstance && terminalInstance.term && typeof terminalInstance.term.paste === 'function') {
