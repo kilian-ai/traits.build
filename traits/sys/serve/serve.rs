@@ -698,7 +698,7 @@ async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), St
             return Err(format!("Session expired (HTTP {})", status));
         }
 
-        let req: RelayRequest = match serde_json::from_slice(&output.stdout) {
+        let req: RelayRequest = match serde_json::from_str(&body) {
             Ok(r) => r,
             Err(e) => {
                 info!("Invalid relay request: {}", e);
