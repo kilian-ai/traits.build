@@ -11,6 +11,8 @@ fi
 
 WASM_PKG_DIR="traits/kernel/wasm/pkg"
 WASM_RUNTIME_JS="traits/www/static/wasm-runtime.js"
+SDK_SRC="traits/www/sdk/traits.js"
+SDK_RUNTIME="traits/www/static/sdk-runtime.js"
 INDEX_HTML="traits/www/static/index.html"
 INDEX_STANDALONE_HTML="traits/www/static/index.standalone.html"
 
@@ -142,20 +144,38 @@ CSSJS2
     } > "$TERMINAL_RUNTIME"
 fi
 
-if [[ -f "$INDEX_HTML" && -f "$WASM_RUNTIME_JS" && -f "$TERMINAL_RUNTIME" ]]; then
+# ── Generate sdk-runtime.js (classic script from ES module traits.js) ──
+if [[ -f "$SDK_SRC" ]]; then
+    echo "Generating SDK runtime..."
+    {
+        echo '(function() {'
+        sed -E \
+            -e 's/^export class /class /' \
+            -e 's/^export function /function /' \
+            -e '/^export default/d' \
+            -e '/^export \{/d' \
+            "$SDK_SRC"
+        echo 'if (typeof window !== "undefined") { window.Traits = Traits; window.getTraits = getTraits; }'
+        echo '})();'
+    } > "$SDK_RUNTIME"
+fi
+
+if [[ -f "$INDEX_HTML" && -f "$WASM_RUNTIME_JS" && -f "$TERMINAL_RUNTIME" && -f "$SDK_RUNTIME" ]]; then
     echo "Generating standalone HTML..."
-    python3 - "$INDEX_HTML" "$WASM_RUNTIME_JS" "$TERMINAL_RUNTIME" "$INDEX_STANDALONE_HTML" <<'PY'
+    python3 - "$INDEX_HTML" "$WASM_RUNTIME_JS" "$TERMINAL_RUNTIME" "$SDK_RUNTIME" "$INDEX_STANDALONE_HTML" <<'PY'
 import pathlib
 import sys
 
 index_path = pathlib.Path(sys.argv[1])
 wasm_runtime_path = pathlib.Path(sys.argv[2])
 terminal_runtime_path = pathlib.Path(sys.argv[3])
-out_path = pathlib.Path(sys.argv[4])
+sdk_runtime_path = pathlib.Path(sys.argv[4])
+out_path = pathlib.Path(sys.argv[5])
 
 html = index_path.read_text()
 wasm_runtime = wasm_runtime_path.read_text()
 terminal_runtime = terminal_runtime_path.read_text()
+sdk_runtime = sdk_runtime_path.read_text()
 
 runtime_fn = """function runtimeScriptPath() {
   return 'inline:wasm-runtime';
@@ -169,13 +189,19 @@ runtime_fn_old = """function runtimeScriptPath() {
 term_src_old = "const termSrc = isLocal ? `./terminal-runtime.js?v=${Date.now()}` : '/static/www/static/terminal-runtime.js';"
 term_src_new = "const termSrc = 'inline:terminal-runtime';"
 
+sdk_src_old = "const sdkSrc = isLocal ? `./sdk-runtime.js?v=${Date.now()}` : '/static/www/static/sdk-runtime.js';"
+sdk_src_new = "const sdkSrc = 'inline:sdk-runtime';"
+
 if runtime_fn_old not in html:
     raise SystemExit('standalone generation failed: runtimeScriptPath() block not found')
 if term_src_old not in html:
     raise SystemExit('standalone generation failed: terminal runtime path not found')
+if sdk_src_old not in html:
+    raise SystemExit('standalone generation failed: SDK runtime path not found')
 
 html = html.replace(runtime_fn_old, runtime_fn)
 html = html.replace(term_src_old, term_src_new)
+html = html.replace(sdk_src_old, sdk_src_new)
 
 # Standalone is always "local" (hash routing) — no server to handle pushState paths
 html = html.replace(
@@ -192,6 +218,9 @@ inline_scripts = (
     + '\n</script>\n'
     + '<script data-runtime-src="inline:terminal-runtime">\n'
     + escape_script(terminal_runtime)
+    + '\n</script>\n'
+    + '<script data-runtime-src="inline:sdk-runtime">\n'
+    + escape_script(sdk_runtime)
     + '\n</script>\n'
 )
 

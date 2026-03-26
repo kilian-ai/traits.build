@@ -97,8 +97,8 @@ function loadScript(src) {
   return new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[data-runtime-src="${src}"]`);
     if (existing) {
-      if (window.TraitsWasm) resolve();
-      else existing.addEventListener('load', () => resolve(), { once: true });
+      if (!existing.src) { resolve(); return; } // Inline script — already executed
+      existing.addEventListener('load', () => resolve(), { once: true });
       return;
     }
     const script = document.createElement('script');
@@ -118,263 +118,8 @@ function decodeBase64Bytes(base64) {
   return bytes;
 }
 
-// ── Minimal SDK (inlined for zero-dependency boot) ──
-// Dispatch cascade: WASM local → helper (localhost) → server REST → error
-let wasm = null, wasmReady = false;
-const wasmCallableSet = new Set();
-
-// ── Local Helper (privileged trait runtime on localhost) ──
-let helperUrl = null;      // e.g. "http://localhost:8090"
-let helperReady = false;
-let helperInfo = null;     // { status, version, trait_count, ... }
-const HELPER_PORTS = [8090, 8091, 9090]; // Discovery ports to try
-const HELPER_TIMEOUT = 1500; // ms per probe
-
-async function probeHelper(url, timeout = HELPER_TIMEOUT) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeout);
-  try {
-    const res = await fetch(`${url}/health`, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (res.ok) {
-      const data = await res.json();
-      return data;
-    }
-  } catch(e) { clearTimeout(timer); }
-  return null;
-}
-
-async function discoverHelper() {
-  // Try stored helper URL first
-  try {
-    const stored = localStorage.getItem('traits.helper.url');
-    if (stored) {
-      const info = await probeHelper(stored, 1000);
-      if (info) { helperUrl = stored; helperInfo = info; helperReady = true; return; }
-    }
-  } catch(e) {}
-
-  // Auto-discover on common ports
-  for (const port of HELPER_PORTS) {
-    const url = `http://localhost:${port}`;
-    const info = await probeHelper(url);
-    if (info) {
-      helperUrl = url; helperInfo = info; helperReady = true;
-      try { localStorage.setItem('traits.helper.url', url); } catch(e) {}
-      return;
-    }
-  }
-}
-
-// Sync helper connection state to the WASM kernel so helper-preferred
-// traits (e.g. sys.ps) can delegate to the native helper for richer data.
-function syncHelperToWasm() {
-  if (wasm && wasm.set_helper_connected) {
-    wasm.set_helper_connected(helperReady);
-  }
-}
-
-async function callHelper(path, args) {
-  if (!helperReady) return null;
-  const rest = path.replace(/\./g, '/');
-  try {
-    const res = await fetch(`${helperUrl}/traits/${rest}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ args }),
-    });
-    const data = await res.json();
-    return {
-      ok: res.ok,
-      result: res.ok ? data.result : undefined,
-      error: res.ok ? undefined : (data.error || `HTTP ${res.status}`),
-      dispatch: 'helper',
-      ms: 0,
-    };
-  } catch(e) {
-    return null; // Helper unreachable — cascade continues
-  }
-}
-
-// ── WebLLM engine (lazy-loaded) ──
-let _webllmLib = null, _webllmEngine = null, _webllmModel = '', _webllmLoading = null;
-const WEBLLM_DEFAULT_MODEL = 'SmolLM2-360M-Instruct-q4f16_1-MLC';
-function _webllmProgress(text) {
-  window.dispatchEvent(new CustomEvent('webllm-progress', { detail: text }));
-}
-async function _ensureWebLLM(model) {
-  model = model || WEBLLM_DEFAULT_MODEL;
-  if (_webllmEngine && _webllmModel === model) return _webllmEngine;
-  if (_webllmLoading) { await _webllmLoading; if (_webllmModel === model) return _webllmEngine; }
-  _webllmLoading = (async () => {
-    try {
-      if (!_webllmLib) {
-        _webllmProgress('Loading WebLLM library…');
-        _webllmLib = await import('https://esm.run/@mlc-ai/web-llm');
-      }
-      if (_webllmEngine) {
-        try { await _webllmEngine.unload(); } catch(e) {}
-        _webllmEngine = null; _webllmModel = '';
-      }
-      _webllmProgress(`Loading model ${model}… (first run downloads ~200 MB)`);
-      _webllmEngine = await _webllmLib.CreateMLCEngine(model, {
-        initProgressCallback: (report) => {
-          _webllmProgress(report.text || `${Math.round((report.progress || 0) * 100)}%`);
-        }
-      });
-      _webllmModel = model;
-      _webllmProgress('Model ready.');
-    } catch(e) {
-      _webllmEngine = null; _webllmModel = '';
-      _webllmProgress('');
-      throw e;
-    }
-  })();
-  try { await _webllmLoading; } finally { _webllmLoading = null; }
-  return _webllmEngine;
-}
-
-class TraitsSDK {
-  constructor() { this._origin = location.origin; }
-
-  async call(path, args = []) {
-    const t0 = performance.now();
-
-    // 1. Try WASM (instant, local) — fall through to helper/REST on error
-    let wasmError = null;
-    if (wasmReady && wasmCallableSet.has(path)) {
-      try {
-        const raw = wasm.call(path, JSON.stringify(args));
-        const parsed = JSON.parse(raw);
-        // Intercept WebLLM dispatch sentinel — route to JS-side WebLLM engine
-        if (parsed && parsed.dispatch === 'webllm') {
-          return this._callWebLLM(parsed.prompt, parsed.model);
-        }
-        return { ok: true, result: parsed, dispatch: 'wasm',
-                 ms: Math.round((performance.now() - t0) * 10) / 10 };
-      } catch(e) {
-        wasmError = e; // WASM declined — cascade to helper/REST
-      }
-    }
-
-    // 2. Try local helper (privileged traits on localhost)
-    if (helperReady) {
-      const helperResult = await callHelper(path, args);
-      if (helperResult) {
-        helperResult.ms = Math.round((performance.now() - t0) * 10) / 10;
-        return helperResult;
-      }
-    }
-
-    // 3. Try server REST (when served from traits.build, not file://)
-    if (!isLocal) {
-      const rest = path.replace(/\./g, '/');
-      try {
-        const res = await fetch(`${this._origin}/traits/${rest}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ args }),
-        });
-        const data = await res.json();
-        return {
-          ok: res.ok,
-          result: res.ok ? data.result : undefined,
-          error: res.ok ? undefined : (data.error || `HTTP ${res.status}`),
-          dispatch: 'rest',
-          ms: Math.round((performance.now() - t0) * 10) / 10,
-        };
-      } catch(e) {
-        return { ok: false, error: e.message || String(e), dispatch: 'rest' };
-      }
-    }
-
-    // 4. No dispatch path available — return WASM error if we had one
-    if (wasmError) {
-      return { ok: false, error: wasmError.message || String(wasmError), dispatch: 'wasm' };
-    }
-    return { ok: false, error: `Trait '${path}' requires local helper. Run: npx traits-helper`, dispatch: 'none' };
-  }
-
-  /** Connect to a specific helper URL (overrides auto-discovery). */
-  async connectHelper(url) {
-    const info = await probeHelper(url);
-    if (info) {
-      helperUrl = url.replace(/\/$/, '');
-      helperInfo = info;
-      helperReady = true;
-      try { localStorage.setItem('traits.helper.url', helperUrl); } catch(e) {}
-      syncHelperToWasm();
-      return { ok: true, ...info };
-    }
-    return { ok: false, error: 'Helper not reachable at ' + url };
-  }
-
-  async _callWebLLM(prompt, model) {
-    const t0 = performance.now();
-    try {
-      const engine = await _ensureWebLLM(model);
-      const reply = await engine.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7, max_tokens: 1024,
-      });
-      const content = reply.choices?.[0]?.message?.content || '';
-      return { ok: true, result: content, dispatch: 'webllm', model: _webllmModel,
-               ms: Math.round((performance.now() - t0) * 10) / 10 };
-    } catch(e) {
-      return { ok: false, error: e.message || String(e), dispatch: 'webllm' };
-    }
-  }
-
-  isCallable(path) { return wasmReady && wasmCallableSet.has(path); }
-  dispatchMode(path) {
-    if (wasmReady && wasmCallableSet.has(path)) return 'wasm';
-    if (helperReady) return 'helper';
-    if (!isLocal) return 'rest';
-    return 'none';
-  }
-
-  async list() {
-    if (wasmReady) return JSON.parse(wasm.list_traits());
-    if (helperReady) {
-      try { const r = await fetch(`${helperUrl}/traits`); return r.json(); } catch(e) {}
-    }
-    if (!isLocal) { const r = await fetch(`${this._origin}/traits`); return r.json(); }
-    return [];
-  }
-
-  async info(path) {
-    if (wasmReady) {
-      const raw = wasm.get_trait_info(path);
-      return raw ? JSON.parse(raw) : null;
-    }
-    const rest = path.replace(/\./g, '/');
-    if (helperReady) {
-      try { const r = await fetch(`${helperUrl}/traits/${rest}`); if (r.ok) return r.json(); } catch(e) {}
-    }
-    if (!isLocal) {
-      const res = await fetch(`${this._origin}/traits/${rest}`);
-      return res.ok ? res.json() : null;
-    }
-    return null;
-  }
-
-  async search(query) {
-    if (wasmReady) return JSON.parse(wasm.search_traits(query));
-    const all = await this.list();
-    const q = query.toLowerCase();
-    return all.filter(t => t.path?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q));
-  }
-
-  get callableTraits() { return [...wasmCallableSet]; }
-  get helperConnected() { return helperReady; }
-  get helperStatus() { return helperReady ? { url: helperUrl, ...helperInfo } : null; }
-  get status() {
-    return { wasm: wasmReady, callable: wasmCallableSet.size, helper: helperReady, helperUrl };
-  }
-}
-
-const sdk = new TraitsSDK();
-window._traitsSDK = sdk;
+// ── SDK instance (set during boot, from traits.js runtime) ──
+let sdk = null;
 
 // ── Trait Components — declarative data-trait → DOM binding ──
 //
@@ -663,35 +408,34 @@ window.addEventListener('hashchange', () => {
 });
 
 function updateStatusBar() {
+  const s = sdk ? sdk.status : {};
   const parts = [];
-  if (wasmReady) parts.push(`WASM (${wasmCallableSet.size})`);
-  if (helperReady) parts.push(`helper`);
+  if (s.wasm) parts.push(`WASM (${s.callable || 0})`);
+  if (s.helper) parts.push('helper');
   else if (!isLocal) parts.push('REST');
-
-  if (wasmReady || helperReady) {
-    dot.className = 'dot ok';
-  } else if (!isLocal) {
-    dot.className = 'dot ok';
-  } else {
-    dot.className = 'dot off';
-  }
+  dot.className = (s.wasm || s.helper || !isLocal) ? 'dot ok' : 'dot off';
   statusText.textContent = parts.join(' + ') || 'offline';
 }
 
 // ── Boot sequence ──
 async function boot() {
-  // Start helper discovery in parallel with WASM init (non-blocking)
-  const helperPromise = discoverHelper();
+  // Load SDK runtime (unless already inlined by standalone build)
+  const sdkSrc = isLocal ? `./sdk-runtime.js?v=${Date.now()}` : '/static/www/static/sdk-runtime.js';
+  await loadScript(sdkSrc);
+
+  sdk = new Traits({ wasm: false, server: isLocal ? '' : undefined });
+  window._traitsSDK = sdk;
+
+  // Start helper discovery in parallel with WASM init
+  const initPromise = sdk.init();
 
   try {
     await loadScript(runtimeScriptPath());
     const mod = window.TraitsWasm;
     if (!mod) throw new Error('TraitsWasm runtime missing');
     mod.initSync(decodeBase64Bytes(mod.WASM_BASE64));
-    const info = JSON.parse(mod.init());
-    JSON.parse(mod.callable_traits()).forEach(p => wasmCallableSet.add(p));
-    wasm = mod;
-    wasmReady = true;
+    JSON.parse(mod.init());
+    sdk.attachWasm(mod);
 
     // Pre-load terminal as classic script (import() blocked in file:// mode)
     try {
@@ -703,19 +447,13 @@ async function boot() {
   }
 
   // Wait for helper discovery to finish (has its own timeout)
-  await helperPromise;
-  syncHelperToWasm();
+  await initPromise;
 
   // Re-probe helper every second (detect connect/disconnect)
   setInterval(async () => {
-    if (helperReady) {
-      // Verify still alive
-      const info = await probeHelper(helperUrl, 1000);
-      if (!info) { helperReady = false; helperUrl = null; helperInfo = null; syncHelperToWasm(); updateStatusBar(); }
-    } else {
-      await discoverHelper();
-      if (helperReady) { syncHelperToWasm(); updateStatusBar(); }
-    }
+    const was = sdk.helperConnected;
+    await sdk.refreshHelper();
+    if (sdk.helperConnected !== was) updateStatusBar();
   }, 1000);
 
   updateStatusBar();

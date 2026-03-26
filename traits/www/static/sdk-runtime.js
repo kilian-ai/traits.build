@@ -1,3 +1,4 @@
+(function() {
 /**
  * traits.js — Unified client SDK for traits.build
  *
@@ -166,7 +167,7 @@ async function loadWasm(wasmUrl, jsUrl) {
 
 // ── Traits Client ──
 
-export class Traits {
+class Traits {
     /**
      * @param {Object} opts
      * @param {string} [opts.server]    - Base URL (default: current origin)
@@ -638,10 +639,11 @@ let _default = null;
  * @param {Object} [opts] - Options passed to constructor (first call only)
  * @returns {Traits}
  */
-export function getTraits(opts) {
+function getTraits(opts) {
     if (!_default) _default = new Traits(opts);
     return _default;
 }
 
 // Convenience re-exports for quick use
-export default Traits;
+if (typeof window !== "undefined") { window.Traits = Traits; window.getTraits = getTraits; }
+})();
