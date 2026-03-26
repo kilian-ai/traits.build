@@ -695,6 +695,80 @@ Conversions: `to_json()`, `from_json()`, type coercion at dispatch time.
 
 ---
 
+## Platform Abstraction Layer
+
+**Path:** `traits/kernel/logic/src/platform/`
+
+Provides a unified API for platform-specific capabilities so trait source files can be **platform-agnostic** — no `#[cfg(target_arch)]` blocks needed in migrated traits.
+
+### Architecture
+
+Two abstraction mechanisms:
+
+1. **Compile-time** (`platform::time`) — cfg-gated implementations, zero overhead. Uses `js_sys::Date` on WASM, `std::time::SystemTime` on native.
+2. **Runtime** (`Platform` struct) — function pointers stored in `OnceLock`, initialized once at startup. One indirection per call.
+
+### Platform Struct
+
+```rust
+pub struct Platform {
+    pub dispatch: fn(&str, &[Value]) -> Option<Value>,     // trait dispatch
+    pub registry_all: fn() -> Vec<Value>,                   // all traits as JSON
+    pub registry_count: fn() -> usize,                      // trait count
+    pub registry_detail: fn(&str) -> Option<Value>,         // single trait detail
+    pub config_get: fn(&str, &str, &str) -> String,         // per-trait config
+    pub secret_get: fn(&str) -> Option<String>,             // secret retrieval
+}
+```
+
+### Initialization
+
+**Native** (`kernel/main/main.rs` → `bootstrap()`):
+- `dispatch` → `crate::dispatcher::compiled::dispatch`
+- `registry_*` → `crate::globals::REGISTRY.get()`
+- `config_get` → `crate::config::trait_config_or`
+- `secret_get` → `SecretContext::resolve`
+
+**WASM** (`kernel/wasm/src/lib.rs` → `init()`):
+- `dispatch` → `wasm_traits::dispatch`
+- `registry_*` → `get_registry()` (WasmRegistry)
+- `config_get` → returns default (no config in browser)
+- `secret_get` → `wasm_secrets::get_secret`
+
+### Convenience Functions
+
+```rust
+kernel_logic::platform::dispatch(path, args)       // -> Option<Value>
+kernel_logic::platform::registry_all()             // -> Vec<Value>
+kernel_logic::platform::registry_count()           // -> usize
+kernel_logic::platform::registry_detail(path)      // -> Option<Value>
+kernel_logic::platform::config_get(trait, key, d)  // -> String
+kernel_logic::platform::secret_get(key)            // -> Option<String>
+kernel_logic::platform::time::now_utc()            // -> (y, mo, d, h, m, s)
+```
+
+### Migrated Traits
+
+These traits now use `kernel_logic::platform::*` instead of `#[cfg]` blocks:
+
+| Trait | Before | After |
+|-------|--------|-------|
+| `kernel.call` | cfg dispatch to `compiled::dispatch` / `wasm_traits::dispatch` | `platform::dispatch()` |
+| `sys.info` | cfg delegate to native registry / WASM registry | `platform::dispatch("sys.registry", ...)` |
+| `sys.list` | cfg delegate to native registry / WASM registry | `platform::dispatch("sys.registry", ...)` |
+| `sys.llm` | cfg `dispatch_sys_call()` | `platform::dispatch("sys.call", ...)` |
+| `sys.version` | cfg `utc_now()` + cfg `build_system_version()` | `platform::time::now_utc()` + `platform::registry_count()` |
+| `sys.registry` | 6 cfg-gated helper functions | `platform::registry_all/detail/count()` |
+| `www.admin` | cfg `crate::config::trait_config_or` | `platform::config_get()` |
+
+### Limitations
+
+- **Dylib traits cannot use platform::** — dylibs get separate static address spaces, so the `OnceLock<Platform>` in the dylib's copy of kernel-logic won't be initialized. Only builtin traits (compiled as modules into the binary) share the binary's statics.
+- **Some cfg blocks remain** — `env!("TRAITS_BUILD_VERSION")` vs `env!("CARGO_PKG_VERSION")` in `sys.version` are inherently build-time and cannot be abstracted away.
+- **Not migrated** — `sys/call.rs` (HTTP client, too platform-specific), `sys/test_runner.rs` (heavily native), `chat_*` traits (native-only), filesystem/process management (native-only).
+
+---
+
 ## Deployment
 
 ### GitHub Pages (Primary — Static SPA)
