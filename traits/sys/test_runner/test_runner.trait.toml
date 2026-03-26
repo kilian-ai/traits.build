@@ -43,3 +43,4 @@ description = "{ ok, pattern, summary: { traits, examples, commands, skipped, to
 language = "rust"
 source = "builtin"
 entry = "test_runner"
+wasm = true

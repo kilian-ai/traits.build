@@ -18,3 +18,4 @@ description = "Type system documentation: trait types, languages, wire protocol"
 language = "rust"
 source = "kernel"
 entry = "types"
+wasm = true

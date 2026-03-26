@@ -49,3 +49,4 @@ description = "{ ok, status, body } — body is parsed JSON if Content-Type is a
 language = "rust"
 source = "builtin"
 entry = "call"
+wasm = true

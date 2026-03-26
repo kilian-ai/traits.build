@@ -28,3 +28,5 @@ description = "Object with ok and checksum fields"
 language = "rust"
 source = "dylib"
 entry = "checksum"
+wasm = true
+wasm_entry = "checksum_dispatch"

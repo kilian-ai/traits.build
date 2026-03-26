@@ -27,3 +27,4 @@ description = "Result from the called trait"
 language = "rust"
 source = "kernel"
 entry = "call"
+wasm = true

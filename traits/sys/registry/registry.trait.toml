@@ -27,3 +27,4 @@ description = "Registry data (tree, namespace list, count, trait entry, or searc
 language = "rust"
 source = "builtin"
 entry = "registry"
+wasm = true

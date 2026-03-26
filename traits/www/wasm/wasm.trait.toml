@@ -16,3 +16,4 @@ description = "HTML page loading the WASM kernel"
 language = "rust"
 source = "builtin"
 entry = "wasm_page"
+wasm = true

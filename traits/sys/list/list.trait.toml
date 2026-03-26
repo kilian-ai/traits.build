@@ -1,8 +1,8 @@
 [trait]
 description = "List all registered traits"
-version = "v260320.224553"
+version = "v260326"
 epoch = 0
-checksum = "f1b35fbbbdbd02f284b45155fce466cf8160ec09f6d0db5f554df3b9473bb374"
+checksum = "496912bbaca990b98346f7ace0306c1d7f3833d9761260947de57b4bb91e26e8"
 author = "system"
 tags = ["system", "meta", "discovery"]
 provides = ["sys/list"]
@@ -26,3 +26,4 @@ description = "Array of trait summaries"
 language = "rust"
 source = "builtin"
 entry = "list"
+wasm = true

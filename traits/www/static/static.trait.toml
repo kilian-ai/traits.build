@@ -16,3 +16,4 @@ description = "HTML page: self-contained SPA with WASM kernel and SDK"
 language = "rust"
 source = "builtin"
 entry = "static_page"
+wasm = true

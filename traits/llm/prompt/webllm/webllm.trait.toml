@@ -20,3 +20,4 @@ description = "Assistant response text from in-browser model"
 language = "rust"
 source = "builtin"
 entry = "webllm"
+wasm = true

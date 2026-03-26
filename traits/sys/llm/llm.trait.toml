@@ -49,3 +49,4 @@ description = "{ ok, provider, model, content, usage? }"
 language = "rust"
 source = "builtin"
 entry = "llm"
+wasm = true

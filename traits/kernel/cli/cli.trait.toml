@@ -27,3 +27,5 @@ description = "ANSI-formatted output text"
 language = "rust"
 source = "builtin"
 entry = "cli_dispatch"
+wasm = true
+wasm_callable = false

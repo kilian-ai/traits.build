@@ -16,3 +16,4 @@ description = "HTML chat log inspection page"
 language = "rust"
 source = "builtin"
 entry = "chat_logs"
+wasm = true

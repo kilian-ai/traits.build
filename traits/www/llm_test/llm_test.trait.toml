@@ -19,3 +19,4 @@ description = "HTML chat page"
 language = "rust"
 source = "builtin"
 entry = "llm_test"
+wasm = true

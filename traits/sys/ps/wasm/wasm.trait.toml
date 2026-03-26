@@ -17,3 +17,4 @@ description = "{ ok, runtime: 'wasm', processes: [], wasm: { callable, registere
 language = "rust"
 source = "builtin"
 entry = "wasm_ps"
+wasm = true

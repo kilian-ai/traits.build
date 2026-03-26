@@ -16,3 +16,4 @@ description = "HTML SPA admin workspace"
 language = "rust"
 source = "builtin"
 entry = "spa"
+wasm = true

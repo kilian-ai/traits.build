@@ -17,3 +17,4 @@ description = "HTML playground page"
 language = "rust"
 source = "builtin"
 entry = "playground"
+wasm = true

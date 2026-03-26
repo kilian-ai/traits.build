@@ -1,8 +1,8 @@
 [trait]
 description = "Show detailed info about a specific trait"
-version = "v260320.224553"
+version = "v260326"
 epoch = 0
-checksum = "d7a449bd6bd62fd68c94cf795a1753bb0b0d8d7f0066b03c3a1c063efa3cde18"
+checksum = "918053ac8b611dce3c42ccd4690e92a2671341df325cc0ad021fde0cee207cd2"
 author = "system"
 tags = ["system", "meta", "discovery"]
 provides = ["sys/info"]
@@ -26,3 +26,4 @@ description = "Full trait metadata including signature"
 language = "rust"
 source = "builtin"
 entry = "info"
+wasm = true

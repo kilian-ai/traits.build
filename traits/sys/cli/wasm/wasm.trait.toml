@@ -20,3 +20,6 @@ description = "Method-dependent return value"
 language = "rust"
 source = "builtin"
 entry = "wasm"
+wasm = true
+wasm_entry = "wasm_dispatch"
+wasm_source = "wasm_impl.rs"

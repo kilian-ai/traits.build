@@ -36,3 +36,4 @@ fly_region = ""
 language = "rust"
 source = "builtin"
 entry = "admin"
+wasm = true

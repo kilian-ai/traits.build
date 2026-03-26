@@ -29,3 +29,4 @@ registry = "kernel.registry"
 language = "rust"
 source = "builtin"
 entry = "openapi"
+wasm = true

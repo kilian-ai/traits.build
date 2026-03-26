@@ -17,3 +17,4 @@ description = "HTML documentation page with all docs and sidebar navigation"
 language = "rust"
 source = "builtin"
 entry = "docs"
+wasm = true
