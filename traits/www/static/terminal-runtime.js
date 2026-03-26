@@ -136,6 +136,13 @@ async function createTerminal(mountEl, opts = {}) {
     // ── Input → WASM session → output (with REST fallback) ──
     let restPending = false;
 
+    // ── WebLLM progress — show model loading status inline ──
+    window.addEventListener('webllm-progress', (e) => {
+        if (restPending && e.detail) {
+            term.write(`\r\x1b[K\x1b[90m⏳ ${e.detail}\x1b[0m`);
+        }
+    });
+
     term.onData(data => {
         if (!wasm || !wasm.cli_input) return;
         if (restPending) return; // Block input during REST calls
@@ -158,6 +165,7 @@ async function createTerminal(mountEl, opts = {}) {
                 const traitsSdk = window._traitsSDK;
                 if (traitsSdk) {
                     traitsSdk.call(p, a).then(res => {
+                        term.write('\r\x1b[K'); // Clear progress line
                         if (res.ok && res.result !== undefined) {
                             const text = typeof res.result === 'string'
                                 ? res.result

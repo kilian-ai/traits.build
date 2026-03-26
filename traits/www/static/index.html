@@ -199,20 +199,38 @@ async function callHelper(path, args) {
 // ── WebLLM engine (lazy-loaded) ──
 let _webllmLib = null, _webllmEngine = null, _webllmModel = '', _webllmLoading = null;
 const WEBLLM_DEFAULT_MODEL = 'SmolLM2-360M-Instruct-q4f16_1-MLC';
+function _webllmProgress(text) {
+  window.dispatchEvent(new CustomEvent('webllm-progress', { detail: text }));
+}
 async function _ensureWebLLM(model) {
   model = model || WEBLLM_DEFAULT_MODEL;
   if (_webllmEngine && _webllmModel === model) return _webllmEngine;
   if (_webllmLoading) { await _webllmLoading; if (_webllmModel === model) return _webllmEngine; }
   _webllmLoading = (async () => {
-    if (!_webllmLib) {
-      _webllmLib = await import('https://esm.run/@mlc-ai/web-llm');
+    try {
+      if (!_webllmLib) {
+        _webllmProgress('Loading WebLLM library…');
+        _webllmLib = await import('https://esm.run/@mlc-ai/web-llm');
+      }
+      if (_webllmEngine) {
+        try { await _webllmEngine.unload(); } catch(e) {}
+        _webllmEngine = null; _webllmModel = '';
+      }
+      _webllmProgress(`Loading model ${model}… (first run downloads ~200 MB)`);
+      _webllmEngine = await _webllmLib.CreateMLCEngine(model, {
+        initProgressCallback: (report) => {
+          _webllmProgress(report.text || `${Math.round((report.progress || 0) * 100)}%`);
+        }
+      });
+      _webllmModel = model;
+      _webllmProgress('Model ready.');
+    } catch(e) {
+      _webllmEngine = null; _webllmModel = '';
+      _webllmProgress('');
+      throw e;
     }
-    if (_webllmEngine) { await _webllmEngine.unload(); }
-    _webllmEngine = await _webllmLib.CreateMLCEngine(model);
-    _webllmModel = model;
   })();
-  await _webllmLoading;
-  _webllmLoading = null;
+  try { await _webllmLoading; } finally { _webllmLoading = null; }
   return _webllmEngine;
 }
 

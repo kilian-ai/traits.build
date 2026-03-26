@@ -33,6 +33,12 @@ let _webllmLoading = null;
 
 const WEBLLM_DEFAULT_MODEL = 'SmolLM2-360M-Instruct-q4f16_1-MLC';
 
+function _webllmProgress(text) {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('webllm-progress', { detail: text }));
+    }
+}
+
 async function _ensureWebLLM(model) {
     const modelId = model || WEBLLM_DEFAULT_MODEL;
 
@@ -41,8 +47,8 @@ async function _ensureWebLLM(model) {
 
     // Detect concurrent load for same model — wait for it
     if (_webllmLoading) {
-        const result = await _webllmLoading;
-        if (_webllmModel === modelId) return result;
+        try { await _webllmLoading; } catch(e) {}
+        if (_webllmModel === modelId && _webllmEngine) return _webllmEngine;
     }
 
     // Check WebGPU support
@@ -51,23 +57,36 @@ async function _ensureWebLLM(model) {
     if (!adapter) throw new Error('WebGPU adapter not available');
 
     _webllmLoading = (async () => {
-        // Lazy-load WebLLM library
-        if (!_webllmLib) {
-            _webllmLib = await import('https://esm.run/@mlc-ai/web-llm');
-        }
+        try {
+            // Lazy-load WebLLM library
+            if (!_webllmLib) {
+                _webllmProgress('Loading WebLLM library…');
+                _webllmLib = await import('https://esm.run/@mlc-ai/web-llm');
+            }
 
-        // Create or reload engine
-        if (!_webllmEngine) {
-            _webllmEngine = new _webllmLib.MLCEngine();
-        }
+            // Clean up existing engine
+            if (_webllmEngine) {
+                try { await _webllmEngine.unload(); } catch(e) {}
+                _webllmEngine = null; _webllmModel = null;
+            }
 
-        await _webllmEngine.reload(modelId);
-        _webllmModel = modelId;
-        _webllmLoading = null;
-        return _webllmEngine;
+            _webllmProgress(`Loading model ${modelId}… (first run downloads ~200 MB)`);
+            _webllmEngine = await _webllmLib.CreateMLCEngine(modelId, {
+                initProgressCallback: (report) => {
+                    _webllmProgress(report.text || `${Math.round((report.progress || 0) * 100)}%`);
+                }
+            });
+            _webllmModel = modelId;
+            _webllmProgress('Model ready.');
+            return _webllmEngine;
+        } catch(e) {
+            _webllmEngine = null; _webllmModel = null;
+            _webllmProgress('');
+            throw e;
+        }
     })();
 
-    return _webllmLoading;
+    try { return await _webllmLoading; } finally { _webllmLoading = null; }
 }
 
 async function probeHelper(url, timeout = HELPER_TIMEOUT) {
