@@ -1058,6 +1058,7 @@ dependencies = [
 name = "kernel-logic"
 version = "0.1.0"
 dependencies = [
+ "js-sys",
  "serde",
  "serde_json",
  "toml",
@@ -2033,7 +2034,7 @@ dependencies = [
 
 [[package]]
 name = "traits"
-version = "0.260326.144019"
+version = "0.260326.174452"
 dependencies = [
  "actix-cors",
  "actix-rt",
@@ -2066,7 +2067,7 @@ dependencies = [
 
 [[package]]
 name = "traits-wasm"
-version = "0.260326.144019"
+version = "0.260326.174452"
 dependencies = [
  "js-sys",
  "kernel-logic",

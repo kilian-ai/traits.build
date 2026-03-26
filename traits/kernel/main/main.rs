@@ -31,6 +31,28 @@ pub fn bootstrap(config: &Config) -> Result<Dispatcher, Box<dyn std::error::Erro
     // Initialize globals so trait implementations can access registry/config
     globals::init(registry.clone(), traits_dir.to_path_buf(), config.clone());
 
+    // Initialize platform abstraction layer (dispatch, registry, config, secrets)
+    kernel_logic::platform::init(kernel_logic::platform::Platform {
+        dispatch: |path, args| crate::dispatcher::compiled::dispatch(path, args),
+        registry_all: || {
+            match crate::globals::REGISTRY.get() {
+                Some(reg) => {
+                    let mut traits = reg.all();
+                    traits.sort_by(|a, b| a.path.cmp(&b.path));
+                    traits.iter().map(|t| t.to_summary_json()).collect()
+                }
+                None => vec![],
+            }
+        },
+        registry_count: || crate::globals::REGISTRY.get().map(|r| r.len()).unwrap_or(0),
+        registry_detail: |path| crate::globals::REGISTRY.get()?.get(path).map(|t| t.to_json()),
+        config_get: crate::config::trait_config_or,
+        secret_get: |key| {
+            let ctx = crate::dispatcher::compiled::secrets::SecretContext::resolve(&[key]);
+            ctx.get(key).map(|v| v.to_string())
+        },
+    });
+
     // Load trait dylibs from the entire traits directory (recursive)
     let dylib_loader = std::sync::Arc::new(dylib_loader::DylibLoader::new(vec![traits_dir.to_path_buf()]));
     let dylib_count = dylib_loader.load_all();
