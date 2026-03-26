@@ -1,0 +1,79 @@
+{
+  "trait": "www.seo",
+  "description": "SEO settings editor page",
+  "features": [
+    {
+      "name": "Returns SEO settings HTML",
+      "description": "Calling www.seo returns the SEO configuration page",
+      "tests": [
+        {
+          "name": "returns html with seo heading",
+          "type": "command",
+          "command": "./target/release/traits call www.seo 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "<!DOCTYPE html>" },
+            { "type": "contains", "expected": "Meta &amp; Open Graph" }
+          ]
+        },
+        {
+          "name": "contains basic meta fields",
+          "type": "command",
+          "command": "./target/release/traits call www.seo 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "f_title" },
+            { "type": "contains", "expected": "f_description" },
+            { "type": "contains", "expected": "f_keywords" },
+            { "type": "contains", "expected": "f_canonical" }
+          ]
+        },
+        {
+          "name": "contains open graph fields",
+          "type": "command",
+          "command": "./target/release/traits call www.seo 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "og_title" },
+            { "type": "contains", "expected": "og_description" },
+            { "type": "contains", "expected": "og_site_name" }
+          ]
+        },
+        {
+          "name": "contains twitter card fields",
+          "type": "command",
+          "command": "./target/release/traits call www.seo 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "twitter_title" },
+            { "type": "contains", "expected": "twitter_description" }
+          ]
+        },
+        {
+          "name": "contains json-ld fields",
+          "type": "command",
+          "command": "./target/release/traits call www.seo 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "jsonld_name" },
+            { "type": "contains", "expected": "jsonld_description" }
+          ]
+        },
+        {
+          "name": "contains save and apply buttons",
+          "type": "command",
+          "command": "./target/release/traits call www.seo 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "Save All" },
+            { "type": "contains", "expected": "Apply to Page" },
+            { "type": "contains", "expected": "Reset to Defaults" }
+          ]
+        },
+        {
+          "name": "uses sys.config for persistence",
+          "type": "command",
+          "command": "./target/release/traits call www.seo 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "sys.config" }
+          ]
+        }
+      ]
+    }
+  ]
+}

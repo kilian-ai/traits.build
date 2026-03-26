@@ -37,6 +37,39 @@ pub fn init() -> Result<JsValue, JsValue> {
     let reg = get_registry();
     let count = reg.len();
     let callable = wasm_traits::WASM_CALLABLE.len();
+
+    // Initialize platform abstraction layer (dispatch, registry, config, secrets)
+    kernel_logic::platform::init(kernel_logic::platform::Platform {
+        dispatch: |path, args| wasm_traits::dispatch(path, args),
+        registry_all: || {
+            get_registry().all().iter().map(|t| serde_json::json!({
+                "path": t.path,
+                "description": t.description,
+                "version": t.version,
+                "tags": t.tags,
+                "wasm_callable": t.wasm_callable,
+            })).collect()
+        },
+        registry_count: || get_registry().len(),
+        registry_detail: |path| {
+            get_registry().get(path).map(|t| serde_json::json!({
+                "path": t.path,
+                "description": t.description,
+                "version": t.version,
+                "author": t.author,
+                "tags": t.tags,
+                "provides": t.provides,
+                "language": t.language,
+                "source": t.source_type,
+                "wasm_callable": t.wasm_callable,
+                "params": t.params,
+                "returns": t.returns_type,
+                "returns_description": t.returns_description,
+            }))
+        },
+        config_get: |_trait_path, _key, default| default.to_string(),
+        secret_get: wasm_secrets::get_secret,
+    });
     Ok(serde_json::to_string(&serde_json::json!({
         "status": "ok",
         "traits_registered": count,

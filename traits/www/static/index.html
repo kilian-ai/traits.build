@@ -142,6 +142,7 @@ const ROUTES = {
   '/chat-logs':  'www.chat_logs',
   '/admin':      'www.admin.spa',
   '/settings':   'www.admin.spa',
+  '/seo':        'www.seo',
   '/playground': 'www.docs.api',
   '/terminal':   'www.terminal',
   '/wasm':       'www.wasm',
@@ -520,6 +521,54 @@ async function boot() {
   }, 1000);
 
   updateStatusBar();
+
+  // Apply SEO overrides from sys.config (if helper/server connected)
+  if (sdk.helperConnected || !isLocal) {
+    try {
+      const seoRes = await sdk.call('sys.config', ['list', 'www.seo']);
+      if (seoRes.ok && seoRes.result?.config) {
+        const SEO_MAP = {
+          title:               { sel: null, attr: null },
+          description:         { sel: 'meta[name="description"]', attr: 'content' },
+          keywords:            { sel: 'meta[name="keywords"]', attr: 'content' },
+          author:              { sel: 'meta[name="author"]', attr: 'content' },
+          canonical:           { sel: 'link[rel="canonical"]', attr: 'href' },
+          og_title:            { sel: 'meta[property="og:title"]', attr: 'content' },
+          og_description:      { sel: 'meta[property="og:description"]', attr: 'content' },
+          og_site_name:        { sel: 'meta[property="og:site_name"]', attr: 'content' },
+          og_image:            { sel: 'meta[property="og:image"]', attr: 'content' },
+          twitter_title:       { sel: 'meta[name="twitter:title"]', attr: 'content' },
+          twitter_description: { sel: 'meta[name="twitter:description"]', attr: 'content' },
+          twitter_image:       { sel: 'meta[name="twitter:image"]', attr: 'content' },
+        };
+        for (const item of seoRes.result.config) {
+          if (!item.value) continue;
+          if (item.key === 'title') { document.title = item.value; continue; }
+          const m = SEO_MAP[item.key];
+          if (m?.sel) {
+            const el = document.querySelector(m.sel);
+            if (el) el.setAttribute(m.attr, item.value);
+          }
+        }
+        // Update JSON-LD
+        const ldEl = document.querySelector('script[type="application/ld+json"]');
+        if (ldEl) {
+          try {
+            const ld = JSON.parse(ldEl.textContent);
+            for (const item of seoRes.result.config) {
+              if (item.key === 'jsonld_name' && item.value) ld.name = item.value;
+              if (item.key === 'jsonld_description' && item.value) ld.description = item.value;
+              if (item.key === 'jsonld_author' && item.value) {
+                if (!ld.author) ld.author = { '@type': 'Person' };
+                ld.author.name = item.value;
+              }
+            }
+            ldEl.textContent = JSON.stringify(ld, null, 2);
+          } catch(_) {}
+        }
+      }
+    } catch(e) { console.debug('SEO config load skipped:', e.message); }
+  }
 
   // Show nav, hide overlay
   nav.style.display = '';

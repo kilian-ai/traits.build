@@ -1,0 +1,19 @@
+[trait]
+description = "SEO settings editor — configure meta tags, Open Graph, Twitter cards, and JSON-LD"
+version = "v260326.180527"
+checksum = "22d52c9251c20c5cc65707e6f649fb7c1f94e8eadb516c8df5d087103f154be1"
+author = "system"
+tags = ["www", "seo", "settings", "meta"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML SEO settings page"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "seo"
+wasm = true

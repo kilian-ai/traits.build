@@ -1,8 +1,8 @@
 [trait]
 description = "Show detailed info about a specific trait"
-version = "v260326"
+version = "v260326.175920"
 epoch = 0
-checksum = "918053ac8b611dce3c42ccd4690e92a2671341df325cc0ad021fde0cee207cd2"
+checksum = "0ec04058c17cd3080fef4c61afb1da31650c848d8ac76000be8fecb05732569f"
 author = "system"
 tags = ["system", "meta", "discovery"]
 provides = ["sys/info"]

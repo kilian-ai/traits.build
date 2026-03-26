@@ -1,8 +1,8 @@
 [trait]
 description = "Call another trait by dot-notation path"
-version = "v260325"
+version = "v260326"
 epoch = 0
-checksum = "5d52c4d4c5bf628bb51a5d63b121ccaa2068bf66862814552ec144eae044d549"
+checksum = "619d332a433bebc515e395e74d938d81feee8a55bf1f292454ac224f5994e13a"
 author = "system"
 tags = ["kernel", "dispatch"]
 provides = ["kernel/call"]

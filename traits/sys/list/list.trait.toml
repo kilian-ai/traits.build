@@ -1,8 +1,8 @@
 [trait]
 description = "List all registered traits"
-version = "v260326"
+version = "v260326.175920"
 epoch = 0
-checksum = "496912bbaca990b98346f7ace0306c1d7f3833d9761260947de57b4bb91e26e8"
+checksum = "bad37beda11eb45cbe2755d47ea10ca459fe3581d069b28aec86a00acdb7c3f4"
 author = "system"
 tags = ["system", "meta", "discovery"]
 provides = ["sys/list"]

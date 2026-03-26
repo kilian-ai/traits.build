@@ -1,7 +1,7 @@
 [trait]
 description = "Unified LLM inference — routes to OpenAI API or a local model server (wgml, ollama, llama.cpp)"
-version = "v260325"
-checksum = "428a169ac3cc392a59d4c2a63309c86f6d8f4b454fc7c63cf754b9f99e27aed5"
+version = "v260326"
+checksum = "f015b96d726c055793af87ca4cc70fe096165b43890c2a71ed4feabebcf694ac"
 epoch = 0
 author = "system"
 tags = ["system", "llm", "inference", "openai", "wgml"]

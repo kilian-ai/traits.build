@@ -2,15 +2,8 @@ use serde_json::Value;
 use maud::{html, DOCTYPE, PreEscaped};
 
 pub fn admin(_args: &[Value]) -> Value {
-    #[cfg(not(target_arch = "wasm32"))]
-    let fly_app = crate::config::trait_config_or("www.admin", "fly_app", "polygrait-api");
-    #[cfg(target_arch = "wasm32")]
-    let fly_app = "polygrait-api".to_string();
-
-    #[cfg(not(target_arch = "wasm32"))]
-    let fly_region = crate::config::trait_config_or("www.admin", "fly_region", "iad");
-    #[cfg(target_arch = "wasm32")]
-    let fly_region = "iad".to_string();
+    let fly_app = kernel_logic::platform::config_get("www.admin", "fly_app", "polygrait-api");
+    let fly_region = kernel_logic::platform::config_get("www.admin", "fly_region", "iad");
 
     let markup = html! {
         (DOCTYPE)

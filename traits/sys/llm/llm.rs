@@ -37,15 +37,10 @@ pub fn llm(args: &[Value]) -> Value {
     }
 }
 
-/// Dispatch to sys.call (platform-aware)
+/// Dispatch to sys.call via platform abstraction.
 fn dispatch_sys_call(args: &[Value]) -> Value {
-    #[cfg(not(target_arch = "wasm32"))]
-    let result = crate::dispatcher::compiled::dispatch("sys.call", args);
-
-    #[cfg(target_arch = "wasm32")]
-    let result = crate::wasm_traits::dispatch("sys.call", args);
-
-    result.unwrap_or_else(|| json!({"ok": false, "error": "sys.call not found"}))
+    kernel_logic::platform::dispatch("sys.call", args)
+        .unwrap_or_else(|| json!({"ok": false, "error": "sys.call not found"}))
 }
 
 /// Call OpenAI chat completions via sys.call

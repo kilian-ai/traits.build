@@ -1,63 +1,17 @@
 use serde_json::Value;
 
-// ── Platform-specific registry access ──
+// ── Registry access via platform abstraction ──
 
-#[cfg(not(target_arch = "wasm32"))]
 fn get_all_entries() -> Vec<Value> {
-    match crate::globals::REGISTRY.get() {
-        Some(reg) => {
-            let mut traits = reg.all();
-            traits.sort_by(|a, b| a.path.cmp(&b.path));
-            traits.iter().map(|t| t.to_summary_json()).collect()
-        }
-        None => vec![],
-    }
+    kernel_logic::platform::registry_all()
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn get_entry_detail(path: &str) -> Option<Value> {
-    crate::globals::REGISTRY.get()?.get(path).map(|t| t.to_json())
+    kernel_logic::platform::registry_detail(path)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn registry_count() -> usize {
-    crate::globals::REGISTRY.get().map(|r| r.len()).unwrap_or(0)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn get_all_entries() -> Vec<Value> {
-    let reg = crate::get_registry();
-    reg.all().iter().map(|t| serde_json::json!({
-        "path": t.path,
-        "description": t.description,
-        "version": t.version,
-        "tags": t.tags,
-        "wasm_callable": t.wasm_callable,
-    })).collect()
-}
-
-#[cfg(target_arch = "wasm32")]
-fn get_entry_detail(path: &str) -> Option<Value> {
-    let reg = crate::get_registry();
-    reg.get(path).map(|t| serde_json::json!({
-        "path": t.path,
-        "description": t.description,
-        "version": t.version,
-        "author": t.author,
-        "tags": t.tags,
-        "provides": t.provides,
-        "language": t.language,
-        "source": t.source_type,
-        "wasm_callable": t.wasm_callable,
-        "params": t.params,
-        "returns": t.returns_type,
-        "returns_description": t.returns_description,
-    }))
-}
-
-#[cfg(target_arch = "wasm32")]
-fn registry_count() -> usize {
-    crate::get_registry().len()
+    kernel_logic::platform::registry_count()
 }
 
 // ── Shared dispatch logic (identical on both targets) ──
