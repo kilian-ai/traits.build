@@ -10,9 +10,9 @@
 
 ## Project Overview
 
-**traits.build** is a Rust kernel that compiles ~58 traits into a single binary AND a WASM browser runtime. The same trait registry powers:
+**traits.build** is a Rust kernel that compiles ~65 traits into a single binary AND a WASM browser runtime. The same trait registry powers:
 - **Native binary** — `./traits serve`, `traits list`, `traits mcp` (CLI + HTTP + MCP)
-- **WASM kernel** — runs in the browser, compiled via `wasm-pack`, ~752 registered traits
+- **WASM kernel** — runs in the browser, compiled via `wasm-pack`, 27 WASM-compiled traits (full registry of ~65 visible)
 - **Static SPA** — `index.html` with hash-based routing, served from GitHub Pages (no server required)
 - **4-tier dispatch cascade** — WASM local → helper (localhost) → relay (pairing code) → server REST
 
@@ -544,7 +544,7 @@ RELAY_URL=https://traits-build.fly.dev traits serve
 
 ---
 
-## Trait Inventory (~58 traits)
+## Trait Inventory (~65 traits)
 
 ### Kernel — 3-Layer Architecture
 
@@ -825,7 +825,7 @@ fly deploy --now --local-only --image registry.fly.io/traits-build:deployment-vN
 The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 
 ```
-1. WASM Local     — instant, ~752 traits callable in browser
+1. WASM Local     — instant, 27 traits callable in browser
 2. Local Helper   — localhost:8090/8091/9090, probed on page load
 3. Relay          — remote helper via 4-char pairing code (HTTP long-poll)
 4. Server REST    — POST to origin /traits/{namespace}/{name}
@@ -865,7 +865,7 @@ Layer 2: traits.js — Single JS SDK (ONE source of truth)
 
 Layer 1: Kernels (Rust, compiled per target)
   - Browser Kernel (WASM) — 26 pure traits, registry browse, CLI session
-  - Native Kernel (binary) — all 58+ traits, HTTP server, dylib loader, relay
+  - Native Kernel (binary) — all ~65 traits, HTTP server, dylib loader, relay
 
 Layer 0: kernel/logic — Shared Rust library
   - TraitValue / TraitType (type system)
@@ -926,8 +926,8 @@ Test types: `exit_code`, `contains`, `matches` (regex), `json_path`
 **Present:**
 | Component | Status | Details |
 |-----------|--------|---------|
-| Rust kernel | Core | 58 traits compiled into single binary |
-| WASM kernel | Core | Browser runtime with ~752 registered traits |
+| Rust kernel | Core | ~65 traits compiled into single binary |
+| WASM kernel | Core | Browser runtime with 27 WASM-compiled traits |
 | Static SPA | Core | `index.html` with self-contained WASM + SDK |
 | MCP server | Present | `sys.mcp` — native Rust, stdio JSON-RPC 2.0 |
 | CLI | Present | `sys.cli` with native + WASM backends |

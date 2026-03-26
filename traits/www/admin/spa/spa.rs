@@ -50,23 +50,83 @@ pub fn spa(_args: &[Value]) -> Value {
                         div.log id="cmdLog" style="display:none;margin-top:14px;" {}
                     }
 
-                    div.grid {
-                        section.card data-trait="sys.list" data-handler="refreshStats" data-interval="30000" {
-                            h2 { "Server stats" }
-                            div.status {
-                                div.dot.gray id="spaStatusDot" {}
-                                span.status-text id="spaStatusText" { "Checking..." }
+                    section.card id="dispatchCard" data-trait="sys.list" data-handler="refreshStats" data-interval="30000" {
+                        h2 { "Dispatch" }
+                        p.note {
+                            "Calls cascade through four tiers. The first available tier wins."
+                        }
+
+                        // Tier 1 — WASM
+                        div.tier {
+                            div.tier-header {
+                                div.dot.gray id="dotWasm" {}
+                                span.tier-label { "WASM" }
+                                span.tier-detail.muted id="wasmDetail" { "loading..." }
                             }
+                        }
+
+                        // Tier 2 — Local Helper
+                        div.tier {
+                            div.tier-header {
+                                div.dot.gray id="dotHelper" {}
+                                span.tier-label { "Local Helper" }
+                                span.tier-detail.muted id="helperDetail" { "probing..." }
+                            }
+                            div.tier-controls id="helperControls" style="display:none;" {
+                                div.form-row.compact {
+                                    input id="helperUrl" type="text" placeholder="http://localhost:8090" style="flex:1;min-width:160px;" {}
+                                    button.primary.sm id="btnHelperConnect" onclick="connectHelper()" { "Connect" }
+                                    button.sm id="btnHelperDisconnect" onclick="disconnectHelper()" style="display:none;" { "Disconnect" }
+                                }
+                            }
+                        }
+
+                        // Tier 3 — Relay
+                        div.tier {
+                            div.tier-header {
+                                div.dot.gray id="dotRelay" {}
+                                span.tier-label { "Relay" }
+                                span.tier-detail.muted id="relayDetail" { "not configured" }
+                            }
+                            div.tier-controls id="relayControls" {
+                                p.note.compact-note {
+                                    "Run " code { "RELAY_URL=https://traits-build.fly.dev traits serve" } " on your Mac, enter the pairing code."
+                                }
+                                div.form-row.compact {
+                                    input id="relayCode" type="text" placeholder="Code (e.g. A7X9)"
+                                          maxlength="4" style="width:110px;text-transform:uppercase;font-family:'Iosevka Etoile','IBM Plex Mono',monospace;font-size:1rem;letter-spacing:0.12em;text-align:center;" {}
+                                    input id="relayServer" type="text" placeholder="Relay server (optional)" style="flex:1;min-width:140px;" {}
+                                    button.primary.sm id="btnRelayConnect" onclick="connectRelay()" { "Connect" }
+                                    button.sm id="btnRelayDisconnect" onclick="disconnectRelay()" style="display:none;" { "Disconnect" }
+                                }
+                            }
+                        }
+
+                        // Tier 4 — REST
+                        div.tier {
+                            div.tier-header {
+                                div.dot.gray id="dotRest" {}
+                                span.tier-label { "REST" }
+                                span.tier-detail.muted id="restDetail" { "checking..." }
+                            }
+                        }
+
+                        // Summary bar
+                        div.dispatch-summary id="dispatchSummary" {
+                            span.muted { "Active path: " }
+                            span id="activePath" { "—" }
+                        }
+                    }
+
+                    div.grid {
+                        section.card {
+                            h2 { "Kernel" }
                             table.stats {
                                 tr { td { "Runtime" } td id="runtimeMode" { "-" } }
                                 tr { td { "Traits" } td id="traitCount" { "-" } }
                                 tr { td { "Namespaces" } td id="namespaceCount" { "-" } }
                                 tr { td { "Version" } td id="buildVersion" { "-" } }
                                 tr { td { "Uptime" } td id="uptimeHuman" { "-" } }
-                            }
-                            p.note {
-                                "When the HTTP server is reachable this card reads " code { "/health" } ". "
-                                "In file or pure WASM mode it falls back to local trait metadata."
                             }
                         }
 
@@ -101,26 +161,6 @@ pub fn spa(_args: &[Value]) -> Value {
                                 td colspan="2" { a href="#" onclick="setCmd('call kernel.reload');runCmd();return false" { code { "traits call kernel.reload" } } }
                                 }
                             }
-                        }
-                    }
-
-                    section.card id="relayCard" {
-                        h2 { "Remote Helper" }
-                        p.note {
-                            "Connect to your Mac's helper from anywhere. "
-                            "Start " code { "RELAY_URL=https://traits-build.fly.dev traits serve" } " on your Mac, "
-                            "then enter the pairing code shown in the terminal."
-                        }
-                        div.form-row {
-                            input id="relayCode" type="text" placeholder="Pairing code (e.g. A7X9)"
-                                  maxlength="4" style="width:140px;text-transform:uppercase;font-family:'Iosevka Etoile','IBM Plex Mono',monospace;font-size:1.1rem;letter-spacing:0.15em;text-align:center;" {}
-                            input id="relayServer" type="text" placeholder="Relay server (optional)" style="flex:1;" {}
-                            button class="primary" id="btnRelayConnect" onclick="connectRelay()" { "Connect" }
-                            button id="btnRelayDisconnect" onclick="disconnectRelay()" style="display:none;" { "Disconnect" }
-                        }
-                        div.status id="relayStatus" {
-                            div.dot.gray id="relayDot" {}
-                            span.status-text id="relayText" { "Not connected" }
                         }
                     }
 
@@ -406,6 +446,83 @@ a { color: #8be3cb; }
   .card { padding: 16px; border-radius: 16px; }
   td:first-child, .tools td:nth-child(2) { width: auto; }
   .tools td:last-child, #envTable td:last-child, #secretTable td:last-child { text-align: left; }
+  .tier-controls { padding-left: 16px; }
+}
+
+/* Dispatch tiers */
+.tier {
+  position: relative;
+  padding-left: 28px;
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+.tier:not(:last-of-type)::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 18px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--line);
+}
+.tier-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+.tier-header .dot {
+  position: absolute;
+  left: 0;
+  width: 12px;
+  height: 12px;
+}
+.tier-label {
+  font-family: "Iosevka Etoile", "IBM Plex Mono", monospace;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tier-detail {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tier-controls {
+  padding-left: 0;
+  margin-top: 6px;
+}
+.tier-controls .compact-note {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.form-row.compact {
+  margin-top: 6px;
+  gap: 6px;
+}
+.form-row.compact input {
+  padding: 8px 10px;
+  font-size: 13px;
+  min-width: 100px;
+}
+button.sm {
+  padding: 7px 12px;
+  font-size: 13px;
+}
+.dispatch-summary {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(8, 12, 15, 0.6);
+  border: 1px solid var(--line);
+  font-family: "Iosevka Etoile", "IBM Plex Mono", monospace;
+  font-size: 13px;
+}
+.tier-header .tier-url {
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.7;
 }
 "##;
 
@@ -661,7 +778,7 @@ function apiDocsUrl(fragment) {
 }
 
 // ── Stats via TC (Trait Component) ──
-// The section.card has data-trait="sys.list" data-handler="refreshStats" data-interval="30000"
+// The dispatch card has data-trait="sys.list" data-handler="refreshStats" data-interval="30000"
 // TC auto-calls sys.list on mount + every 30s, passes result to this handler.
 
 TC.on('refreshStats', async (el, traits, meta) => {
@@ -677,9 +794,6 @@ TC.on('refreshStats', async (el, traits, meta) => {
   byId('buildVersion').textContent = String(version || '-');
   byId('uptimeHuman').textContent = '-';
 
-  const dot = byId('spaStatusDot');
-  const text = byId('spaStatusText');
-
   if (!isLocalFile) {
     try {
       const resp = await fetch(`${location.origin}/health`);
@@ -687,27 +801,22 @@ TC.on('refreshStats', async (el, traits, meta) => {
       if (health && resp.ok) {
         byId('uptimeHuman').textContent = health.uptime_human || '-';
         if (health.version) byId('buildVersion').textContent = health.version;
-        dot.className = 'dot green';
-        text.textContent = 'Healthy';
-        return;
       }
     } catch (_) {}
   }
 
-  dot.className = isLocalFile ? 'dot yellow' : 'dot green';
-  text.textContent = isLocalFile ? 'Local browser mode' : 'Reachable';
+  refreshDispatchStatus();
 });
 
 // Error fallback for stats loading
 document.querySelector('[data-handler="refreshStats"]')
   ?.addEventListener('trait:error', (e) => {
-    byId('spaStatusDot').className = 'dot red';
-    byId('spaStatusText').textContent = 'Unavailable';
     byId('runtimeMode').textContent = isLocalFile ? 'file' : 'rest';
     byId('traitCount').textContent = '-';
     byId('namespaceCount').textContent = '-';
     byId('buildVersion').textContent = '-';
     byId('uptimeHuman').textContent = '-';
+    refreshDispatchStatus();
     log('Stats error: ' + (e.detail?.error || 'Unknown'), 'error');
   });
 
@@ -825,66 +934,180 @@ window.saveEnvVar = saveEnvVar;
 window.deleteEnvVar = deleteEnvVar;
 window.connectRelay = connectRelay;
 window.disconnectRelay = disconnectRelay;
+window.connectHelper = connectHelperUI;
+window.disconnectHelper = disconnectHelperUI;
 
 // ═══════════════════════════════════════════════════════════════
-// Relay
+// Dispatch Status (unified 4-tier view)
 // ═══════════════════════════════════════════════════════════════
+
+function setTier(id, color, detail) {
+  var dot = byId('dot' + id);
+  var txt = byId(id.charAt(0).toLowerCase() + id.slice(1) + 'Detail');
+  if (dot) dot.className = 'dot ' + color;
+  if (txt) txt.textContent = detail;
+}
+
+async function refreshDispatchStatus() {
+  var sdk = window._traitsSDK;
+  if (!sdk) return;
+  var s = sdk.status;
+  var tiers = [];
+
+  // Tier 1: WASM
+  if (s.wasm) {
+    setTier('Wasm', 'green', s.callable + ' callable, ' + s.traits + ' registered' + (s.version ? ' — ' + s.version : ''));
+    tiers.push('WASM');
+  } else {
+    setTier('Wasm', 'gray', 'not loaded');
+  }
+
+  // Tier 2: Helper
+  var hs = sdk.helperStatus;
+  if (s.helper && hs) {
+    var hDetail = hs.url || 'connected';
+    if (hs.version) hDetail += ' — ' + hs.version;
+    if (hs.traits_count) hDetail += ' (' + hs.traits_count + ' traits)';
+    setTier('Helper', 'green', hDetail);
+    byId('btnHelperConnect').style.display = 'none';
+    byId('btnHelperDisconnect').style.display = '';
+    byId('helperUrl').value = hs.url || '';
+    byId('helperControls').style.display = '';
+    tiers.push('Helper');
+  } else {
+    setTier('Helper', 'gray', 'not connected');
+    byId('btnHelperConnect').style.display = '';
+    byId('btnHelperDisconnect').style.display = 'none';
+    byId('helperControls').style.display = '';
+  }
+
+  // Tier 3: Relay
+  if (s.relay && s.relayCode) {
+    try {
+      var rs = await sdk.relayStatus();
+      if (rs.connected) {
+        var rDetail = 'code ' + s.relayCode;
+        if (rs.age_seconds !== undefined) rDetail += ' — active ' + formatAge(rs.age_seconds);
+        setTier('Relay', 'green', rDetail);
+        byId('btnRelayConnect').style.display = 'none';
+        byId('btnRelayDisconnect').style.display = '';
+        tiers.push('Relay');
+      } else {
+        setTier('Relay', 'red', 'code ' + s.relayCode + ' — helper offline');
+        byId('btnRelayConnect').style.display = '';
+        byId('btnRelayDisconnect').style.display = 'none';
+      }
+    } catch (e) {
+      setTier('Relay', 'red', 'error: ' + (e.message || e));
+    }
+  } else {
+    setTier('Relay', 'gray', 'not configured');
+    byId('btnRelayConnect').style.display = '';
+    byId('btnRelayDisconnect').style.display = 'none';
+  }
+
+  // Tier 4: REST
+  if (!isLocalFile && location.origin && location.origin !== 'null') {
+    try {
+      var resp = await fetch(location.origin + '/health', { signal: AbortSignal.timeout(3000) });
+      if (resp.ok) {
+        var h = await resp.json();
+        var rDetail = location.origin;
+        if (h.version) rDetail += ' — ' + h.version;
+        setTier('Rest', 'green', rDetail);
+        tiers.push('REST');
+      } else {
+        setTier('Rest', 'gray', location.origin + ' — unreachable');
+      }
+    } catch (_) {
+      setTier('Rest', 'gray', 'no server');
+    }
+  } else {
+    setTier('Rest', 'gray', 'no server (file://)');
+  }
+
+  // Summary
+  var summary = byId('activePath');
+  if (tiers.length > 0) {
+    summary.textContent = tiers.join(' → ');
+  } else {
+    summary.textContent = 'no dispatch available';
+  }
+}
+
+function formatAge(seconds) {
+  if (seconds < 60) return seconds + 's';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+  return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+}
+
+// ── Helper controls ──
+
+async function connectHelperUI() {
+  var url = byId('helperUrl').value.trim();
+  if (!url) url = 'http://localhost:8090';
+  var sdk = window._traitsSDK;
+  if (!sdk) { log('SDK not ready', 'error'); return; }
+  setTier('Helper', 'yellow', 'connecting...');
+  var res = await sdk.connectHelper(url);
+  if (res.ok) {
+    log('Helper connected: ' + url);
+  } else {
+    setTier('Helper', 'red', res.error || 'connection failed');
+    log('Helper connection failed: ' + (res.error || url), 'error');
+  }
+  refreshDispatchStatus();
+}
+
+async function disconnectHelperUI() {
+  var sdk = window._traitsSDK;
+  if (sdk && sdk.disconnectHelper) sdk.disconnectHelper();
+  log('Helper disconnected');
+  refreshDispatchStatus();
+}
+
+// ── Relay controls ──
+
 function initRelay() {
   var code = localStorage.getItem('traits.relay.code') || '';
   var server = localStorage.getItem('traits.relay.server') || '';
-  document.getElementById('relayCode').value = code;
-  document.getElementById('relayServer').value = server;
-  if (code) refreshRelayStatus();
+  byId('relayCode').value = code;
+  byId('relayServer').value = server;
+  // Stored helper URL
+  try {
+    var storedHelper = localStorage.getItem('traits.helper.url');
+    if (storedHelper) byId('helperUrl').value = storedHelper;
+  } catch(e) {}
+  // Initial dispatch status refresh after a short delay for SDK init
+  setTimeout(refreshDispatchStatus, 500);
 }
 
 async function connectRelay() {
-  var code = document.getElementById('relayCode').value.trim().toUpperCase();
-  if (!code) { setRelayStatus('gray', 'Enter a pairing code'); return; }
-  var server = document.getElementById('relayServer').value.trim() || undefined;
+  var code = byId('relayCode').value.trim().toUpperCase();
+  if (!code) { setTier('Relay', 'gray', 'enter a pairing code'); return; }
+  var server = byId('relayServer').value.trim() || undefined;
   var sdk = window._traitsSDK;
-  if (!sdk) { setRelayStatus('gray', 'SDK not ready'); return; }
-  setRelayStatus('gray', 'Connecting...');
+  if (!sdk) { setTier('Relay', 'gray', 'SDK not ready'); return; }
+  setTier('Relay', 'yellow', 'connecting...');
   var res = await sdk.connectRelay(code, server);
   if (res.ok) {
-    setRelayStatus('green', 'Connected — relay active');
-    document.getElementById('btnRelayConnect').style.display = 'none';
-    document.getElementById('btnRelayDisconnect').style.display = '';
     log('Relay connected: ' + code);
   } else {
-    setRelayStatus('red', res.error || 'Connection failed');
+    setTier('Relay', 'red', res.error || 'connection failed');
+    log('Relay connection failed: ' + (res.error || code), 'error');
   }
+  refreshDispatchStatus();
 }
 
 async function disconnectRelay() {
   var sdk = window._traitsSDK;
   if (sdk) sdk.disconnectRelay();
-  document.getElementById('relayCode').value = '';
-  document.getElementById('btnRelayConnect').style.display = '';
-  document.getElementById('btnRelayDisconnect').style.display = 'none';
-  setRelayStatus('gray', 'Disconnected');
+  byId('relayCode').value = '';
+  byId('btnRelayConnect').style.display = '';
+  byId('btnRelayDisconnect').style.display = 'none';
+  setTier('Relay', 'gray', 'disconnected');
   log('Relay disconnected');
-}
-
-async function refreshRelayStatus() {
-  var sdk = window._traitsSDK;
-  if (!sdk) return;
-  var status = await sdk.relayStatus();
-  if (status.connected) {
-    setRelayStatus('green', 'Connected — relay active');
-    document.getElementById('btnRelayConnect').style.display = 'none';
-    document.getElementById('btnRelayDisconnect').style.display = '';
-  } else if (status.code) {
-    setRelayStatus('red', status.error || 'Helper offline or code expired');
-    document.getElementById('btnRelayConnect').style.display = '';
-    document.getElementById('btnRelayDisconnect').style.display = 'none';
-  }
-}
-
-function setRelayStatus(color, text) {
-  var dot = document.getElementById('relayDot');
-  var txt = document.getElementById('relayText');
-  if (dot) { dot.className = 'dot ' + color; }
-  if (txt) { txt.textContent = text; }
+  refreshDispatchStatus();
 }
 
 initRelay();

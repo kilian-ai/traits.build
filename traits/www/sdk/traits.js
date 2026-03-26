@@ -531,6 +531,14 @@ export class Traits {
             if (!data.active) return { ok: false, error: 'Pairing code not found or expired' };
             localStorage.setItem('traits.relay.code', code);
             localStorage.setItem('traits.relay.server', relayServer);
+            // Send _ping so Mac helper confirms the connection
+            try {
+                await fetch(`${relayServer}/relay/call`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code, path: '_ping', args: [] }),
+                });
+            } catch(_) { /* ping is best-effort */ }
             return { ok: true, active: true };
         } catch(e) {
             return { ok: false, error: 'Cannot reach relay server: ' + e.message };

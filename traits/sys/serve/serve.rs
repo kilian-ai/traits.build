@@ -706,6 +706,23 @@ async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), St
             }
         };
 
+        // Handle _ping (connection handshake from SPA)
+        if req.path == "_ping" {
+            info!("✅ Remote client connected via relay (code: {})", code);
+            let pong = serde_json::json!({
+                "code": code,
+                "id": req.id,
+                "result": "pong",
+            });
+            let pong_body = pong.to_string();
+            let _ = tokio::process::Command::new("curl")
+                .args(["-sf", "-X", "POST", "-H", "Content-Type: application/json",
+                       "-d", &pong_body, &format!("{}/relay/respond", relay_url)])
+                .output()
+                .await;
+            continue;
+        }
+
         info!("Relay request: {} (id: {})", req.path, req.id);
 
         // 3. Dispatch via local HTTP server
