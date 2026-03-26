@@ -1,10 +1,9 @@
 [trait]
-description = "Default REST-backed provider for the llm/openai interface"
-version = "v260325"
+description = "OpenAI-compatible prompt→response inference (implements llm/prompt)"
+version = "v260326"
 author = "system"
-tags = ["llm", "openai", "rest", "provider"]
-provides = ["llm/openai"]
-priority = 100
+tags = ["llm", "openai", "prompt", "ai"]
+provides = ["llm/prompt"]
 
 [trait.http]
 method = "POST"
@@ -15,6 +14,15 @@ response_path = "body.choices.0.message.content"
 
 [trait.http.defaults]
 model = "gpt-4o-mini"
+
+[requires]
+provider = "llm/openai"
+
+[bindings]
+provider = "llm.prompt.openai.rest"
+
+[load]
+llm.prompt.openai = "llm/openai"
 
 [signature]
 params = [
@@ -29,4 +37,4 @@ description = "Assistant response text"
 [implementation]
 language = "rust"
 source = "rest"
-entry = "rest"
+entry = "openai"

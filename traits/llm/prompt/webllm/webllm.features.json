@@ -1,0 +1,25 @@
+{
+  "trait": "llm.prompt.webllm",
+  "features": [
+    {
+      "name": "Browser-only WebLLM inference",
+      "description": "In-browser LLM using WebGPU via WebLLM. Returns dispatch sentinel for JS runtime.",
+      "tests": [
+        {
+          "name": "returns error on native (WebGPU not available)",
+          "type": "command",
+          "command": ["call", "llm.prompt.webllm", "hello"],
+          "expect": {
+            "contains": "only available in the browser"
+          }
+        }
+      ],
+      "examples": [
+        {
+          "input": ["What is 2+2?"],
+          "note": "In browser, this triggers WebLLM inference. On native, returns error."
+        }
+      ]
+    }
+  ]
+}

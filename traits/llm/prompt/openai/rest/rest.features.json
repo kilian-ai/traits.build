@@ -1,5 +1,5 @@
 {
-  "trait": "llm.openai.rest",
+  "trait": "llm.prompt.openai.rest",
   "features": [
     {
       "name": "REST provider returns text completions",
@@ -9,7 +9,7 @@
           "name": "returns string response",
           "type": "rest",
           "method": "POST",
-          "path": "/traits/llm/openai/rest",
+          "path": "/traits/llm/prompt/openai/rest",
           "body": { "args": ["Respond with exactly the word: provider"] },
           "expect": {
             "status": 200,

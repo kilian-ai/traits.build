@@ -1,0 +1,10 @@
+{
+  "trait": "llm.prompt",
+  "features": [
+    {
+      "name": "Interface definition",
+      "description": "llm.prompt is an interface — concrete providers like llm.prompt.openai and llm.prompt.webllm implement it",
+      "tests": []
+    }
+  ]
+}

@@ -476,7 +476,7 @@ function cmdLog(msg, type) {
   el.style.display = 'block';
   var t = new Date().toTimeString().slice(0,8);
   var cls = type || '';
-  el.innerHTML += '\n<span class="entry"><span class="time">[' + t + ']</span> <span' + (cls ? ' class="'+cls+'"' : '') + '>' + esc(msg) + '</span></span>';
+  el.innerHTML += '<span class="entry"><span class="time">[' + t + ']</span> <span' + (cls ? ' class="'+cls+'"' : '') + '>' + esc(msg) + '</span></span>';
   el.scrollTop = el.scrollHeight;
 }
 
@@ -580,7 +580,7 @@ function log(message, type) {
   const t = new Date().toTimeString().slice(0, 8);
   const safe = esc(message);
   const tone = type ? ` class="${type}"` : '';
-  el.innerHTML += `\n<span class="entry"><span class="time">[${t}]</span><span${tone}>${safe}</span></span>`;
+  el.innerHTML += `<span class="entry"><span class="time">[${t}]</span><span${tone}>${safe}</span></span>`;
   el.scrollTop = el.scrollHeight;
 }
 

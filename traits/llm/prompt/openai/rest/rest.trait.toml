@@ -1,9 +1,10 @@
 [trait]
-description = "Swappable OpenAI-compatible inference entrypoint"
+description = "Default REST-backed provider for llm.prompt.openai"
 version = "v260325"
-checksum = "2cbd5e713048fbd2a9e4ae5490c88bd83f031f018f9dc632198f5105e488062a"
 author = "system"
-tags = ["llm", "openai", "interface", "ai"]
+tags = ["llm", "openai", "rest", "provider"]
+provides = ["llm/openai", "llm/prompt"]
+priority = 100
 
 [trait.http]
 method = "POST"
@@ -14,15 +15,6 @@ response_path = "body.choices.0.message.content"
 
 [trait.http.defaults]
 model = "gpt-4o-mini"
-
-[requires]
-provider = "llm/openai"
-
-[bindings]
-provider = "llm.openai.rest"
-
-[load]
-llm.openai = "llm/openai"
 
 [signature]
 params = [
@@ -37,4 +29,4 @@ description = "Assistant response text"
 [implementation]
 language = "rust"
 source = "rest"
-entry = "openai"
+entry = "rest"

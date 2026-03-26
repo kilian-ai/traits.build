@@ -369,7 +369,7 @@ function cmdLog(msg, type) {
   el.style.display = 'block';
   var t = new Date().toTimeString().slice(0,8);
   var cls = type || 'info';
-  el.innerHTML += '\n<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
+  el.innerHTML += '<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
   el.scrollTop = el.scrollHeight;
 }
 
@@ -421,7 +421,7 @@ function log(msg, type) {
   const el = document.getElementById('log');
   const t = new Date().toTimeString().slice(0,8);
   const cls = type || 'info';
-  el.innerHTML += '\n<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
+  el.innerHTML += '<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
   el.scrollTop = el.scrollHeight;
 }
 

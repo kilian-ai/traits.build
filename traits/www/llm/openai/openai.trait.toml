@@ -1,7 +1,7 @@
 [trait]
 description = "LLM Chat UI — simple prompt interface for OpenAI"
-version = "v260323"
-checksum = "9b15190a8a4e4d350ecf590c090f3df22a2e904bb67befe32499f800f2803691"
+version = "v260326"
+checksum = "042211c99b77399cdeac66338dd88dceded2d4d1bda2a01634ea06f317d4d66c"
 author = "system"
 tags = ["www", "llm", "openai", "chat"]
 provides = ["www/webpage"]

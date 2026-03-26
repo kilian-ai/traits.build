@@ -1,5 +1,5 @@
 {
-  "trait": "llm.openai",
+  "trait": "llm.prompt.openai",
   "features": [
     {
       "name": "Chat completion with prompt",
@@ -9,7 +9,7 @@
           "name": "returns string response",
           "type": "rest",
           "method": "POST",
-          "path": "/traits/llm/openai",
+          "path": "/traits/llm/prompt/openai",
           "body": { "args": ["Respond with exactly the word: hello"] },
           "expect": {
             "status": 200,
@@ -36,7 +36,7 @@
           "name": "custom model returns response",
           "type": "rest",
           "method": "POST",
-          "path": "/traits/llm/openai",
+          "path": "/traits/llm/prompt/openai",
           "body": { "args": ["Respond with exactly the word: world", "gpt-4o-mini"] },
           "expect": {
             "status": 200,
@@ -63,7 +63,7 @@
           "name": "error on missing prompt",
           "type": "rest",
           "method": "POST",
-          "path": "/traits/llm/openai",
+          "path": "/traits/llm/prompt/openai",
           "body": { "args": [] },
           "expect": {
             "status": 400

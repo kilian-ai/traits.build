@@ -74,6 +74,9 @@ pub mod wasm_ps;
 #[path = "../../../../sys/llm/llm.rs"]
 pub mod llm;
 
+#[path = "../../../../llm/prompt/webllm/webllm.rs"]
+pub mod webllm;
+
 /// WASM-callable trait paths (curated list of pure-computation traits).
 pub const WASM_CALLABLE: &[&str] = &[
     "kernel.call",
@@ -90,6 +93,7 @@ pub const WASM_CALLABLE: &[&str] = &[
     "sys.registry",
     "sys.test_runner",
     "sys.version",
+    "llm.prompt.webllm",
     "www.admin",
     "www.admin.spa",
     "www.chat_logs",
@@ -128,6 +132,7 @@ pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
         "sys.ps" | "sys.ps.wasm" => Some(wasm_ps::wasm_ps(args)),
         "sys.list" => Some(registry::list(args)),
         "sys.llm" => Some(llm::llm(args)),
+        "llm.prompt.webllm" => Some(webllm::webllm(args)),
         "sys.openapi" => Some(openapi::openapi(args)),
         "sys.registry" => Some(registry::registry(args)),
         "sys.test_runner" => Some(test_runner::test_runner(args)),

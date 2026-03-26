@@ -1,0 +1,22 @@
+[trait]
+description = "In-browser LLM inference via WebLLM (WebGPU) — implements llm/prompt"
+version = "v260326.011922"
+checksum = "0690a1b0b340a7d30d9e3f279c11bf7c25af0c55392d2946b9239f75181d864a"
+author = "system"
+tags = ["llm", "webllm", "webgpu", "wasm", "browser", "prompt"]
+provides = ["llm/prompt"]
+
+[signature]
+params = [
+  { name = "prompt", type = "string", description = "User message to send to the model", required = true },
+  { name = "model", type = "string", description = "WebLLM model ID (e.g. Llama-3.1-8B-Instruct-q4f32_1-MLC)", required = false },
+]
+
+[signature.returns]
+type = "string"
+description = "Assistant response text from in-browser model"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "webllm"

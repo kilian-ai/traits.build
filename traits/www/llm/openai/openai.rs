@@ -133,7 +133,7 @@ async function sendMessage() {
 
   try {
     const model = modelEl.value;
-    const res = await fetch('/traits/llm/openai', {
+    const res = await fetch('/traits/llm/prompt/openai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ args: [text, model] })
