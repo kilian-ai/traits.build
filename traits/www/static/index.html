@@ -630,6 +630,18 @@ async function boot() {
   // Wait for helper discovery to finish (has its own timeout)
   await helperPromise;
 
+  // Re-probe helper every second (detect connect/disconnect)
+  setInterval(async () => {
+    if (helperReady) {
+      // Verify still alive
+      const info = await probeHelper(helperUrl, 1000);
+      if (!info) { helperReady = false; helperUrl = null; helperInfo = null; updateStatusBar(); }
+    } else {
+      await discoverHelper();
+      if (helperReady) updateStatusBar();
+    }
+  }, 1000);
+
   updateStatusBar();
 
   // Show nav, hide overlay
