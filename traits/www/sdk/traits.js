@@ -3,14 +3,16 @@
  *
  * Dispatch cascade: WASM kernel (instant, local) → helper (localhost) → REST API.
  * Helper = local Rust binary running on localhost for privileged traits.
+ * Runtime bindings: interface paths (e.g. llm/prompt) resolve to bound implementations
+ * before dispatch. Supports deferred binding (bindWhenReady) for lazy-loaded impls.
  *
  * Usage:
  *   import { Traits } from '/static/www/sdk/traits.js';
  *   const traits = new Traits();         // auto-detects server from current origin
  *   await traits.init();                 // loads WASM kernel + discovers helper
  *   const hash = await traits.call('sys.checksum', ['hash', 'hello']);
- *   const list = await traits.list();
- *   const info = await traits.info('sys.checksum');
+ *   traits.bind('llm/prompt', 'llm.prompt.openai');       // set default
+ *   traits.bindWhenReady('llm/prompt', 'llm.prompt.webllm', readyPromise);
  */
 
 // ── WASM kernel bindings (lazy-loaded) ──
@@ -185,6 +187,10 @@ export class Traits {
         this.jsUrl = opts.jsUrl || '/wasm/traits_wasm.js';
         this._initPromise = null;
         this._wasmInfo = null;
+        // Runtime binding table: interface path → implementation trait path
+        this._bindings = new Map();
+        // Pending deferred bindings: interface → { impl, cancel }
+        this._pendingBindings = new Map();
     }
 
     /**
@@ -241,6 +247,12 @@ export class Traits {
     async call(path, args = [], opts = {}) {
         // Ensure initialized
         if (!this._initPromise) await this.init();
+
+        // 0. Binding resolution: redirect interface paths to bound implementations
+        const bound = this._bindings.get(path);
+        if (bound && bound !== path) {
+            return this.call(bound, args, opts);
+        }
 
         const forceMode = opts.force;
         let wasmResult = null;
@@ -348,6 +360,111 @@ export class Traits {
             return { ok: true, ...info };
         }
         return { ok: false, error: 'Helper not reachable at ' + url };
+    }
+
+    // ── Runtime Bindings ──
+
+    /**
+     * Set an immediate binding: interface → implementation.
+     * All calls to the interface path will be redirected to the implementation.
+     * @param {string} iface - Interface path (e.g. 'llm/prompt')
+     * @param {string} impl - Implementation trait path (e.g. 'llm.prompt.openai')
+     * @returns {this}
+     */
+    bind(iface, impl) {
+        const prev = this._bindings.get(iface) || null;
+        this._bindings.set(iface, impl);
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('traits-binding', {
+                detail: { interface: iface, impl, previous: prev }
+            }));
+        }
+        return this;
+    }
+
+    /**
+     * Remove a binding. Calls to the interface will no longer be redirected.
+     * Also cancels any pending deferred binding for this interface.
+     * @param {string} iface - Interface path
+     * @returns {this}
+     */
+    unbind(iface) {
+        const prev = this._bindings.get(iface) || null;
+        this._bindings.delete(iface);
+        const pending = this._pendingBindings.get(iface);
+        if (pending) { pending.cancel(); this._pendingBindings.delete(iface); }
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('traits-binding', {
+                detail: { interface: iface, impl: null, previous: prev }
+            }));
+        }
+        return this;
+    }
+
+    /**
+     * Get the current binding for an interface.
+     * @param {string} iface - Interface path
+     * @returns {string|null} - Bound implementation path, or null
+     */
+    getBinding(iface) {
+        return this._bindings.get(iface) || null;
+    }
+
+    /**
+     * List all active bindings.
+     * @returns {Object} - { 'llm/prompt': 'llm.prompt.openai', ... }
+     */
+    listBindings() {
+        return Object.fromEntries(this._bindings);
+    }
+
+    /**
+     * List pending (deferred) bindings that haven't resolved yet.
+     * @returns {Object} - { 'llm/prompt': 'llm.prompt.webllm', ... }
+     */
+    listPendingBindings() {
+        const result = {};
+        for (const [iface, entry] of this._pendingBindings) {
+            result[iface] = entry.impl;
+        }
+        return result;
+    }
+
+    /**
+     * Deferred binding: bind an interface to an implementation when a Promise resolves.
+     * While the promise is pending, the existing binding (if any) stays active.
+     * When the promise resolves, the binding switches automatically.
+     * If the promise rejects, a 'traits-binding-error' event fires.
+     *
+     * @param {string} iface - Interface path (e.g. 'llm/prompt')
+     * @param {string} impl - Implementation to bind when ready (e.g. 'llm.prompt.webllm')
+     * @param {Promise} readyPromise - Resolves when the implementation is ready
+     * @returns {this}
+     */
+    bindWhenReady(iface, impl, readyPromise) {
+        // Cancel any existing pending binding for this interface
+        const existing = this._pendingBindings.get(iface);
+        if (existing) existing.cancel();
+
+        let cancelled = false;
+        const entry = { impl, cancel: () => { cancelled = true; } };
+        this._pendingBindings.set(iface, entry);
+
+        readyPromise.then(() => {
+            if (cancelled) return;
+            this._pendingBindings.delete(iface);
+            this.bind(iface, impl);
+        }).catch(err => {
+            if (cancelled) return;
+            this._pendingBindings.delete(iface);
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('traits-binding-error', {
+                    detail: { interface: iface, impl, error: err.message || String(err) }
+                }));
+            }
+        });
+
+        return this;
     }
 
     /**

@@ -49,7 +49,8 @@ Polygrait/A. traits.build/
 │   │   ├── registry/     # DashMap of trait defs, interface resolution
 │   │   ├── types/        # TraitValue, TraitType, type coercion
 │   │   └── wasm/         # WASM browser kernel (wasm-pack target)
-│   ├── sys/              # 25 system traits
+│   ├── sys/              # 26 system traits
+│   │   ├── bindings/     # Runtime interface binding management
 │   │   ├── call/         # Outbound HTTP/REST API calls
 │   │   ├── chat_learnings/   # Chat learning extraction
 │   │   ├── chat_protocols/   # Chat protocol reader + vscode/ sub-trait
@@ -442,10 +443,11 @@ traits mcp
 - `kernel.logic` — shared library crate with registry, types, dispatch, bindings logic
 - `kernel.wasm` — WASM browser kernel (wasm-pack target, compiled separately)
 
-### Sys (25) — System utilities & services
+### Sys (26) — System utilities & services
 
 | Trait | Description | Source |
 |-------|-------------|--------|
+| `sys.bindings` | Runtime interface binding management (hot-swap implementations) | builtin |
 | `sys.cli` | CLI bootstrap, dispatch, stdin, arg parsing | builtin |
 | `sys.cli.native` | Native CLI backend (filesystem, process) | builtin |
 | `sys.cli.wasm` | WASM CLI backend (browser dispatch) | builtin |
@@ -529,6 +531,46 @@ Key dependency examples:
 - `kernel.serve` requires: `www/webpage`, `kernel/dispatcher`
 - `kernel.main` requires: `kernel/dispatcher`, `kernel/registry`, `kernel/config`, `kernel/globals`, `kernel/dylib_loader`
 - `sys.cli` requires: `kernel/config`, `kernel/call`, `kernel/serve`
+
+### Runtime Binding System
+
+Bindings can be hot-swapped at runtime without recompilation. Two surfaces:
+
+**Server-side (Rust):** `sys.bindings` trait mutates `Registry.bindings` DashMap.
+```bash
+traits call sys.bindings set llm/prompt llm.prompt.openai    # set binding
+traits call sys.bindings get llm/prompt                       # get current
+traits call sys.bindings list                                 # list all
+traits call sys.bindings clear llm/prompt                     # remove binding
+# HTTP: POST /traits/sys/bindings {"args": ["set", "llm/prompt", "llm.prompt.openai"]}
+```
+
+**Client-side (JS SDK):** `Traits` class in `traits.js` manages a binding table.
+```javascript
+sdk.bind('llm/prompt', 'llm.prompt.openai');           // immediate binding
+sdk.unbind('llm/prompt');                               // remove binding
+sdk.getBinding('llm/prompt');                           // get current → string|null
+sdk.listBindings();                                     // { 'llm/prompt': '...' }
+sdk.bindWhenReady('llm/prompt', 'llm.prompt.webllm', readyPromise);  // deferred
+
+// Events fired on window:
+// 'traits-binding'       — { interface, impl, previous }
+// 'traits-binding-error' — { interface, impl, error }
+```
+
+**Deferred binding pattern** — bind when an implementation signals readiness:
+```javascript
+// Default: use OpenAI while WebLLM downloads weights in background
+sdk.bind('llm/prompt', 'llm.prompt.openai');
+const webllmReady = startWebLLMDownload();               // returns Promise
+sdk.bindWhenReady('llm/prompt', 'llm.prompt.webllm', webllmReady);
+// Auto-switches to WebLLM when download completes
+```
+
+**Dispatch flow with bindings:**
+1. JS SDK `call(path)` → check `_bindings` map → redirect if bound
+2. Dispatch resolved path via normal cascade: WASM → helper → REST
+3. Server-side: `Dispatcher::call()` resolves interfaces via `Registry.bindings`
 
 ---
 

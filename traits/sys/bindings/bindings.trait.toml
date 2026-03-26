@@ -1,0 +1,36 @@
+[trait]
+description = "Runtime binding management: hot-swap interface implementations without recompilation"
+version = "v260326.134540"
+checksum = "eebe6a37212c0aa4f4d47b65146a1e03e81287e0cf9570905f989e0e0867458d"
+author = "system"
+tags = ["system", "bindings", "interfaces", "runtime"]
+provides = ["sys/bindings"]
+
+[[signature.params]]
+name = "action"
+type = "string"
+description = "Action: set, get, list, clear"
+example = "set"
+
+[[signature.params]]
+name = "interface"
+type = "string?"
+description = "Interface path (e.g. llm/prompt). Required for set, get, clear."
+example = "llm/prompt"
+required = false
+
+[[signature.params]]
+name = "impl_path"
+type = "string?"
+description = "Implementation trait path (e.g. llm.prompt.openai). Required for set."
+example = "llm.prompt.openai"
+required = false
+
+[signature.returns]
+type = "object"
+description = "{ ok, action, interface?, impl?, bindings? }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "bindings"

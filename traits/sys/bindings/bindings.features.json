@@ -1,0 +1,74 @@
+{
+  "module": "traits/sys/bindings/bindings.rs",
+  "description": "Runtime interface binding management — hot-swap implementations",
+  "features": [
+    {
+      "name": "Manage runtime bindings",
+      "description": "Set, get, list, and clear interface → implementation bindings at runtime",
+      "tests": [
+        {
+          "name": "set a binding",
+          "type": "command",
+          "command": "./target/release/traits call sys.bindings set llm/prompt llm.prompt.openai 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "\"action\": \"set\"" },
+            { "type": "contains", "expected": "llm/prompt" },
+            { "type": "contains", "expected": "llm.prompt.openai" }
+          ]
+        },
+        {
+          "name": "get a binding returns null when empty",
+          "type": "command",
+          "command": "./target/release/traits call sys.bindings get llm/prompt 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "\"action\": \"get\"" },
+            { "type": "contains", "expected": "llm/prompt" }
+          ]
+        },
+        {
+          "name": "list all bindings",
+          "type": "command",
+          "command": "./target/release/traits call sys.bindings list 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "\"action\": \"list\"" }
+          ]
+        },
+        {
+          "name": "clear returns removed false when nothing bound",
+          "type": "command",
+          "command": "./target/release/traits call sys.bindings clear test/iface 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "\"removed\": false" }
+          ]
+        },
+        {
+          "name": "action is required",
+          "type": "command",
+          "command": "./target/release/traits call sys.bindings 2>&1",
+          "checks": [
+            { "type": "exit_code", "expected": 1 },
+            { "type": "contains", "expected": "Usage" }
+          ]
+        },
+        {
+          "name": "set requires interface and impl",
+          "type": "command",
+          "command": "./target/release/traits call sys.bindings set 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "error" },
+            { "type": "contains", "expected": "interface" }
+          ]
+        }
+      ]
+    }
+  ]
+}

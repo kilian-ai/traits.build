@@ -456,6 +456,22 @@ impl Registry {
         }
     }
 
+    /// Set a global binding: interface_path → impl_path.
+    /// Used by sys.bindings to hot-swap implementations at runtime.
+    pub fn set_binding(&self, interface: &str, impl_path: &str) {
+        self.bindings.insert(interface.to_string(), impl_path.to_string());
+    }
+
+    /// Remove a global binding.
+    pub fn remove_binding(&self, interface: &str) -> bool {
+        self.bindings.remove(interface).is_some()
+    }
+
+    /// Return all global bindings as a HashMap.
+    pub fn all_bindings(&self) -> HashMap<String, String> {
+        self.bindings.iter().map(|e| (e.key().clone(), e.value().clone())).collect()
+    }
+
 }
 
 // ── Trait dispatch entry point ──
