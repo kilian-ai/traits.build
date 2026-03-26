@@ -54,6 +54,29 @@
               "expected": "Single binary"
             }
           ]
+        },
+        {
+          "name": "contains browser-native section",
+          "type": "command",
+          "command": "./target/release/traits call www.traits.build 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "Browser-Native"
+            },
+            {
+              "type": "contains",
+              "expected": "WASM kernel"
+            },
+            {
+              "type": "contains",
+              "expected": "3-tier dispatch"
+            }
+          ]
         }
       ],
       "examples": [
