@@ -68,6 +68,9 @@ pub mod call;
 #[path = "../../../../sys/call/call.rs"]
 pub mod sys_call;
 
+#[path = "../../../../sys/ps/wasm/wasm_ps.rs"]
+pub mod wasm_ps;
+
 #[path = "../../../../sys/llm/llm.rs"]
 pub mod llm;
 
@@ -81,6 +84,8 @@ pub const WASM_CALLABLE: &[&str] = &[
     "sys.info",
     "sys.list",
     "sys.llm",
+    "sys.ps",
+    "sys.ps.wasm",
     "sys.openapi",
     "sys.registry",
     "sys.test_runner",
@@ -106,6 +111,7 @@ pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
         "sys.checksum" => Some(checksum::checksum_dispatch(args)),
         "sys.cli.wasm" => Some(wasm_impl::wasm_dispatch(args)),
         "sys.info" => Some(registry::info(args)),
+        "sys.ps" | "sys.ps.wasm" => Some(wasm_ps::wasm_ps(args)),
         "sys.list" => Some(registry::list(args)),
         "sys.llm" => Some(llm::llm(args)),
         "sys.openapi" => Some(openapi::openapi(args)),

@@ -1,0 +1,26 @@
+{
+  "trait": "sys.ps.wasm",
+  "description": "WASM runtime process status — reports kernel state in browser context",
+  "features": [
+    {
+      "name": "Returns WASM runtime state",
+      "description": "Reports the WASM kernel state: callable count, registered count, empty processes",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["\"ok\"", "\"runtime\"", "\"wasm\"", "\"callable\""] }
+        }
+      ]
+    },
+    {
+      "name": "No OS processes in WASM",
+      "description": "The processes array is always empty in WASM — no OS threads exist",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["\"processes\":[]", "\"threading\""] }
+        }
+      ]
+    }
+  ]
+}
