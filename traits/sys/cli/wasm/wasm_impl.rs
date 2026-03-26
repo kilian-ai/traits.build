@@ -51,6 +51,15 @@ fn method_call(args: &[Value]) -> Value {
         return serde_json::json!({"ok": false, "error": "trait path is required"});
     }
 
+    // If a local helper is connected and this trait prefers native dispatch,
+    // delegate via REST sentinel so the terminal routes to the helper.
+    if crate::is_helper_connected() && super::HELPER_PREFERRED.contains(&path) {
+        return serde_json::json!({
+            "ok": false,
+            "error": format!("REST:{}", path)
+        });
+    }
+
     // Try WASM-local dispatch first
     match super::dispatch(path, &call_args) {
         Some(result) => serde_json::json!({"ok": true, "result": result}),

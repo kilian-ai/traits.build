@@ -102,6 +102,15 @@ pub const WASM_CALLABLE: &[&str] = &[
     "www.wasm",
 ];
 
+/// Traits that have WASM fallbacks but prefer helper dispatch when available.
+/// When a local helper (native binary) is connected, these traits emit a REST
+/// sentinel so the terminal delegates to the helper — which has access to OS
+/// processes, filesystem, network, and other native capabilities.
+/// When no helper is connected, the WASM-local implementation runs instead.
+pub const HELPER_PREFERRED: &[&str] = &[
+    "sys.ps",
+];
+
 /// Dispatch a trait call by path. Returns None if the path isn't WASM-callable.
 pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
     match trait_path {

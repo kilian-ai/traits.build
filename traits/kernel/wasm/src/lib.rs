@@ -1,10 +1,18 @@
 use wasm_bindgen::prelude::*;
 use serde_json::Value;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 mod registry;
 mod wasm_traits;
 pub(crate) mod wasm_secrets;
+
+// ── Helper connection state (set by JS when local helper is discovered) ──
+static HELPER_CONNECTED: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn is_helper_connected() -> bool {
+    HELPER_CONNECTED.load(Ordering::Relaxed)
+}
 
 // Include generated trait definitions (for registry browsing)
 include!(concat!(env!("OUT_DIR"), "/wasm_builtin_traits.rs"));
@@ -48,6 +56,15 @@ pub fn is_callable(trait_path: &str) -> bool {
 #[wasm_bindgen]
 pub fn set_secret(key: &str, value: &str) {
     wasm_secrets::set_secret(key, value);
+}
+
+/// Notify the WASM kernel whether a local helper (native binary) is connected.
+/// When connected, helper-preferred traits (e.g. sys.ps) delegate to the helper
+/// for richer native data (OS processes, filesystem, etc.) instead of using
+/// the WASM-local fallback.
+#[wasm_bindgen]
+pub fn set_helper_connected(connected: bool) {
+    HELPER_CONNECTED.store(connected, Ordering::Relaxed);
 }
 
 /// Check if a trait is registered (even if not WASM-callable).

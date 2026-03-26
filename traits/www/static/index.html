@@ -163,6 +163,14 @@ async function discoverHelper() {
   }
 }
 
+// Sync helper connection state to the WASM kernel so helper-preferred
+// traits (e.g. sys.ps) can delegate to the native helper for richer data.
+function syncHelperToWasm() {
+  if (wasm && wasm.set_helper_connected) {
+    wasm.set_helper_connected(helperReady);
+  }
+}
+
 async function callHelper(path, args) {
   if (!helperReady) return null;
   const rest = path.replace(/\./g, '/');
@@ -245,6 +253,7 @@ class TraitsSDK {
       helperInfo = info;
       helperReady = true;
       try { localStorage.setItem('traits.helper.url', helperUrl); } catch(e) {}
+      syncHelperToWasm();
       return { ok: true, ...info };
     }
     return { ok: false, error: 'Helper not reachable at ' + url };
@@ -629,16 +638,17 @@ async function boot() {
 
   // Wait for helper discovery to finish (has its own timeout)
   await helperPromise;
+  syncHelperToWasm();
 
   // Re-probe helper every second (detect connect/disconnect)
   setInterval(async () => {
     if (helperReady) {
       // Verify still alive
       const info = await probeHelper(helperUrl, 1000);
-      if (!info) { helperReady = false; helperUrl = null; helperInfo = null; updateStatusBar(); }
+      if (!info) { helperReady = false; helperUrl = null; helperInfo = null; syncHelperToWasm(); updateStatusBar(); }
     } else {
       await discoverHelper();
-      if (helperReady) updateStatusBar();
+      if (helperReady) { syncHelperToWasm(); updateStatusBar(); }
     }
   }, 1000);
 
