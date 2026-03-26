@@ -104,6 +104,26 @@ pub fn spa(_args: &[Value]) -> Value {
                         }
                     }
 
+                    section.card id="relayCard" {
+                        h2 { "Remote Helper" }
+                        p.note {
+                            "Connect to your Mac's helper from anywhere. "
+                            "Start " code { "RELAY_URL=https://traits-build.fly.dev traits serve" } " on your Mac, "
+                            "then enter the pairing code shown in the terminal."
+                        }
+                        div.form-row {
+                            input id="relayCode" type="text" placeholder="Pairing code (e.g. A7X9)"
+                                  maxlength="4" style="width:140px;text-transform:uppercase;font-family:'Iosevka Etoile','IBM Plex Mono',monospace;font-size:1.1rem;letter-spacing:0.15em;text-align:center;" {}
+                            input id="relayServer" type="text" placeholder="Relay server (optional)" style="flex:1;" {}
+                            button class="primary" id="btnRelayConnect" onclick="connectRelay()" { "Connect" }
+                            button id="btnRelayDisconnect" onclick="disconnectRelay()" style="display:none;" { "Disconnect" }
+                        }
+                        div.status id="relayStatus" {
+                            div.dot.gray id="relayDot" {}
+                            span.status-text id="relayText" { "Not connected" }
+                        }
+                    }
+
                     div.grid {
                         section.card {
                             h2 { "Secrets" }
@@ -803,6 +823,71 @@ window.saveSecret = saveSecret;
 window.deleteSecret = deleteSecret;
 window.saveEnvVar = saveEnvVar;
 window.deleteEnvVar = deleteEnvVar;
+window.connectRelay = connectRelay;
+window.disconnectRelay = disconnectRelay;
+
+// ═══════════════════════════════════════════════════════════════
+// Relay
+// ═══════════════════════════════════════════════════════════════
+function initRelay() {
+  var code = localStorage.getItem('traits.relay.code') || '';
+  var server = localStorage.getItem('traits.relay.server') || '';
+  document.getElementById('relayCode').value = code;
+  document.getElementById('relayServer').value = server;
+  if (code) refreshRelayStatus();
+}
+
+async function connectRelay() {
+  var code = document.getElementById('relayCode').value.trim().toUpperCase();
+  if (!code) { setRelayStatus('gray', 'Enter a pairing code'); return; }
+  var server = document.getElementById('relayServer').value.trim() || undefined;
+  var sdk = window._traitsSDK;
+  if (!sdk) { setRelayStatus('gray', 'SDK not ready'); return; }
+  setRelayStatus('gray', 'Connecting...');
+  var res = await sdk.connectRelay(code, server);
+  if (res.ok) {
+    setRelayStatus('green', 'Connected — relay active');
+    document.getElementById('btnRelayConnect').style.display = 'none';
+    document.getElementById('btnRelayDisconnect').style.display = '';
+    log('Relay connected: ' + code);
+  } else {
+    setRelayStatus('red', res.error || 'Connection failed');
+  }
+}
+
+async function disconnectRelay() {
+  var sdk = window._traitsSDK;
+  if (sdk) sdk.disconnectRelay();
+  document.getElementById('relayCode').value = '';
+  document.getElementById('btnRelayConnect').style.display = '';
+  document.getElementById('btnRelayDisconnect').style.display = 'none';
+  setRelayStatus('gray', 'Disconnected');
+  log('Relay disconnected');
+}
+
+async function refreshRelayStatus() {
+  var sdk = window._traitsSDK;
+  if (!sdk) return;
+  var status = await sdk.relayStatus();
+  if (status.connected) {
+    setRelayStatus('green', 'Connected — relay active');
+    document.getElementById('btnRelayConnect').style.display = 'none';
+    document.getElementById('btnRelayDisconnect').style.display = '';
+  } else if (status.code) {
+    setRelayStatus('red', status.error || 'Helper offline or code expired');
+    document.getElementById('btnRelayConnect').style.display = '';
+    document.getElementById('btnRelayDisconnect').style.display = 'none';
+  }
+}
+
+function setRelayStatus(color, text) {
+  var dot = document.getElementById('relayDot');
+  var txt = document.getElementById('relayText');
+  if (dot) { dot.className = 'dot ' + color; }
+  if (txt) { txt.textContent = text; }
+}
+
+initRelay();
 
 // TC handles interval cleanup automatically via TC.cleanup() in injectPage
 })();

@@ -483,6 +483,20 @@ function updateStatusBar() {
 
 // ── Boot sequence ──
 async function boot() {
+  // Handle URL params: ?helper=URL, ?relay=CODE, ?server=URL
+  try {
+    const params = new URLSearchParams(location.search);
+    const helperParam = params.get('helper');
+    const relayParam = params.get('relay');
+    const serverParam = params.get('server');
+    if (helperParam) localStorage.setItem('traits.helper.url', helperParam);
+    if (relayParam) localStorage.setItem('traits.relay.code', relayParam.toUpperCase());
+    if (serverParam) localStorage.setItem('traits.relay.server', serverParam);
+    if (helperParam || relayParam) {
+      history.replaceState(null, '', location.pathname + location.hash);
+    }
+  } catch(e) {}
+
   // Load SDK runtime (unless already inlined by standalone build)
   const sdkSrc = isLocal ? `./sdk-runtime.js?v=${Date.now()}` : '/static/www/static/sdk-runtime.js';
   await loadScript(sdkSrc);

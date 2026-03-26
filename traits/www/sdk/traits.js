@@ -27,6 +27,33 @@ let helperInfo = null;
 const HELPER_PORTS = [8090, 8091, 9090];
 const HELPER_TIMEOUT = 1500;
 
+// ── Relay state (remote helper via pairing code) ──
+const RELAY_DEFAULT_SERVER = 'https://traits-build.fly.dev';
+
+function _relayServer() {
+    try { return localStorage.getItem('traits.relay.server') || RELAY_DEFAULT_SERVER; } catch(e) { return RELAY_DEFAULT_SERVER; }
+}
+function _relayCode() {
+    try { return localStorage.getItem('traits.relay.code'); } catch(e) { return null; }
+}
+
+async function callRelay(path, args) {
+    const code = _relayCode();
+    if (!code) return null;
+    const server = _relayServer();
+    try {
+        const res = await fetch(`${server}/relay/call`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, path, args }),
+        });
+        if (!res.ok && res.status === 404) return null; // Invalid code — skip relay
+        const data = await res.json();
+        if (data.error) return { ok: false, error: data.error, dispatch: 'relay' };
+        return { ok: true, result: data.result, dispatch: 'relay' };
+    } catch(e) { return null; }
+}
+
 // ── WebLLM engine state (lazy-loaded) ──
 let _webllmLib = null;
 let _webllmEngine = null;
@@ -281,12 +308,22 @@ export class Traits {
             }
         }
 
-        // 3. Server REST (if server URL is configured)
+        // 3. Relay (remote helper via pairing code)
+        if (forceMode !== 'rest' && !helperReady && _relayCode()) {
+            const t0 = performance.now();
+            const result = await callRelay(path, args);
+            if (result) {
+                result.ms = Math.round((performance.now() - t0) * 10) / 10;
+                return result;
+            }
+        }
+
+        // 4. Server REST (if server URL is configured)
         if (this.server) {
             return this._callRest(path, args, opts);
         }
 
-        // 4. No dispatch path available
+        // 5. No dispatch path available
         if (wasmResult) return wasmResult;
         return { ok: false, error: `No dispatch path for '${path}'`, dispatch: 'none' };
     }
@@ -478,6 +515,55 @@ export class Traits {
         try { localStorage.removeItem('traits.helper.url'); } catch(e) {}
     }
 
+    // ── Relay (remote helper via pairing code) ──
+
+    /**
+     * Connect to a remote relay. Stores code + server in localStorage.
+     * @param {string} code - 4-char pairing code from Mac helper
+     * @param {string} [server] - Relay server URL (defaults to traits-build.fly.dev)
+     * @returns {Promise<{ok: boolean, active?: boolean, error?: string}>}
+     */
+    async connectRelay(code, server) {
+        const relayServer = server || RELAY_DEFAULT_SERVER;
+        try {
+            const res = await fetch(`${relayServer}/relay/status?code=${encodeURIComponent(code)}`);
+            const data = await res.json();
+            if (!data.active) return { ok: false, error: 'Pairing code not found or expired' };
+            localStorage.setItem('traits.relay.code', code);
+            localStorage.setItem('traits.relay.server', relayServer);
+            return { ok: true, active: true };
+        } catch(e) {
+            return { ok: false, error: 'Cannot reach relay server: ' + e.message };
+        }
+    }
+
+    /**
+     * Disconnect from relay and clear stored code.
+     */
+    disconnectRelay() {
+        try {
+            localStorage.removeItem('traits.relay.code');
+            localStorage.removeItem('traits.relay.server');
+        } catch(e) {}
+    }
+
+    /**
+     * Check relay connection status.
+     * @returns {Promise<{connected: boolean, code?: string, server?: string, active?: boolean}>}
+     */
+    async relayStatus() {
+        const code = _relayCode();
+        if (!code) return { connected: false };
+        const server = _relayServer();
+        try {
+            const res = await fetch(`${server}/relay/status?code=${encodeURIComponent(code)}`);
+            const data = await res.json();
+            return { connected: data.active, code, server, ...data };
+        } catch(e) {
+            return { connected: false, code, server, error: e.message };
+        }
+    }
+
     /**
      * List all traits. Uses WASM registry → helper → REST.
      * @returns {Promise<Array>}
@@ -541,6 +627,7 @@ export class Traits {
      * @returns {{wasm: boolean, traits: number, callable: number, version: string|null, helper: boolean, helperUrl: string|null}}
      */
     get status() {
+        const relayCode = _relayCode();
         return {
             wasm: wasmReady,
             traits: this._wasmInfo?.traits_registered || 0,
@@ -548,6 +635,9 @@ export class Traits {
             version: this._wasmInfo?.version || null,
             helper: helperReady,
             helperUrl: helperUrl,
+            relay: !!relayCode,
+            relayCode: relayCode,
+            relayServer: relayCode ? _relayServer() : null,
         };
     }
 

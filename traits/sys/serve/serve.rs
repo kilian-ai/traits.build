@@ -40,12 +40,65 @@ use crate::dispatcher::{CallConfig, Dispatcher};
 use crate::types::{CallRequest, CallResponse, TraitValue};
 use tracing::info;
 use futures::StreamExt;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
+use dashmap::DashMap;
+use std::sync::Arc;
 
 struct AppState {
     dispatcher: Dispatcher,
     start_time: std::time::Instant,
+}
+
+// ══════════════════════════════════════════════════════════════
+// Relay: NAT-traversal for remote helpers via pairing codes
+// Phone → POST /relay/call → Fly.io relay → Mac (via long-poll)
+// ══════════════════════════════════════════════════════════════
+
+struct RelayState {
+    sessions: DashMap<String, Arc<RelaySession>>,
+}
+
+struct RelaySession {
+    request_tx: mpsc::Sender<RelayRequest>,
+    request_rx: tokio::sync::Mutex<mpsc::Receiver<RelayRequest>>,
+    response_txs: DashMap<String, oneshot::Sender<String>>,
+    created: std::time::Instant,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RelayRequest {
+    id: String,
+    path: String,
+    args: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RelayCallBody {
+    code: String,
+    path: String,
+    args: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RelayCodeQuery {
+    code: String,
+}
+
+impl RelayState {
+    fn new() -> Self {
+        Self { sessions: DashMap::new() }
+    }
+
+    fn generate_code(&self) -> String {
+        loop {
+            let id = uuid::Uuid::new_v4().to_string().replace('-', "");
+            let code = id[..4].to_uppercase();
+            if !self.sessions.contains_key(&code) {
+                return code;
+            }
+        }
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -442,6 +495,263 @@ async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
     }
 }
 
+// ── Relay handlers ──
+
+/// POST /relay/register — Reserve a pairing code
+async fn relay_register(relay: web::Data<Arc<RelayState>>) -> HttpResponse {
+    let code = relay.generate_code();
+    let (tx, rx) = mpsc::channel::<RelayRequest>(32);
+    let session = Arc::new(RelaySession {
+        request_tx: tx,
+        request_rx: tokio::sync::Mutex::new(rx),
+        response_txs: DashMap::new(),
+        created: std::time::Instant::now(),
+    });
+    relay.sessions.insert(code.clone(), session);
+    info!("Relay session created: {}", code);
+    HttpResponse::Ok().json(serde_json::json!({ "code": code }))
+}
+
+/// GET /relay/poll?code=XXXX — Mac long-polls for next request
+async fn relay_poll(
+    relay: web::Data<Arc<RelayState>>,
+    query: web::Query<RelayCodeQuery>,
+) -> HttpResponse {
+    let session = match relay.sessions.get(&query.code) {
+        Some(s) => s.clone(),
+        None => return HttpResponse::NotFound().json(serde_json::json!({"error": "Invalid code"})),
+    };
+    drop(relay); // Release DashMap ref before blocking
+
+    let mut rx = session.request_rx.lock().await;
+    match tokio::time::timeout(std::time::Duration::from_secs(30), rx.recv()).await {
+        Ok(Some(req)) => HttpResponse::Ok().json(&req),
+        Ok(None) => HttpResponse::Gone().json(serde_json::json!({"error": "Session closed"})),
+        Err(_) => HttpResponse::NoContent().finish(), // Timeout — Mac should retry
+    }
+}
+
+/// POST /relay/call — Phone sends trait call, waits for Mac response
+async fn relay_call_handler(
+    relay: web::Data<Arc<RelayState>>,
+    body: web::Json<RelayCallBody>,
+) -> HttpResponse {
+    let session = match relay.sessions.get(&body.code) {
+        Some(s) => s.clone(),
+        None => return HttpResponse::NotFound().json(serde_json::json!({
+            "error": "Invalid pairing code",
+            "result": serde_json::Value::Null,
+        })),
+    };
+    drop(relay);
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let request = RelayRequest {
+        id: id.clone(),
+        path: body.path.clone(),
+        args: body.args.clone(),
+    };
+
+    let (tx, rx) = oneshot::channel::<String>();
+    session.response_txs.insert(id.clone(), tx);
+
+    if session.request_tx.send(request).await.is_err() {
+        session.response_txs.remove(&id);
+        return HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "Helper not connected",
+            "result": serde_json::Value::Null,
+        }));
+    }
+
+    match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
+        Ok(Ok(response_json)) => {
+            match serde_json::from_str::<serde_json::Value>(&response_json) {
+                Ok(v) => HttpResponse::Ok().json(serde_json::json!({
+                    "result": v.get("result").cloned(),
+                    "error": v.get("error").and_then(|e| e.as_str()),
+                })),
+                Err(_) => HttpResponse::Ok().body(response_json),
+            }
+        }
+        Ok(Err(_)) => HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "Helper disconnected",
+            "result": serde_json::Value::Null,
+        })),
+        Err(_) => HttpResponse::GatewayTimeout().json(serde_json::json!({
+            "error": "Relay timeout (30s)",
+            "result": serde_json::Value::Null,
+        })),
+    }
+}
+
+/// POST /relay/respond — Mac sends result back
+async fn relay_respond(
+    relay: web::Data<Arc<RelayState>>,
+    body: web::Json<serde_json::Value>,
+) -> HttpResponse {
+    let code = match body.get("code").and_then(|v| v.as_str()) {
+        Some(c) => c.to_string(),
+        None => return HttpResponse::BadRequest().json(serde_json::json!({"error": "Missing code"})),
+    };
+    let id = match body.get("id").and_then(|v| v.as_str()) {
+        Some(i) => i.to_string(),
+        None => return HttpResponse::BadRequest().json(serde_json::json!({"error": "Missing id"})),
+    };
+
+    let session = match relay.sessions.get(&code) {
+        Some(s) => s.clone(),
+        None => return HttpResponse::NotFound().json(serde_json::json!({"error": "Invalid code"})),
+    };
+    drop(relay);
+
+    if let Some((_, tx)) = session.response_txs.remove(&id) {
+        let _ = tx.send(body.to_string());
+        HttpResponse::Ok().json(serde_json::json!({"ok": true}))
+    } else {
+        HttpResponse::NotFound().json(serde_json::json!({"error": "No pending request with that id"}))
+    }
+}
+
+/// GET /relay/status?code=XXXX — Check if a pairing code is active
+async fn relay_status(
+    relay: web::Data<Arc<RelayState>>,
+    query: web::Query<RelayCodeQuery>,
+) -> HttpResponse {
+    match relay.sessions.get(&query.code) {
+        Some(s) => HttpResponse::Ok().json(serde_json::json!({
+            "active": true,
+            "code": query.code,
+            "age_seconds": s.created.elapsed().as_secs(),
+        })),
+        None => HttpResponse::Ok().json(serde_json::json!({"active": false})),
+    }
+}
+
+// ── Relay client (Mac connects to remote relay via curl) ──
+
+fn spawn_relay_client(relay_url: String, local_port: u16) {
+    tokio::spawn(async move {
+        // Wait a moment for local server to start
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        info!("Connecting to relay at {}...", relay_url);
+        loop {
+            match relay_client_session(&relay_url, local_port).await {
+                Ok(_) => info!("Relay session ended, reconnecting in 5s..."),
+                Err(e) => info!("Relay error: {}, retrying in 5s...", e),
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+    });
+}
+
+async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), String> {
+    // 1. Register
+    let output = tokio::process::Command::new("curl")
+        .args(["-sf", "-X", "POST", &format!("{}/relay/register", relay_url)])
+        .output()
+        .await
+        .map_err(|e| format!("curl register failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!("Register failed (exit {})", output.status.code().unwrap_or(-1)));
+    }
+
+    let reg: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Invalid register response: {}", e))?;
+    let code = reg["code"].as_str().ok_or("No code in response")?.to_string();
+
+    info!("📡 Relay pairing code: {}", code);
+    info!("   Enter this code at traits.build/#/settings to connect from anywhere");
+
+    // 2. Poll loop
+    loop {
+        let poll_url = format!("{}/relay/poll?code={}", relay_url, code);
+        let output = tokio::process::Command::new("curl")
+            .args(["-sf", "--max-time", "35", &poll_url])
+            .output()
+            .await
+            .map_err(|e| format!("curl poll failed: {}", e))?;
+
+        if !output.status.success() {
+            return Err("Poll failed — session may have expired".to_string());
+        }
+
+        // Empty body = long-poll timeout (204 No Content), retry
+        if output.stdout.is_empty() {
+            continue;
+        }
+
+        let req: RelayRequest = match serde_json::from_slice(&output.stdout) {
+            Ok(r) => r,
+            Err(e) => {
+                info!("Invalid relay request: {}", e);
+                continue;
+            }
+        };
+
+        info!("Relay request: {} (id: {})", req.path, req.id);
+
+        // 3. Dispatch via local HTTP server
+        let local_url = format!("http://127.0.0.1:{}/traits/{}", local_port, req.path.replace('.', "/"));
+        let dispatch_body = serde_json::json!({"args": req.args}).to_string();
+        let dispatch_output = tokio::process::Command::new("curl")
+            .args(["-sf", "-X", "POST", "-H", "Content-Type: application/json",
+                   "-d", &dispatch_body, &local_url])
+            .output()
+            .await;
+
+        let response = match dispatch_output {
+            Ok(out) if out.status.success() => {
+                let result: serde_json::Value = serde_json::from_slice(&out.stdout)
+                    .unwrap_or(serde_json::Value::Null);
+                serde_json::json!({
+                    "code": code,
+                    "id": req.id,
+                    "result": result.get("result").cloned().unwrap_or(result),
+                })
+            }
+            Ok(out) => serde_json::json!({
+                "code": code,
+                "id": req.id,
+                "error": format!("Local dispatch failed (exit {})", out.status.code().unwrap_or(-1)),
+            }),
+            Err(e) => serde_json::json!({
+                "code": code,
+                "id": req.id,
+                "error": format!("Local dispatch error: {}", e),
+            }),
+        };
+
+        // 4. Respond
+        let body_str = serde_json::to_string(&response).unwrap_or_default();
+        let _ = tokio::process::Command::new("curl")
+            .args(["-sf", "-X", "POST", "-H", "Content-Type: application/json",
+                   "-d", &body_str, &format!("{}/relay/respond", relay_url)])
+            .output()
+            .await;
+    }
+}
+
+fn spawn_relay_cleanup(relay: Arc<RelayState>) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+            let mut expired = vec![];
+            for entry in relay.sessions.iter() {
+                if entry.value().created.elapsed() > std::time::Duration::from_secs(3600) {
+                    expired.push(entry.key().clone());
+                }
+            }
+            for code in &expired {
+                relay.sessions.remove(code);
+            }
+            if !expired.is_empty() {
+                info!("Cleaned up {} expired relay sessions", expired.len());
+            }
+        }
+    });
+}
+
 /// Start the HTTP server — called by the runtime when sys.serve is dispatched.
 /// Uses the already-initialized globals (registry, config) instead of re-bootstrapping.
 /// Resolves the www/website interface from sys.serve's [bindings] section.
@@ -459,6 +769,18 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
 
     let state = web::Data::new(AppState { dispatcher, start_time: std::time::Instant::now() });
 
+    // Relay state (shared across all workers)
+    let relay = Arc::new(RelayState::new());
+    let relay_data = web::Data::new(relay.clone());
+    spawn_relay_cleanup(relay.clone());
+
+    // If RELAY_URL is set, connect to remote relay as a client
+    if let Ok(relay_url) = std::env::var("RELAY_URL") {
+        if !relay_url.is_empty() {
+            spawn_relay_client(relay_url, port);
+        }
+    }
+
     info!("Starting Traits server on {}:{} ({} page routes)", config.traits.bind, port, page_routes.len());
 
     HttpServer::new(move || {
@@ -471,8 +793,14 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
         App::new()
             .wrap(cors)
             .app_data(state.clone())
+            .app_data(relay_data.clone())
             .route("/health", web::get().to(health_check))
             .route("/metrics", web::get().to(metrics))
+            .route("/relay/register", web::post().to(relay_register))
+            .route("/relay/poll", web::get().to(relay_poll))
+            .route("/relay/call", web::post().to(relay_call_handler))
+            .route("/relay/respond", web::post().to(relay_respond))
+            .route("/relay/status", web::get().to(relay_status))
             .route("/traits", web::get().to(list_traits))
             .route("/traits/", web::get().to(list_traits))
             .route("/traits/{path:.*}", web::post().to(call_trait))

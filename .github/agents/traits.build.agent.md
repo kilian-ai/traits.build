@@ -14,7 +14,7 @@
 - **Native binary** — `./traits serve`, `traits list`, `traits mcp` (CLI + HTTP + MCP)
 - **WASM kernel** — runs in the browser, compiled via `wasm-pack`, ~752 registered traits
 - **Static SPA** — `index.html` with hash-based routing, served from GitHub Pages (no server required)
-- **3-tier dispatch cascade** — WASM local → helper (localhost) → server REST
+- **4-tier dispatch cascade** — WASM local → helper (localhost) → relay (pairing code) → server REST
 
 ---
 
@@ -529,6 +529,17 @@ traits mcp
 # Reads JSON-RPC from stdin, writes responses to stdout.
 # All traits are exposed as tools: dot paths → underscore names
 # e.g. sys.checksum → sys_checksum
+
+# Relay — NAT-traversal for remote helpers
+POST /relay/register              # Reserve a 4-char pairing code → {code}
+GET  /relay/poll?code=XXXX        # Long-poll (30s) for next request
+POST /relay/call                  # Phone sends {code, path, args} → result
+POST /relay/respond               # Mac sends {code, id, result} back
+GET  /relay/status?code=XXXX      # Check if code is active → {active, age_seconds}
+
+# Mac connects to relay:
+RELAY_URL=https://traits-build.fly.dev traits serve
+# Shows pairing code, phone enters at traits.build/#/settings
 ```
 
 ---
@@ -796,31 +807,52 @@ docker buildx build --platform linux/amd64 -t registry.fly.io/traits-build:deplo
 fly deploy --now --local-only --image registry.fly.io/traits-build:deployment-vN
 ```
 
-### SPA Architecture (3-Tier Dispatch Cascade)
+### SPA Architecture (4-Tier Dispatch Cascade)
 
-The SPA at `www.traits.build` uses a 3-tier dispatch cascade:
+The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 
 ```
 1. WASM Local     — instant, ~752 traits callable in browser
 2. Local Helper   — localhost:8090/8091/9090, probed on page load
-3. Server REST    — POST to origin /traits/{namespace}/{name}
+3. Relay          — remote helper via 4-char pairing code (HTTP long-poll)
+4. Server REST    — POST to origin /traits/{namespace}/{name}
+```
+
+**Relay system** (NAT-traversal for remote helpers):
+- Mac starts `RELAY_URL=https://traits-build.fly.dev traits serve`
+- Mac registers at `/relay/register` → gets 4-char pairing code (e.g. `A7X9`)
+- Mac long-polls `/relay/poll?code=A7X9` for incoming requests
+- Phone enters code in Settings → stored in `localStorage['traits.relay.code']`
+- Phone SDK calls `/relay/call` with `{code, path, args}` → relay forwards to Mac
+- Mac dispatches locally, responds via `/relay/respond` → relay returns result to phone
+- Zero new dependencies: relay server uses actix-web handlers + tokio channels;
+  Mac client uses `tokio::process::Command("curl")` for all HTTP calls
+
+**Relay endpoints** (registered in `sys.serve`):
+```
+POST /relay/register           — Reserve a pairing code
+GET  /relay/poll?code=XXXX     — Long-poll for next request (30s timeout)
+POST /relay/call               — Phone sends {code, path, args}, waits for result
+POST /relay/respond            — Mac sends {code, id, result} back
+GET  /relay/status?code=XXXX   — Check if code is active
 ```
 
 **Architecture: Three layers, zero duplication:**
 ```
 Layer 3: Shells (thin, unique per surface)
-  - index.html (SPA boot + routing + page injection)
+  - index.html (SPA boot + routing + page injection + ?relay= URL params)
   - terminal.js (xterm.js display + WASM CLI)
 
 Layer 2: traits.js — Single JS SDK (ONE source of truth)
-  - Dispatch cascade (WASM → helper → REST)
+  - Dispatch cascade (WASM → helper → relay → REST)
   - Helper discovery + probing
+  - Relay connect/disconnect/status
   - WebLLM engine management
   - WASM kernel loader + attachWasm()
 
 Layer 1: Kernels (Rust, compiled per target)
   - Browser Kernel (WASM) — 26 pure traits, registry browse, CLI session
-  - Native Kernel (binary) — all 58+ traits, HTTP server, dylib loader
+  - Native Kernel (binary) — all 58+ traits, HTTP server, dylib loader, relay
 
 Layer 0: kernel/logic — Shared Rust library
   - TraitValue / TraitType (type system)
