@@ -53,7 +53,17 @@ fn method_call(args: &[Value]) -> Value {
 
     // Try WASM-local dispatch (helper-preferred check is inside dispatch())
     match super::dispatch(path, &call_args) {
-        Some(result) => serde_json::json!({"ok": true, "result": result}),
+        Some(result) => {
+            // Check for dispatch sentinel (e.g. webllm) — delegate to SDK
+            if result.get("dispatch").and_then(|d| d.as_str()).is_some() {
+                serde_json::json!({
+                    "ok": false,
+                    "error": format!("REST:{}", path)
+                })
+            } else {
+                serde_json::json!({"ok": true, "result": result})
+            }
+        }
         None => {
             // Check if trait exists but needs REST dispatch
             let reg = crate::get_registry();
