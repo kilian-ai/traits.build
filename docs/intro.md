@@ -7,6 +7,8 @@ sidebar_position: 1
 
 **traits.build** is a composable function kernel written in pure Rust. Every capability — from HTTP serving to SHA-256 hashing to the registry itself — is a **trait**: a typed, self-describing function defined in TOML and compiled into a single binary.
 
+> **Terminology note:** A "trait" in this project means a registered, typed function — not a Rust language `trait`. The naming is intentional: like Rust traits, these are composable abstractions with defined contracts. Context always disambiguates.
+
 ## What makes it different
 
 - **Traits all the way down.** The kernel itself is built from traits. `kernel.serve` is a trait. `kernel.registry` is a trait. There is no special framework code — just traits calling traits.
