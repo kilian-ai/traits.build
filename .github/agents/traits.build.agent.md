@@ -687,7 +687,10 @@ dep = "namespace.concrete_trait"
 - Always commit to git after making changes to the codebase, with a clear and concise commit message describing the changes made.
 - Always include build-generated files in your commits — `build.rs` auto-bumps versions in `.trait.toml` files, `Cargo.toml`, and `Cargo.lock` on every build. Run `git add -A` (not just the files you edited) to capture all version bumps, checksum updates, and generated TOML changes.
 - Always run the build script (`build.sh`) after making changes to ensure that the code compiles correctly and that any generated files are updated.
+- Always run tests after making changes to verify that everything is working as expected and that no existing functionality is broken.
+- Always update the documentation (e.g., `features.json` tests, README, this agent file) with any new information about the project structure, build process, conventions, or any user preferences about anything that may be helpful for future reference.
+- Always push to the `main` branch to deploy changes to GitHub Pages, which serves the static SPA at `www.traits.build`. Ensure that the `index.html` file is updated with any new routes or changes to the SPA structure.
 - Always rebuild the binary and restart the local server after making changes to the codebase to ensure that the changes take effect and to test that everything is working correctly.
 - Always store memory files you are creating in .github/memories so we can save them for future use.
 - Never forget to create a features.json file for any new trait you create, and to add example-based tests in that file to ensure the trait works as expected.
-- Never forget to create a features.json file for any new trait you create, and to add example-based tests in that file to ensure the trait works as expected.
+- Always update the .github/agents/traits.build.agent.md file with any new information about the project structure, build process, or conventions or any user preferences about anything that may be helpful for future reference.
