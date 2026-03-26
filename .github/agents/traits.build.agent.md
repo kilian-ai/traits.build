@@ -118,14 +118,20 @@ The `build.rs` at project root does all code generation:
 
 The `build.sh` orchestrates the complete build:
 
-1. **`cargo build --release`** — compiles all builtin traits into `target/release/traits` (~11MB)
-2. **`wasm-pack build`** — compiles `traits/kernel/wasm/` to `wasm32-unknown-unknown`
+1. **`wasm-pack build`** — compiles `traits/kernel/wasm/` to `wasm32-unknown-unknown`
    - Output: `traits/kernel/wasm/pkg/` (traits_wasm.js + traits_wasm_bg.wasm)
+   - **Must run before native build** — the native binary embeds WASM pkg via `include_bytes!`
+2. **`cargo build --release`** — compiles all builtin traits into `target/release/traits` (~11MB)
+   - Embeds the WASM binary + JS wrapper from step 1 into `wasm_static_assets.rs`
 3. **WASM runtime generation** — Python script embeds WASM binary as base64 into `wasm-runtime.js`
 4. **Terminal runtime generation** — strips ESM export from `terminal.js`, inlines CSS
 5. **Standalone HTML generation** — inlines both runtimes into `index.standalone.html`
 6. **Copy to root** — `index.standalone.html` → `index.html` (the GitHub Pages entry point)
 7. **Dylib copying** — copies `.dylib` files to trait directories for runtime loading
+
+> **Important:** WASM must be built before native. The native binary's `build.rs` generates
+> `wasm_static_assets.rs` which uses `include_bytes!` to embed the WASM pkg files. If native
+> is built first, it embeds stale WASM from the previous build.
 
 ```bash
 # Full build (native + WASM + static):
