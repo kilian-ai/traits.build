@@ -25,6 +25,51 @@ let helperInfo = null;
 const HELPER_PORTS = [8090, 8091, 9090];
 const HELPER_TIMEOUT = 1500;
 
+// ── WebLLM engine state (lazy-loaded) ──
+let _webllmLib = null;
+let _webllmEngine = null;
+let _webllmModel = null;
+let _webllmLoading = null;
+
+const WEBLLM_DEFAULT_MODEL = 'SmolLM2-360M-Instruct-q4f16_1-MLC';
+
+async function _ensureWebLLM(model) {
+    const modelId = model || WEBLLM_DEFAULT_MODEL;
+
+    // Already loaded with same model
+    if (_webllmEngine && _webllmModel === modelId) return _webllmEngine;
+
+    // Detect concurrent load for same model — wait for it
+    if (_webllmLoading) {
+        const result = await _webllmLoading;
+        if (_webllmModel === modelId) return result;
+    }
+
+    // Check WebGPU support
+    if (!navigator.gpu) throw new Error('WebGPU not supported in this browser (requires Chrome 113+ or Edge 113+)');
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) throw new Error('WebGPU adapter not available');
+
+    _webllmLoading = (async () => {
+        // Lazy-load WebLLM library
+        if (!_webllmLib) {
+            _webllmLib = await import('https://esm.run/@mlc-ai/web-llm');
+        }
+
+        // Create or reload engine
+        if (!_webllmEngine) {
+            _webllmEngine = new _webllmLib.MLCEngine();
+        }
+
+        await _webllmEngine.reload(modelId);
+        _webllmModel = modelId;
+        _webllmLoading = null;
+        return _webllmEngine;
+    })();
+
+    return _webllmLoading;
+}
+
 async function probeHelper(url, timeout = HELPER_TIMEOUT) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeout);
@@ -175,7 +220,12 @@ export class Traits {
 
         // 1. WASM (instant, local)
         if (forceMode === 'wasm' || (forceMode !== 'rest' && forceMode !== 'helper' && wasmReady && wasmCallableSet.has(path))) {
-            return this._callWasm(path, args);
+            const wasmResult = this._callWasm(path, args);
+            // Intercept WebLLM dispatch sentinel — route to JS-side WebLLM engine
+            if (wasmResult.ok && wasmResult.result && wasmResult.result.dispatch === 'webllm') {
+                return this._callWebLLM(wasmResult.result.prompt, wasmResult.result.model);
+            }
+            return wasmResult;
         }
 
         // 2. Local helper (privileged traits on localhost)
@@ -424,6 +474,29 @@ export class Traits {
             return { ok: true, result, dispatch: 'wasm', ms: Math.round(dt * 10) / 10 };
         } catch (e) {
             return { ok: false, error: e.message || String(e), dispatch: 'wasm' };
+        }
+    }
+
+    async _callWebLLM(prompt, model) {
+        const t0 = performance.now();
+        try {
+            const engine = await _ensureWebLLM(model);
+            const reply = await engine.chat.completions.create({
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.7,
+                max_tokens: 1024,
+            });
+            const dt = performance.now() - t0;
+            const content = reply.choices?.[0]?.message?.content || '';
+            return {
+                ok: true,
+                result: content,
+                dispatch: 'webllm',
+                model: _webllmModel,
+                ms: Math.round(dt * 10) / 10,
+            };
+        } catch (e) {
+            return { ok: false, error: e.message || String(e), dispatch: 'webllm' };
         }
     }
 

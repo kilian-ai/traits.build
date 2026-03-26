@@ -22,18 +22,16 @@ pub fn webllm(args: &[Value]) -> Value {
         .filter(|s| !s.is_empty())
         .unwrap_or("");
 
-    // In WASM, we return a JS dispatch sentinel that the browser runtime
+    // In WASM, we return a dispatch sentinel that the browser SDK (traits.js)
     // intercepts and routes to the WebLLM engine loaded in the page.
-    // The WASM kernel cannot call JS directly (no async), so we emit a
-    // structured response that the terminal/SDK knows how to handle.
+    // The WASM kernel is synchronous, so actual async WebLLM inference
+    // happens on the JS side via _callWebLLM() in the SDK.
     #[cfg(target_arch = "wasm32")]
     {
         json!({
-            "ok": false,
             "dispatch": "webllm",
             "prompt": prompt,
             "model": model,
-            "error": format!("WEBLLM:{}:{}", model, prompt)
         })
     }
 

@@ -2,9 +2,15 @@ var allTraits = [];
 var selectedTrait = null;
 var dropdownIdx = -1;
 
-// ── Bootstrap (via TC: data-trait="sys.list" on container) ──
-TC.on('initPlayground', function(el, traits) {
-  allTraits = (traits || []).sort(function(a, b) {
+function normalizeTraits(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.traits)) return payload.traits;
+  if (payload && Array.isArray(payload.result)) return payload.result;
+  return [];
+}
+
+function initPlayground(traits) {
+  allTraits = normalizeTraits(traits).sort(function(a, b) {
     return (a.path || '').localeCompare(b.path || '');
   });
   // If URL has ?trait=xxx, auto-select
@@ -14,7 +20,17 @@ TC.on('initPlayground', function(el, traits) {
     if (t) selectTrait(t);
     document.getElementById('traitSearch').value = p.get('trait');
   }
-});
+}
+
+async function bootstrapPlayground() {
+  try {
+    const traits = await window._traitsSDK.list();
+    initPlayground(traits);
+  } catch (error) {
+    document.getElementById('resultPanel').hidden = false;
+    document.getElementById('resultOutput').innerHTML = '<span class="err">' + esc(error.message || String(error)) + '</span>';
+  }
+}
 
 // ── Search + Dropdown ──
 const searchEl = document.getElementById('traitSearch');
@@ -200,3 +216,5 @@ document.getElementById('btnCopy').addEventListener('click', function() {
 });
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+bootstrapPlayground();

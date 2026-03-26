@@ -12,7 +12,7 @@ pub fn playground(_args: &[Value]) -> Value {
                 link rel="stylesheet" href="/static/www/playground/playground.css" {}
             }
             body {
-                div.container data-trait="sys.list" data-handler="initPlayground" {
+                div.container {
                     header {
                         h1 { "traits.build " span.accent { "playground" } }
                         p.subtitle { "Call any trait interactively" }
