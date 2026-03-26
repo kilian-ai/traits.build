@@ -102,15 +102,6 @@ pub fn spa(_args: &[Value]) -> Value {
                             }
                         }
 
-                        // Tier 4 — REST
-                        div.tier {
-                            div.tier-header {
-                                div.dot.gray id="dotRest" {}
-                                span.tier-label { "REST" }
-                                span.tier-detail.muted id="restDetail" { "checking..." }
-                            }
-                        }
-
                         // Summary bar
                         div.dispatch-summary id="dispatchSummary" {
                             span.muted { "Active path: " }
@@ -1004,26 +995,6 @@ async function refreshDispatchStatus() {
     setTier('Relay', 'gray', 'not configured');
     byId('btnRelayConnect').style.display = '';
     byId('btnRelayDisconnect').style.display = 'none';
-  }
-
-  // Tier 4: REST
-  if (!isLocalFile && location.origin && location.origin !== 'null') {
-    try {
-      var resp = await fetch(location.origin + '/health', { signal: AbortSignal.timeout(3000) });
-      if (resp.ok) {
-        var h = await resp.json();
-        var rDetail = location.origin;
-        if (h.version) rDetail += ' — ' + h.version;
-        setTier('Rest', 'green', rDetail);
-        tiers.push('REST');
-      } else {
-        setTier('Rest', 'gray', location.origin + ' — unreachable');
-      }
-    } catch (_) {
-      setTier('Rest', 'gray', 'no server');
-    }
-  } else {
-    setTier('Rest', 'gray', 'no server (file://)');
   }
 
   // Summary

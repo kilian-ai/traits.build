@@ -23,6 +23,17 @@
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "admin" }
           ]
+        },
+        {
+          "name": "contains dispatch card",
+          "type": "command",
+          "command": "./target/release/traits call www.admin 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "dotRest" },
+            { "type": "contains", "expected": "dotRelay" },
+            { "type": "contains", "expected": "checkDispatch" }
+          ]
         }
       ],
       "examples": [

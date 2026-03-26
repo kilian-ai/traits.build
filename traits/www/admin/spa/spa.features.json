@@ -17,8 +17,7 @@
             { "type": "contains", "expected": "dispatchCard" },
             { "type": "contains", "expected": "dotWasm" },
             { "type": "contains", "expected": "dotHelper" },
-            { "type": "contains", "expected": "dotRelay" },
-            { "type": "contains", "expected": "dotRest" }
+            { "type": "contains", "expected": "dotRelay" }
           ]
         }
       ]

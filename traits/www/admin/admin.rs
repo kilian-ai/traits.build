@@ -59,6 +59,24 @@ pub fn admin(_args: &[Value]) -> Value {
                         }
                     }
 
+                    // Dispatch
+                    div.card {
+                        h2 { "Dispatch" }
+                        p.note { "How clients reach this server. REST is always available here." }
+                        div.dispatch-tiers {
+                            div.tier-row {
+                                div.dot.green id="dotRest" {}
+                                span.tier-name { "REST" }
+                                span.tier-info id="restInfo" { "checking..." }
+                            }
+                            div.tier-row {
+                                div.dot.gray id="dotRelay" {}
+                                span.tier-name { "Relay" }
+                                span.tier-info id="relayInfo" { "checking..." }
+                            }
+                        }
+                    }
+
                     // Fly.io Machine
                     div.card {
                         h2 { "Fly.io Machine" }
@@ -267,6 +285,10 @@ const CSS: &str = r##"
   .install-alt code { font-size: 0.75rem; cursor: pointer; }
   .install-alt code:hover { color: #aeb; }
   .install-alt .copied { color: #6b9; font-size: 0.75rem; margin-left: 0.5rem; }
+  .dispatch-tiers { display: flex; flex-direction: column; gap: 0.6rem; }
+  .tier-row { display: flex; align-items: center; gap: 0.75rem; }
+  .tier-name { font-family: 'Berkeley Mono', 'SF Mono', monospace; font-size: 0.9rem; font-weight: 600; min-width: 60px; }
+  .tier-info { font-size: 0.85rem; color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 "##;
 
 const JS: &str = r##"
@@ -853,10 +875,37 @@ async function saveConfig() {
   document.getElementById('btnSaveConfig').disabled = false;
 }
 
+async function checkDispatch() {
+  // REST — always available since this page is server-rendered
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    document.getElementById('dotRest').className = 'dot green';
+    document.getElementById('restInfo').textContent = location.origin + ' — ' + (d.version || '?');
+    // Relay — from health response
+    if (d.relay && d.relay.code) {
+      document.getElementById('dotRelay').className = d.relay.connected ? 'dot green' : 'dot yellow';
+      var info = d.relay.code;
+      if (d.relay.url) info += ' via ' + d.relay.url.replace(/^https?:\\/\\//, '');
+      if (!d.relay.connected) info += ' (reconnecting)';
+      document.getElementById('relayInfo').textContent = info;
+    } else {
+      document.getElementById('dotRelay').className = 'dot gray';
+      document.getElementById('relayInfo').textContent = 'Not configured (set RELAY_URL)';
+    }
+  } catch(e) {
+    document.getElementById('dotRest').className = 'dot red';
+    document.getElementById('restInfo').textContent = 'Unreachable';
+    document.getElementById('dotRelay').className = 'dot gray';
+    document.getElementById('relayInfo').textContent = '—';
+  }
+}
+
 checkStatus();
 checkFlyMachine();
+checkDispatch();
 loadSecrets();
-var _admTimers = [setInterval(checkStatus, 30000), setInterval(checkFlyMachine, 60000)];
+var _admTimers = [setInterval(checkStatus, 30000), setInterval(checkFlyMachine, 60000), setInterval(checkDispatch, 30000)];
 window._pageCleanup = function() { _admTimers.forEach(clearInterval); };
 
 async function loadSecrets() {

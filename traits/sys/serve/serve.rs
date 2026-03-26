@@ -246,13 +246,22 @@ async fn health_check(state: web::Data<AppState>) -> HttpResponse {
         _ => 0,
     };
 
+    let relay_code = crate::globals::RELAY_CODE.read().ok().and_then(|g| g.clone());
+    let relay_connected = crate::globals::RELAY_CONNECTED.load(std::sync::atomic::Ordering::Relaxed);
+    let relay_url = crate::globals::RELAY_URL.get().cloned();
+
     HttpResponse::Ok().json(serde_json::json!({
         "status": "healthy",
         "version": env!("TRAITS_BUILD_VERSION"),
         "trait_count": trait_count,
         "namespace_count": namespace_count,
         "uptime_human": uptime_human,
-        "uptime_seconds": uptime_secs
+        "uptime_seconds": uptime_secs,
+        "relay": {
+            "code": relay_code,
+            "connected": relay_connected,
+            "url": relay_url,
+        }
     }))
 }
 
