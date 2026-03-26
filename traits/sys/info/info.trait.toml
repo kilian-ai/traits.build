@@ -1,8 +1,8 @@
 [trait]
-description = "Show detailed info about a specific trait"
-version = "v260326.175920"
+description = "System status overview or detailed trait info with dispatch location"
+version = "v260326.224746"
 epoch = 0
-checksum = "0ec04058c17cd3080fef4c61afb1da31650c848d8ac76000be8fecb05732569f"
+checksum = "63f00491a3c410be0751ab754f8a1183a9f63468ff7cd91304c934a8a66c4810"
 author = "system"
 tags = ["system", "meta", "discovery"]
 provides = ["sys/info"]
@@ -15,15 +15,15 @@ registry = "sys.registry"
 
 [signature]
 params = [
-  { name = "path", pipe = true, type = "string", description = "Dot-notation trait path, e.g. sys.checksum", example = "sys.checksum" }
+  { name = "path", pipe = true, type = "string", description = "Optional: dot-notation trait path for detailed info. Omit for system status.", example = "sys.checksum", required = false }
 ]
 
 [signature.returns]
 type = "object"
-description = "Full trait metadata including signature"
+description = "System status (no args) or trait metadata with dispatch location"
 
 [implementation]
 language = "rust"
 source = "builtin"
 entry = "info"
-wasm = true
+wasm = false

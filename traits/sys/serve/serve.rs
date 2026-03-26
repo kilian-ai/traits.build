@@ -630,6 +630,7 @@ async fn relay_status(
 // ── Relay client (Mac connects to remote relay via curl) ──
 
 fn spawn_relay_client(relay_url: String, local_port: u16) {
+    let _ = crate::globals::RELAY_URL.set(relay_url.clone());
     tokio::spawn(async move {
         // Wait a moment for local server to start
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -659,6 +660,11 @@ async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), St
     let reg: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("Invalid register response: {}", e))?;
     let code = reg["code"].as_str().ok_or("No code in response")?.to_string();
+
+    // Publish pairing code to globals
+    if let Ok(mut guard) = crate::globals::RELAY_CODE.write() {
+        *guard = Some(code.clone());
+    }
 
     info!("📡 Relay pairing code: {}", code);
     info!("   Enter this code at traits.build/#/settings to connect from anywhere");
@@ -708,6 +714,7 @@ async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), St
 
         // Handle _ping (connection handshake from SPA)
         if req.path == "_ping" {
+            crate::globals::RELAY_CONNECTED.store(true, std::sync::atomic::Ordering::Relaxed);
             info!("✅ Remote client connected via relay (code: {})", code);
             let pong = serde_json::json!({
                 "code": code,
