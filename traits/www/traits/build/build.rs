@@ -70,9 +70,9 @@ traits/sys/checksum/checksum.rs
             body {
                 // Hero
                 div.hero {
-                    div.pill { "open source \u{00B7} pure Rust \u{00B7} runs in browser via WASM \u{00B7} AI-ready" }
+                    div.pill { "open source \u{00B7} pure Rust \u{00B7} web server + SPA \u{00B7} WASM browser kernel \u{00B7} AI-ready" }
                     h1 { span { "traits" } ".build" }
-                    p.sub { "Typed, composable functions compiled into a single Rust binary and a WASM browser kernel. Define traits in TOML, call them via CLI, REST, MCP, or directly in the browser. No server required." }
+                    p.sub { "Typed, composable functions compiled into a single Rust binary that serves itself as a web app. The same kernel runs in the browser via WASM. Define traits in TOML, call them via CLI, REST, MCP, or directly in the SPA." }
                     div.cta {
                         a.btn.btn-primary href="#browser-native" { "Try in Browser" }
                         a.btn.btn-outline href="/playground" { "Playground" }

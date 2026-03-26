@@ -359,7 +359,7 @@ code {
   font-size: 13px;
   white-space: pre-wrap;
 }
-.entry { display: block; margin-bottom: 6px; }
+.entry { display: block; margin-bottom: 0; }
 .time { color: #5f7583; margin-right: 6px; }
 a { color: #8be3cb; }
 .preview { color: #c9d7e0; word-break: break-all; }

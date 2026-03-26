@@ -246,7 +246,7 @@ const CSS: &str = r##"
   button.danger:hover { background: #991b1b; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .log { background: #0d0d0d; border: 1px solid #222; border-radius: 6px; padding: 1rem; font-family: 'Berkeley Mono', 'SF Mono', monospace; font-size: 0.8rem; color: #888; max-height: 300px; overflow-y: auto; white-space: pre-wrap; margin-top: 1rem; }
-  .log .entry { margin-bottom: 0.25rem; }
+  .log .entry { display: block; margin-bottom: 0; }
   .log .time { color: #555; }
   .log .info { color: #6b9; }
   .log .warn { color: #eb5; }
@@ -563,7 +563,7 @@ function sysLog(msg, type) {
   el.style.display = 'block';
   const t = new Date().toTimeString().slice(0,8);
   const cls = type || 'info';
-  el.innerHTML += '\n<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
+  el.innerHTML += '<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
   el.scrollTop = el.scrollHeight;
 }
 
@@ -644,7 +644,7 @@ function deployLog(msg, type) {
   el.style.display = 'block';
   const t = new Date().toTimeString().slice(0,8);
   const cls = type || 'info';
-  el.innerHTML += '\n<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
+  el.innerHTML += '<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
   el.scrollTop = el.scrollHeight;
 }
 
@@ -696,7 +696,7 @@ function releaseLog(msg, type) {
   el.style.display = 'block';
   const t = new Date().toTimeString().slice(0,8);
   const cls = type || 'info';
-  el.innerHTML += '\n<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
+  el.innerHTML += '<span class="entry"><span class="time">[' + t + ']</span> <span class="' + cls + '">' + esc(msg) + '</span></span>';
   el.scrollTop = el.scrollHeight;
 }
 
