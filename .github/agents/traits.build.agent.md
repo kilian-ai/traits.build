@@ -277,6 +277,54 @@ pub fn info(args: &[Value]) -> Value {
 }
 ```
 
+#### WASM Compatibility: Handling Unsupported Imports
+
+When `wasm = true` is set, the trait's `.rs` file is compiled for `wasm32-unknown-unknown`. If it imports native-only APIs (`std::fs`, `std::net`, `tokio`, `actix`, etc.), the WASM build fails at compile time with clear errors. Three patterns handle this:
+
+**Pattern 1: cfg-gating** — for shared source files with minor differences:
+```rust
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn my_trait(args: &[Value]) -> Value {
+    // native: use filesystem
+    let data = fs::read_to_string("file.txt").unwrap();
+    json!(data)
+}
+#[cfg(target_arch = "wasm32")]
+pub fn my_trait(args: &[Value]) -> Value {
+    // WASM: different implementation
+    json!("not available in browser")
+}
+```
+Used by: `sys.info` (info.rs), `sys.list` (list.rs) — native delegates to `crate::dispatcher`, WASM uses `super::registry`.
+
+**Pattern 2: `wasm_source` override** — for traits needing a completely separate WASM implementation:
+```toml
+[implementation]
+wasm = true
+wasm_source = "wasm_impl.rs"   # WASM builds this file instead of the default
+```
+Used by: `sys.cli.wasm` — native code in `wasm.rs` has native dependencies, WASM builds from `wasm_impl.rs`.
+
+**Pattern 3: `wasm_forward`** — for traits that cannot run in WASM at all but have a WASM-capable sibling:
+```toml
+[implementation]
+wasm = true
+wasm_forward = "sys.ps.wasm"    # dispatch redirects to this trait in WASM
+helper_preferred = true          # prefer native helper when connected
+```
+Used by: `sys.ps` — forwards to `sys.ps.wasm` (a pure-WASM reimplementation) and prefers native dispatch when a helper is connected.
+
+**When to use which:**
+| Scenario | Pattern | Example |
+|----------|---------|---------|
+| Minor code path differences | cfg-gating | `sys.info`, `sys.list` |
+| Heavily divergent implementations | `wasm_source` | `sys.cli.wasm` |
+| Trait is native-only, sibling has WASM version | `wasm_forward` | `sys.ps` → `sys.ps.wasm` |
+| Module needed by other WASM traits, not dispatchable itself | `wasm_callable = false` | `kernel.cli` |
+
 #### Generated wasm_compiled_traits.rs
 
 The `wasm_traits/mod.rs` is a 4-line include!() wrapper:
