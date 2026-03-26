@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260326.20011"
+version = "0.260326.32859"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]

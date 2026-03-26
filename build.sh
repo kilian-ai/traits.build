@@ -9,6 +9,22 @@ if [[ "${1:-}" == "--clean" ]]; then
     cargo clean
 fi
 
+WASM_PKG_DIR="traits/kernel/wasm/pkg"
+WASM_RUNTIME_JS="traits/www/static/wasm-runtime.js"
+INDEX_HTML="traits/www/static/index.html"
+INDEX_STANDALONE_HTML="traits/www/static/index.standalone.html"
+
+# Build WASM first so the native binary embeds the latest WASM pkg via include_bytes!
+if command -v wasm-pack >/dev/null 2>&1; then
+    echo "Building WASM kernel..."
+    (
+        cd traits/kernel/wasm
+        wasm-pack build --target web --release
+    )
+else
+    echo "Skipping WASM build — wasm-pack not found"
+fi
+
 echo "Building traits kernel..."
 cargo build --release
 
@@ -21,21 +37,6 @@ fi
 SIZE=$(du -h "$BIN" | cut -f1)
 echo ""
 echo "Built: $BIN ($SIZE)"
-
-WASM_PKG_DIR="traits/kernel/wasm/pkg"
-WASM_RUNTIME_JS="traits/www/static/wasm-runtime.js"
-INDEX_HTML="traits/www/static/index.html"
-INDEX_STANDALONE_HTML="traits/www/static/index.standalone.html"
-
-if command -v wasm-pack >/dev/null 2>&1; then
-    echo "Building WASM kernel..."
-    (
-        cd traits/kernel/wasm
-        wasm-pack build --target web --release
-    )
-else
-    echo "Skipping WASM build — wasm-pack not found"
-fi
 
 if [[ -f "$WASM_PKG_DIR/traits_wasm_bg.wasm" && -f "$WASM_PKG_DIR/traits_wasm.js" ]]; then
     echo "Generating static WASM runtime..."
