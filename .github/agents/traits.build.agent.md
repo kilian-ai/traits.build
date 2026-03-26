@@ -226,6 +226,66 @@ Allows kernel/ code to be accessed as `crate::types`, `crate::dispatcher`, etc.
 - Syncs to Cargo.toml as `0.YYMMDD.HHMMSS`
 - Re-run detection: watches entire traits/ tree for changes
 
+### wasm/build.rs (WASM Code Generation)
+
+The `traits/kernel/wasm/build.rs` auto-generates WASM trait dispatch from `.trait.toml` metadata — mirroring the native build.rs pattern:
+
+1. **Trait discovery** — scans `traits/` recursively for `.trait.toml` files with `wasm = true` in `[implementation]`
+2. **`wasm_compiled_traits.rs`** — generates:
+   - `#[path = "..."] pub mod <name>;` declarations for each WASM trait
+   - `dispatch(trait_path, args)` function with match table
+   - `WASM_CALLABLE` const — list of all WASM-dispatchable trait paths
+   - `HELPER_PREFERRED` const — traits preferring native helper dispatch
+
+#### WASM-Specific .trait.toml Fields
+
+All fields live in `[implementation]`:
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|--------|
+| `wasm` | bool | false | Opt-in for WASM compilation |
+| `wasm_callable` | bool | true | If false, include as module dependency but don't dispatch |
+| `wasm_entry` | string | same as `entry` | Override entry function name for WASM |
+| `wasm_source` | string | auto-detect | Override source .rs file for WASM |
+| `wasm_forward` | string | — | Forward dispatch to another trait path (no module needed) |
+| `helper_preferred` | bool | false | Prefer native helper dispatch when connected |
+
+#### File Lookup Cascade for WASM Traits
+
+1. `wasm_source` override (e.g., `wasm_source = "wasm_impl.rs"`)
+2. `{dir_name}.rs` (standard convention)
+3. `{entry_name}.rs` (e.g., `wasm_ps.rs` for `entry = "wasm_ps"`)
+4. Single `.rs` fallback via `find_single_rs()`
+
+#### Module Name Collision Resolution
+
+Same algorithm as native build.rs: count duplicate module names across all traits, qualify with parent segment:
+- `kernel.call` → `kernel_call`, `sys.call` → `sys_call`
+- `sys.cli.wasm` → `cli_wasm`, `sys.ps.wasm` → `ps_wasm`, `www.wasm` → `www_wasm`
+
+#### Cross-Target Compilation (cfg-gating)
+
+Some trait source files compile for both WASM and native targets. Use cfg-gating for target-specific code:
+```rust
+#[cfg(not(target_arch = "wasm32"))]
+pub fn info(args: &[Value]) -> Value {
+    crate::dispatcher::compiled::registry::info(args)  // native path
+}
+#[cfg(target_arch = "wasm32")]
+pub fn info(args: &[Value]) -> Value {
+    super::registry::info(args)  // WASM path (no crate::dispatcher in WASM)
+}
+```
+
+#### Generated wasm_compiled_traits.rs
+
+The `wasm_traits/mod.rs` is a 4-line include!() wrapper:
+```rust
+include!(concat!(env!("OUT_DIR"), "/wasm_compiled_traits.rs"));
+```
+
+Generated output includes ~25 module declarations, dispatch function with helper-preferred gating, and const arrays. Currently 26 traits opt in to WASM compilation.
+
 ---
 
 ## plugin_api Crate: C ABI Contract
@@ -384,11 +444,13 @@ entry = "website"   # Name of exported function
 | plugin_api | kernel/plugin_api | C ABI export macro | Library (shared) |
 | kernel/logic | kernel/logic/src | Shared registry/types/dispatch lib | Library (shared) |
 | kernel/wasm | kernel/wasm/src | WASM browser kernel | wasm-pack target |
+| wasm/build.rs | kernel/wasm/build.rs | WASM trait discovery + codegen | Compile-time |
 | dylib_loader.rs | sys/dylib_loader | Runtime .dylib loading | Sys trait |
 | compiled_traits.rs | OUT_DIR (gen) | Dispatch to compiled traits | Dispatch router |
 | builtin_traits.rs | OUT_DIR (gen) | TOML registry data | Registry seed |
 | cli_formatters.rs | OUT_DIR (gen) | CLI output formatting | Optional |
 | kernel_modules.rs | OUT_DIR (gen) | Crate-level kernel/ mods | Module tree |
+| wasm_compiled_traits.rs | WASM OUT_DIR (gen) | WASM dispatch + modules | WASM dispatch |
 | index.html | root | Deployed SPA (GitHub Pages) | Entry point |
 | wasm-runtime.js | www/static | Embedded WASM + JS wrapper | Generated |
 | sdk-runtime.js | www/static | JS SDK as classic script (from traits.js) | Generated |
@@ -757,6 +819,13 @@ description = "Return description"
 language = "rust"
 source = "builtin"
 entry = "function_name"
+# WASM fields (all optional):
+# wasm = true              # opt-in for WASM compilation
+# wasm_callable = false    # include as module dep only (no dispatch)
+# wasm_entry = "alt_fn"    # override entry function for WASM
+# wasm_source = "wasm.rs"  # override source file for WASM
+# wasm_forward = "sys.x"   # forward dispatch to another trait
+# helper_preferred = true  # prefer native helper when connected
 
 [requires]
 dep = "namespace/interface"
