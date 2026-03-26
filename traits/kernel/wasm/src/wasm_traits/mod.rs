@@ -111,8 +111,13 @@ pub const HELPER_PREFERRED: &[&str] = &[
     "sys.ps",
 ];
 
-/// Dispatch a trait call by path. Returns None if the path isn't WASM-callable.
+/// Dispatch a trait call by path. Returns None if the path isn't WASM-callable
+/// or if the trait prefers native helper dispatch and a helper is connected.
 pub fn dispatch(trait_path: &str, args: &[Value]) -> Option<Value> {
+    // Helper-preferred traits delegate to native helper when connected
+    if crate::is_helper_connected() && HELPER_PREFERRED.contains(&trait_path) {
+        return None;
+    }
     match trait_path {
         "kernel.call" => Some(call::call(args)),
         "kernel.types" => Some(types::types(args)),

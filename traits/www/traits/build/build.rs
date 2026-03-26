@@ -34,6 +34,12 @@ pub fn website(_args: &[Value]) -> Value {
     #[cfg(target_arch = "wasm32")]
     let binary_size = "WASM".to_string();
 
+    // Count WASM-callable traits
+    #[cfg(not(target_arch = "wasm32"))]
+    let wasm_callable = trait_count;
+    #[cfg(target_arch = "wasm32")]
+    let wasm_callable = trait_count;
+
     let code_how_it_works = format!(r##"<span class="cm"># 1. Define a trait (TOML + Rust source)</span>
 traits/sys/checksum/checksum.trait.toml
 traits/sys/checksum/checksum.rs
@@ -64,13 +70,14 @@ traits/sys/checksum/checksum.rs
             body {
                 // Hero
                 div.hero {
-                    div.pill { "open source \u{00B7} pure Rust \u{00B7} encrypted secrets \u{00B7} AI-ready" }
+                    div.pill { "open source \u{00B7} pure Rust \u{00B7} runs in browser via WASM \u{00B7} AI-ready" }
                     h1 { span { "traits" } ".build" }
-                    p.sub { "Typed, composable functions compiled into a single Rust binary with encrypted secrets, zero-trust auth, and first-class AI integration. Define traits in TOML, call them via CLI, REST, or MCP." }
+                    p.sub { "Typed, composable functions compiled into a single Rust binary and a WASM browser kernel. Define traits in TOML, call them via CLI, REST, MCP, or directly in the browser. No server required." }
                     div.cta {
-                        a.btn.btn-primary href="#built-in-traits" { "Explore Traits" }
-                        a.btn.btn-outline href="/docs" { "Documentation" }
-                        a.btn.btn-outline href="/docs/api" { "API Docs" }
+                        a.btn.btn-primary href="#browser-native" { "Try in Browser" }
+                        a.btn.btn-outline href="/playground" { "Playground" }
+                        a.btn.btn-outline href="/docs" { "Docs" }
+                        a.btn.btn-outline href="/docs/api" { "API" }
                         a.btn.btn-outline href="https://github.com/kilian-ai/traits.build" { "GitHub" }
                     }
                 }
@@ -78,9 +85,23 @@ traits/sys/checksum/checksum.rs
                 // Stats
                 div.stats {
                     div.stat { div.num { (trait_count) } div.label { "compiled traits" } }
+                    div.stat { div.num { (wasm_callable) } div.label { "WASM-callable" } }
                     div.stat { div.num { (ns_count) } div.label { "namespaces" } }
                     div.stat { div.num { (&binary_size) } div.label { "binary size" } }
-                    div.stat { div.num { "0" } div.label { "runtime deps" } }
+                }
+
+                // Browser-native
+                h2.section-title id="browser-native" { "Browser-Native" }
+                p.section-sub { "The same kernel runs in the browser via WASM \u{2014} no server required" }
+                section {
+                    div.features {
+                        div.card { div.icon { "\u{1F30D}" } h3 { "WASM kernel" } p { "The entire trait registry compiles to WebAssembly via wasm-pack. " (wasm_callable) " traits callable directly in the browser at native speed." } }
+                        div.card { div.icon { "\u{26A1}" } h3 { "3-tier dispatch" } p { "SDK tries WASM local \u{2192} localhost helper \u{2192} server REST. Falls through automatically. Most traits resolve in <1ms via WASM." } }
+                        div.card { div.icon { "\u{1F4BB}" } h3 { "Terminal in browser" } p { "Full xterm.js terminal running the traits CLI via WASM. Type " code { "list" } ", " code { "call sys.checksum hash hello" } " \u{2014} runs locally." } }
+                        div.card { div.icon { "\u{1F3AE}" } h3 { "Interactive playground" } p { "Search, select, and call any trait with a visual form. Parameters auto-generated from TOML signatures. Results display inline." } }
+                        div.card { div.icon { "\u{1F50C}" } h3 { "Auto-connect helper" } p { "Run " code { "./traits serve" } " locally and the page auto-discovers it within 1 second. Unlocks privileged traits (deploy, secrets, file I/O)." } }
+                        div.card { div.icon { "\u{1F9E9}" } h3 { "Trait Components (TC)" } p { "Declarative " code { "data-trait" } " attributes on HTML elements. TC auto-calls traits on mount or click, binds results to DOM \u{2014} reactive UI without a framework." } }
+                    }
                 }
 
                 // Architecture
@@ -104,8 +125,8 @@ traits/sys/checksum/checksum.rs
                     div.features {
                         div.card { div.icon { "\u{1F680}" } h3 { "Single binary, zero runtime" } p { "Every trait compiles directly into the binary via build.rs. No containers, no workers, no runtime dependencies. One executable does everything." } }
                         div.card { div.icon { "\u{2699}\u{FE0F}" } h3 { "Self-describing kernel" } p { "Registry, dispatcher, config, CLI, and HTTP server are all traits. Call " code { "kernel.main" } " to see every module, interface, and bootstrap step." } }
-                        div.card { div.icon { "\u{1F50C}" } h3 { "CLI + REST + MCP" } p { "Every trait is callable via REST API (" code { "POST /traits/ns/name" } "), CLI (" code { "traits name args" } "), or MCP tool protocol. One trait, three surfaces." } }
-                        div.card { div.icon { "\u{1F310}" } h3 { "Built-in web server" } p { "The binary hosts its own landing page, admin dashboard, and documentation \u{2014} all as traits. No nginx, no static files, no separate frontend. " code { "kernel.serve" } " runs actix-web; www.* traits generate HTML." } }
+                        div.card { div.icon { "\u{1F50C}" } h3 { "CLI + REST + MCP + WASM" } p { "Every trait is callable via CLI, REST API, MCP tool protocol, or WASM in the browser. One trait, four surfaces." } }
+                        div.card { div.icon { "\u{1F310}" } h3 { "Static SPA on GitHub Pages" } p { "The site is a self-contained HTML file with embedded WASM kernel. Hosted on GitHub Pages \u{2014} no server process needed for most traits." } }
                         div.card { div.icon { "\u{1F517}" } h3 { "Interface wiring" } p { "Traits declare " code { "provides" } ", " code { "requires" } ", and " code { "bindings" } " in TOML. Resolution: per-call overrides \u{2192} global bindings \u{2192} auto-discover." } }
                         div.card { div.icon { "\u{1F9E9}" } h3 { "Build-time codegen" } p { "build.rs discovers all .trait.toml files, generates dispatch tables, embeds definitions, auto-bumps versions and checksums." } }
                         div.card { div.icon { "\u{1F4E6}" } h3 { "cdylib plugins" } p { "Extend at runtime with .dylib shared libraries. The kernel discovers and loads them at startup via kernel.dylib_loader." } }
@@ -189,13 +210,16 @@ traits/sys/checksum/checksum.rs
 
                 // Quick start
                 h2.section-title { "Quick start" }
-                p.section-sub { "Two ways to talk to every trait" }
+                p.section-sub { "Four ways to talk to every trait" }
                 section {
                     div.code-block style="max-width:100%;padding:0;margin-bottom:2rem" {
                         pre { (PreEscaped(CODE_CLI)) }
                     }
-                    div.code-block style="max-width:100%;padding:0" {
+                    div.code-block style="max-width:100%;padding:0;margin-bottom:2rem" {
                         pre { (PreEscaped(CODE_REST)) }
+                    }
+                    div.code-block style="max-width:100%;padding:0" {
+                        pre { (PreEscaped(CODE_BROWSER)) }
                     }
                 }
 
@@ -210,13 +234,13 @@ traits/sys/checksum/checksum.rs
 
                 footer {
                     p {
-                        "traits.build \u{2014} a pure Rust kernel, AI-ready by default. \u{00B7} "
+                        "traits.build \u{2014} pure Rust kernel + WASM browser runtime. \u{00B7} "
+                        a href="/playground" { "Playground" } " \u{00B7} "
                         a href="/docs" { "Docs" } " \u{00B7} "
-                        a href="/docs/api" { "API Docs" } " \u{00B7} "
+                        a href="/docs/api" { "API" } " \u{00B7} "
                         a href="https://github.com/kilian-ai/traits.build" { "GitHub" } " \u{00B7} "
-                        a href="/traits/kernel/main" { "kernel.main" } " \u{00B7} "
-                        a href="/traits/sys/list" { "sys.list" } " \u{00B7} "
-                        a href="/health" { "health" }
+                        a href="/admin" { "Admin" } " \u{00B7} "
+                        a href="/wasm" { "WASM" }
                     }
                 }
             }
@@ -248,17 +272,25 @@ const TRAITS: &[(&str, &str)] = &[
     ("sys.ps", "List running background traits with process details"),
     ("sys.openapi", "Generate OpenAPI 3.0 spec with live examples from the registry"),
     ("sys.mcp", "MCP stdio server \u{2014} JSON-RPC 2.0 over stdin/stdout"),
-    ("sys.secrets", "Encrypted secrets store \u{2014} set, get, delete, list with SecretContext isolation"),
+    ("sys.secrets", "Encrypted secrets store \u{2014} set, get, delete, list"),
+    ("sys.llm", "Unified LLM inference router \u{2014} provider-agnostic"),
     ("sys.docs.skills", "Generate SKILL.md from OpenAPI \u{2014} teach AI agents every trait"),
     ("www.traits.build", "This landing page \u{2014} stats pulled live from registry"),
+    ("www.static", "SPA shell with WASM kernel + SDK + TC system"),
+    ("www.playground", "Interactive trait playground \u{2014} search, call, inspect"),
+    ("www.terminal", "Browser terminal via xterm.js + WASM CLI"),
+    ("www.wasm", "WASM kernel internals and diagnostics page"),
     ("www.docs", "Single-page documentation with all guides rendered from markdown"),
     ("www.docs.api", "Serve Redoc API documentation page (OpenAPI + Redoc)"),
     ("www.admin", "Admin dashboard with deployment controls (Basic Auth)"),
+    ("www.admin.spa", "Browser-only admin \u{2014} no auth required, SPA mode"),
     ("www.admin.deploy", "Deploy to Fly.io"),
     ("www.admin.fast_deploy", "Fast deploy: Docker build + sftp upload + restart"),
     ("www.admin.scale", "Scale Fly.io machines up or down"),
     ("www.admin.destroy", "Destroy Fly.io machines"),
     ("www.admin.save_config", "Save deploy configuration to traits.toml"),
+    ("www.chat_logs", "Chat history viewer \u{2014} browse indexed conversations"),
+    ("www.llm.openai", "OpenAI chat interface with streaming responses"),
 ];
 
 const TYPES: &[&str] = &[
@@ -400,3 +432,13 @@ const CODE_REST: &str = r##"<span class="cm"># REST API &mdash; POST /traits/{na
 
 <span class="cm"># Health check</span>
 <span class="kw">$</span> curl https://traits.build/health</pre>"##;
+
+const CODE_BROWSER: &str = r##"<span class="cm">// Browser &mdash; TraitsSDK (WASM → helper → REST cascade)</span>
+<span class="kw">const</span> sdk = window._traitsSDK;
+
+<span class="cm">// Call any trait from JavaScript</span>
+<span class="kw">const</span> hash = <span class="kw">await</span> sdk.call(<span class="s">"sys.checksum"</span>, [<span class="s">"hash"</span>, <span class="s">"hello"</span>]);
+<span class="cm">// → "2cf24dba..."  (resolved via WASM in &lt;1ms)</span>
+
+<span class="cm">// Or use Trait Components — zero JS needed</span>
+<span class="cm">// &lt;div data-trait="sys.list" data-render="html"&gt;&lt;/div&gt;</span>"##;

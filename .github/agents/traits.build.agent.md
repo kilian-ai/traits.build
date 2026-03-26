@@ -694,3 +694,5 @@ dep = "namespace.concrete_trait"
 - Always store memory files you are creating in .github/memories so we can save them for future use.
 - Never forget to create a features.json file for any new trait you create, and to add example-based tests in that file to ensure the trait works as expected.
 - Always update the .github/agents/traits.build.agent.md file with any new information about the project structure, build process, or conventions or any user preferences about anything that may be helpful for future reference.
+- Deduplication is your friend. If you find yourself writing the same code or instructions more than once, you must create a helper function or a template to reduce repetition and improve maintainability in traits.
+- Always sharpen the boundaries and remove obsolete duplicate code. If you find that some code is being used in multiple places, consider whether it can be moved to a shared module or if the trait structure can be refactored to reduce duplication and improve clarity.

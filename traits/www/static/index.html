@@ -199,14 +199,15 @@ class TraitsSDK {
   async call(path, args = []) {
     const t0 = performance.now();
 
-    // 1. Try WASM (instant, local)
+    // 1. Try WASM (instant, local) — fall through to helper/REST on error
+    let wasmError = null;
     if (wasmReady && wasmCallableSet.has(path)) {
       try {
         const raw = wasm.call(path, JSON.stringify(args));
         return { ok: true, result: JSON.parse(raw), dispatch: 'wasm',
                  ms: Math.round((performance.now() - t0) * 10) / 10 };
       } catch(e) {
-        return { ok: false, error: e.message || String(e), dispatch: 'wasm' };
+        wasmError = e; // WASM declined — cascade to helper/REST
       }
     }
 
@@ -241,7 +242,10 @@ class TraitsSDK {
       }
     }
 
-    // 4. No dispatch path available
+    // 4. No dispatch path available — return WASM error if we had one
+    if (wasmError) {
+      return { ok: false, error: wasmError.message || String(wasmError), dispatch: 'wasm' };
+    }
     return { ok: false, error: `Trait '${path}' requires local helper. Run: npx traits-helper`, dispatch: 'none' };
   }
 
