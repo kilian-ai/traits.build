@@ -2033,7 +2033,7 @@ dependencies = [
 
 [[package]]
 name = "traits"
-version = "0.260326.12412"
+version = "0.260326.12918"
 dependencies = [
  "actix-cors",
  "actix-rt",
@@ -2066,7 +2066,7 @@ dependencies = [
 
 [[package]]
 name = "traits-wasm"
-version = "0.260326.12412"
+version = "0.260326.12918"
 dependencies = [
  "js-sys",
  "kernel-logic",
