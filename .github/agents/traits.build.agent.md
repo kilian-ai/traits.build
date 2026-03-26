@@ -91,7 +91,9 @@ Polygrait/A. traits.build/
 │   │   ├── traits/build/ # Landing page (cdylib)
 │   │   └── wasm/         # WASM kernel internals page
 │   └── llm/              # LLM provider traits
-│       └── openai/       # OpenAI interface + REST provider
+│       └── prompt/       # llm/prompt interface
+│           ├── openai/   # OpenAI-compatible inference + REST provider
+│           └── webllm/   # In-browser WebLLM (WASM-only)
 ├── local/                # Downloadable scripts (helper.sh, install.sh, traits.sh)
 └── scripts/              # Build helpers (release.sh, fast-deploy.sh, etc.)
 ```
@@ -487,12 +489,14 @@ traits mcp
 | `www.llm.openai` | OpenAI chat interface | builtin |
 | `www.llm_test` | LLM inference tester | builtin |
 
-### LLM (2) — Language model providers
+### LLM (4) — Language model providers
 
 | Trait | Description | Source |
 |-------|-------------|--------|
-| `llm.openai` | Swappable OpenAI inference entrypoint | rest |
-| `llm.openai.rest` | REST-backed OpenAI provider | rest |
+| `llm.prompt` | Interface for simple prompt→response LLM inference | interface |
+| `llm.prompt.openai` | OpenAI-compatible inference (implements llm/prompt) | rest |
+| `llm.prompt.openai.rest` | Default REST-backed provider for llm.prompt.openai | rest |
+| `llm.prompt.webllm` | In-browser LLM via WebGPU/WebLLM (WASM-only, implements llm/prompt) | builtin |
 
 ---
 
@@ -621,7 +625,7 @@ Test types: `exit_code`, `contains`, `matches` (regex), `json_path`
 | CLI | Present | `sys.cli` with native + WASM backends |
 | HTTP server | Present | `sys.serve` via actix-web |
 | Secrets store | Present | `sys.secrets` — AES-256-GCM encrypted |
-| LLM integration | Present | `sys.llm` + `llm.openai` provider chain |
+| LLM integration | Present | `sys.llm` + `llm.prompt.openai` + `llm.prompt.webllm` provider chain |
 | Chat analytics | Present | `sys.chat_protocols`, `sys.chat_workspaces` |
 | Terminal UI | Present | `www.terminal` — xterm.js + WASM CLI |
 | Playground | Present | `www.playground` — interactive trait testing |
