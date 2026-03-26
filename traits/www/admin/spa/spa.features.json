@@ -7,13 +7,18 @@
       "description": "Calling www.admin.spa returns the browser-local admin workspace",
       "tests": [
         {
-          "name": "returns html with local admin workspace heading",
+          "name": "returns html with dispatch card and settings page",
           "type": "command",
           "command": "./target/release/traits call www.admin.spa 2>/dev/null",
           "checks": [
             { "type": "exit_code", "expected": 0 },
             { "type": "contains", "expected": "<!DOCTYPE html>" },
-            { "type": "contains", "expected": "Local operator workspace" }
+            { "type": "contains", "expected": "traits.build - Settings" },
+            { "type": "contains", "expected": "dispatchCard" },
+            { "type": "contains", "expected": "dotWasm" },
+            { "type": "contains", "expected": "dotHelper" },
+            { "type": "contains", "expected": "dotRelay" },
+            { "type": "contains", "expected": "dotRest" }
           ]
         }
       ]
