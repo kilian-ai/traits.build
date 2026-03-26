@@ -886,7 +886,7 @@ async function checkDispatch() {
     if (d.relay && d.relay.code) {
       document.getElementById('dotRelay').className = d.relay.connected ? 'dot green' : 'dot yellow';
       var info = d.relay.code;
-      if (d.relay.url) info += ' via ' + d.relay.url.replace(/^https?:\\/\\//, '');
+      if (d.relay.url) info += ' via ' + d.relay.url.replace('https://', '').replace('http://', '');
       if (!d.relay.connected) info += ' (reconnecting)';
       document.getElementById('relayInfo').textContent = info;
     } else {

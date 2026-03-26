@@ -811,7 +811,7 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend) -> String {
         "list" | "ls" => format_list(backend, args.first().map(|s| s.as_str())),
         "info" | "i" => {
             if args.is_empty() {
-                return format!("{RED}Usage: info <trait_path>{RESET}");
+                return format_system_status(backend);
             }
             format_info(backend, &args[0])
         }
@@ -904,7 +904,8 @@ fn format_help() -> String {
     let mut s = String::new();
     s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Commands{RESET}\r\n"));
     s.push_str(&format!("  {GREEN}list{RESET} {GRAY}[namespace]{RESET}         List traits\r\n"));
-    s.push_str(&format!("  {GREEN}info{RESET} {GRAY}<path>{RESET}              Show trait details\r\n"));
+    s.push_str(&format!("  {GREEN}info{RESET}                       System status\r\n"));
+    s.push_str(&format!("  {GREEN}info{RESET} {GRAY}<path>{RESET}              Show trait details + dispatch location\r\n"));
     s.push_str(&format!("  {GREEN}call{RESET} {GRAY}<path> [args...]{RESET}    Call a trait\r\n"));
     s.push_str(&format!("  {GREEN}call -i{RESET} {GRAY}<path>{RESET}           Interactive mode (prompt each param)\r\n"));
     s.push_str(&format!("  {GREEN}search{RESET} {GRAY}<query>{RESET}           Search by name or description\r\n"));
@@ -986,6 +987,82 @@ fn format_list(backend: &dyn CliBackend, namespace: Option<&str>) -> String {
     }
     out.push_str(&format!("{GRAY}{} traits{RESET}", filtered.len()));
     out
+}
+
+fn format_system_status(backend: &dyn CliBackend) -> String {
+    // Call sys.info with no args to get system status
+    match backend.call("sys.info", &[]) {
+        Ok(info) => {
+            let mut out = String::new();
+            out.push_str(&format!("{BOLD}{BRIGHT_WHITE}System Status{RESET}\r\n\r\n"));
+
+            // System
+            if let Some(sys) = info.get("system") {
+                let os = sys.get("os").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let arch = sys.get("arch").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let build = sys.get("build_version").and_then(|v| v.as_str()).unwrap_or("?");
+                out.push_str(&format!("{BOLD}System{RESET}\r\n"));
+                out.push_str(&format!("  {GRAY}OS:{RESET}      {CYAN}{}/{}{RESET}\r\n", os, arch));
+                out.push_str(&format!("  {GRAY}Build:{RESET}   {CYAN}{}{RESET}\r\n", build));
+            }
+
+            // Server
+            if let Some(srv) = info.get("server") {
+                let bind = srv.get("bind").and_then(|v| v.as_str()).unwrap_or("?");
+                let port = srv.get("port").and_then(|v| v.as_str()).unwrap_or("?");
+                let uptime = srv.get("uptime").and_then(|v| v.as_str()).unwrap_or("n/a");
+                out.push_str(&format!("\r\n{BOLD}Server{RESET}\r\n"));
+                if bind == "not running" {
+                    out.push_str(&format!("  {GRAY}Status:{RESET}  {YELLOW}not running{RESET}\r\n"));
+                } else {
+                    out.push_str(&format!("  {GRAY}Listen:{RESET}  {GREEN}{}:{}{RESET}\r\n", bind, port));
+                    out.push_str(&format!("  {GRAY}Uptime:{RESET}  {CYAN}{}{RESET}\r\n", uptime));
+                }
+            }
+
+            // Traits
+            if let Some(traits) = info.get("traits") {
+                let total = traits.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+                out.push_str(&format!("\r\n{BOLD}Traits{RESET}\r\n"));
+                out.push_str(&format!("  {GRAY}Total:{RESET}   {CYAN}{}{RESET}\r\n", total));
+            }
+
+            // Relay
+            if let Some(relay) = info.get("relay") {
+                let enabled = relay.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+                out.push_str(&format!("\r\n{BOLD}Relay{RESET}\r\n"));
+                if enabled {
+                    let url = relay.get("url").and_then(|v| v.as_str()).unwrap_or("?");
+                    let code = relay.get("code").and_then(|v| v.as_str()).unwrap_or("");
+                    let connected = relay.get("client_connected").and_then(|v| v.as_bool()).unwrap_or(false);
+                    out.push_str(&format!("  {GRAY}URL:{RESET}     {CYAN}{}{RESET}\r\n", url));
+                    if !code.is_empty() {
+                        out.push_str(&format!("  {GRAY}Code:{RESET}    {GREEN}{}{RESET}\r\n", code));
+                    }
+                    let status = if connected {
+                        format!("{GREEN}connected{RESET}")
+                    } else {
+                        format!("{YELLOW}waiting{RESET}")
+                    };
+                    out.push_str(&format!("  {GRAY}Client:{RESET}  {}\r\n", status));
+                } else {
+                    out.push_str(&format!("  {GRAY}Status:{RESET}  {YELLOW}disabled{RESET} {GRAY}(set RELAY_URL to enable){RESET}\r\n"));
+                }
+            }
+
+            out
+        }
+        Err(_) => {
+            // Fallback: basic info from backend
+            let paths = backend.all_paths();
+            let mut out = String::new();
+            out.push_str(&format!("{BOLD}{BRIGHT_WHITE}System Status{RESET}\r\n\r\n"));
+            out.push_str(&format!("{BOLD}Traits{RESET}\r\n"));
+            out.push_str(&format!("  {GRAY}Total:{RESET}   {CYAN}{}{RESET}\r\n", paths.len()));
+            out.push_str(&format!("  {GRAY}Version:{RESET} {CYAN}{}{RESET}\r\n", backend.version()));
+            out
+        }
+    }
 }
 
 fn format_info(backend: &dyn CliBackend, path: &str) -> String {
