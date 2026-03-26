@@ -546,23 +546,36 @@ RELAY_URL=https://traits-build.fly.dev traits serve
 
 ## Trait Inventory (~58 traits)
 
-### Kernel (10) — Core runtime
+### Kernel — 3-Layer Architecture
 
-| Trait | Description | Provides |
-|-------|-------------|----------|
-| `kernel.main` | Entry point, bootstrap, introspection | — |
-| `kernel.dispatcher` | Path resolution, arg validation, compiled dispatch | `kernel/dispatcher` |
-| `kernel.registry` | DashMap trait lookup, interface resolution | `kernel/registry` |
-| `kernel.config` | traits.toml + env var overrides | `kernel/config` |
-| `kernel.cli` | Portable CLI processor (shared WASM/native) | — |
-| `kernel.types` | TraitValue, TraitType, type parsing | `kernel/types` |
-| `kernel.globals` | OnceLock statics (REGISTRY, CONFIG, etc.) | `kernel/globals` |
-| `kernel.call` | Inter-trait dispatch by dot-notation | — |
-| `kernel.plugin_api` | C ABI export macro for cdylib plugins | `kernel/plugin_api` |
+The kernel namespace uses a **3-layer architecture** enforced by a build-time lint in `build.rs`:
 
-**Special modules** (no .trait.toml):
-- `kernel.logic` — shared library crate with registry, types, dispatch, bindings logic
-- `kernel.wasm` — WASM browser kernel (wasm-pack target, compiled separately)
+```
+Layer 0: Shared Library (source = "library")
+  kernel.logic    — pure-logic crate: types, registry model, platform abstraction
+  kernel.wasm     — WASM browser kernel (wasm-pack cdylib compilation target)
+
+Layer 1: Portable Traits (wasm = true)
+  kernel.call     — cross-trait dispatch by dot-path
+  kernel.cli      — portable CLI processor (wasm_callable = false)
+  kernel.types    — type system introspection
+
+Layer 2: Native Infrastructure (wasm = false)
+  kernel.config       — traits.toml + env var overrides
+  kernel.dispatcher   — path resolution, arg validation, dylib loading
+  kernel.globals      — OnceLock statics (REGISTRY, CONFIG, etc.)
+  kernel.main         — binary entry point, bootstrap
+  kernel.plugin_api   — C ABI export macro for cdylib plugins
+  kernel.registry     — DashMap trait lookup, interface resolution
+```
+
+**Layer 0** entries are workspace-member Rust crates with `Cargo.toml` + `src/` layout (not callable as traits). They have `.trait.toml` for registry visibility but `callable = false`.
+
+**Layer 1** traits compile for both `x86_64` and `wasm32-unknown-unknown`. They use `kernel_logic::platform::*` instead of `#[cfg]` blocks.
+
+**Layer 2** traits are native-only runtime infrastructure. They form the backbone that Layer 1 traits dispatch through. Moving them out of `kernel` would be circular — they ARE the kernel.
+
+The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel traits and warns if any trait is missing an explicit `wasm = true/false` declaration.
 
 ### Sys (26) — System utilities & services
 

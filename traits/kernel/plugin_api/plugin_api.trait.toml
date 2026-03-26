@@ -18,3 +18,4 @@ description = "Plugin ABI contract and installed plugins"
 language = "rust"
 source = "kernel"
 entry = "plugin_api"
+wasm = false

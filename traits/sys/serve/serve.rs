@@ -667,18 +667,35 @@ async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), St
     loop {
         let poll_url = format!("{}/relay/poll?code={}", relay_url, code);
         let output = tokio::process::Command::new("curl")
-            .args(["-sf", "--max-time", "35", &poll_url])
+            .args(["-s", "-w", "\n%{http_code}", "--max-time", "35", &poll_url])
             .output()
             .await
             .map_err(|e| format!("curl poll failed: {}", e))?;
 
+        let raw = String::from_utf8_lossy(&output.stdout);
+        let (body, status) = match raw.rfind('\n') {
+            Some(pos) => (raw[..pos].to_string(), raw[pos+1..].trim().to_string()),
+            None => (String::new(), raw.trim().to_string()),
+        };
+
+        // curl exit 28 = timeout (Fly proxy may not relay 204), treat as retry
         if !output.status.success() {
-            return Err("Poll failed — session may have expired".to_string());
+            let code = output.status.code().unwrap_or(-1);
+            if code == 28 {
+                // curl timeout — normal for long-poll, just retry
+                continue;
+            }
+            return Err(format!("Poll failed (curl exit {})", code));
         }
 
-        // Empty body = long-poll timeout (204 No Content), retry
-        if output.stdout.is_empty() {
+        // 204 = no pending request (server-side timeout), retry
+        if status == "204" || body.is_empty() {
             continue;
+        }
+
+        // 404/410 = session expired
+        if status == "404" || status == "410" {
+            return Err(format!("Session expired (HTTP {})", status));
         }
 
         let req: RelayRequest = match serde_json::from_slice(&output.stdout) {

@@ -31,3 +31,4 @@ dylib_loader = "sys.dylib_loader"
 language = "rust"
 source = "kernel"
 entry = "main_info"
+wasm = false

@@ -1,6 +1,6 @@
 [package]
 name = "traits-wasm"
-version = "0.260326.193320"
+version = "0.260326.212847"
 edition = "2021"
 description = "traits.build kernel compiled to WebAssembly"
 publish = false

@@ -1,0 +1,18 @@
+[trait]
+description = "WASM browser kernel — compiles portable traits to wasm32-unknown-unknown via wasm-pack"
+version = "v260326"
+author = "system"
+tags = ["kernel", "wasm", "browser", "runtime"]
+provides = ["kernel/wasm-runtime"]
+
+[signature]
+
+[signature.returns]
+type = "null"
+description = "WASM compilation target — not callable as a trait"
+
+[implementation]
+language = "rust"
+source = "library"
+entry = "lib"
+callable = false

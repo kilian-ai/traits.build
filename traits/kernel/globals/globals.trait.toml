@@ -26,3 +26,4 @@ description = "Global state summary: initialization status, uptime, epoch"
 language = "rust"
 source = "kernel"
 entry = "globals"
+wasm = false

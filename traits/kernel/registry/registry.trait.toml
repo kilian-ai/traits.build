@@ -20,3 +20,4 @@ description = "Registry stats and trait listing"
 language = "rust"
 source = "kernel"
 entry = "registry"
+wasm = false

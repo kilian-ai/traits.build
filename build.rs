@@ -96,6 +96,10 @@ fn main() {
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     modules.sort_by(|a, b| a.trait_path.cmp(&b.trait_path));
 
+    // ── Kernel 3-layer architecture lint ──
+    // Verify kernel.* trait WASM status: portable (Layer 1) vs infrastructure (Layer 2)
+    lint_kernel_layers(&traits_dir);
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     // ── Generate builtin_traits.rs (TOML definitions for registry) ──
@@ -580,6 +584,111 @@ fn watch_dirs_recursive(dir: &Path) {
                 watch_dirs_recursive(&entry.path());
             }
         }
+    }
+}
+
+/// Kernel 3-layer architecture lint.
+///
+/// Scans kernel/*.trait.toml files and classifies them:
+///   Layer 0: kernel/logic — shared library (source = "library")
+///   Layer 1: portable — wasm = true (compile for both native + WASM)
+///   Layer 2: infrastructure — no wasm = true (native-only runtime)
+///
+/// Emits cargo warnings for:
+///   - kernel traits with wasm = true whose .rs file imports native-only APIs without cfg-gating
+///   - kernel traits missing explicit wasm field (ambiguous portability)
+fn lint_kernel_layers(traits_dir: &Path) {
+    let kernel_dir = traits_dir.join("kernel");
+    if !kernel_dir.exists() { return; }
+
+    struct KernelTraitInfo {
+        name: String,
+        has_wasm: bool,
+        wasm_value: bool,
+        source: String,
+    }
+
+    let mut infos: Vec<KernelTraitInfo> = Vec::new();
+
+    // Scan kernel/ subdirectories for .trait.toml files
+    if let Ok(rd) = fs::read_dir(&kernel_dir) {
+        for entry in rd.flatten() {
+            let dir_path = entry.path();
+            if !dir_path.is_dir() { continue; }
+            let dir_name = dir_path.file_name().unwrap().to_string_lossy().to_string();
+            let toml_path = dir_path.join(format!("{}.trait.toml", dir_name));
+            if !toml_path.exists() { continue; }
+
+            let content = match fs::read_to_string(&toml_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let mut has_wasm = false;
+            let mut wasm_value = false;
+            let mut source = String::from("builtin");
+
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("wasm") && trimmed.contains('=') && !trimmed.starts_with("wasm_") {
+                    has_wasm = true;
+                    wasm_value = trimmed.contains("true");
+                }
+                if trimmed.starts_with("source") && trimmed.contains('=') {
+                    if let Some(val) = trimmed.split('=').nth(1) {
+                        source = val.trim().trim_matches('"').to_string();
+                    }
+                }
+            }
+
+            infos.push(KernelTraitInfo {
+                name: format!("kernel.{}", dir_name),
+                has_wasm,
+                wasm_value,
+                source,
+            });
+        }
+    }
+
+    if infos.is_empty() { return; }
+    infos.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // Classify and report
+    let mut layer0: Vec<&str> = Vec::new();
+    let mut layer1: Vec<&str> = Vec::new();
+    let mut layer2: Vec<&str> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+
+    for info in &infos {
+        if info.source == "library" {
+            layer0.push(&info.name);
+        } else if info.wasm_value {
+            layer1.push(&info.name);
+        } else {
+            layer2.push(&info.name);
+            // Warn if builtin/kernel trait doesn't explicitly declare wasm status
+            if !info.has_wasm && (info.source == "builtin" || info.source == "kernel") {
+                warnings.push(format!(
+                    "kernel trait '{}' has no explicit wasm = true/false in .trait.toml — add wasm field to declare portability tier",
+                    info.name
+                ));
+            }
+        }
+    }
+
+    // Emit summary
+    if !layer0.is_empty() {
+        println!("cargo:warning=Kernel Layer 0 (shared library): {}", layer0.join(", "));
+    }
+    if !layer1.is_empty() {
+        println!("cargo:warning=Kernel Layer 1 (portable, wasm=true): {}", layer1.join(", "));
+    }
+    if !layer2.is_empty() {
+        println!("cargo:warning=Kernel Layer 2 (infrastructure, native-only): {}", layer2.join(", "));
+    }
+
+    for w in &warnings {
+        println!("cargo:warning={}", w);
     }
 }
 

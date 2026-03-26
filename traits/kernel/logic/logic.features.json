@@ -1,0 +1,21 @@
+{
+  "module": "traits/kernel/logic/src/lib.rs",
+  "description": "Shared pure-logic kernel library: type system, registry data model, TOML parsing, platform abstraction layer",
+  "features": [
+    {
+      "name": "Type system definitions",
+      "description": "Defines TraitType enum (int, float, string, bool, bytes, null, any, handle, list, map, optional) and TraitValue enum with JSON conversion",
+      "tests": []
+    },
+    {
+      "name": "Registry data model",
+      "description": "Provides TraitToml parsing, TraitEntry structures, and BuiltinTraitDef for build-time TOML embedding",
+      "tests": []
+    },
+    {
+      "name": "Platform abstraction layer",
+      "description": "Runtime function pointer table (Platform struct in OnceLock) for dispatch, registry, config, secrets — plus compile-time time abstraction",
+      "tests": []
+    }
+  ]
+}

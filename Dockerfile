@@ -25,7 +25,7 @@ RUN rm -rf src
 COPY . .
 
 # 6. Touch source files to ensure they rebuild (stubs may have newer timestamps)
-RUN find traits/kernel/main -name '*.rs' -exec touch {} + && find traits -name '*.toml' -exec touch {} +
+RUN find traits -name '*.rs' -exec touch {} + && find traits -name '*.toml' -exec touch {} +
 
 # 7. Build the release binary
 RUN cargo build --release

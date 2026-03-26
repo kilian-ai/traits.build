@@ -28,3 +28,4 @@ description = "Dispatcher status: dispatch layers, dylib info, features"
 language = "rust"
 source = "kernel"
 entry = "dispatcher"
+wasm = false

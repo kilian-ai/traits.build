@@ -20,3 +20,4 @@ description = "Current runtime configuration or schema description"
 language = "rust"
 source = "kernel"
 entry = "config"
+wasm = false

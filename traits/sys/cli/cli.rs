@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
     about = "Trait plugin system",
     after_help = "Any subcommand not listed above is dispatched as sys.<name> (or kernel.<name>).\n\
                   Examples:\n  \
-                    traits serve              → kernel.serve (default)\n  \
+                    traits serve              → sys.serve (default)\n  \
                     traits list               → sys.list\n  \
                     traits test_runner '*'    → sys.test_runner\n  \
                     traits call sys.checksum  → call any trait by full path\n\n\
@@ -103,7 +103,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(config.traits.port);
-            dispatch_trait(&config, "kernel.serve", &[&port.to_string()]).await?;
+            dispatch_trait(&config, "sys.serve", &[&port.to_string()]).await?;
         }
     }
 
