@@ -299,30 +299,66 @@ class Traits {
 
     _installBuiltinBackgroundAdapters() {
         this.registerBackgroundAdapter(BACKGROUND_WORKER, {
-            run: async ({ id, path, args }) => {
-                if (!wasmCallableSet.has(path)) {
-                    return { ok: false, id, error: `Trait '${path}' is not WASM-callable`, dispatch: 'worker' };
+            run: async ({ id, task }) => {
+                if (task.cmd === 'call') {
+                    const path = task.path || '';
+                    if (!wasmCallableSet.has(path)) {
+                        return { ok: false, id, error: `Trait '${path}' is not WASM-callable`, dispatch: 'worker' };
+                    }
                 }
                 await this.initWorkerPool();
-                return new Promise((resolve) => {
-                    const t0 = performance.now();
-                    this._workerQueue.push({ id, path, args, t0, resolve });
-                    this._drainWorkerQueue();
-                });
+                return this._enqueueWorkerTask(id, task);
             },
         });
 
         this.registerBackgroundAdapter(BACKGROUND_DIRECT, {
-            run: async ({ id, path, args }) => {
-                const res = await this.call(path, args);
-                return { ...res, id, dispatch: res.dispatch || 'direct' };
+            run: async ({ id, task }) => {
+                if (task.cmd === 'call') {
+                    const res = await this.call(task.path || '', task.args || []);
+                    return { ...res, id, dispatch: res.dispatch || 'direct' };
+                }
+
+                if (!wasm) {
+                    return { ok: false, id, error: `Direct background command '${task.cmd}' requires an attached WASM module`, dispatch: 'direct' };
+                }
+
+                switch (task.cmd) {
+                    case 'cli_input':
+                        return { ok: true, id, result: wasm.cli_input ? wasm.cli_input(task.data || '') : '', dispatch: 'direct' };
+                    case 'cli_welcome':
+                        return { ok: true, id, result: wasm.cli_welcome ? wasm.cli_welcome() : '', dispatch: 'direct' };
+                    case 'cli_get_history':
+                        return { ok: true, id, result: wasm.cli_get_history ? wasm.cli_get_history() : '[]', dispatch: 'direct' };
+                    case 'cli_set_history':
+                        if (wasm.cli_set_history) wasm.cli_set_history(task.history_json || '[]');
+                        return { ok: true, id, result: true, dispatch: 'direct' };
+                    case 'cli_format_rest_result':
+                        return {
+                            ok: true,
+                            id,
+                            result: wasm.cli_format_rest_result
+                                ? wasm.cli_format_rest_result(task.path || '', task.args_json || '[]', task.result_json || 'null')
+                                : '',
+                            dispatch: 'direct',
+                        };
+                    default:
+                        return { ok: false, id, error: `Unsupported direct background command: '${task.cmd}'`, dispatch: 'direct' };
+                }
             },
         });
 
         // Native helper-proxied backend. Meant for future tokio task traits.
         this.registerBackgroundAdapter(BACKGROUND_TOKIO, {
-            run: async ({ id, path, args }) => {
-                const res = await this.call(path, args, { force: 'helper' });
+            run: async ({ id, task }) => {
+                if (task.cmd !== 'call') {
+                    return {
+                        ok: false,
+                        id,
+                        error: `tokio backend currently supports only trait calls (got '${task.cmd}')`,
+                        dispatch: 'tokio',
+                    };
+                }
+                const res = await this.call(task.path || '', task.args || [], { force: 'helper' });
                 if (res && res.ok) return { ...res, id, dispatch: 'tokio' };
                 return {
                     ok: false,
@@ -403,6 +439,18 @@ class Traits {
      * @returns {{id: string, promise: Promise<any>}}
      */
     spawn(path, args = [], opts = {}) {
+        return this.executeBackground({ cmd: 'call', path, args }, opts);
+    }
+
+    /**
+     * Run an arbitrary background task through the configured background adapter.
+     * @param {Object} task
+     * @param {string} task.cmd - Worker command (e.g. 'call', 'cli_input')
+     * @param {Object} [opts]
+     * @param {string} [opts.impl] - Override adapter implementation
+     * @returns {{id: string, promise: Promise<any>}}
+     */
+    executeBackground(task, opts = {}) {
         const id = `task-${this._nextTaskId++}`;
         const promise = (async () => {
             if (!this._initPromise) await this.init();
@@ -411,9 +459,21 @@ class Traits {
             if (!adapter) {
                 return { ok: false, id, error: `Unknown background adapter: '${impl}'`, dispatch: 'background' };
             }
-            return adapter.run({ id, path, args, opts, sdk: this });
+            return adapter.run({ id, task, opts, sdk: this });
         })();
         return { id, promise };
+    }
+
+    /**
+     * Convenience helper for worker-like commands used by background runtimes.
+     * @param {string} cmd
+     * @param {Object} [payload]
+     * @param {Object} [opts]
+     * @returns {Promise<any>}
+     */
+    async backgroundCall(cmd, payload = {}, opts = {}) {
+        const job = this.executeBackground({ cmd, ...payload }, opts);
+        return job.promise;
     }
 
     /**
@@ -423,7 +483,7 @@ class Traits {
      * @returns {Promise<any>}
      */
     async callInWorker(path, args = []) {
-        const job = this.spawn(path, args, { impl: BACKGROUND_WORKER });
+        const job = this.executeBackground({ cmd: 'call', path, args }, { impl: BACKGROUND_WORKER });
         return job.promise;
     }
 
@@ -477,7 +537,7 @@ class Traits {
             const next = this._workerQueue.shift();
             if (!next) return;
             state.busy = true;
-            this._rpcWorker(state, 'call', { path: next.path, args: next.args })
+            this._rpcWorker(state, next.cmd, next.payload)
                 .then((result) => {
                     next.resolve({
                         ok: true,
@@ -503,6 +563,20 @@ class Traits {
                     this._drainWorkerQueue();
                 });
         }
+    }
+
+    _enqueueWorkerTask(id, task) {
+        return new Promise((resolve) => {
+            const t0 = performance.now();
+            this._workerQueue.push({
+                id,
+                cmd: task.cmd,
+                payload: { ...task },
+                t0,
+                resolve,
+            });
+            this._drainWorkerQueue();
+        });
     }
 
     _syncHelperToWorkers() {

@@ -75,12 +75,19 @@ export async function createTerminal(mountEl, opts = {}) {
     fitAddon.fit();
 
     // ── Persist scrollback + history to localStorage ──
+    let wasm = null;
+    let backgroundCall = null;
+
     const saveState = () => {
         if (serializeAddon) {
             try { localStorage.setItem(LS_SCROLLBACK, serializeAddon.serialize()); } catch (_) {}
         }
-        if (wasm && wasm.cli_get_history) {
-            try { localStorage.setItem(LS_HISTORY, wasm.cli_get_history()); } catch (_) {}
+        if (backgroundCall) {
+            backgroundCall('cli_get_history').then(res => {
+                if (res?.ok && typeof res.result === 'string') {
+                    try { localStorage.setItem(LS_HISTORY, res.result); } catch (_) {}
+                }
+            }).catch(() => {});
         }
     };
     window.addEventListener('pagehide', saveState);
@@ -114,31 +121,65 @@ export async function createTerminal(mountEl, opts = {}) {
     };
     setStatus('loading WASM…', 'loading');
 
-    // ── Load WASM kernel ──
-    let wasm = null;
+    // ── Load background runtime (preferred: SDK adapter; fallback: direct WASM) ──
     try {
-        // Reuse WASM already loaded by SPA shell (window.TraitsWasm from wasm-runtime.js)
-        if (window.TraitsWasm && window.TraitsWasm.cli_input) {
-            wasm = window.TraitsWasm;
-            const count = wasm.is_registered ? JSON.parse(wasm.callable_traits()).length : 0;
-            setStatus(`WASM (SPA)`, 'ready');
-            if (opts.onReady) opts.onReady({ wasm, traitCount: 0, wasmCount: count });
+        const traitsSdk = window._traitsSDK;
+        if (traitsSdk && typeof traitsSdk.backgroundCall === 'function') {
+            await traitsSdk.initWorkerPool();
+            backgroundCall = (cmd, payload = {}) => traitsSdk.backgroundCall(cmd, payload);
+            const status = traitsSdk.status || {};
+            setStatus('WASM worker', 'ready');
+            if (opts.onReady) opts.onReady({ wasm: null, traitCount: status.traits || 0, wasmCount: status.callable || 0, background: true });
         } else {
-            // Standalone mode — load WASM from server
-            const wasmJsUrl = '/wasm/traits_wasm.js';
-            const wasmBinUrl = '/wasm/traits_wasm_bg.wasm';
-            const mod = await import(wasmJsUrl);
-            await mod.default(wasmBinUrl);
-            const initResult = JSON.parse(mod.init());
-            wasm = mod;
-            const count = initResult.traits_registered || 0;
-            const wasmCount = initResult.wasm_callable || 0;
-            setStatus(`${count} traits (${wasmCount} WASM)`, 'ready');
-            if (opts.onReady) opts.onReady({ wasm, traitCount: count, wasmCount });
+            // Legacy fallback: direct WASM calls on main thread.
+            if (window.TraitsWasm && window.TraitsWasm.cli_input) {
+                wasm = window.TraitsWasm;
+                const count = wasm.is_registered ? JSON.parse(wasm.callable_traits()).length : 0;
+                setStatus('WASM (SPA)', 'ready');
+                if (opts.onReady) opts.onReady({ wasm, traitCount: 0, wasmCount: count, background: false });
+            } else {
+                const wasmJsUrl = '/wasm/traits_wasm.js';
+                const wasmBinUrl = '/wasm/traits_wasm_bg.wasm';
+                const mod = await import(wasmJsUrl);
+                await mod.default(wasmBinUrl);
+                const initResult = JSON.parse(mod.init());
+                wasm = mod;
+                const count = initResult.traits_registered || 0;
+                const wasmCount = initResult.wasm_callable || 0;
+                setStatus(`${count} traits (${wasmCount} WASM)`, 'ready');
+                if (opts.onReady) opts.onReady({ wasm, traitCount: count, wasmCount, background: false });
+            }
+
+            backgroundCall = async (cmd, payload = {}) => {
+                try {
+                    switch (cmd) {
+                        case 'cli_input':
+                            return { ok: true, result: wasm.cli_input ? wasm.cli_input(payload.data || '') : '' };
+                        case 'cli_welcome':
+                            return { ok: true, result: wasm.cli_welcome ? wasm.cli_welcome() : '' };
+                        case 'cli_get_history':
+                            return { ok: true, result: wasm.cli_get_history ? wasm.cli_get_history() : '[]' };
+                        case 'cli_set_history':
+                            if (wasm.cli_set_history) wasm.cli_set_history(payload.history_json || '[]');
+                            return { ok: true, result: true };
+                        case 'cli_format_rest_result':
+                            return {
+                                ok: true,
+                                result: wasm.cli_format_rest_result
+                                    ? wasm.cli_format_rest_result(payload.path || '', payload.args_json || '[]', payload.result_json || 'null')
+                                    : '',
+                            };
+                        default:
+                            return { ok: false, error: `Unknown CLI command: ${cmd}` };
+                    }
+                } catch (e) {
+                    return { ok: false, error: e.message || String(e) };
+                }
+            };
         }
     } catch (e) {
-        setStatus('WASM failed', 'error');
-        console.error('WASM load failed:', e);
+        setStatus('background failed', 'error');
+        console.error('Background runtime load failed:', e);
     }
 
     // ── Input → WASM session → output (with REST fallback) ──
@@ -151,37 +192,48 @@ export async function createTerminal(mountEl, opts = {}) {
         }
     });
 
+    let ioChain = Promise.resolve();
     term.onData(data => {
-        if (!wasm || !wasm.cli_input) return;
-        if (restPending) return; // Block input during REST calls
+        if (!backgroundCall || restPending) return;
+        ioChain = ioChain.then(async () => {
+            const inputRes = await backgroundCall('cli_input', { data });
+            if (!inputRes?.ok) {
+                term.write(`\x1b[31mCLI error: ${inputRes?.error || 'unknown'}\x1b[0m\r\n`);
+                term.write(PROMPT);
+                return;
+            }
+            const output = inputRes.result || '';
+            if (!output) return;
 
-        const output = wasm.cli_input(data);
-        if (!output) return;
-
-        // Check for REST dispatch sentinel
-        const restMatch = output.match(REST_RE);
-        if (restMatch) {
+            // Check for REST dispatch sentinel
+            const restMatch = output.match(REST_RE);
+            if (restMatch) {
             // Write visible part (loading message) without the sentinel
-            const visible = output.replace(REST_RE, '');
-            if (visible) term.write(visible);
+                const visible = output.replace(REST_RE, '');
+                if (visible) term.write(visible);
 
             // Parse dispatch info and call via SDK cascade (WASM → helper → REST)
-            try {
-                const { p, a } = JSON.parse(restMatch[1]);
-                restPending = true;
+                try {
+                    const { p, a } = JSON.parse(restMatch[1]);
+                    restPending = true;
 
-                const traitsSdk = window._traitsSDK;
-                if (traitsSdk) {
-                    traitsSdk.call(p, a).then(res => {
+                    const traitsSdk = window._traitsSDK;
+                    if (traitsSdk) {
+                        traitsSdk.call(p, a).then(async res => {
                         term.write('\r\x1b[K'); // Clear progress line
                         if (res.ok && res.result !== undefined) {
                             // Try WASM CLI formatter first, fall back to JSON
                             let text = '';
-                            if (wasm && wasm.cli_format_rest_result) {
-                                const resultJson = typeof res.result === 'string'
-                                    ? JSON.stringify(res.result)
-                                    : JSON.stringify(res.result);
-                                text = wasm.cli_format_rest_result(p, JSON.stringify(a), resultJson);
+                            const resultJson = typeof res.result === 'string'
+                                ? JSON.stringify(res.result)
+                                : JSON.stringify(res.result);
+                            const fmt = await backgroundCall('cli_format_rest_result', {
+                                path: p,
+                                args_json: JSON.stringify(a),
+                                result_json: resultJson,
+                            });
+                            if (fmt?.ok) {
+                                text = fmt.result || '';
                             }
                             if (!text) {
                                 text = typeof res.result === 'string'
@@ -193,8 +245,13 @@ export async function createTerminal(mountEl, opts = {}) {
                         } else if (res.error) {
                             // Try WASM formatter with null result (local fallback)
                             let fallback = '';
-                            if (wasm && wasm.cli_format_rest_result) {
-                                fallback = wasm.cli_format_rest_result(p, JSON.stringify(a), 'null');
+                            const fmt = await backgroundCall('cli_format_rest_result', {
+                                path: p,
+                                args_json: JSON.stringify(a),
+                                result_json: 'null',
+                            });
+                            if (fmt?.ok) {
+                                fallback = fmt.result || '';
                             }
                             if (fallback) {
                                 term.write(fallback.replace(/\n/g, '\r\n'));
@@ -204,14 +261,14 @@ export async function createTerminal(mountEl, opts = {}) {
                             }
                         }
                         term.write(PROMPT);
-                    }).catch(e => {
-                        term.write(`\x1b[31mDispatch error: ${e.message}\x1b[0m\r\n`);
-                        term.write(PROMPT);
-                    }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
-                } else {
+                        }).catch(e => {
+                            term.write(`\x1b[31mDispatch error: ${e.message}\x1b[0m\r\n`);
+                            term.write(PROMPT);
+                        }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
+                    } else {
                     // Fallback: direct REST call (when not in SPA)
-                    const restPath = p.replace(/\./g, '/');
-                    fetch(`/traits/${restPath}`, {
+                        const restPath = p.replace(/\./g, '/');
+                        fetch(`/traits/${restPath}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ args: a }),
@@ -241,40 +298,49 @@ export async function createTerminal(mountEl, opts = {}) {
                         term.write(PROMPT);
                     })
                     .finally(() => { restPending = false; requestAnimationFrame(saveState); });
+                    }
+                } catch (e) {
+                    term.write(`\x1b[31mREST parse error: ${e.message}\x1b[0m\r\n`);
+                    term.write(PROMPT);
+                    restPending = false;
+                    requestAnimationFrame(saveState);
                 }
-            } catch (e) {
-                term.write(`\x1b[31mREST parse error: ${e.message}\x1b[0m\r\n`);
-                term.write(PROMPT);
-                restPending = false;
-                requestAnimationFrame(saveState);
+                return;
             }
-            return;
-        }
 
-        if (output.includes(CLEAR_SENTINEL)) {
-            term.clear();
-            const rest = output.replaceAll(CLEAR_SENTINEL, '');
-            if (rest) term.write(rest);
-            try { localStorage.removeItem(LS_SCROLLBACK); } catch (_) {}
-        } else {
-            term.write(output);
-            // Save after a command completes (output contains newline from Enter)
-            if (data.includes('\r') || data.includes('\n')) requestAnimationFrame(saveState);
-        }
+            if (output.includes(CLEAR_SENTINEL)) {
+                term.clear();
+                const rest = output.replaceAll(CLEAR_SENTINEL, '');
+                if (rest) term.write(rest);
+                try { localStorage.removeItem(LS_SCROLLBACK); } catch (_) {}
+            } else {
+                term.write(output);
+                // Save after a command completes (output contains newline from Enter)
+                if (data.includes('\r') || data.includes('\n')) requestAnimationFrame(saveState);
+            }
+        }).catch(e => {
+            term.write(`\x1b[31mTerminal IO error: ${e.message}\x1b[0m\r\n`);
+            term.write(PROMPT);
+        });
     });
 
     // ── Restore history into WASM session ──
     const savedHistory = localStorage.getItem(LS_HISTORY);
-    if (savedHistory && wasm && wasm.cli_set_history) {
-        try { wasm.cli_set_history(savedHistory); } catch (_) {}
+    if (savedHistory && backgroundCall) {
+        try { await backgroundCall('cli_set_history', { history_json: savedHistory }); } catch (_) {}
     }
 
     // ── Restore scrollback or show welcome ──
     const savedScrollback = localStorage.getItem(LS_SCROLLBACK);
     if (savedScrollback) {
         term.write(savedScrollback);
-    } else if (wasm && wasm.cli_welcome) {
-        term.write(wasm.cli_welcome());
+    } else if (backgroundCall) {
+        const welcome = await backgroundCall('cli_welcome');
+        if (welcome?.ok && welcome.result) {
+            term.write(welcome.result);
+        } else {
+            term.writeln('\x1b[33mWASM kernel not loaded — commands unavailable\x1b[0m');
+        }
     } else {
         term.writeln('\x1b[33mWASM kernel not loaded — commands unavailable\x1b[0m');
     }
