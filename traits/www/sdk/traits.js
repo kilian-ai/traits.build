@@ -20,6 +20,21 @@ let wasm = null;
 let wasmReady = false;
 let wasmCallableSet = new Set();
 
+function resolveWorkerScriptUrl(explicitUrl) {
+    if (explicitUrl) return explicitUrl;
+    if (typeof document !== 'undefined') {
+        const inline = document.querySelector('script[data-runtime-src="inline:traits-worker"]');
+        if (inline && inline.textContent) {
+            const blob = new Blob([inline.textContent], { type: 'text/javascript' });
+            return URL.createObjectURL(blob);
+        }
+    }
+    if (typeof location !== 'undefined' && location.protocol === 'file:') {
+        return `./traits-worker.js?v=${Date.now()}`;
+    }
+    return '/static/www/static/traits-worker.js';
+}
+
 // ── Local helper state ──
 let helperUrl = null;
 let helperReady = false;
@@ -218,6 +233,15 @@ export class Traits {
         this._bindings = new Map();
         // Pending deferred bindings: interface → { impl, cancel }
         this._pendingBindings = new Map();
+
+        // WASM worker pool (for background SPA multitasking)
+        this.workerPoolSize = Math.max(1, Number(opts.workerPoolSize || 2));
+        this.workerUrl = opts.workerUrl || '';
+        this._workerScriptUrl = null;
+        this._workers = [];
+        this._workerQueue = [];
+        this._nextWorkerMsgId = 1;
+        this._nextTaskId = 1;
     }
 
     /**
@@ -258,6 +282,158 @@ export class Traits {
             helper: helperReady,
             helperUrl: helperUrl,
         };
+    }
+
+    /**
+     * Initialize a WASM worker pool for background calls.
+     * @param {number} [size] - Number of workers (default from constructor)
+     * @returns {Promise<{ok: boolean, workers: number}>}
+     */
+    async initWorkerPool(size) {
+        const target = Math.max(1, Number(size || this.workerPoolSize));
+        if (this._workers.length >= target) {
+            return { ok: true, workers: this._workers.length };
+        }
+        this._workerScriptUrl = this._workerScriptUrl || resolveWorkerScriptUrl(this.workerUrl);
+        while (this._workers.length < target) {
+            const state = await this._spawnWorker(this._workers.length);
+            this._workers.push(state);
+        }
+        this._syncHelperToWorkers();
+        return { ok: true, workers: this._workers.length };
+    }
+
+    /**
+     * Stop all worker pool workers.
+     */
+    shutdownWorkerPool() {
+        for (const w of this._workers) {
+            try { w.worker.terminate(); } catch(e) {}
+        }
+        this._workers = [];
+        this._workerQueue = [];
+        if (this._workerScriptUrl && this._workerScriptUrl.startsWith('blob:')) {
+            try { URL.revokeObjectURL(this._workerScriptUrl); } catch(e) {}
+        }
+        this._workerScriptUrl = null;
+    }
+
+    /**
+     * Run a WASM-callable trait in the worker pool.
+     * @param {string} path
+     * @param {Array} [args=[]]
+     * @returns {{id: string, promise: Promise<any>}}
+     */
+    spawn(path, args = []) {
+        const id = `task-${this._nextTaskId++}`;
+        const promise = (async () => {
+            if (!this._initPromise) await this.init();
+            if (!wasmCallableSet.has(path)) {
+                return { ok: false, error: `Trait '${path}' is not WASM-callable`, dispatch: 'worker' };
+            }
+            await this.initWorkerPool();
+            return new Promise((resolve) => {
+                const t0 = performance.now();
+                this._workerQueue.push({ id, path, args, t0, resolve });
+                this._drainWorkerQueue();
+            });
+        })();
+        return { id, promise };
+    }
+
+    /**
+     * Convenience wrapper around spawn() that awaits the result.
+     * @param {string} path
+     * @param {Array} [args=[]]
+     * @returns {Promise<any>}
+     */
+    async callInWorker(path, args = []) {
+        const job = this.spawn(path, args);
+        return job.promise;
+    }
+
+    /**
+     * List worker pool status.
+     * @returns {{workers: number, queued: number, running: number}}
+     */
+    workerStatus() {
+        const running = this._workers.filter(w => w.busy).length;
+        return { workers: this._workers.length, queued: this._workerQueue.length, running };
+    }
+
+    async _spawnWorker(index) {
+        const worker = new Worker(this._workerScriptUrl);
+        const pending = new Map();
+        const state = { index, worker, pending, busy: false };
+
+        worker.onmessage = (ev) => {
+            const msg = ev.data || {};
+            const req = pending.get(msg.id);
+            if (!req) return;
+            pending.delete(msg.id);
+            if (msg.ok) req.resolve(msg.result);
+            else req.reject(new Error(msg.error || 'Worker call failed'));
+        };
+
+        worker.onerror = (ev) => {
+            for (const [, req] of pending) {
+                req.reject(new Error(ev.message || 'Worker crashed'));
+            }
+            pending.clear();
+            state.busy = false;
+        };
+
+        await this._rpcWorker(state, 'ping', {});
+        await this._rpcWorker(state, 'init', {});
+        return state;
+    }
+
+    _rpcWorker(state, cmd, payload) {
+        return new Promise((resolve, reject) => {
+            const id = this._nextWorkerMsgId++;
+            state.pending.set(id, { resolve, reject });
+            state.worker.postMessage({ id, cmd, payload });
+        });
+    }
+
+    _drainWorkerQueue() {
+        for (const state of this._workers) {
+            if (state.busy) continue;
+            const next = this._workerQueue.shift();
+            if (!next) return;
+            state.busy = true;
+            this._rpcWorker(state, 'call', { path: next.path, args: next.args })
+                .then((result) => {
+                    next.resolve({
+                        ok: true,
+                        id: next.id,
+                        result,
+                        dispatch: 'worker',
+                        worker: state.index,
+                        ms: Math.round((performance.now() - next.t0) * 10) / 10,
+                    });
+                })
+                .catch((e) => {
+                    next.resolve({
+                        ok: false,
+                        id: next.id,
+                        error: e.message || String(e),
+                        dispatch: 'worker',
+                        worker: state.index,
+                        ms: Math.round((performance.now() - next.t0) * 10) / 10,
+                    });
+                })
+                .finally(() => {
+                    state.busy = false;
+                    this._drainWorkerQueue();
+                });
+        }
+    }
+
+    _syncHelperToWorkers() {
+        for (const state of this._workers) {
+            this._rpcWorker(state, 'set_helper_connected', { connected: helperReady }).catch(() => {});
+        }
     }
 
     /**
@@ -366,6 +542,7 @@ export class Traits {
         const callable = JSON.parse(mod.callable_traits());
         callable.forEach(p => wasmCallableSet.add(p));
         syncHelperToWasm();
+        this._syncHelperToWorkers();
     }
 
     /**
@@ -378,10 +555,14 @@ export class Traits {
             if (!info) {
                 helperReady = false; helperUrl = null; helperInfo = null;
                 syncHelperToWasm();
+                this._syncHelperToWorkers();
             }
         } else {
             await discoverHelper();
-            if (helperReady) syncHelperToWasm();
+            if (helperReady) {
+                syncHelperToWasm();
+                this._syncHelperToWorkers();
+            }
         }
         return helperReady;
     }
@@ -393,6 +574,7 @@ export class Traits {
             helperInfo = info;
             helperReady = true;
             syncHelperToWasm();
+            this._syncHelperToWorkers();
             try { localStorage.setItem('traits.helper.url', helperUrl); } catch(e) {}
             return { ok: true, ...info };
         }
@@ -512,6 +694,7 @@ export class Traits {
         helperUrl = null;
         helperInfo = null;
         syncHelperToWasm();
+        this._syncHelperToWorkers();
         try { localStorage.removeItem('traits.helper.url'); } catch(e) {}
     }
 

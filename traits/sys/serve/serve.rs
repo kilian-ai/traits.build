@@ -976,7 +976,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
     let _ = crate::globals::SERVER_BIND.set(config.traits.bind.clone());
     let _ = crate::globals::SERVER_PORT.set(port);
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
             .allow_any_method()
@@ -1005,9 +1005,18 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
             .default_service(web::to(serve_page))
     })
     .workers(2)
-    .bind(format!("{}:{}", config.traits.bind, port))?
-    .run()
-    .await?;
+    .bind(format!("{}:{}", config.traits.bind, port))?;
+
+    // Spawn REPL on a background thread if stdin is a TTY
+    if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        std::thread::spawn(|| {
+            // Brief delay so the server's INFO log prints first
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            crate::dispatcher::compiled::cli::serve_repl();
+        });
+    }
+
+    server.run().await?;
 
     Ok(())
 }

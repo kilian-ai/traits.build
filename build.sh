@@ -11,6 +11,7 @@ fi
 
 WASM_PKG_DIR="traits/kernel/wasm/pkg"
 WASM_RUNTIME_JS="traits/www/static/wasm-runtime.js"
+WASM_WORKER_JS="traits/www/static/traits-worker.js"
 SDK_SRC="traits/www/sdk/traits.js"
 SDK_RUNTIME="traits/www/static/sdk-runtime.js"
 INDEX_HTML="traits/www/static/index.html"
@@ -107,6 +108,98 @@ wrapped = (
 )
 out_path.write_text(wrapped)
 PY
+
+    echo "Generating WASM worker runtime..."
+    python3 - "$WASM_PKG_DIR/traits_wasm.js" "$WASM_PKG_DIR/traits_wasm_bg.wasm" "$WASM_WORKER_JS" <<'PY'
+import base64
+import pathlib
+import re
+import sys
+
+js_path = pathlib.Path(sys.argv[1])
+wasm_path = pathlib.Path(sys.argv[2])
+out_path = pathlib.Path(sys.argv[3])
+
+js = js_path.read_text()
+js = re.sub(r'^/\*.*?\*/\s*', '', js, count=1, flags=re.S)
+js = re.sub(r'^export function (\w+)\(', r'function \1(', js, flags=re.M)
+js = js.replace('export { initSync, __wbg_init as default };', '')
+js = js.replace('import.meta.url', '__traits_runtime_script_url')
+
+exports = [
+    'call',
+    'callable_traits',
+    'cli_format_rest_result',
+    'cli_get_history',
+    'cli_input',
+    'cli_set_history',
+    'cli_welcome',
+    'get_trait_info',
+    'init',
+    'initSync',
+    'is_callable',
+    'is_registered',
+    'list_traits',
+    'run_tests',
+    'search_traits',
+    'set_helper_connected',
+    'set_secret',
+    'version',
+]
+
+wasm_b64 = base64.b64encode(wasm_path.read_bytes()).decode('ascii')
+api = ',\n'.join(f'  {name}: {name}' for name in exports)
+worker = (
+    'const __traits_runtime_script_url = (typeof location !== "undefined" ? location.href : "");\n'
+    + js
+    + '\nconst TraitsWasm = {\n'
+    + api
+    + f",\n  WASM_BASE64: '{wasm_b64}'\n"
+    + '};\n'
+    + 'function decodeBase64Bytes(b64) {\n'
+    + '  const raw = atob(b64);\n'
+    + '  const out = new Uint8Array(raw.length);\n'
+    + '  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);\n'
+    + '  return out;\n'
+    + '}\n'
+    + 'let __traits_ready = false;\n'
+    + 'function ensureReady() {\n'
+    + '  if (__traits_ready) return;\n'
+    + '  TraitsWasm.initSync(decodeBase64Bytes(TraitsWasm.WASM_BASE64));\n'
+    + '  JSON.parse(TraitsWasm.init());\n'
+    + '  __traits_ready = true;\n'
+    + '}\n'
+    + 'function sendOk(id, result) { self.postMessage({ id, ok: true, result }); }\n'
+    + 'function sendErr(id, err) { self.postMessage({ id, ok: false, error: (err && err.message) ? err.message : String(err) }); }\n'
+    + 'self.onmessage = function(ev) {\n'
+    + '  const msg = ev.data || {};\n'
+    + '  const id = msg.id;\n'
+    + '  const cmd = msg.cmd || "";\n'
+    + '  const payload = msg.payload || {};\n'
+    + '  try {\n'
+    + '    if (cmd !== "ping") ensureReady();\n'
+    + '    switch (cmd) {\n'
+    + '      case "ping": sendOk(id, "pong"); break;\n'
+    + '      case "init": sendOk(id, true); break;\n'
+    + '      case "set_helper_connected": TraitsWasm.set_helper_connected(!!payload.connected); sendOk(id, true); break;\n'
+    + '      case "cli_input": sendOk(id, TraitsWasm.cli_input(payload.data || "")); break;\n'
+    + '      case "cli_welcome": sendOk(id, TraitsWasm.cli_welcome()); break;\n'
+    + '      case "cli_get_history": sendOk(id, TraitsWasm.cli_get_history()); break;\n'
+    + '      case "cli_set_history": TraitsWasm.cli_set_history(payload.history_json || "[]"); sendOk(id, true); break;\n'
+    + '      case "cli_format_rest_result": sendOk(id, TraitsWasm.cli_format_rest_result(payload.path || "", payload.args_json || "[]", payload.result_json || "null")); break;\n'
+    + '      case "call": { const raw = TraitsWasm.call(payload.path || "", JSON.stringify(payload.args || [])); sendOk(id, JSON.parse(raw)); break; }\n'
+    + '      case "call_raw": sendOk(id, TraitsWasm.call(payload.path || "", payload.args_json || "[]")); break;\n'
+    + '      case "callable_traits": sendOk(id, JSON.parse(TraitsWasm.callable_traits())); break;\n'
+    + '      default: throw new Error("Unknown command: " + cmd);\n'
+    + '    }\n'
+    + '  } catch (e) {\n'
+    + '    sendErr(id, e);\n'
+    + '  }\n'
+    + '};\n'
+)
+
+out_path.write_text(worker)
+PY
 else
     echo "Skipping static WASM runtime generation — missing wasm pkg outputs"
 fi
@@ -180,20 +273,22 @@ if [[ -f "$SDK_SRC" ]]; then
     } > "$SDK_RUNTIME"
 fi
 
-if [[ -f "$INDEX_HTML" && -f "$WASM_RUNTIME_JS" && -f "$TERMINAL_RUNTIME" && -f "$SDK_RUNTIME" ]]; then
+if [[ -f "$INDEX_HTML" && -f "$WASM_RUNTIME_JS" && -f "$WASM_WORKER_JS" && -f "$TERMINAL_RUNTIME" && -f "$SDK_RUNTIME" ]]; then
     echo "Generating standalone HTML..."
-    python3 - "$INDEX_HTML" "$WASM_RUNTIME_JS" "$TERMINAL_RUNTIME" "$SDK_RUNTIME" "$INDEX_STANDALONE_HTML" <<'PY'
+    python3 - "$INDEX_HTML" "$WASM_RUNTIME_JS" "$WASM_WORKER_JS" "$TERMINAL_RUNTIME" "$SDK_RUNTIME" "$INDEX_STANDALONE_HTML" <<'PY'
 import pathlib
 import sys
 
 index_path = pathlib.Path(sys.argv[1])
 wasm_runtime_path = pathlib.Path(sys.argv[2])
-terminal_runtime_path = pathlib.Path(sys.argv[3])
-sdk_runtime_path = pathlib.Path(sys.argv[4])
-out_path = pathlib.Path(sys.argv[5])
+worker_runtime_path = pathlib.Path(sys.argv[3])
+terminal_runtime_path = pathlib.Path(sys.argv[4])
+sdk_runtime_path = pathlib.Path(sys.argv[5])
+out_path = pathlib.Path(sys.argv[6])
 
 html = index_path.read_text()
 wasm_runtime = wasm_runtime_path.read_text()
+worker_runtime = worker_runtime_path.read_text()
 terminal_runtime = terminal_runtime_path.read_text()
 sdk_runtime = sdk_runtime_path.read_text()
 
@@ -235,6 +330,9 @@ def escape_script(code: str) -> str:
 inline_scripts = (
     '<script data-runtime-src="inline:wasm-runtime">\n'
     + escape_script(wasm_runtime)
+    + '\n</script>\n'
+    + '<script type="text/plain" data-runtime-src="inline:traits-worker">\n'
+    + escape_script(worker_runtime)
     + '\n</script>\n'
     + '<script data-runtime-src="inline:terminal-runtime">\n'
     + escape_script(terminal_runtime)

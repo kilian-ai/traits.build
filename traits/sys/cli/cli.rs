@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::types::TraitValue;
-use crate::cli::{CliSession, CliBackend, CLEAR_SENTINEL};
+use crate::cli::{CliSession, CliBackend, CLEAR_SENTINEL, REST_SENTINEL_START, REST_SENTINEL_END};
 use std::io::Read;
 
 use clap::{Parser, Subcommand};
@@ -561,6 +561,115 @@ async fn interactive_call(
     terminal::disable_raw_mode()?;
     println!(); // Final newline after raw mode
     result
+}
+
+/// REPL that runs alongside `traits serve`.
+/// Same CliSession as the WASM terminal — green prompt, tab completion, history.
+pub fn serve_repl() {
+    use crossterm::{terminal, event::{self, Event, KeyCode, KeyModifiers}};
+    use std::io::Write;
+
+    let backend = NativeCliBackend;
+    let mut session = CliSession::new();
+    session.load_history(&backend);
+
+    // Print welcome banner + initial prompt
+    let welcome = session.welcome(&backend);
+    print!("{}", welcome);
+    std::io::stdout().flush().ok();
+
+    if terminal::enable_raw_mode().is_err() {
+        eprintln!("Failed to enable raw mode — REPL disabled");
+        return;
+    }
+
+    loop {
+        let event = match event::read() {
+            Ok(ev) => ev,
+            Err(_) => break,
+        };
+
+        match event {
+            Event::Key(key) => {
+                let raw = match (key.code, key.modifiers) {
+                    (KeyCode::Enter, _) => Some("\r".to_string()),
+                    (KeyCode::Tab, _) => Some("\t".to_string()),
+                    (KeyCode::Backspace, _) => Some("\x7f".to_string()),
+                    (KeyCode::Delete, _) => Some("\x1b[3~".to_string()),
+                    (KeyCode::Up, _) => Some("\x1b[A".to_string()),
+                    (KeyCode::Down, _) => Some("\x1b[B".to_string()),
+                    (KeyCode::Left, _) => Some("\x1b[D".to_string()),
+                    (KeyCode::Right, _) => Some("\x1b[C".to_string()),
+                    (KeyCode::Home, _) => Some("\x1b[H".to_string()),
+                    (KeyCode::End, _) => Some("\x1b[F".to_string()),
+                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some("\x03".to_string()),
+                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                        // Ctrl+D: exit REPL and server
+                        let _ = terminal::disable_raw_mode();
+                        println!();
+                        std::process::exit(0);
+                    }
+                    (KeyCode::Char('l'), KeyModifiers::CONTROL) => Some("\x0c".to_string()),
+                    (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some("\x15".to_string()),
+                    (KeyCode::Char('w'), KeyModifiers::CONTROL) => Some("\x17".to_string()),
+                    (KeyCode::Char('a'), KeyModifiers::CONTROL) => Some("\x01".to_string()),
+                    (KeyCode::Char('e'), KeyModifiers::CONTROL) => Some("\x05".to_string()),
+                    (KeyCode::Char(c), _) => {
+                        let mut buf = [0u8; 4];
+                        Some(c.encode_utf8(&mut buf).to_string())
+                    }
+                    _ => None,
+                };
+
+                if let Some(bytes) = raw {
+                    let output = session.feed(&bytes, &backend);
+
+                    // Handle CLEAR sentinel
+                    if output.contains(CLEAR_SENTINEL) {
+                        let cleaned = output.replace(CLEAR_SENTINEL, "\x1b[2J\x1b[H");
+                        print!("{}", cleaned);
+                        std::io::stdout().flush().ok();
+                        continue;
+                    }
+
+                    // Handle REST sentinel (shouldn't occur natively, but handle gracefully)
+                    if output.contains(REST_SENTINEL_START) {
+                        // Extract the part before the sentinel
+                        if let Some(start) = output.find(REST_SENTINEL_START) {
+                            print!("{}", &output[..start]);
+                        }
+                        // Extract {p, a} and dispatch directly
+                        if let (Some(s), Some(e)) = (output.find(REST_SENTINEL_START), output.find(REST_SENTINEL_END)) {
+                            let json_str = &output[s + REST_SENTINEL_START.len()..e];
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                                let path = parsed["p"].as_str().unwrap_or("");
+                                let args: Vec<serde_json::Value> = parsed["a"].as_array().cloned().unwrap_or_default();
+                                match backend.call(path, &args) {
+                                    Ok(result) => {
+                                        let formatted = crate::cli::format_rest_result(path, &args, &result)
+                                            .unwrap_or_else(|| serde_json::to_string_pretty(&result).unwrap_or_default());
+                                        print!("{}", formatted);
+                                    }
+                                    Err(e) => print!("\x1b[31mError: {}\x1b[0m\r\n", e),
+                                }
+                            }
+                        }
+                        // Print prompt after REST result
+                        print!("\x1b[32mtraits \x1b[0m");
+                        std::io::stdout().flush().ok();
+                        continue;
+                    }
+
+                    print!("{}", output);
+                    std::io::stdout().flush().ok();
+                }
+            }
+            _ => {} // Ignore mouse/resize events
+        }
+    }
+
+    let _ = terminal::disable_raw_mode();
+    println!();
 }
 
 // ── Trait dispatch entry point ──
