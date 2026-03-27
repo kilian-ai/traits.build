@@ -167,9 +167,19 @@ async function createTerminal(mountEl, opts = {}) {
                     traitsSdk.call(p, a).then(res => {
                         term.write('\r\x1b[K'); // Clear progress line
                         if (res.ok && res.result !== undefined) {
-                            const text = typeof res.result === 'string'
-                                ? res.result
-                                : JSON.stringify(res.result, null, 2);
+                            // Try WASM CLI formatter first, fall back to JSON
+                            let text = '';
+                            if (wasm && wasm.cli_format_rest_result) {
+                                const resultJson = typeof res.result === 'string'
+                                    ? JSON.stringify(res.result)
+                                    : JSON.stringify(res.result);
+                                text = wasm.cli_format_rest_result(p, JSON.stringify(a), resultJson);
+                            }
+                            if (!text) {
+                                text = typeof res.result === 'string'
+                                    ? res.result
+                                    : JSON.stringify(res.result, null, 2);
+                            }
                             term.write(text.replace(/\n/g, '\r\n'));
                             if (!text.endsWith('\n')) term.write('\r\n');
                         } else if (res.error) {
@@ -191,9 +201,16 @@ async function createTerminal(mountEl, opts = {}) {
                     .then(r => r.json())
                     .then(data => {
                         if (data.result !== undefined) {
-                            const text = typeof data.result === 'string'
-                                ? data.result
-                                : JSON.stringify(data.result, null, 2);
+                            let text = '';
+                            if (wasm && wasm.cli_format_rest_result) {
+                                text = wasm.cli_format_rest_result(p, JSON.stringify(a),
+                                    JSON.stringify(data.result));
+                            }
+                            if (!text) {
+                                text = typeof data.result === 'string'
+                                    ? data.result
+                                    : JSON.stringify(data.result, null, 2);
+                            }
                             term.write(text.replace(/\n/g, '\r\n'));
                             if (!text.endsWith('\n')) term.write('\r\n');
                         } else if (data.error) {

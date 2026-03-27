@@ -650,6 +650,11 @@ fn spawn_relay_client(relay_url: String, local_port: u16) {
                 Ok(_) => info!("Relay session ended, reconnecting in 5s..."),
                 Err(e) => info!("Relay error: {}, retrying in 5s...", e),
             }
+            // Reset relay state on session end (expired, error, or clean close)
+            crate::globals::RELAY_CONNECTED.store(false, std::sync::atomic::Ordering::Relaxed);
+            if let Ok(mut guard) = crate::globals::RELAY_CODE.write() {
+                *guard = None;
+            }
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     });

@@ -338,3 +338,13 @@ pub fn cli_welcome() -> String {
         session.welcome(&WasmCliBackend)
     })
 }
+
+/// Format a REST response for display in the terminal.
+/// Called by terminal.js after a REST sentinel dispatch completes.
+/// Returns formatted ANSI text, or empty string to fall back to JSON.
+#[wasm_bindgen]
+pub fn cli_format_rest_result(trait_path: &str, args_json: &str, result_json: &str) -> String {
+    let args: Vec<Value> = serde_json::from_str(args_json).unwrap_or_default();
+    let result: Value = serde_json::from_str(result_json).unwrap_or(Value::Null);
+    cli_core::format_rest_result(trait_path, &args, &result).unwrap_or_default()
+}

@@ -270,7 +270,7 @@
         {
           "name": "no pipe when stdin is terminal",
           "type": "command",
-          "command": "./target/release/traits call sys.info 2>&1",
+          "command": "./target/release/traits call sys.checksum 2>&1",
           "checks": [
             {
               "type": "exit_code",
@@ -287,7 +287,7 @@
         {
           "name": "empty stdin not injected",
           "type": "command",
-          "command": "printf '' | ./target/release/traits call sys.info 2>&1",
+          "command": "printf '' | ./target/release/traits call sys.checksum 2>&1",
           "checks": [
             {
               "type": "exit_code",
