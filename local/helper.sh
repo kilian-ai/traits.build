@@ -88,20 +88,7 @@ if [ -n "$LATEST" ]; then
     echo "  (no prebuilt binary for $OS/$ARCH)"
 fi
 
-# ── 3. Fallback: use local binary if already installed ──
-for bin in \
-    "$(command -v traits 2>/dev/null || true)" \
-    "$HOME/.local/bin/traits" \
-    "$HOME/.traits/bin/traits" \
-    "/usr/local/bin/traits"; do
-    if [ -n "$bin" ] && [ -x "$bin" ]; then
-        banner "$@"
-        echo "✓ Using local: $bin"
-        exec "$bin" "$@"
-    fi
-done
-
-# ── 3. Last resort: build from source ──
+# ── 3. Build from source (always fresh) ──
 if command -v cargo &>/dev/null; then
     echo "Building from source (1-2 min on first run)..."
     cargo install --git "https://github.com/$REPO" --locked 2>&1
