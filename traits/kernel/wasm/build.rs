@@ -317,7 +317,7 @@ fn visit_traits(dir: &Path, root_dir: &Path, traits_dir: &Path,
                     if f2.exists() {
                         Some(f2)
                     } else {
-                        // Last resort: find any single .rs file (excluding *_cli.rs)
+                        // Last resort: find any single .rs file (excluding *.cli.rs)
                         find_single_rs(toml_dir)
                     }
                 }
@@ -346,14 +346,14 @@ fn visit_traits(dir: &Path, root_dir: &Path, traits_dir: &Path,
     }
 }
 
-/// Find a single .rs file in a directory, excluding *_cli.rs files.
+/// Find a single .rs file in a directory, excluding *.cli.rs files.
 fn find_single_rs(dir: &Path) -> Option<PathBuf> {
     let mut rs_files: Vec<PathBuf> = Vec::new();
     if let Ok(rd) = fs::read_dir(dir) {
         for entry in rd.flatten() {
             let p = entry.path();
             if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-                if name.ends_with(".rs") && !name.ends_with("_cli.rs") {
+                if name.ends_with(".rs") && !name.ends_with(".cli.rs") {
                     rs_files.push(p);
                 }
             }

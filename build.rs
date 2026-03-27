@@ -50,7 +50,7 @@ struct KernelModule {
     abs_path: String,
 }
 
-/// A discovered *_cli.rs companion providing format_cli(result) -> String.
+/// A discovered *.cli.rs companion providing format_cli(result) -> String.
 struct CliFormatter {
     trait_path: String,
     mod_name: String,
@@ -816,8 +816,8 @@ fn visit_traits(dir: &Path, manifest_dir: &Path, traits_dir: &Path, entries: &mu
                 let toml_dir = path.parent().unwrap();
                 let dir_name = toml_dir.file_name().unwrap().to_string_lossy();
 
-                // Check for companion _cli.rs file (CLI output formatter)
-                let cli_file = toml_dir.join(format!("{}_cli.rs", dir_name));
+                // Check for companion .cli.rs file (CLI output formatter)
+                let cli_file = toml_dir.join(format!("{}.cli.rs", dir_name));
                 if cli_file.exists() {
                     let cli_rel = cli_file.strip_prefix(manifest_dir)
                         .unwrap_or(&cli_file)
