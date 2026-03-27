@@ -421,78 +421,88 @@ fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
         let _ = fs::write(&toml_path, updated);
     }
 
-    // Sync version to Cargo.toml (strip 'v' prefix, use 0.YYMMDD.PATCH format)
-    // Semver forbids leading zeros in version segments, so parse HHMMSS as integer
-    let cargo_toml_path = manifest_dir.join("Cargo.toml");
-    if let Ok(cargo_content) = fs::read_to_string(&cargo_toml_path) {
-        let ver_str = new_ver.strip_prefix('v').unwrap_or(&new_ver);
-        let cargo_ver = if let Some((date, time)) = ver_str.split_once('.') {
-            // Strip leading zeros from HHMMSS by parsing as integer
-            let patch: u32 = time.parse().unwrap_or(0);
-            format!("0.{}.{}", date, patch)
-        } else {
-            format!("0.{}.0", ver_str)
-        };
-        // Only replace the version line in the [package] section (before any other section)
-        let mut in_package = false;
-        let mut replaced = false;
-        let updated: String = cargo_content
-            .lines()
-            .map(|line| {
-                if line.trim() == "[package]" {
-                    in_package = true;
-                } else if line.trim().starts_with('[') {
-                    in_package = false;
-                }
-                if in_package && !replaced && line.trim().starts_with("version") && line.contains('=') {
-                    replaced = true;
-                    format!("version = \"{}\"", cargo_ver)
-                } else {
-                    line.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        if updated != cargo_content {
-            let _ = fs::write(&cargo_toml_path, updated);
-        }
-    }
+    // Sync version to all workspace member Cargo.toml files
+    let ver_str = new_ver.strip_prefix('v').unwrap_or(&new_ver);
+    let cargo_ver = if let Some((date, time)) = ver_str.split_once('.') {
+        // Semver forbids leading zeros: parse HHMMSS as integer to strip them
+        let patch: u32 = time.parse().unwrap_or(0);
+        format!("0.{}.{}", date, patch)
+    } else {
+        format!("0.{}.0", ver_str)
+    };
 
-    // Also sync to WASM kernel Cargo.toml
-    let wasm_cargo_path = manifest_dir.join("traits/kernel/wasm/Cargo.toml");
-    if let Ok(wasm_content) = fs::read_to_string(&wasm_cargo_path) {
-        let ver_str = new_ver.strip_prefix('v').unwrap_or(&new_ver);
-        let cargo_ver = if let Some((date, time)) = ver_str.split_once('.') {
-            let patch: u32 = time.parse().unwrap_or(0);
-            format!("0.{}.{}", date, patch)
-        } else {
-            format!("0.{}.0", ver_str)
-        };
-        let mut in_package = false;
-        let mut replaced = false;
-        let updated: String = wasm_content
-            .lines()
-            .map(|line| {
-                if line.trim() == "[package]" {
-                    in_package = true;
-                } else if line.trim().starts_with('[') {
-                    in_package = false;
-                }
-                if in_package && !replaced && line.trim().starts_with("version") && line.contains('=') {
-                    replaced = true;
-                    format!("version = \"{}\"", cargo_ver)
-                } else {
-                    line.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        if updated != wasm_content {
-            let _ = fs::write(&wasm_cargo_path, updated);
-        }
+    // All workspace Cargo.toml paths to keep in sync
+    let workspace_tomls = [
+        "Cargo.toml",
+        "traits/kernel/logic/Cargo.toml",
+        "traits/kernel/plugin_api/Cargo.toml",
+        "traits/kernel/wasm/Cargo.toml",
+        "traits/sys/checksum/Cargo.toml",
+        "traits/sys/ps/Cargo.toml",
+        "traits/www/traits/build/Cargo.toml",
+    ];
+    for rel_path in &workspace_tomls {
+        let cargo_path = manifest_dir.join(rel_path);
+        sync_cargo_version(&cargo_path, &cargo_ver);
     }
 
     new_ver
+}
+
+/// Sync [package] version and all local path-dep versions in a Cargo.toml to `cargo_ver`.
+fn sync_cargo_version(cargo_path: &std::path::Path, cargo_ver: &str) {
+    let content = match fs::read_to_string(cargo_path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let mut in_package = false;
+    let mut pkg_version_replaced = false;
+    let updated: String = content
+        .lines()
+        .map(|line| {
+            // Track which TOML section we're in
+            if line.trim() == "[package]" {
+                in_package = true;
+            } else if line.trim().starts_with('[') {
+                in_package = false;
+            }
+
+            // Replace [package] version = "..."
+            if in_package && !pkg_version_replaced
+                && line.trim().starts_with("version")
+                && line.contains('=')
+            {
+                pkg_version_replaced = true;
+                return format!("version = \"{}\"", cargo_ver);
+            }
+
+            // Replace version = "..." inside local path dependency lines
+            // e.g.: kernel-logic = { path = "...", version = "OLD" }
+            if line.contains("path = \"") && line.contains("version = \"") {
+                return replace_dep_version(line, cargo_ver);
+            }
+
+            line.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if updated != content {
+        let _ = fs::write(cargo_path, updated);
+    }
+}
+
+/// Replace the `version = "..."` value inside a dependency line, leaving everything else intact.
+fn replace_dep_version(line: &str, new_ver: &str) -> String {
+    // Find `version = "` and replace the quoted value
+    if let Some(ver_start) = line.find("version = \"") {
+        let prefix = &line[..ver_start + 10]; // up to and including the opening quote
+        let rest = &line[ver_start + 10..];   // from the old version value onward
+        if let Some(end_quote) = rest.find('"') {
+            let suffix = &rest[end_quote..]; // from the closing quote onward
+            return format!("{}{}{}",  prefix, new_ver, suffix);
+        }
+    }
+    line.to_string()
 }
 
 /// Compute SHA-256 hex digest of a file's contents.
