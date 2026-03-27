@@ -1,9 +1,12 @@
 [package]
 name = "kernel-logic"
-version = "0.260327.144926"
+version = "0.260327.151655"
 edition = "2021"
 description = "Shared pure-logic kernel: types, registry data model, TOML parsing"
+authors = ["kilian"]
 license = "MIT"
+repository = "https://github.com/kilian-ai/traits.build"
+homepage = "https://traits.build/"
 publish = true
 
 [dependencies]

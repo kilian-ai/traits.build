@@ -1,10 +1,12 @@
 [package]
 name = "plugin_api"
-version = "0.260327.144926"
+version = "0.260327.151655"
 edition = "2021"
 description = "C ABI wrapper for trait cdylib plugins"
 authors = ["kilian"]
 license = "MIT"
+repository = "https://github.com/kilian-ai/traits.build"
+homepage = "https://traits.build/"
 
 [lib]
 path = "plugin_api.rs"
