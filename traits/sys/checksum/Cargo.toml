@@ -3,6 +3,7 @@ name = "trait-sys-checksum"
 version = "0.1.0"
 edition = "2021"
 description = "SHA-256 checksum trait (cdylib plugin)"
+license = "MIT"
 publish = true
 
 [lib]
