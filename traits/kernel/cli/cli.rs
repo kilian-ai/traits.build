@@ -1115,17 +1115,34 @@ fn format_info_json(info: &Value) -> String {
 
 /// Format a REST response for display in the WASM terminal.
 /// Returns Some(formatted) if a formatter exists, None to fall back to JSON.
+/// When result is null (REST failed), returns a local fallback if available.
 pub fn format_rest_result(trait_path: &str, args: &[Value], result: &Value) -> Option<String> {
     match trait_path {
         "sys.info" => {
             if args.is_empty() || args.first().and_then(|v| v.as_str()).unwrap_or("").is_empty() {
-                Some(format_system_status_json(result))
+                if result.is_null() {
+                    Some(format_basic_status())
+                } else {
+                    Some(format_system_status_json(result))
+                }
             } else {
                 Some(format_info_json(result))
             }
         }
         _ => None,
     }
+}
+
+/// Basic system status from WASM-local data (no server needed).
+fn format_basic_status() -> String {
+    let count = kernel_logic::platform::registry_count();
+    let mut out = String::new();
+    out.push_str(&format!("{BOLD}{BRIGHT_WHITE}System Status{RESET}\n\n"));
+    out.push_str(&format!("{BOLD}Traits{RESET}\n"));
+    out.push_str(&format!("  {GRAY}Total:{RESET}   {CYAN}{count}{RESET}\n"));
+    out.push_str(&format!("  {GRAY}Runtime:{RESET} {CYAN}WASM (browser){RESET}\n"));
+    out.push_str(&format!("\n{GRAY}Connect a helper for full system status{RESET}\n"));
+    out
 }
 
 fn format_info(backend: &dyn CliBackend, path: &str) -> String {

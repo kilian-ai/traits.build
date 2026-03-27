@@ -183,7 +183,17 @@ async function createTerminal(mountEl, opts = {}) {
                             term.write(text.replace(/\n/g, '\r\n'));
                             if (!text.endsWith('\n')) term.write('\r\n');
                         } else if (res.error) {
-                            term.write(`\x1b[31mError: ${res.error}\x1b[0m\r\n`);
+                            // Try WASM formatter with null result (local fallback)
+                            let fallback = '';
+                            if (wasm && wasm.cli_format_rest_result) {
+                                fallback = wasm.cli_format_rest_result(p, JSON.stringify(a), 'null');
+                            }
+                            if (fallback) {
+                                term.write(fallback.replace(/\n/g, '\r\n'));
+                                if (!fallback.endsWith('\n')) term.write('\r\n');
+                            } else {
+                                term.write(`\x1b[31mError: ${res.error}\x1b[0m\r\n`);
+                            }
                         }
                         term.write(PROMPT);
                     }).catch(e => {

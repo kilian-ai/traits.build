@@ -804,6 +804,12 @@ export class Traits {
                 return { ok: true, stream: this._readSSE(res.body), dispatch: 'rest', ms: Math.round(dt * 10) / 10 };
             }
 
+            // Guard against non-JSON responses (e.g. HTML 404 from static hosting)
+            const ct = res.headers.get('content-type') || '';
+            if (!ct.includes('json')) {
+                return { ok: false, error: `HTTP ${res.status}`, dispatch: 'rest', ms: Math.round(dt * 10) / 10 };
+            }
+
             const data = await res.json();
             return {
                 ok: res.ok,

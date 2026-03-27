@@ -63,7 +63,7 @@ done
 
 LOCAL_VERSION=""
 if [ -n "$LOCAL_BIN" ]; then
-    LOCAL_VERSION="$("$LOCAL_BIN" version 2>/dev/null | sed -E 's/traits (v[0-9.]+).*/\1/' || true)"
+    LOCAL_VERSION="$("$LOCAL_BIN" version 2>/dev/null | grep -oE 'v[0-9]{6,}\.[0-9]+' | head -1 || true)"
 fi
 
 # ── Check latest remote version ──
