@@ -1136,11 +1136,17 @@ pub fn format_rest_result(trait_path: &str, args: &[Value], result: &Value) -> O
 /// Basic system status from WASM-local data (no server needed).
 fn format_basic_status() -> String {
     let count = kernel_logic::platform::registry_count();
+    let version_info = kernel_logic::platform::dispatch("sys.version", &[
+        Value::String("system".into()),
+    ]).unwrap_or_default();
+    let version = version_info.get("version").and_then(|v| v.as_str()).unwrap_or("?");
     let mut out = String::new();
     out.push_str(&format!("{BOLD}{BRIGHT_WHITE}System Status{RESET}\n\n"));
-    out.push_str(&format!("{BOLD}Traits{RESET}\n"));
-    out.push_str(&format!("  {GRAY}Total:{RESET}   {CYAN}{count}{RESET}\n"));
+    out.push_str(&format!("{BOLD}System{RESET}\n"));
     out.push_str(&format!("  {GRAY}Runtime:{RESET} {CYAN}WASM (browser){RESET}\n"));
+    out.push_str(&format!("  {GRAY}Build:{RESET}   {CYAN}{version}{RESET}\n"));
+    out.push_str(&format!("\n{BOLD}Traits{RESET}\n"));
+    out.push_str(&format!("  {GRAY}Total:{RESET}   {CYAN}{count}{RESET}\n"));
     out.push_str(&format!("\n{GRAY}Connect a helper for full system status{RESET}\n"));
     out
 }
