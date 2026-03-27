@@ -66,21 +66,27 @@ if [ -n "$LOCAL_BIN" ]; then
     LOCAL_VERSION="$("$LOCAL_BIN" version </dev/null 2>/dev/null | grep -oE 'v[0-9]{6,}\.[0-9]+' | head -1 || true)"
 fi
 
-# ── Check latest remote version ──
+# ── Check latest remote version (via git tags, not GitHub Releases) ──
 echo "Checking for updates..."
 LATEST=""
-LATEST="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
-    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
+LATEST="$(curl -fsSL --connect-timeout 3 "https://api.github.com/repos/$REPO/tags?per_page=1" 2>/dev/null \
+    | grep '"name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
 
 # ── Use local binary if it matches the latest version ──
+# Only use local if we successfully fetched a remote version AND it matches.
+# If we can't reach GitHub (offline), fall back to local binary.
 if [ -n "$LOCAL_BIN" ] && [ -n "$LOCAL_VERSION" ]; then
-    if [ -z "$LATEST" ] || [ "$LOCAL_VERSION" = "$LATEST" ]; then
-        banner "$@"
-        echo "✓ Using local: $LOCAL_BIN ($LOCAL_VERSION)"
-        echo ""
-        exec "$LOCAL_BIN" "$@"
+    if [ -n "$LATEST" ]; then
+        if [ "$LOCAL_VERSION" = "$LATEST" ]; then
+            banner "$@"
+            echo "✓ Using local: $LOCAL_BIN ($LOCAL_VERSION)"
+            echo ""
+            exec "$LOCAL_BIN" "$@"
+        else
+            echo "  Local $LOCAL_VERSION → remote $LATEST (updating...)"
+        fi
     else
-        echo "  Local $LOCAL_VERSION → remote $LATEST (updating...)"
+        echo "  Could not check remote version, trying download..."
     fi
 fi
 

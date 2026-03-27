@@ -253,3 +253,18 @@ cp traits/www/local/helper/helper.sh local/traits.sh
 cp traits/www/local/install/install.sh local/install.sh
 
 echo "Traits: $("$BIN" list 2>/dev/null | grep -c '"path"') registered"
+
+# ── Create git release tag ──
+VERSION="$("$BIN" version </dev/null 2>/dev/null | grep -oE 'v[0-9]{6,}\.[0-9]+' | head -1 || true)"
+if [[ -n "$VERSION" ]] && command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if ! git tag --list "$VERSION" | grep -q .; then
+        git tag "$VERSION"
+        echo "Tagged: $VERSION"
+        # Push tag if remote exists
+        if git remote get-url origin >/dev/null 2>&1; then
+            git push origin "$VERSION" 2>/dev/null && echo "Pushed tag $VERSION" || echo "  (tag push failed — push manually with: git push origin $VERSION)"
+        fi
+    else
+        echo "Tag $VERSION already exists"
+    fi
+fi
