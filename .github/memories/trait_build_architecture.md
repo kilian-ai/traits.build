@@ -39,7 +39,7 @@ The build script scans `traits/` recursively for `.trait.toml` files and discove
    - If sibling exists: registers as TraitModule
    - Updates `.trait.toml` checksum (bumps version if .rs changed)
 3. **Kernel traits**: if path starts with "kernel." AND mod_name != "main", also register as KernelModule (crate-level mod)
-4. **CLI formatters**: discovers `<name>_cli.rs` companion files for CLI output formatting
+4. **CLI formatters**: discovers `<name>.cli.rs` companion files for CLI output formatting
 
 ### Phase 2: Code Generation
 
@@ -96,7 +96,7 @@ pub fn list_compiled() -> Vec<&'static str> { ... }
 #### 3. `cli_formatters.rs`
 Module declarations + format_cli dispatch:
 ```rust
-#[path = "/absolute/path/traits/sys/checksum/checksum_cli.rs"]
+#[path = "/absolute/path/traits/sys/checksum/checksum.cli.rs"]
 pub mod checksum_cli;
 
 pub fn format_cli(trait_path: &str, result: &Value) -> Option<String> {

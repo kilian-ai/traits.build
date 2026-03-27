@@ -168,7 +168,7 @@ Key logic:
    - If sibling exists: registers as TraitModule
    - Updates `.trait.toml` checksum (bumps version if .rs changed)
 3. **Kernel traits**: if path starts with "kernel." AND mod_name != "main", also register as KernelModule (crate-level mod)
-4. **CLI formatters**: discovers `<name>_cli.rs` companion files for CLI output formatting
+4. **CLI formatters**: discovers `<name>.cli.rs` companion files for CLI output formatting
 
 #### Generated Code Examples
 
@@ -953,7 +953,7 @@ Test types: `exit_code`, `contains`, `matches` (regex), `json_path`
 ## Conventions
 
 - **All trait code is Rust.** Frontend JS is in `terminal.js`, `playground.js`, `api.js`, etc. but these are served as static assets.
-- **CLI output formatting uses `_cli.rs` files, NEVER terminal.js.** To format a trait's JSON output for the terminal, create a `{name}_cli.rs` companion file next to the trait's `.rs` file. It must export `pub fn format_cli(result: &Value) -> String`. The build system auto-discovers these and generates `cli_formatters.rs`. **Never add per-trait formatting logic to terminal.js** — terminal.js is a thin display layer only.
+- **CLI output formatting uses `.cli.rs` files, NEVER terminal.js.** To format a trait's JSON output for the terminal, create a `{name}.cli.rs` companion file next to the trait's `.rs` file (matching the `*.features.json` and `*.trait.toml` dot-naming convention). It must export `pub fn format_cli(result: &Value) -> String`. The build system auto-discovers these and generates `cli_formatters.rs`. **Never add per-trait formatting logic to terminal.js** — terminal.js is a thin display layer only.
 - **`source = "builtin"`** for compiled traits. `source = "dylib"` for cdylib plugins. `source = "rest"` for REST-backed.
 - **Trait files live in `traits/{namespace}/{name}/`** — each directory has `name.trait.toml` + `name.rs` + `name.features.json`
 - **build.rs auto-discovers** everything — no manual module registration needed.
@@ -1016,4 +1016,4 @@ dep = "namespace.concrete_trait"
 - Always update the .github/agents/traits.build.agent.md file with any new information about the project structure, build process, or conventions or any user preferences about anything that may be helpful for future reference.
 - Deduplication is your friend. If you find yourself writing the same code or instructions more than once, you must create a helper function or a template to reduce repetition and improve maintainability in traits.
 - Always sharpen the boundaries and remove obsolete duplicate code. If you find that some code is being used in multiple places, consider whether it can be moved to a shared module or if the trait structure can be refactored to reduce duplication and improve clarity.
-- NEVER modify terminal.js to add per-trait output formatting. All CLI/terminal output formatting MUST go in a `{name}_cli.rs` companion file (auto-discovered by build.rs). terminal.js is a thin display layer — it pipes data to/from the WASM CLI kernel and handles REST sentinels generically. No trait-specific logic belongs there.
+- NEVER modify terminal.js to add per-trait output formatting. All CLI/terminal output formatting MUST go in a `{name}.cli.rs` companion file (auto-discovered by build.rs). terminal.js is a thin display layer — it pipes data to/from the WASM CLI kernel and handles REST sentinels generically. No trait-specific logic belongs there.

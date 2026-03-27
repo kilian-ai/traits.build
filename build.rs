@@ -493,13 +493,13 @@ fn sync_cargo_version(cargo_path: &std::path::Path, cargo_ver: &str) {
 
 /// Replace the `version = "..."` value inside a dependency line, leaving everything else intact.
 fn replace_dep_version(line: &str, new_ver: &str) -> String {
-    // Find `version = "` and replace the quoted value
+    // Find `version = "` (11 chars) and replace the quoted value
     if let Some(ver_start) = line.find("version = \"") {
-        let prefix = &line[..ver_start + 10]; // up to and including the opening quote
-        let rest = &line[ver_start + 10..];   // from the old version value onward
+        let prefix = &line[..ver_start + 11]; // up to and including the opening quote
+        let rest = &line[ver_start + 11..];   // from the old version value onward (after opening quote)
         if let Some(end_quote) = rest.find('"') {
             let suffix = &rest[end_quote..]; // from the closing quote onward
-            return format!("{}{}{}",  prefix, new_ver, suffix);
+            return format!("{}{}{}", prefix, new_ver, suffix);
         }
     }
     line.to_string()
