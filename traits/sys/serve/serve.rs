@@ -461,6 +461,139 @@ async fn serve_binary() -> HttpResponse {
         .body(binary)
 }
 
+/// POST /admin/update — Self-update: download latest binary from GitHub releases,
+/// replace /data/traits, and exit so Fly.io auto-restarts with the new binary.
+/// Requires admin Basic Auth.
+async fn admin_update(req: HttpRequest) -> HttpResponse {
+    if let Err(resp) = check_basic_auth(&req) {
+        return resp;
+    }
+
+    let repo = "kilian-ai/traits.build";
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+
+    // 1. Get latest tag from GitHub
+    let tag_url = format!("https://api.github.com/repos/{}/tags?per_page=1", repo);
+    let tag_output = match tokio::process::Command::new("curl")
+        .args(["-fsSL", "--connect-timeout", "10", &tag_url])
+        .output()
+        .await
+    {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+        _ => return HttpResponse::InternalServerError()
+            .json(serde_json::json!({"error": "Failed to fetch tags from GitHub"})),
+    };
+
+    let latest = tag_output.lines()
+        .find(|l| l.contains("\"name\""))
+        .and_then(|l| {
+            let start = l.find('"')? + 1;
+            let rest = &l[start..];
+            let start2 = rest.find('"')? + 1;
+            let rest2 = &rest[start2..];
+            let end = rest2.find('"')?;
+            Some(rest2[..end].to_string())
+        });
+
+    let latest = match latest {
+        Some(v) => v,
+        None => return HttpResponse::InternalServerError()
+            .json(serde_json::json!({"error": "No tags found on GitHub"})),
+    };
+
+    // 2. Check if we're already running this version
+    let current = env!("TRAITS_BUILD_VERSION");
+    if current == latest {
+        return HttpResponse::Ok()
+            .json(serde_json::json!({"status": "up-to-date", "version": current}));
+    }
+
+    // 3. Download the binary from GitHub release assets
+    let binary_name = format!("traits-{}-{}", os, arch);
+    let binary_url = format!(
+        "https://github.com/{}/releases/download/{}/{}",
+        repo, latest, binary_name
+    );
+
+    let tmp_path = "/data/traits.update";
+    let final_path = "/data/traits";
+
+    let dl_result = tokio::process::Command::new("curl")
+        .args(["-fsSL", "--connect-timeout", "30", "--max-time", "120",
+               "-o", tmp_path, &binary_url])
+        .output()
+        .await;
+
+    match dl_result {
+        Ok(o) if o.status.success() => {}
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({
+                    "error": "Download failed",
+                    "url": binary_url,
+                    "detail": stderr.to_string()
+                }));
+        }
+        Err(e) => return HttpResponse::InternalServerError()
+            .json(serde_json::json!({"error": format!("curl failed: {}", e)})),
+    };
+
+    // 4. Verify downloaded file is non-empty and looks like an ELF binary
+    match std::fs::metadata(tmp_path) {
+        Ok(m) if m.len() > 1_000_000 => {} // binary should be >1MB
+        Ok(m) => {
+            let _ = std::fs::remove_file(tmp_path);
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({
+                    "error": "Downloaded file too small",
+                    "size": m.len(),
+                    "url": binary_url
+                }));
+        }
+        Err(e) => return HttpResponse::InternalServerError()
+            .json(serde_json::json!({"error": format!("Cannot stat download: {}", e)})),
+    }
+
+    // Check ELF magic bytes
+    if let Ok(bytes) = std::fs::read(tmp_path) {
+        if bytes.len() < 4 || &bytes[..4] != b"\x7fELF" {
+            let _ = std::fs::remove_file(tmp_path);
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"error": "Downloaded file is not a valid ELF binary"}));
+        }
+    }
+
+    // 5. Atomic replace: rename tmp → final
+    if let Err(e) = std::fs::rename(tmp_path, final_path) {
+        let _ = std::fs::remove_file(tmp_path);
+        return HttpResponse::InternalServerError()
+            .json(serde_json::json!({"error": format!("Failed to install binary: {}", e)}));
+    }
+
+    // Set executable permission
+    let _ = std::process::Command::new("chmod").args(["+x", final_path]).status();
+
+    // 6. Respond before exiting
+    let response = serde_json::json!({
+        "status": "updated",
+        "from": current,
+        "to": latest,
+        "path": final_path,
+        "restarting": true
+    });
+
+    // Schedule exit after a brief delay so the response gets sent
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        info!("Self-update complete: exiting for restart");
+        std::process::exit(0);
+    });
+
+    HttpResponse::Ok().json(response)
+}
+
 /// Serve pages by resolving keyed interface bindings from sys.serve's [requires]/[bindings].
 /// Each key is a URL path (e.g. "/", "/admin"), resolved to a page trait.
 async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
@@ -868,6 +1001,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
             .route("/static/{path:.*}", web::get().to(serve_static))
             .route("/wasm/{path:.*}", web::get().to(serve_wasm_asset))
             .route("/local/binary", web::get().to(serve_binary))
+            .route("/admin/update", web::post().to(admin_update))
             .default_service(web::to(serve_page))
     })
     .workers(2)

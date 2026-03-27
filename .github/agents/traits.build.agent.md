@@ -524,6 +524,11 @@ traits test_runner '*'
 # Health check (used by Fly.io)
 GET /health
 
+# Admin — self-update (Basic Auth required)
+POST /admin/update                # Download latest binary from GitHub releases,
+                                  # replace /data/traits, exit for restart
+                                  # Returns: {"status":"updated","from":"v...","to":"v..."}
+
 # MCP — stdio JSON-RPC 2.0
 traits mcp
 # Reads JSON-RPC from stdin, writes responses to stdout.
@@ -807,14 +812,24 @@ These traits now use `kernel_logic::platform::*` instead of `#[cfg]` blocks:
 ### Fly.io (Optional — Backend for privileged traits)
 
 - **App:** `traits-build`
+- **URL:** `traits-build.fly.dev` (NOT `traits.build` — that's GitHub Pages)
 - **Region:** `sjc`
-- **VM:** shared CPU, 1 vCPU, 512 MB RAM
+- **VM:** shared CPU, 1 vCPU, 256 MB RAM
 - **Port:** 8090 (internal), HTTPS forced
-- **Auto-scaling:** 0–2 machines, auto-stop/auto-start
+- **Auto-scaling:** 0–1 machines, auto-stop/auto-start
 - **Health check:** `GET /health` every 30s
 - **Admin auth:** HTTP Basic Auth (`ADMIN_PASSWORD` Fly secret)
+- **Persistent volume:** `/data` mount — `CMD` prefers `/data/traits` over image binary
 
-Deploy workflow:
+Auto-deploy workflow (triggered by tag push from `build.sh`):
+1. `build.sh` creates + pushes git tag (e.g. `v260327.161045`)
+2. GitHub Actions (`.github/workflows/release.yml`) cross-compiles linux/amd64 binary
+3. Binary uploaded as GitHub Release asset (e.g. `traits-linux-x86_64`)
+4. Action curls `POST /admin/update` on Fly.io with Basic Auth
+5. Server downloads new binary to `/data/traits`, exits
+6. Fly.io auto-restarts, picks up `/data/traits` (see Dockerfile CMD)
+
+Manual deploy (fallback):
 ```bash
 docker buildx build --platform linux/amd64 -t registry.fly.io/traits-build:deployment-vN .
 fly deploy --now --local-only --image registry.fly.io/traits-build:deployment-vN

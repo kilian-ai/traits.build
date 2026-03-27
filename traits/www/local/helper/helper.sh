@@ -90,39 +90,44 @@ if [ -n "$LOCAL_BIN" ] && [ -n "$LOCAL_VERSION" ]; then
     fi
 fi
 
-# ── 1. Try traits.build server binary ──
+# ── 1. Try GitHub Releases (cross-platform binaries from CI) ──
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "Checking traits.build for $OS/$ARCH binary..."
-HEADERS="$(curl -fsSL -D - -o "$TMPDIR/traits" "https://traits.build/local/binary" 2>/dev/null || true)"
+if [ -n "$LATEST" ]; then
+    # GitHub Actions uploads: traits-linux-x86_64, traits-linux-aarch64, traits-darwin-aarch64, etc.
+    BINARY_NAME="traits-${RUST_OS}-${RUST_ARCH}"
+    BINARY_URL="https://github.com/$REPO/releases/download/$LATEST/$BINARY_NAME"
+    echo "Downloading traits $LATEST ($RUST_OS/$RUST_ARCH)..."
+    if curl -fsSL --connect-timeout 10 "$BINARY_URL" -o "$TMPDIR/traits" 2>/dev/null; then
+        if [ -s "$TMPDIR/traits" ]; then
+            chmod +x "$TMPDIR/traits"
+            banner "$@"
+            echo "✓ Downloaded traits $LATEST"
+            echo ""
+            exec "$TMPDIR/traits" "$@"
+        fi
+    fi
+    echo "  (no prebuilt binary for $RUST_OS/$RUST_ARCH)"
+fi
+
+# ── 2. Try Fly.io server binary (fallback — serves its own running binary) ──
+FLY_URL="${RELAY_URL:-https://traits-build.fly.dev}"
+echo "Checking Fly.io server for $RUST_OS/$RUST_ARCH binary..."
+HEADERS="$(curl -fsSL --connect-timeout 5 -D - -o "$TMPDIR/traits" "$FLY_URL/local/binary" 2>/dev/null || true)"
 if [ -f "$TMPDIR/traits" ] && [ -s "$TMPDIR/traits" ]; then
     REMOTE_OS="$(echo "$HEADERS" | grep -i 'X-Traits-OS:' | tr -d '\r' | awk '{print $2}')"
     REMOTE_ARCH="$(echo "$HEADERS" | grep -i 'X-Traits-Arch:' | tr -d '\r' | awk '{print $2}')"
     if [ "$REMOTE_OS" = "$RUST_OS" ] && [ "$REMOTE_ARCH" = "$RUST_ARCH" ]; then
         chmod +x "$TMPDIR/traits"
         banner "$@"
-        echo "✓ Downloaded traits binary ($REMOTE_OS/$REMOTE_ARCH)"
+        echo "✓ Downloaded traits binary from server ($REMOTE_OS/$REMOTE_ARCH)"
         echo ""
         exec "$TMPDIR/traits" "$@"
     else
         echo "  Server binary is $REMOTE_OS/$REMOTE_ARCH — need $RUST_OS/$RUST_ARCH"
         rm -f "$TMPDIR/traits"
     fi
-fi
-
-# ── 2. Try GitHub Releases ──
-if [ -n "$LATEST" ]; then
-    BINARY_URL="https://github.com/$REPO/releases/download/$LATEST/traits-$OS-$ARCH"
-    echo "Downloading traits $LATEST ($OS/$ARCH)..."
-    if curl -fsSL "$BINARY_URL" -o "$TMPDIR/traits" 2>/dev/null; then
-        chmod +x "$TMPDIR/traits"
-        banner "$@"
-        echo "✓ Downloaded traits $LATEST"
-        echo ""
-        exec "$TMPDIR/traits" "$@"
-    fi
-    echo "  (no prebuilt binary for $OS/$ARCH)"
 fi
 
 # ── 3. Build from source ──

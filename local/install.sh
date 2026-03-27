@@ -36,39 +36,46 @@ echo ""
 
 mkdir -p "$INSTALL_DIR"
 
-# ── 1. Try traits.build server binary ──
+# ── 1. Try GitHub Releases (cross-platform binaries from CI) ──
 INSTALLED=false
-HEADERS="$(curl -fsSL -D - -o "$INSTALL_DIR/traits.tmp" "https://traits.build/local/binary" 2>/dev/null || true)"
-if [ -f "$INSTALL_DIR/traits.tmp" ] && [ -s "$INSTALL_DIR/traits.tmp" ]; then
-    REMOTE_OS="$(echo "$HEADERS" | grep -i 'X-Traits-OS:' | tr -d '\r' | awk '{print $2}')"
-    REMOTE_ARCH="$(echo "$HEADERS" | grep -i 'X-Traits-Arch:' | tr -d '\r' | awk '{print $2}')"
-    if [ "$REMOTE_OS" = "$RUST_OS" ] && [ "$REMOTE_ARCH" = "$RUST_ARCH" ]; then
-        mv "$INSTALL_DIR/traits.tmp" "$INSTALL_DIR/traits"
-        chmod +x "$INSTALL_DIR/traits"
-        INSTALLED=true
-        echo "✓ Installed traits ($REMOTE_OS/$REMOTE_ARCH) → $INSTALL_DIR/traits"
-    else
-        echo "  Server binary is $REMOTE_OS/$REMOTE_ARCH — need $RUST_OS/$RUST_ARCH"
-        rm -f "$INSTALL_DIR/traits.tmp"
-    fi
-fi
 
-# ── 2. Try GitHub releases ──
-if [ "$INSTALLED" = false ]; then
-LATEST="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
-    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
+LATEST="$(curl -fsSL --connect-timeout 3 "https://api.github.com/repos/$REPO/tags?per_page=1" 2>/dev/null \
+    | grep '"name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
 
 if [ -n "$LATEST" ]; then
-    BINARY_URL="https://github.com/$REPO/releases/download/$LATEST/traits-$OS-$ARCH"
-    echo "Downloading traits $LATEST..."
-    if curl -fsSL "$BINARY_URL" -o "$INSTALL_DIR/traits" 2>/dev/null; then
+    BINARY_NAME="traits-${RUST_OS}-${RUST_ARCH}"
+    BINARY_URL="https://github.com/$REPO/releases/download/$LATEST/$BINARY_NAME"
+    echo "Downloading traits $LATEST ($RUST_OS/$RUST_ARCH)..."
+    if curl -fsSL --connect-timeout 10 "$BINARY_URL" -o "$INSTALL_DIR/traits.tmp" 2>/dev/null && [ -s "$INSTALL_DIR/traits.tmp" ]; then
+        mv "$INSTALL_DIR/traits.tmp" "$INSTALL_DIR/traits"
         chmod +x "$INSTALL_DIR/traits"
         INSTALLED=true
         echo "✓ Installed traits $LATEST → $INSTALL_DIR/traits"
     else
-        echo "  (no prebuilt binary for $OS/$ARCH)"
+        rm -f "$INSTALL_DIR/traits.tmp"
+        echo "  (no prebuilt binary for $RUST_OS/$RUST_ARCH)"
     fi
 fi
+
+# ── 2. Try Fly.io server binary (fallback) ──
+if [ "$INSTALLED" = false ]; then
+    FLY_URL="${RELAY_URL:-https://traits-build.fly.dev}"
+    HEADERS="$(curl -fsSL --connect-timeout 5 -D - -o "$INSTALL_DIR/traits.tmp" "$FLY_URL/local/binary" 2>/dev/null || true)"
+    if [ -f "$INSTALL_DIR/traits.tmp" ] && [ -s "$INSTALL_DIR/traits.tmp" ]; then
+        REMOTE_OS="$(echo "$HEADERS" | grep -i 'X-Traits-OS:' | tr -d '\r' | awk '{print $2}')"
+        REMOTE_ARCH="$(echo "$HEADERS" | grep -i 'X-Traits-Arch:' | tr -d '\r' | awk '{print $2}')"
+        if [ "$REMOTE_OS" = "$RUST_OS" ] && [ "$REMOTE_ARCH" = "$RUST_ARCH" ]; then
+            mv "$INSTALL_DIR/traits.tmp" "$INSTALL_DIR/traits"
+            chmod +x "$INSTALL_DIR/traits"
+            INSTALLED=true
+            echo "✓ Installed traits ($REMOTE_OS/$REMOTE_ARCH) → $INSTALL_DIR/traits"
+        else
+            echo "  Server binary is $REMOTE_OS/$REMOTE_ARCH — need $RUST_OS/$RUST_ARCH"
+            rm -f "$INSTALL_DIR/traits.tmp"
+        fi
+    else
+        rm -f "$INSTALL_DIR/traits.tmp"
+    fi
 fi
 
 # ── 2. Fallback: build from source ──

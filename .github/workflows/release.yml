@@ -1,0 +1,79 @@
+name: Release & Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            os: linux
+            arch: x86_64
+            artifact: traits-linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            os: linux
+            arch: aarch64
+            artifact: traits-linux-aarch64
+            cross: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename binary
+        run: cp target/${{ matrix.target }}/release/traits ${{ matrix.artifact }}
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact }}
+          generate_release_notes: true
+
+  deploy:
+    name: Deploy to Fly.io
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger server self-update
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        run: |
+          echo "Waiting 10s for release assets to propagate..."
+          sleep 10
+          echo "Triggering self-update on traits-build.fly.dev..."
+          RESPONSE=$(curl -fsSL --connect-timeout 15 --max-time 30 \
+            -X POST \
+            -u "admin:$ADMIN_PASSWORD" \
+            "https://traits-build.fly.dev/admin/update" 2>&1) || {
+            echo "Update request failed (server may be stopped or unrestarting)"
+            echo "Response: $RESPONSE"
+            echo "The server will auto-update on next start via Fly auto_start_machines"
+            exit 0
+          }
+          echo "Response: $RESPONSE"
