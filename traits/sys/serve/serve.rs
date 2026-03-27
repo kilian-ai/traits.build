@@ -490,6 +490,7 @@ async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
             };
             HttpResponse::Ok()
                 .content_type(content_type)
+                .insert_header(("Cache-Control", "no-cache"))
                 .body(html)
         }
         Ok(other) => {

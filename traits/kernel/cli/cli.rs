@@ -1052,6 +1052,13 @@ fn format_system_status(backend: &dyn CliBackend) -> String {
 
             out
         }
+        Err(e) if e.starts_with("REST:") => {
+            // WASM can't dispatch sys.info locally — delegate to SDK cascade
+            format!(
+                "{GRAY}loading system status…{RESET}\r\n\
+                 {REST_SENTINEL_START}{{\"p\":\"sys.info\",\"a\":[]}}{REST_SENTINEL_END}"
+            )
+        }
         Err(_) => {
             // Fallback: basic info from backend
             let paths = backend.all_paths();
