@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::types::TraitValue;
-use crate::cli::{CliSession, CliBackend, CLEAR_SENTINEL, REST_SENTINEL_START, REST_SENTINEL_END};
+use crate::cli::{CliSession, CliBackend, PROMPT, CLEAR_SENTINEL, REST_SENTINEL_START, REST_SENTINEL_END};
 use std::io::Read;
 
 use clap::{Parser, Subcommand};
@@ -133,22 +133,9 @@ fn print_result(trait_path: &str, result: &TraitValue) -> Result<(), Box<dyn std
 }
 
 /// Parse a single CLI string into a typed JSON value.
+/// Delegates to the kernel's canonical parse_value.
 fn parse_cli_value(s: &str) -> serde_json::Value {
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-        return v;
-    }
-    if let Ok(n) = s.parse::<i64>() {
-        return serde_json::Value::from(n);
-    }
-    if let Ok(f) = s.parse::<f64>() {
-        return serde_json::Value::from(f);
-    }
-    match s {
-        "true" => serde_json::Value::Bool(true),
-        "false" => serde_json::Value::Bool(false),
-        "null" => serde_json::Value::Null,
-        _ => serde_json::Value::String(s.to_string()),
-    }
+    crate::cli::parse_value(s)
 }
 
 /// Parse raw CLI args into ordered TraitValues using the trait's param signature.
@@ -475,6 +462,81 @@ impl CliBackend for NativeCliBackend {
     }
 }
 
+// ── Unified raw-mode REPL ──
+// Both interactive_call and serve_repl share key mapping, sentinel handling,
+// and the event loop. The only differences are setup/teardown and exit conditions.
+
+/// Convert a crossterm KeyEvent to raw terminal bytes for CliSession.feed().
+/// Single source of truth for the crossterm → ANSI byte mapping.
+fn keycode_to_bytes(key: &crossterm::event::KeyEvent) -> Option<String> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    match (key.code, key.modifiers) {
+        (KeyCode::Enter, _) => Some("\r".to_string()),
+        (KeyCode::Tab, _) => Some("\t".to_string()),
+        (KeyCode::Backspace, _) => Some("\x7f".to_string()),
+        (KeyCode::Delete, _) => Some("\x1b[3~".to_string()),
+        (KeyCode::Up, _) => Some("\x1b[A".to_string()),
+        (KeyCode::Down, _) => Some("\x1b[B".to_string()),
+        (KeyCode::Left, _) => Some("\x1b[D".to_string()),
+        (KeyCode::Right, _) => Some("\x1b[C".to_string()),
+        (KeyCode::Home, _) => Some("\x1b[H".to_string()),
+        (KeyCode::End, _) => Some("\x1b[F".to_string()),
+        (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some("\x03".to_string()),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some("\x04".to_string()),
+        (KeyCode::Char('l'), KeyModifiers::CONTROL) => Some("\x0c".to_string()),
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some("\x15".to_string()),
+        (KeyCode::Char('w'), KeyModifiers::CONTROL) => Some("\x17".to_string()),
+        (KeyCode::Char('a'), KeyModifiers::CONTROL) => Some("\x01".to_string()),
+        (KeyCode::Char('e'), KeyModifiers::CONTROL) => Some("\x05".to_string()),
+        (KeyCode::Char(c), _) => {
+            let mut buf = [0u8; 4];
+            Some(c.encode_utf8(&mut buf).to_string())
+        }
+        _ => None,
+    }
+}
+
+/// Process CliSession output: handle CLEAR and REST sentinels, print the rest.
+/// Returns `true` if a sentinel was handled (caller should `continue` the loop).
+fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
+    use std::io::Write;
+
+    // Handle CLEAR sentinel
+    if output.contains(CLEAR_SENTINEL) {
+        let cleaned = output.replace(CLEAR_SENTINEL, "\x1b[2J\x1b[H");
+        print!("{}", cleaned);
+        std::io::stdout().flush().ok();
+        return true;
+    }
+
+    // Handle REST sentinel — extract {p, a} and dispatch directly via native backend
+    if output.contains(REST_SENTINEL_START) {
+        if let Some(start) = output.find(REST_SENTINEL_START) {
+            print!("{}", &output[..start]);
+        }
+        if let (Some(s), Some(e)) = (output.find(REST_SENTINEL_START), output.find(REST_SENTINEL_END)) {
+            let json_str = &output[s + REST_SENTINEL_START.len()..e];
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                let path = parsed["p"].as_str().unwrap_or("");
+                let args: Vec<serde_json::Value> = parsed["a"].as_array().cloned().unwrap_or_default();
+                match backend.call(path, &args) {
+                    Ok(result) => {
+                        let formatted = crate::cli::format_rest_result(path, &args, &result)
+                            .unwrap_or_else(|| serde_json::to_string_pretty(&result).unwrap_or_default());
+                        print!("{}", formatted);
+                    }
+                    Err(e) => print!("\x1b[31mError: {}\x1b[0m\r\n", e),
+                }
+            }
+        }
+        print!("{}", PROMPT);
+        std::io::stdout().flush().ok();
+        return true;
+    }
+
+    false
+}
+
 /// Interactive call using the unified kernel CliSession.
 /// Puts the terminal in raw mode and feeds crossterm key events as raw bytes
 /// into CliSession.feed(), writing the ANSI output directly to stdout.
@@ -482,14 +544,14 @@ async fn interactive_call(
     config: &Config,
     trait_path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use crossterm::{terminal, event::{self, Event, KeyCode, KeyModifiers}};
+    use crossterm::{terminal, event::{self, Event}};
     use std::io::{IsTerminal, Write};
 
     if !std::io::stdin().is_terminal() {
         return Err("Interactive mode requires a terminal (stdin must be a TTY)".into());
     }
 
-    let _dispatcher = crate::bootstrap(config)?; // bootstrap needed to init REGISTRY
+    let _dispatcher = crate::bootstrap(config)?;
     let backend = NativeCliBackend;
 
     let mut session = CliSession::new();
@@ -501,65 +563,29 @@ async fn interactive_call(
     print!("{}", init_output);
     std::io::stdout().flush()?;
 
-    // Enter raw mode and feed crossterm events to CliSession
     terminal::enable_raw_mode()?;
     let result = loop {
         match event::read() {
             Ok(Event::Key(key)) => {
-                // Convert crossterm KeyEvent to raw terminal bytes for CliSession.feed()
-                let raw = match (key.code, key.modifiers) {
-                    (KeyCode::Enter, _) => Some("\r".to_string()),
-                    (KeyCode::Tab, _) => Some("\t".to_string()),
-                    (KeyCode::Backspace, _) => Some("\x7f".to_string()),
-                    (KeyCode::Delete, _) => Some("\x1b[3~".to_string()),
-                    (KeyCode::Up, _) => Some("\x1b[A".to_string()),
-                    (KeyCode::Down, _) => Some("\x1b[B".to_string()),
-                    (KeyCode::Left, _) => Some("\x1b[D".to_string()),
-                    (KeyCode::Right, _) => Some("\x1b[C".to_string()),
-                    (KeyCode::Home, _) => Some("\x1b[H".to_string()),
-                    (KeyCode::End, _) => Some("\x1b[F".to_string()),
-                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some("\x03".to_string()),
-                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some("\x04".to_string()),
-                    (KeyCode::Char('l'), KeyModifiers::CONTROL) => Some("\x0c".to_string()),
-                    (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some("\x15".to_string()),
-                    (KeyCode::Char('w'), KeyModifiers::CONTROL) => Some("\x17".to_string()),
-                    (KeyCode::Char('a'), KeyModifiers::CONTROL) => Some("\x01".to_string()),
-                    (KeyCode::Char('e'), KeyModifiers::CONTROL) => Some("\x05".to_string()),
-                    (KeyCode::Char(c), _) => {
-                        let mut buf = [0u8; 4];
-                        Some(c.encode_utf8(&mut buf).to_string())
-                    }
-                    _ => None,
-                };
-
-                if let Some(bytes) = raw {
+                if let Some(bytes) = keycode_to_bytes(&key) {
                     let output = session.feed(&bytes, &backend);
-
-                    // Handle CLEAR sentinel
-                    if output.contains(CLEAR_SENTINEL) {
-                        let cleaned = output.replace(CLEAR_SENTINEL, "\x1b[2J\x1b[H");
-                        print!("{}", cleaned);
-                        std::io::stdout().flush()?;
+                    if process_session_output(&output, &backend) {
                         continue;
                     }
-
                     print!("{}", output);
                     std::io::stdout().flush()?;
-
-                    // If session exited interactive mode (back to prompt),
-                    // and we're in a single-command interactive call, we're done.
                     if !session.is_interactive() && output.contains("traits \x1b[0m") {
                         break Ok(());
                     }
                 }
             }
-            Ok(_) => {} // Ignore mouse/resize events
+            Ok(_) => {}
             Err(e) => break Err(Box::new(e) as Box<dyn std::error::Error>),
         }
     };
 
     terminal::disable_raw_mode()?;
-    println!(); // Final newline after raw mode
+    println!();
     result
 }
 
@@ -573,7 +599,6 @@ pub fn serve_repl() {
     let mut session = CliSession::new();
     session.load_history(&backend);
 
-    // Print welcome banner + initial prompt
     let welcome = session.welcome(&backend);
     print!("{}", welcome);
     std::io::stdout().flush().ok();
@@ -591,80 +616,23 @@ pub fn serve_repl() {
 
         match event {
             Event::Key(key) => {
-                let raw = match (key.code, key.modifiers) {
-                    (KeyCode::Enter, _) => Some("\r".to_string()),
-                    (KeyCode::Tab, _) => Some("\t".to_string()),
-                    (KeyCode::Backspace, _) => Some("\x7f".to_string()),
-                    (KeyCode::Delete, _) => Some("\x1b[3~".to_string()),
-                    (KeyCode::Up, _) => Some("\x1b[A".to_string()),
-                    (KeyCode::Down, _) => Some("\x1b[B".to_string()),
-                    (KeyCode::Left, _) => Some("\x1b[D".to_string()),
-                    (KeyCode::Right, _) => Some("\x1b[C".to_string()),
-                    (KeyCode::Home, _) => Some("\x1b[H".to_string()),
-                    (KeyCode::End, _) => Some("\x1b[F".to_string()),
-                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some("\x03".to_string()),
-                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-                        // Ctrl+D: exit REPL and server
-                        let _ = terminal::disable_raw_mode();
-                        println!();
-                        std::process::exit(0);
-                    }
-                    (KeyCode::Char('l'), KeyModifiers::CONTROL) => Some("\x0c".to_string()),
-                    (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some("\x15".to_string()),
-                    (KeyCode::Char('w'), KeyModifiers::CONTROL) => Some("\x17".to_string()),
-                    (KeyCode::Char('a'), KeyModifiers::CONTROL) => Some("\x01".to_string()),
-                    (KeyCode::Char('e'), KeyModifiers::CONTROL) => Some("\x05".to_string()),
-                    (KeyCode::Char(c), _) => {
-                        let mut buf = [0u8; 4];
-                        Some(c.encode_utf8(&mut buf).to_string())
-                    }
-                    _ => None,
-                };
+                // Ctrl+D: exit REPL and server
+                if key.code == KeyCode::Char('d') && key.modifiers == KeyModifiers::CONTROL {
+                    let _ = terminal::disable_raw_mode();
+                    println!();
+                    std::process::exit(0);
+                }
 
-                if let Some(bytes) = raw {
+                if let Some(bytes) = keycode_to_bytes(&key) {
                     let output = session.feed(&bytes, &backend);
-
-                    // Handle CLEAR sentinel
-                    if output.contains(CLEAR_SENTINEL) {
-                        let cleaned = output.replace(CLEAR_SENTINEL, "\x1b[2J\x1b[H");
-                        print!("{}", cleaned);
-                        std::io::stdout().flush().ok();
+                    if process_session_output(&output, &backend) {
                         continue;
                     }
-
-                    // Handle REST sentinel (shouldn't occur natively, but handle gracefully)
-                    if output.contains(REST_SENTINEL_START) {
-                        // Extract the part before the sentinel
-                        if let Some(start) = output.find(REST_SENTINEL_START) {
-                            print!("{}", &output[..start]);
-                        }
-                        // Extract {p, a} and dispatch directly
-                        if let (Some(s), Some(e)) = (output.find(REST_SENTINEL_START), output.find(REST_SENTINEL_END)) {
-                            let json_str = &output[s + REST_SENTINEL_START.len()..e];
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
-                                let path = parsed["p"].as_str().unwrap_or("");
-                                let args: Vec<serde_json::Value> = parsed["a"].as_array().cloned().unwrap_or_default();
-                                match backend.call(path, &args) {
-                                    Ok(result) => {
-                                        let formatted = crate::cli::format_rest_result(path, &args, &result)
-                                            .unwrap_or_else(|| serde_json::to_string_pretty(&result).unwrap_or_default());
-                                        print!("{}", formatted);
-                                    }
-                                    Err(e) => print!("\x1b[31mError: {}\x1b[0m\r\n", e),
-                                }
-                            }
-                        }
-                        // Print prompt after REST result
-                        print!("\x1b[32mtraits \x1b[0m");
-                        std::io::stdout().flush().ok();
-                        continue;
-                    }
-
                     print!("{}", output);
                     std::io::stdout().flush().ok();
                 }
             }
-            _ => {} // Ignore mouse/resize events
+            _ => {}
         }
     }
 

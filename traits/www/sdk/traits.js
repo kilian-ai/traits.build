@@ -20,6 +20,11 @@ let wasm = null;
 let wasmReady = false;
 let wasmCallableSet = new Set();
 
+const BACKGROUND_IFACE = 'kernel/background';
+const BACKGROUND_WORKER = 'sdk.background.worker';
+const BACKGROUND_DIRECT = 'sdk.background.direct';
+const BACKGROUND_TOKIO = 'sdk.background.tokio';
+
 function resolveWorkerScriptUrl(explicitUrl) {
     if (explicitUrl) return explicitUrl;
     if (typeof document !== 'undefined') {
@@ -242,6 +247,13 @@ export class Traits {
         this._workerQueue = [];
         this._nextWorkerMsgId = 1;
         this._nextTaskId = 1;
+
+        // Background execution abstraction: iface binding -> adapter implementation.
+        this._backgroundAdapters = new Map();
+        this._installBuiltinBackgroundAdapters();
+        if (!this._bindings.has(BACKGROUND_IFACE)) {
+            this._bindings.set(BACKGROUND_IFACE, BACKGROUND_WORKER);
+        }
     }
 
     /**
@@ -281,6 +293,71 @@ export class Traits {
             version: this._wasmInfo?.version || null,
             helper: helperReady,
             helperUrl: helperUrl,
+        };
+    }
+
+    _installBuiltinBackgroundAdapters() {
+        this.registerBackgroundAdapter(BACKGROUND_WORKER, {
+            run: async ({ id, path, args }) => {
+                if (!wasmCallableSet.has(path)) {
+                    return { ok: false, id, error: `Trait '${path}' is not WASM-callable`, dispatch: 'worker' };
+                }
+                await this.initWorkerPool();
+                return new Promise((resolve) => {
+                    const t0 = performance.now();
+                    this._workerQueue.push({ id, path, args, t0, resolve });
+                    this._drainWorkerQueue();
+                });
+            },
+        });
+
+        this.registerBackgroundAdapter(BACKGROUND_DIRECT, {
+            run: async ({ id, path, args }) => {
+                const res = await this.call(path, args);
+                return { ...res, id, dispatch: res.dispatch || 'direct' };
+            },
+        });
+
+        // Native helper-proxied backend. Meant for future tokio task traits.
+        this.registerBackgroundAdapter(BACKGROUND_TOKIO, {
+            run: async ({ id, path, args }) => {
+                const res = await this.call(path, args, { force: 'helper' });
+                if (res && res.ok) return { ...res, id, dispatch: 'tokio' };
+                return {
+                    ok: false,
+                    id,
+                    error: res?.error || 'tokio backend requires a reachable helper implementation',
+                    dispatch: 'tokio',
+                };
+            },
+        });
+    }
+
+    registerBackgroundAdapter(name, adapter) {
+        if (!name || typeof name !== 'string') {
+            throw new Error('Background adapter name must be a non-empty string');
+        }
+        if (!adapter || typeof adapter.run !== 'function') {
+            throw new Error(`Background adapter '${name}' must provide a run() function`);
+        }
+        this._backgroundAdapters.set(name, adapter);
+        return this;
+    }
+
+    getBackgroundBinding() {
+        return this._bindings.get(BACKGROUND_IFACE) || BACKGROUND_WORKER;
+    }
+
+    setBackgroundBinding(impl) {
+        this.bind(BACKGROUND_IFACE, impl);
+        return this;
+    }
+
+    backgroundStatus() {
+        return {
+            binding: this.getBackgroundBinding(),
+            adapters: [...this._backgroundAdapters.keys()],
+            ...this.workerStatus(),
         };
     }
 
@@ -324,19 +401,16 @@ export class Traits {
      * @param {Array} [args=[]]
      * @returns {{id: string, promise: Promise<any>}}
      */
-    spawn(path, args = []) {
+    spawn(path, args = [], opts = {}) {
         const id = `task-${this._nextTaskId++}`;
         const promise = (async () => {
             if (!this._initPromise) await this.init();
-            if (!wasmCallableSet.has(path)) {
-                return { ok: false, error: `Trait '${path}' is not WASM-callable`, dispatch: 'worker' };
+            const impl = opts.impl || this.getBackgroundBinding();
+            const adapter = this._backgroundAdapters.get(impl);
+            if (!adapter) {
+                return { ok: false, id, error: `Unknown background adapter: '${impl}'`, dispatch: 'background' };
             }
-            await this.initWorkerPool();
-            return new Promise((resolve) => {
-                const t0 = performance.now();
-                this._workerQueue.push({ id, path, args, t0, resolve });
-                this._drainWorkerQueue();
-            });
+            return adapter.run({ id, path, args, opts, sdk: this });
         })();
         return { id, promise };
     }
@@ -348,7 +422,7 @@ export class Traits {
      * @returns {Promise<any>}
      */
     async callInWorker(path, args = []) {
-        const job = this.spawn(path, args);
+        const job = this.spawn(path, args, { impl: BACKGROUND_WORKER });
         return job.promise;
     }
 

@@ -20,6 +20,7 @@
 
 const CLEAR_SENTINEL = '\x1b[CLEAR]';
 const REST_RE = /\x1b\[REST\]([\s\S]*?)\x1b\[\/REST\]/;
+// Source of truth: kernel/cli/cli.rs PROMPT constant. Must stay in sync.
 const PROMPT = '\x1b[32mtraits \x1b[0m';
 
 const LS_SCROLLBACK = 'traits.terminal.scrollback';

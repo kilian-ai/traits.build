@@ -23,7 +23,7 @@ pub const CYAN: &str = "\x1b[36m";
 pub const GRAY: &str = "\x1b[90m";
 pub const BRIGHT_WHITE: &str = "\x1b[97m";
 
-const PROMPT: &str = "\x1b[32mtraits \x1b[0m";
+pub const PROMPT: &str = "\x1b[32mtraits \x1b[0m";
 const IPROMPT: &str = "  \x1b[96m❯\x1b[0m ";
 
 /// Sentinel returned by clear — frontends intercept this.
