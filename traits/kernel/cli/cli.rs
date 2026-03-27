@@ -1013,7 +1013,8 @@ fn format_list(backend: &dyn CliBackend, namespace: Option<&str>) -> String {
 fn format_system_status(backend: &dyn CliBackend) -> String {
     // Call sys.info with no args to get system status
     match backend.call("sys.info", &[]) {
-        Ok(info) => format_system_status_json(&info),
+        Ok(info) => format_trait_result("sys.info", &info)
+            .unwrap_or_else(|| serde_json::to_string_pretty(&info).unwrap_or_default()),
         Err(e) if e.starts_with("REST:") => {
             // WASM can't dispatch sys.info locally — delegate to SDK cascade
             format!(
@@ -1032,106 +1033,6 @@ fn format_system_status(backend: &dyn CliBackend) -> String {
             out
         }
     }
-}
-
-/// Format sys.info system status JSON into ANSI terminal output.
-fn format_system_status_json(info: &Value) -> String {
-    let mut out = String::new();
-    out.push_str(&format!("{BOLD}{BRIGHT_WHITE}System Status{RESET}\r\n\r\n"));
-
-    if let Some(sys) = info.get("system") {
-        let os = sys.get("os").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let arch = sys.get("arch").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let build = sys.get("build_version").and_then(|v| v.as_str()).unwrap_or("?");
-        out.push_str(&format!("{BOLD}System{RESET}\r\n"));
-        out.push_str(&format!("  {GRAY}OS:{RESET}      {CYAN}{}/{}{RESET}\r\n", os, arch));
-        out.push_str(&format!("  {GRAY}Build:{RESET}   {CYAN}{}{RESET}\r\n", build));
-    }
-
-    if let Some(srv) = info.get("server") {
-        let bind = srv.get("bind").and_then(|v| v.as_str()).unwrap_or("?");
-        let port = srv.get("port").and_then(|v| v.as_str()).unwrap_or("?");
-        let uptime = srv.get("uptime").and_then(|v| v.as_str()).unwrap_or("n/a");
-        out.push_str(&format!("\r\n{BOLD}Server{RESET}\r\n"));
-        if bind == "not running" {
-            out.push_str(&format!("  {GRAY}Status:{RESET}  {YELLOW}not running{RESET}\r\n"));
-        } else {
-            out.push_str(&format!("  {GRAY}Listen:{RESET}  {GREEN}{}:{}{RESET}\r\n", bind, port));
-            out.push_str(&format!("  {GRAY}Uptime:{RESET}  {CYAN}{}{RESET}\r\n", uptime));
-        }
-    }
-
-    if let Some(traits) = info.get("traits") {
-        let total = traits.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
-        out.push_str(&format!("\r\n{BOLD}Traits{RESET}\r\n"));
-        out.push_str(&format!("  {GRAY}Total:{RESET}   {CYAN}{}{RESET}\r\n", total));
-    }
-
-    if let Some(relay) = info.get("relay") {
-        let enabled = relay.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-        out.push_str(&format!("\r\n{BOLD}Relay{RESET}\r\n"));
-        if enabled {
-            let url = relay.get("url").and_then(|v| v.as_str()).unwrap_or("?");
-            let code = relay.get("code").and_then(|v| v.as_str()).unwrap_or("");
-            let connected = relay.get("client_connected").and_then(|v| v.as_bool()).unwrap_or(false);
-            out.push_str(&format!("  {GRAY}URL:{RESET}     {CYAN}{}{RESET}\r\n", url));
-            if !code.is_empty() {
-                out.push_str(&format!("  {GRAY}Code:{RESET}    {GREEN}{}{RESET}\r\n", code));
-            }
-            let status = if connected {
-                format!("{GREEN}connected{RESET}")
-            } else {
-                format!("{YELLOW}waiting{RESET}")
-            };
-            out.push_str(&format!("  {GRAY}Client:{RESET}  {}\r\n", status));
-        } else {
-            out.push_str(&format!("  {GRAY}Status:{RESET}  {YELLOW}disabled{RESET} {GRAY}(traits config set sys.serve RELAY_URL <url>){RESET}\r\n"));
-        }
-    }
-
-    out
-}
-
-/// Format sys.info trait detail JSON into ANSI terminal output.
-fn format_info_json(info: &Value) -> String {
-    let mut out = String::new();
-    let path = info.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-    let desc = info.get("description").and_then(|v| v.as_str()).unwrap_or("");
-    let version = info.get("version").and_then(|v| v.as_str()).unwrap_or("?");
-    let source = info.get("source").and_then(|v| v.as_str()).unwrap_or("?");
-
-    out.push_str(&format!("{BOLD}{BRIGHT_WHITE}{}{RESET}  {GRAY}{}{RESET}\r\n", path, version));
-    if !desc.is_empty() {
-        out.push_str(&format!("  {}{}\r\n", desc, RESET));
-    }
-    out.push_str(&format!("  {GRAY}Source:{RESET} {}\r\n", source));
-
-    if let Some(dispatch) = info.get("dispatch") {
-        let location = dispatch.get("location").and_then(|v| v.as_str()).unwrap_or("?");
-        let browser = dispatch.get("browser_dispatch").and_then(|v| v.as_str()).unwrap_or("n/a");
-        out.push_str(&format!("  {GRAY}Dispatch:{RESET} {}\r\n", location));
-        out.push_str(&format!("  {GRAY}Browser:{RESET}  {}\r\n", browser));
-    }
-
-    if let Some(params) = info.get("params").and_then(|v| v.as_array()) {
-        if !params.is_empty() {
-            out.push_str("\r\n");
-            out.push_str(&format!("{BOLD}Parameters:{RESET}\r\n"));
-            for p in params {
-                let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-                let ptype = p.get("type").and_then(|t| t.as_str()).unwrap_or("any");
-                let pdesc = p.get("description").and_then(|d| d.as_str()).unwrap_or("");
-                let req = p.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
-                let req_mark = if req { format!(" {RED}*{RESET}") } else { String::new() };
-                out.push_str(&format!(
-                    "  {BLUE}{}{RESET} {MAGENTA}({}){RESET}{}  {GRAY}{}{RESET}\r\n",
-                    name, ptype, req_mark, pdesc
-                ));
-            }
-        }
-    }
-
-    out
 }
 
 /// Format a REST response for display in the WASM terminal.
@@ -1174,52 +1075,11 @@ fn format_info(backend: &dyn CliBackend, path: &str) -> String {
         None => return format!("{RED}Trait \"{}\" not found{RESET}", path),
     };
 
-    let mut out = String::new();
-    let trait_path = info.get("path").and_then(|p| p.as_str()).unwrap_or(path);
-    let version = info.get("version").and_then(|v| v.as_str()).unwrap_or("");
-    let desc = info.get("description").and_then(|d| d.as_str()).unwrap_or("");
-    let wasm = info.get("wasm_callable").and_then(|w| w.as_bool()).unwrap_or(false);
-    let badge = if wasm {
-        format!("{GREEN}WASM{RESET}")
-    } else {
-        format!("{YELLOW}REST{RESET}")
-    };
-
-    out.push_str(&format!(
-        "{BOLD}{BRIGHT_WHITE}{}{RESET}  {}  {GRAY}{}{RESET}\r\n", trait_path, badge, version
-    ));
-    if !desc.is_empty() {
-        out.push_str(&format!("  {GRAY}{}{RESET}\r\n", desc));
+    if let Some(formatted) = format_trait_result("sys.info", &info) {
+        return formatted;
     }
 
-    if let Some(params) = info.get("params").and_then(|p| p.as_array()) {
-        if !params.is_empty() {
-            out.push_str("\r\n");
-            out.push_str(&format!("{BOLD}Parameters:{RESET}\r\n"));
-            for p in params {
-                let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-                let ptype = p.get("type").and_then(|t| t.as_str()).unwrap_or("any");
-                let pdesc = p.get("description").and_then(|d| d.as_str()).unwrap_or("");
-                let req = p.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
-                let req_mark = if req { format!(" {RED}*{RESET}") } else { String::new() };
-                out.push_str(&format!(
-                    "  {BLUE}{}{RESET} {MAGENTA}({}){RESET}{}  {GRAY}{}{RESET}\r\n",
-                    name, ptype, req_mark, pdesc
-                ));
-            }
-        }
-    }
-
-    if let Some(ret) = info.get("returns").or_else(|| info.get("returns_type")) {
-        let rtype = if let Some(s) = ret.as_str() { s } else { "any" };
-        let rdesc = info.get("returns_description").and_then(|d| d.as_str()).unwrap_or("");
-        out.push_str("\r\n");
-        out.push_str(&format!(
-            "{BOLD}Returns:{RESET} {MAGENTA}{}{RESET}  {GRAY}{}{RESET}", rtype, rdesc
-        ));
-    }
-
-    out
+    serde_json::to_string_pretty(&info).unwrap_or_default()
 }
 
 fn format_search(backend: &dyn CliBackend, query: &str) -> String {
