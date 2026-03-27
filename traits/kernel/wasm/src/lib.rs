@@ -348,3 +348,20 @@ pub fn cli_format_rest_result(trait_path: &str, args_json: &str, result_json: &s
     let result: Value = serde_json::from_str(result_json).unwrap_or(Value::Null);
     cli_core::format_rest_result(trait_path, &args, &result).unwrap_or_default()
 }
+
+/// Return the current command history as a JSON array (most recent last).
+/// Used by terminal.js to persist history to localStorage.
+#[wasm_bindgen]
+pub fn cli_get_history() -> String {
+    with_session(|session| {
+        serde_json::to_string(session.get_history()).unwrap_or_else(|_| "[]".to_string())
+    })
+}
+
+/// Restore command history from a JSON array (e.g. from localStorage on page load).
+#[wasm_bindgen]
+pub fn cli_set_history(history_json: &str) {
+    if let Ok(history) = serde_json::from_str::<Vec<String>>(history_json) {
+        with_session(|session| session.set_history(history));
+    }
+}

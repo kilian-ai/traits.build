@@ -22,7 +22,10 @@ const CLEAR_SENTINEL = '\x1b[CLEAR]';
 const REST_RE = /\x1b\[REST\]([\s\S]*?)\x1b\[\/REST\]/;
 const PROMPT = '\x1b[32mtraits \x1b[0m';
 
-let Terminal, FitAddon, WebLinksAddon;
+const LS_SCROLLBACK = 'traits.terminal.scrollback';
+const LS_HISTORY    = 'traits.terminal.history';
+
+let Terminal, FitAddon, WebLinksAddon, SerializeAddon;
 
 /**
  * Create and mount a WASM-powered terminal.
@@ -44,6 +47,8 @@ async function createTerminal(mountEl, opts = {}) {
         FitAddon = fitMod.FitAddon;
         const linksMod = await import('https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11/+esm');
         WebLinksAddon = linksMod.WebLinksAddon;
+        const serMod = await import('https://cdn.jsdelivr.net/npm/@xterm/addon-serialize@0.13/+esm');
+        SerializeAddon = serMod.SerializeAddon;
     } catch (e) {
         mountEl.innerHTML = `<div style="padding:1rem;color:#f85149">Failed to load terminal: ${e.message}</div>`;
         throw e;
@@ -73,10 +78,24 @@ async function createTerminal(mountEl, opts = {}) {
     });
 
     const fitAddon = new FitAddon();
+    const serializeAddon = SerializeAddon ? new SerializeAddon() : null;
     term.loadAddon(fitAddon);
+    if (serializeAddon) term.loadAddon(serializeAddon);
     term.loadAddon(new WebLinksAddon());
     term.open(mountEl);
     fitAddon.fit();
+
+    // ── Persist scrollback + history to localStorage ──
+    const saveState = () => {
+        if (serializeAddon) {
+            try { localStorage.setItem(LS_SCROLLBACK, serializeAddon.serialize()); } catch (_) {}
+        }
+        if (wasm && wasm.cli_get_history) {
+            try { localStorage.setItem(LS_HISTORY, wasm.cli_get_history()); } catch (_) {}
+        }
+    };
+    window.addEventListener('pagehide', saveState);
+    window.addEventListener('hashchange', saveState);
 
     // ── Collapse/expand ──
     if (opts.header && opts.container) {
@@ -199,7 +218,7 @@ async function createTerminal(mountEl, opts = {}) {
                     }).catch(e => {
                         term.write(`\x1b[31mDispatch error: ${e.message}\x1b[0m\r\n`);
                         term.write(PROMPT);
-                    }).finally(() => { restPending = false; });
+                    }).finally(() => { restPending = false; saveState(); });
                 } else {
                     // Fallback: direct REST call (when not in SPA)
                     const restPath = p.replace(/\./g, '/');
@@ -232,11 +251,13 @@ async function createTerminal(mountEl, opts = {}) {
                         term.write(`\x1b[31mREST error: ${e.message}\x1b[0m\r\n`);
                         term.write(PROMPT);
                     })
-                    .finally(() => { restPending = false; });
+                    .finally(() => { restPending = false; saveState(); });
                 }
             } catch (e) {
                 term.write(`\x1b[31mREST parse error: ${e.message}\x1b[0m\r\n`);
                 term.write(PROMPT);
+                restPending = false;
+                saveState();
             }
             return;
         }
@@ -245,13 +266,25 @@ async function createTerminal(mountEl, opts = {}) {
             term.clear();
             const rest = output.replaceAll(CLEAR_SENTINEL, '');
             if (rest) term.write(rest);
+            try { localStorage.removeItem(LS_SCROLLBACK); } catch (_) {}
         } else {
             term.write(output);
+            // Save after a command completes (output contains newline from Enter)
+            if (data.includes('\r') || data.includes('\n')) saveState();
         }
     });
 
-    // ── Welcome ──
-    if (wasm && wasm.cli_welcome) {
+    // ── Restore history into WASM session ──
+    const savedHistory = localStorage.getItem(LS_HISTORY);
+    if (savedHistory && wasm && wasm.cli_set_history) {
+        try { wasm.cli_set_history(savedHistory); } catch (_) {}
+    }
+
+    // ── Restore scrollback or show welcome ──
+    const savedScrollback = localStorage.getItem(LS_SCROLLBACK);
+    if (savedScrollback) {
+        term.write(savedScrollback);
+    } else if (wasm && wasm.cli_welcome) {
         term.write(wasm.cli_welcome());
     } else {
         term.writeln('\x1b[33mWASM kernel not loaded — commands unavailable\x1b[0m');

@@ -130,6 +130,17 @@ impl CliSession {
         self.interactive.is_some()
     }
 
+    /// Return the current command history (most recent last).
+    pub fn get_history(&self) -> &[String] {
+        &self.history
+    }
+
+    /// Restore command history (e.g. from localStorage on WASM startup).
+    pub fn set_history(&mut self, history: Vec<String>) {
+        self.hist_idx = history.len() as isize;
+        self.history = history;
+    }
+
     /// Return the welcome banner + initial prompt.
     pub fn welcome(&self, backend: &dyn CliBackend) -> String {
         let all = backend.list_all();
