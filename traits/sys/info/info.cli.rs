@@ -65,7 +65,7 @@ fn format_system_status(result: &Value) -> String {
             };
             out.push_str(&format!("  \x1b[90mClient:\x1b[0m  {}\n", status));
         } else {
-            out.push_str("  \x1b[90mStatus:\x1b[0m  \x1b[33mdisabled\x1b[0m \x1b[90m(set RELAY_URL to enable)\x1b[0m\n");
+            out.push_str("  \x1b[90mStatus:\x1b[0m  \x1b[33mdisabled\x1b[0m \x1b[90m(set via: traits config set sys.serve RELAY_URL <url>)\x1b[0m\n");
         }
     }
 

@@ -143,10 +143,14 @@ pub fn config(args: &[serde_json::Value]) -> serde_json::Value {
 ///   1. Environment variable: `{TRAIT_PATH}_{KEY}` (dots→underscores, uppercased)
 ///      e.g. `www.admin` key `fly_app` → `WWW_ADMIN_FLY_APP`
 ///   2. Persistent override file (`/data/trait_config.toml` on Fly, or local fallback)
+///      — trait-specific section first, then `["global"]` fallback
 ///   3. sys.secrets store (if the default value starts with `secret:`)
 ///   4. The `[config]` default from the trait's .trait.toml
 ///
 /// Returns None if no value found at any level.
+///
+/// The `["global"]` section in trait_config.toml acts as cross-trait env-like storage:
+///   `traits config set global RELAY_URL https://...`  →  available to any trait
 pub fn trait_config(trait_path: &str, key: &str) -> Option<String> {
     // 1. Env var override: WWW_ADMIN_FLY_APP
     let env_key = format!("{}_{}", trait_path.replace('.', "_"), key).to_uppercase();
@@ -161,6 +165,15 @@ pub fn trait_config(trait_path: &str, key: &str) -> Option<String> {
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(val) = read_persistent_config(trait_path, key) {
         return Some(val);
+    }
+
+    // 2b. Global section fallback — ["global"] acts as cross-trait env store
+    //     e.g. `traits config set global RELAY_URL https://...`
+    #[cfg(not(target_arch = "wasm32"))]
+    if trait_path != "global" {
+        if let Some(val) = read_persistent_config("global", key) {
+            return Some(val);
+        }
     }
 
     // 3. Look up [config] default from registry

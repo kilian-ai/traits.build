@@ -5,6 +5,22 @@ use std::io::Read;
 
 use clap::{Parser, Subcommand};
 
+/// Stderr writer that converts \n to \r\n.
+/// Used when the serve REPL is active — raw mode requires \r\n to
+/// prevent the staircase effect from server log lines.
+struct CrlfStderr;
+impl std::io::Write for CrlfStderr {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let s = String::from_utf8_lossy(buf);
+        let fixed = s.replace('\n', "\r\n");
+        std::io::stderr().write_all(fixed.as_bytes())?;
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::stderr().flush()
+    }
+}
+
 // ────────────────── CLI arg parsing (clap) ──────────────────
 
 #[derive(Parser)]
@@ -55,13 +71,22 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         _ => false,
     };
     let level = if is_serve { tracing::Level::INFO } else { tracing::Level::WARN };
-    tracing_subscriber::fmt()
-        .with_max_level(level)
-        .with_writer(std::io::stderr)
-        .init();
+    let serve_tty = is_serve && std::io::IsTerminal::is_terminal(&std::io::stdin());
+    if serve_tty {
+        // REPL enables raw mode — \n must become \r\n to prevent staircase
+        tracing_subscriber::fmt()
+            .with_max_level(level)
+            .with_writer(|| CrlfStderr)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_max_level(level)
+            .with_writer(std::io::stderr)
+            .init();
+    }
 
     if is_serve {
-        eprintln!("traits {}", env!("TRAITS_BUILD_VERSION"));
+        eprint!("traits {}\r\n", env!("TRAITS_BUILD_VERSION"));
     }
 
     match cli.command {

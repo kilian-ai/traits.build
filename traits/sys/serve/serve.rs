@@ -963,11 +963,14 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
     let relay_data = web::Data::new(relay.clone());
     spawn_relay_cleanup(relay.clone());
 
-    // If RELAY_URL is set, connect to remote relay as a client
-    if let Ok(relay_url) = std::env::var("RELAY_URL") {
-        if !relay_url.is_empty() {
-            spawn_relay_client(relay_url, port);
-        }
+    // If RELAY_URL is set (env var, or persistent config under sys.serve/global), connect as relay client
+    let relay_url = std::env::var("RELAY_URL").ok().filter(|v| !v.is_empty())
+        .or_else(|| {
+            let v = crate::config::trait_config_or("sys.serve", "RELAY_URL", "");
+            if v.is_empty() { None } else { Some(v) }
+        });
+    if let Some(relay_url) = relay_url {
+        spawn_relay_client(relay_url, port);
     }
 
     info!("Starting Traits server on {}:{} ({} page routes)", config.traits.bind, port, page_routes.len());

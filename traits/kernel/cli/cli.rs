@@ -1075,7 +1075,7 @@ fn format_system_status_json(info: &Value) -> String {
             };
             out.push_str(&format!("  {GRAY}Client:{RESET}  {}\r\n", status));
         } else {
-            out.push_str(&format!("  {GRAY}Status:{RESET}  {YELLOW}disabled{RESET} {GRAY}(set RELAY_URL to enable){RESET}\r\n"));
+            out.push_str(&format!("  {GRAY}Status:{RESET}  {YELLOW}disabled{RESET} {GRAY}(traits config set sys.serve RELAY_URL <url>){RESET}\r\n"));
         }
     }
 
