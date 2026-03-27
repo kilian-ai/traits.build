@@ -1,6 +1,10 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
+mod generated_cli_formatters {
+    include!(concat!(env!("OUT_DIR"), "/cli_formatters.rs"));
+}
+
 // ═══════════════════════════════════════════
 // ── Portable CLI core ──
 // Stateful session with line editing, command history,
@@ -879,7 +883,8 @@ fn exec_call(backend: &dyn CliBackend, path: &str, arg_strs: &[String]) -> Strin
         Ok(result) => {
             let formatted = match &result {
                 Value::String(s) => s.clone(),
-                other => serde_json::to_string_pretty(other).unwrap_or_default(),
+                other => format_trait_result(path, other)
+                    .unwrap_or_else(|| serde_json::to_string_pretty(other).unwrap_or_default()),
             };
             let lines: Vec<&str> = formatted.lines().collect();
             let mut out = String::new();
@@ -907,6 +912,11 @@ fn exec_call(backend: &dyn CliBackend, path: &str, arg_strs: &[String]) -> Strin
         }
         Err(e) => format!("{RED}Error: {}{RESET}\r\n", e),
     }
+}
+
+/// Format a trait result via generated *.cli.rs formatters when available.
+pub fn format_trait_result(trait_path: &str, result: &Value) -> Option<String> {
+    generated_cli_formatters::format_cli(trait_path, result)
 }
 
 // ── Formatters ──
@@ -1128,19 +1138,15 @@ fn format_info_json(info: &Value) -> String {
 /// Returns Some(formatted) if a formatter exists, None to fall back to JSON.
 /// When result is null (REST failed), returns a local fallback if available.
 pub fn format_rest_result(trait_path: &str, args: &[Value], result: &Value) -> Option<String> {
-    match trait_path {
-        "sys.info" => {
-            if args.is_empty() || args.first().and_then(|v| v.as_str()).unwrap_or("").is_empty() {
-                if result.is_null() {
-                    Some(format_basic_status())
-                } else {
-                    Some(format_system_status_json(result))
-                }
-            } else {
-                Some(format_info_json(result))
+    if result.is_null() {
+        match trait_path {
+            "sys.info" if args.is_empty() || args.first().and_then(|v| v.as_str()).unwrap_or("").is_empty() => {
+                Some(format_basic_status())
             }
+            _ => None,
         }
-        _ => None,
+    } else {
+        format_trait_result(trait_path, result)
     }
 }
 

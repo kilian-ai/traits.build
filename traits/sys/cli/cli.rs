@@ -147,7 +147,7 @@ fn print_result(trait_path: &str, result: &TraitValue) -> Result<(), Box<dyn std
     use std::io::IsTerminal;
     let json_val = result.to_json();
     if std::io::stdout().is_terminal() {
-        if let Some(formatted) = crate::dispatcher::cli_formatters::format_cli(trait_path, &json_val) {
+        if let Some(formatted) = crate::cli::format_trait_result(trait_path, &json_val) {
             print!("{}", formatted);
             return Ok(());
         }

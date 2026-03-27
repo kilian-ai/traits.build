@@ -39,6 +39,12 @@ struct WasmForward {
     helper_preferred: bool,
 }
 
+struct CliFormatter {
+    trait_path: String,
+    mod_name: String,
+    abs_rs_path: String,
+}
+
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // workspace root is 3 levels up: traits/kernel/wasm → traits/kernel → traits → root
@@ -76,11 +82,13 @@ fn main() {
     let mut entries: Vec<(String, String)> = Vec::new();
     let mut wasm_traits: Vec<WasmTrait> = Vec::new();
     let mut wasm_forwards: Vec<WasmForward> = Vec::new();
+    let mut cli_formatters: Vec<CliFormatter> = Vec::new();
     visit_traits(&traits_dir, root_dir, &traits_dir, &mut entries,
-                 &mut wasm_traits, &mut wasm_forwards);
+                 &mut wasm_traits, &mut wasm_forwards, &mut cli_formatters);
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     wasm_traits.sort_by(|a, b| a.trait_path.cmp(&b.trait_path));
     wasm_forwards.sort_by(|a, b| a.trait_path.cmp(&b.trait_path));
+    cli_formatters.sort_by(|a, b| a.trait_path.cmp(&b.trait_path));
 
     // ── Generate wasm_builtin_traits.rs (TOML definitions for registry) ──
     let mut bt = String::new();
@@ -109,6 +117,29 @@ fn main() {
     bt.push_str("];\n");
 
     fs::write(out_dir.join("wasm_builtin_traits.rs"), bt).expect("write builtin_traits");
+
+    // ── Generate cli_formatters.rs (portable *.cli.rs registry for kernel/cli) ──
+    let mut cf = String::new();
+    for f in &cli_formatters {
+        cf.push_str(&format!(
+            "#[path = {:?}]\npub mod {};\n\n",
+            f.abs_rs_path, rust_ident(&f.mod_name)
+        ));
+        println!("cargo:rerun-if-changed={}", f.abs_rs_path);
+    }
+    cf.push_str("/// Look up a CLI formatter for the given trait path.\n");
+    cf.push_str("pub fn format_cli(trait_path: &str, result: &serde_json::Value) -> Option<String> {\n");
+    cf.push_str("    match trait_path {\n");
+    for f in &cli_formatters {
+        cf.push_str(&format!(
+            "        {:?} => Some({}::format_cli(result)),\n",
+            f.trait_path, rust_ident(&f.mod_name)
+        ));
+    }
+    cf.push_str("        _ => None,\n");
+    cf.push_str("    }\n");
+    cf.push_str("}\n");
+    fs::write(out_dir.join("cli_formatters.rs"), cf).expect("write cli_formatters");
 
     // ── Resolve WASM module name collisions ──
     {
@@ -215,7 +246,8 @@ fn main() {
 fn visit_traits(dir: &Path, root_dir: &Path, traits_dir: &Path,
                 entries: &mut Vec<(String, String)>,
                 wasm_traits: &mut Vec<WasmTrait>,
-                wasm_forwards: &mut Vec<WasmForward>) {
+                wasm_forwards: &mut Vec<WasmForward>,
+                cli_formatters: &mut Vec<CliFormatter>) {
     let read_dir = match fs::read_dir(dir) {
         Ok(rd) => rd,
         Err(_) => return,
@@ -225,7 +257,7 @@ fn visit_traits(dir: &Path, root_dir: &Path, traits_dir: &Path,
         let path = entry.path();
         if path.is_dir() {
             if path.ends_with("kernel/wasm") { continue; }
-            visit_traits(&path, root_dir, traits_dir, entries, wasm_traits, wasm_forwards);
+            visit_traits(&path, root_dir, traits_dir, entries, wasm_traits, wasm_forwards, cli_formatters);
             continue;
         }
         if !path.to_string_lossy().ends_with(".trait.toml") {
@@ -253,6 +285,19 @@ fn visit_traits(dir: &Path, root_dir: &Path, traits_dir: &Path,
 
         if let Some(tp) = trait_path {
             entries.push((tp.clone(), rel_path));
+
+            let toml_dir = path.parent().unwrap();
+            let dir_name = toml_dir.file_name().unwrap().to_string_lossy();
+
+            // Discover companion .cli.rs file for portable CLI formatting.
+            let cli_file = toml_dir.join(format!("{}.cli.rs", dir_name));
+            if cli_file.exists() {
+                cli_formatters.push(CliFormatter {
+                    trait_path: tp.clone(),
+                    mod_name: format!("{}_cli", tp.rsplit('.').next().unwrap_or(&tp)),
+                    abs_rs_path: cli_file.to_string_lossy().to_string(),
+                });
+            }
 
             // ── Parse WASM fields from .trait.toml ──
             let content = match fs::read_to_string(&path) {
@@ -323,7 +368,6 @@ fn visit_traits(dir: &Path, root_dir: &Path, traits_dir: &Path,
             };
 
             // Resolve source .rs file
-            let toml_dir = path.parent().unwrap();
             let dir_name = toml_dir.file_name().unwrap().to_string_lossy().to_string();
 
             let rs_file = if !wasm_source.is_empty() {
