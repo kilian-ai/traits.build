@@ -243,4 +243,9 @@ copy_dylib "trait_www_traits_build" "traits/www/traits/build" "build"
 copy_dylib "trait_sys_checksum"     "traits/sys/checksum"     "checksum"
 copy_dylib "trait_sys_ps"           "traits/sys/ps"           "ps"
 
+echo "Syncing local/ scripts from trait sources..."
+cp traits/www/local/helper/helper.sh local/helper.sh
+cp traits/www/local/helper/helper.sh local/traits.sh
+cp traits/www/local/install/install.sh local/install.sh
+
 echo "Traits: $("$BIN" list 2>/dev/null | grep -c '"path"') registered"

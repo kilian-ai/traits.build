@@ -12,9 +12,11 @@ set -euo pipefail
 
 REPO="kilian-ai/traits.build"
 
-# ── Default command: serve ──
+# ── Default command: serve (with relay) ──
 if [ $# -eq 0 ]; then
     PORT="${TRAITS_PORT:-8090}"
+    RELAY_URL="${RELAY_URL:-https://traits-build.fly.dev}"
+    export RELAY_URL
     set -- serve --port "$PORT"
 fi
 
@@ -35,11 +37,41 @@ case "$ARCH" in
     aarch64|arm64) ARCH="arm64" ;;
 esac
 
-# ── 1. Download fresh binary to tmp ──
+# Normalize OS names to match Rust std::env::consts::OS / ARCH
+RUST_OS="$OS"
+RUST_ARCH="$ARCH"
+case "$OS" in
+    darwin) RUST_OS="macos" ;;
+esac
+case "$ARCH" in
+    amd64) RUST_ARCH="x86_64" ;;
+    arm64) RUST_ARCH="aarch64" ;;
+esac
+
+# ── 1. Try traits.build server binary (fastest — serves its own binary) ──
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "Fetching latest release..."
+echo "Checking traits.build for $OS/$ARCH binary..."
+HEADERS="$(curl -fsSL -D - -o "$TMPDIR/traits" "https://traits.build/local/binary" 2>/dev/null || true)"
+if [ -f "$TMPDIR/traits" ] && [ -s "$TMPDIR/traits" ]; then
+    # Check platform match via response headers
+    REMOTE_OS="$(echo "$HEADERS" | grep -i 'X-Traits-OS:' | tr -d '\r' | awk '{print $2}')"
+    REMOTE_ARCH="$(echo "$HEADERS" | grep -i 'X-Traits-Arch:' | tr -d '\r' | awk '{print $2}')"
+    if [ "$REMOTE_OS" = "$RUST_OS" ] && [ "$REMOTE_ARCH" = "$RUST_ARCH" ]; then
+        chmod +x "$TMPDIR/traits"
+        banner "$@"
+        echo "✓ Downloaded traits binary ($REMOTE_OS/$REMOTE_ARCH)"
+        echo ""
+        exec "$TMPDIR/traits" "$@"
+    else
+        echo "  Server binary is $REMOTE_OS/$REMOTE_ARCH — need $RUST_OS/$RUST_ARCH"
+        rm -f "$TMPDIR/traits"
+    fi
+fi
+
+# ── 2. Try GitHub Releases ──
+echo "Checking GitHub releases..."
 LATEST="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
     | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
 
@@ -56,7 +88,7 @@ if [ -n "$LATEST" ]; then
     echo "  (no prebuilt binary for $OS/$ARCH)"
 fi
 
-# ── 2. Fallback: use local binary if already installed ──
+# ── 3. Fallback: use local binary if already installed ──
 for bin in \
     "$(command -v traits 2>/dev/null || true)" \
     "$HOME/.local/bin/traits" \

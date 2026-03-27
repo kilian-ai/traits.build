@@ -22,6 +22,56 @@ const CLEAR_SENTINEL = '\x1b[CLEAR]';
 const REST_RE = /\x1b\[REST\]([\s\S]*?)\x1b\[\/REST\]/;
 const PROMPT = '\x1b[32mtraits \x1b[0m';
 
+// ── ANSI helpers for terminal formatters ──
+const _B = '\x1b[1m', _W = '\x1b[97m', _G = '\x1b[32m', _C = '\x1b[36m';
+const _Y = '\x1b[33m', _R = '\x1b[31m', _D = '\x1b[90m', _0 = '\x1b[0m';
+
+/** Format sys.info JSON response with ANSI colors for the terminal. */
+function formatSystemStatus(info) {
+    let o = `${_B}${_W}System Status${_0}\r\n\r\n`;
+    const s = info.system;
+    if (s) {
+        o += `${_B}System${_0}\r\n`;
+        o += `  ${_D}OS:${_0}      ${_C}${s.os||'?'}/${s.arch||'?'}${_0}\r\n`;
+        o += `  ${_D}Build:${_0}   ${_C}${s.build_version||s.version||'?'}${_0}\r\n`;
+    }
+    const sv = info.server;
+    if (sv) {
+        o += `\r\n${_B}Server${_0}\r\n`;
+        if (sv.bind === 'not running') {
+            o += `  ${_D}Status:${_0}  ${_Y}not running${_0}\r\n`;
+        } else {
+            o += `  ${_D}Listen:${_0}  ${_G}${sv.bind}:${sv.port}${_0}\r\n`;
+            o += `  ${_D}Uptime:${_0}  ${_C}${sv.uptime||'n/a'}${_0}\r\n`;
+        }
+    }
+    const t = info.traits;
+    if (t) {
+        o += `\r\n${_B}Traits${_0}\r\n`;
+        o += `  ${_D}Total:${_0}   ${_C}${t.total||0}${_0}\r\n`;
+    }
+    const r = info.relay;
+    if (r) {
+        o += `\r\n${_B}Relay${_0}\r\n`;
+        if (r.enabled) {
+            o += `  ${_D}URL:${_0}     ${_C}${r.url||'?'}${_0}\r\n`;
+            if (r.code) o += `  ${_D}Code:${_0}    ${_G}${r.code}${_0}\r\n`;
+            o += `  ${_D}Client:${_0}  ${r.client_connected ? `${_G}connected${_0}` : `${_Y}waiting${_0}`}\r\n`;
+        } else {
+            o += `  ${_D}Status:${_0}  ${_Y}disabled${_0} ${_D}(set RELAY_URL to enable)${_0}\r\n`;
+        }
+    }
+    return o;
+}
+
+/** Format a REST dispatch result for terminal display. Returns null if no special formatter applies. */
+function formatRestResult(traitPath, result) {
+    if (traitPath === 'sys.info' && result && typeof result === 'object' && result.system) {
+        return formatSystemStatus(result);
+    }
+    return null;
+}
+
 let Terminal, FitAddon, WebLinksAddon;
 
 /**
@@ -167,11 +217,13 @@ async function createTerminal(mountEl, opts = {}) {
                     traitsSdk.call(p, a).then(res => {
                         term.write('\r\x1b[K'); // Clear progress line
                         if (res.ok && res.result !== undefined) {
-                            const text = typeof res.result === 'string'
-                                ? res.result
-                                : JSON.stringify(res.result, null, 2);
+                            const formatted = formatRestResult(p, res.result);
+                            const text = formatted
+                                || (typeof res.result === 'string'
+                                    ? res.result
+                                    : JSON.stringify(res.result, null, 2));
                             term.write(text.replace(/\n/g, '\r\n'));
-                            if (!text.endsWith('\n')) term.write('\r\n');
+                            if (!text.endsWith('\n') && !text.endsWith('\r\n')) term.write('\r\n');
                         } else if (res.error) {
                             term.write(`\x1b[31mError: ${res.error}\x1b[0m\r\n`);
                         }
