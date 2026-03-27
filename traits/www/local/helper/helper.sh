@@ -12,9 +12,11 @@ set -euo pipefail
 
 REPO="kilian-ai/traits.build"
 
-# ── Default command: serve ──
+# ── Default command: serve (with relay) ──
 if [ $# -eq 0 ]; then
     PORT="${TRAITS_PORT:-8090}"
+    RELAY_URL="${RELAY_URL:-https://traits-build.fly.dev}"
+    export RELAY_URL
     set -- serve --port "$PORT"
 fi
 
