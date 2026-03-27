@@ -1056,7 +1056,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-logic"
-version = "0.260327.144926"
+version = "0.260327.152038"
 dependencies = [
  "js-sys",
  "serde",
@@ -1282,13 +1282,6 @@ name = "pkg-config"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
-
-[[package]]
-name = "plugin_api"
-version = "0.260327.144926"
-dependencies = [
- "serde_json",
-]
 
 [[package]]
 name = "potential_utf"
@@ -2015,26 +2008,26 @@ dependencies = [
 
 [[package]]
 name = "trait-sys-checksum"
-version = "0.260327.144926"
+version = "0.260327.152038"
 dependencies = [
- "plugin_api",
  "regex",
  "serde_json",
  "sha2",
+ "traits-plugin-api",
 ]
 
 [[package]]
 name = "trait-sys-ps"
-version = "0.260327.144926"
+version = "0.260327.152038"
 dependencies = [
  "libc",
- "plugin_api",
  "serde_json",
+ "traits-plugin-api",
 ]
 
 [[package]]
 name = "traits"
-version = "0.260327.144926"
+version = "0.260327.152038"
 dependencies = [
  "actix-cors",
  "actix-rt",
@@ -2066,8 +2059,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "traits-plugin-api"
+version = "0.260327.152038"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "traits-wasm"
-version = "0.260327.144926"
+version = "0.260327.152038"
 dependencies = [
  "js-sys",
  "kernel-logic",

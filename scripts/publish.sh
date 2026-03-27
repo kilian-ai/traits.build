@@ -6,7 +6,7 @@ set -euo pipefail
 DRY_RUN=""
 if [[ "${1:-}" == "--dry-run" ]]; then
     DRY_RUN="--dry-run"
-    echo "=== DRY RUN ==="
+    echo "=== DRY RUN (only leaf crates testable — deps need real publish) ==="
 fi
 
 # Order matters: leaf deps first, then dependents.
@@ -20,7 +20,7 @@ fi
 # Crates with workspace deps need --no-verify because the crates.io sparse
 # index takes time to reflect newly published versions. We've already tested
 # the full build via build.sh, so verification is redundant.
-LEAF_CRATES=("plugin_api" "kernel-logic")
+LEAF_CRATES=("traits-plugin-api" "kernel-logic")
 DEP_CRATES=("traits" "trait-sys-checksum" "trait-sys-ps")
 
 wait_for_index() {
@@ -69,7 +69,7 @@ for crate in "${LEAF_CRATES[@]}"; do
     echo ""
     echo "── $crate v$VERSION ──"
 
-    if cargo publish -p "$crate" $DRY_RUN 2>&1; then
+    if cargo publish -p "$crate" --allow-dirty $DRY_RUN 2>&1; then
         echo "  ✓ Published $crate v$VERSION"
         wait_for_index "$crate" "$VERSION"
         clear_index_cache
@@ -80,16 +80,21 @@ for crate in "${LEAF_CRATES[@]}"; do
 done
 
 # Phase 2: Publish dependent crates (--no-verify: index may lag)
+# In dry-run mode, these will fail because leaf deps aren't on crates.io yet.
 for crate in "${DEP_CRATES[@]}"; do
     VERSION="$(get_version "$crate")"
     echo ""
     echo "── $crate v$VERSION (--no-verify) ──"
 
-    if cargo publish -p "$crate" --no-verify $DRY_RUN 2>&1; then
+    if cargo publish -p "$crate" --no-verify --allow-dirty $DRY_RUN 2>&1; then
         echo "  ✓ Published $crate v$VERSION"
     else
-        echo "  ✗ Failed to publish $crate"
-        exit 1
+        if [ -n "$DRY_RUN" ]; then
+            echo "  ⚠ Skipped (dry-run can't resolve unpublished workspace deps)"
+        else
+            echo "  ✗ Failed to publish $crate"
+            exit 1
+        fi
     fi
 done
 
