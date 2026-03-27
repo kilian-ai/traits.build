@@ -9,7 +9,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-kernel-logic = { path = "../logic" }
+kernel-logic = { path = "../logic", version = "0.260327.65129" }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

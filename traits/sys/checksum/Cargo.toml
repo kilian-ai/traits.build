@@ -1,6 +1,6 @@
 [package]
 name = "trait-sys-checksum"
-version = "0.1.0"
+version = "0.260327.65129"
 edition = "2021"
 description = "SHA-256 checksum trait (cdylib plugin)"
 license = "MIT"
