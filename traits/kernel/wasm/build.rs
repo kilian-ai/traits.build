@@ -68,6 +68,7 @@ fn main() {
         })
         .unwrap_or_else(|| "unknown".to_string());
     println!("cargo:rustc-env=TRAITS_BUILD_VERSION={}", build_version);
+    println!("cargo:rerun-if-env-changed=TRAITS_BUILD_VERSION");
 
     println!("cargo:rerun-if-changed=build.rs");
     watch_dirs_recursive(&traits_dir);

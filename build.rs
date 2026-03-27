@@ -80,6 +80,7 @@ fn main() {
     // ── Compute build version: vYYMMDD or vYYMMDD.HHMMSS if same day ──
     let build_version = compute_build_version(&manifest_dir, is_publish);
     println!("cargo:rustc-env=TRAITS_BUILD_VERSION={}", build_version);
+    println!("cargo:rerun-if-env-changed=TRAITS_BUILD_VERSION");
 
     let traits_dir = manifest_dir.join("traits");
 
