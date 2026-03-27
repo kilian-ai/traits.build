@@ -1,7 +1,7 @@
 [trait]
 description = "SPA-only local admin workspace"
-version = "v260326.225219"
-checksum = "7e72bbf6c6cff3241581c08277b7a9ad79724872c4bd92b50a71a3a877ad22b8"
+version = "v260327"
+checksum = "bdd8d628fc04ac5160f9e71fe154ef3c7d800346138c16ef572687c6abf85893"
 author = "system"
 tags = ["www", "admin", "spa", "local"]
 provides = ["www/webpage"]

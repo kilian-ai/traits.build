@@ -102,6 +102,28 @@ pub fn spa(_args: &[Value]) -> Value {
                             }
                         }
 
+                            // Tier 4 — Background backend (binding: kernel/background)
+                            div.tier {
+                              div.tier-header {
+                                div.dot.gray id="dotBackground" {}
+                                span.tier-label { "Background" }
+                                span.tier-detail.muted id="backgroundDetail" { "loading..." }
+                              }
+                              div.tier-controls id="backgroundControls" {
+                                p.note.compact-note {
+                                  "Background tasks use the " code { "kernel/background" } " binding."
+                                }
+                                div.form-row.compact {
+                                  select id="backgroundImpl" style="flex:1;min-width:220px;" {
+                                    option value="sdk.background.worker" { "sdk.background.worker (Web Worker pool)" }
+                                    option value="sdk.background.tokio" { "sdk.background.tokio (native helper)" }
+                                    option value="sdk.background.direct" { "sdk.background.direct (main thread fallback)" }
+                                  }
+                                  button.primary.sm id="btnBackgroundApply" onclick="applyBackgroundBinding()" { "Apply" }
+                                }
+                              }
+                            }
+
                         // Summary bar
                         div.dispatch-summary id="dispatchSummary" {
                             span.muted { "Active path: " }
@@ -365,6 +387,7 @@ td:first-child {
   margin-top: 16px;
 }
 input,
+select,
 button {
   border-radius: 12px;
   border: 1px solid var(--line);
@@ -376,6 +399,11 @@ input {
   min-width: 180px;
   flex: 1 1 220px;
   padding: 12px 14px;
+}
+select {
+  min-width: 180px;
+  flex: 1 1 220px;
+  padding: 10px 12px;
 }
 button {
   padding: 10px 14px;
@@ -650,6 +678,7 @@ async function runCmd() {
 // ═══════════════════════════════════════════════════════════════
 const SECRET_PFX = 'traits.secret.';
 const ENV_PFX = 'traits.env.';
+const BG_IMPL_KEY = 'traits.background.impl';
 const SHELL_ROUTE_KEY = 'traits.shell.route';
 const PENDING_COMMAND_KEY = 'traits.pending.terminal.command';
 const API_DOCS_FRAGMENT = '#tag/infrastructure/operation/list_traits';
@@ -927,6 +956,7 @@ window.connectRelay = connectRelay;
 window.disconnectRelay = disconnectRelay;
 window.connectHelper = connectHelperUI;
 window.disconnectHelper = disconnectHelperUI;
+window.applyBackgroundBinding = applyBackgroundBinding;
 
 // ═══════════════════════════════════════════════════════════════
 // Dispatch Status (unified 4-tier view)
@@ -937,6 +967,29 @@ function setTier(id, color, detail) {
   var txt = byId(id.charAt(0).toLowerCase() + id.slice(1) + 'Detail');
   if (dot) dot.className = 'dot ' + color;
   if (txt) txt.textContent = detail;
+}
+
+function initBackgroundBinding() {
+  var select = byId('backgroundImpl');
+  if (!select) return;
+  var saved = storage.getItem(BG_IMPL_KEY) || 'sdk.background.worker';
+  select.value = saved;
+}
+
+async function applyBackgroundBinding() {
+  var sdk = window._traitsSDK;
+  var select = byId('backgroundImpl');
+  if (!sdk || !select) return;
+  var impl = select.value || 'sdk.background.worker';
+  try {
+    sdk.setBackgroundBinding(impl);
+    storage.setItem(BG_IMPL_KEY, impl);
+    log('Background binding set: kernel/background -> ' + impl);
+    await refreshDispatchStatus();
+  } catch (e) {
+    setTier('Background', 'red', e.message || String(e));
+    log('Failed to set background binding: ' + (e.message || e), 'error');
+  }
 }
 
 async function refreshDispatchStatus() {
@@ -997,6 +1050,26 @@ async function refreshDispatchStatus() {
     byId('btnRelayDisconnect').style.display = 'none';
   }
 
+  // Tier 4: Background binding (worker/direct/tokio)
+  var bg = sdk.backgroundStatus ? sdk.backgroundStatus() : null;
+  if (bg) {
+    var select = byId('backgroundImpl');
+    if (select && bg.binding) select.value = bg.binding;
+    var detail = bg.binding + ' — workers: ' + bg.workers + ', running: ' + bg.running + ', queued: ' + bg.queued;
+    if (bg.binding === 'sdk.background.worker') {
+      setTier('Background', 'green', detail);
+      tiers.push('Background');
+    } else if (bg.binding === 'sdk.background.tokio') {
+      setTier('Background', 'yellow', detail + ' (helper-backed)');
+      tiers.push('Background');
+    } else {
+      setTier('Background', 'yellow', detail);
+      tiers.push('Background');
+    }
+  } else {
+    setTier('Background', 'gray', 'not available');
+  }
+
   // Summary
   var summary = byId('activePath');
   if (tiers.length > 0) {
@@ -1040,13 +1113,13 @@ async function disconnectHelperUI() {
 // ── Relay controls ──
 
 function initRelay() {
-  var code = localStorage.getItem('traits.relay.code') || '';
-  var server = localStorage.getItem('traits.relay.server') || '';
+  var code = storage.getItem('traits.relay.code') || '';
+  var server = storage.getItem('traits.relay.server') || '';
   byId('relayCode').value = code;
   byId('relayServer').value = server;
   // Stored helper URL
   try {
-    var storedHelper = localStorage.getItem('traits.helper.url');
+    var storedHelper = storage.getItem('traits.helper.url');
     if (storedHelper) byId('helperUrl').value = storedHelper;
   } catch(e) {}
   // Initial dispatch status refresh after a short delay for SDK init
@@ -1081,6 +1154,7 @@ async function disconnectRelay() {
   refreshDispatchStatus();
 }
 
+initBackgroundBinding();
 initRelay();
 
 // TC handles interval cleanup automatically via TC.cleanup() in injectPage

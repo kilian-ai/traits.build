@@ -504,6 +504,14 @@ async function boot() {
   sdk = new Traits({ wasm: false, server: isLocal ? '' : undefined });
   window._traitsSDK = sdk;
 
+  // Apply persisted background backend binding before runtime init.
+  try {
+    const bgImpl = localStorage.getItem('traits.background.impl');
+    if (bgImpl && sdk.setBackgroundBinding) {
+      sdk.setBackgroundBinding(bgImpl);
+    }
+  } catch(e) {}
+
   // Start helper discovery in parallel with WASM init
   const initPromise = sdk.init();
 
