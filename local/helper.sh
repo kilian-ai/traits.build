@@ -48,14 +48,49 @@ case "$ARCH" in
     arm64) RUST_ARCH="aarch64" ;;
 esac
 
-# ── 1. Try traits.build server binary (fastest — serves its own binary) ──
+# ── Find local binary ──
+LOCAL_BIN=""
+for bin in \
+    "$(command -v traits 2>/dev/null || true)" \
+    "$HOME/.local/bin/traits" \
+    "$HOME/.traits/bin/traits" \
+    "/usr/local/bin/traits"; do
+    if [ -n "$bin" ] && [ -x "$bin" ]; then
+        LOCAL_BIN="$bin"
+        break
+    fi
+done
+
+LOCAL_VERSION=""
+if [ -n "$LOCAL_BIN" ]; then
+    LOCAL_VERSION="$("$LOCAL_BIN" version 2>/dev/null | sed -E 's/traits (v[0-9.]+).*/\1/' || true)"
+fi
+
+# ── Check latest remote version ──
+echo "Checking for updates..."
+LATEST=""
+LATEST="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
+
+# ── Use local binary if it matches the latest version ──
+if [ -n "$LOCAL_BIN" ] && [ -n "$LOCAL_VERSION" ]; then
+    if [ -z "$LATEST" ] || [ "$LOCAL_VERSION" = "$LATEST" ]; then
+        banner "$@"
+        echo "✓ Using local: $LOCAL_BIN ($LOCAL_VERSION)"
+        echo ""
+        exec "$LOCAL_BIN" "$@"
+    else
+        echo "  Local $LOCAL_VERSION → remote $LATEST (updating...)"
+    fi
+fi
+
+# ── 1. Try traits.build server binary ──
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 echo "Checking traits.build for $OS/$ARCH binary..."
 HEADERS="$(curl -fsSL -D - -o "$TMPDIR/traits" "https://traits.build/local/binary" 2>/dev/null || true)"
 if [ -f "$TMPDIR/traits" ] && [ -s "$TMPDIR/traits" ]; then
-    # Check platform match via response headers
     REMOTE_OS="$(echo "$HEADERS" | grep -i 'X-Traits-OS:' | tr -d '\r' | awk '{print $2}')"
     REMOTE_ARCH="$(echo "$HEADERS" | grep -i 'X-Traits-Arch:' | tr -d '\r' | awk '{print $2}')"
     if [ "$REMOTE_OS" = "$RUST_OS" ] && [ "$REMOTE_ARCH" = "$RUST_ARCH" ]; then
@@ -71,10 +106,6 @@ if [ -f "$TMPDIR/traits" ] && [ -s "$TMPDIR/traits" ]; then
 fi
 
 # ── 2. Try GitHub Releases ──
-echo "Checking GitHub releases..."
-LATEST="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
-    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
-
 if [ -n "$LATEST" ]; then
     BINARY_URL="https://github.com/$REPO/releases/download/$LATEST/traits-$OS-$ARCH"
     echo "Downloading traits $LATEST ($OS/$ARCH)..."
@@ -88,9 +119,9 @@ if [ -n "$LATEST" ]; then
     echo "  (no prebuilt binary for $OS/$ARCH)"
 fi
 
-# ── 3. Build from source (always fresh) ──
+# ── 3. Build from source ──
 if command -v cargo &>/dev/null; then
-    echo "Building from source (1-2 min on first run)..."
+    echo "Building from source..."
     cargo install --git "https://github.com/$REPO" --locked 2>&1
     if command -v traits &>/dev/null; then
         banner "$@"
