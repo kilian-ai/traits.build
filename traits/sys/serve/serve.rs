@@ -839,9 +839,9 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
 
     info!("Starting Traits server on {}:{} ({} page routes)", config.traits.bind, port, page_routes.len());
 
-    // Publish bind/port as env vars so sys.info can report server status
-    std::env::set_var("TRAITS_BIND", &config.traits.bind);
-    std::env::set_var("TRAITS_PORT", port.to_string());
+    // Publish bind/port as globals so sys.info can report server status
+    let _ = crate::globals::SERVER_BIND.set(config.traits.bind.clone());
+    let _ = crate::globals::SERVER_PORT.set(port);
 
     HttpServer::new(move || {
         let cors = Cors::default()

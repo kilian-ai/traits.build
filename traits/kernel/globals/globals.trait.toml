@@ -1,8 +1,8 @@
 [trait]
 description = "Global OnceLock statics: REGISTRY, CONFIG, TRAITS_DIR, HANDLES, START_TIME"
-version = "v260326"
+version = "v260327"
 epoch = 0
-checksum = "6c273e73604e0eefd228f347d33229dcad9999fa2fde1335690b4b889a227eed"
+checksum = "43763084634c02e97047a504addf9ef4a279fa482c909cc0d67af9add133ae16"
 author = "kilian-ai"
 tags = ["kernel", "globals"]
 provides = ["kernel/globals"]

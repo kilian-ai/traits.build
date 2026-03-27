@@ -26,9 +26,9 @@ fn system_status() -> Value {
     let uptime = kernel_logic::platform::dispatch("kernel.globals", &[])
         .unwrap_or(json!({}));
 
-    // Server config
-    let bind = std::env::var("TRAITS_BIND").unwrap_or_default();
-    let port = std::env::var("TRAITS_PORT").unwrap_or_default();
+    // Server config (from globals set by sys.serve)
+    let bind = crate::globals::SERVER_BIND.get().cloned().unwrap_or_default();
+    let port = crate::globals::SERVER_PORT.get().map(|p| p.to_string()).unwrap_or_default();
 
     // Relay status
     let relay = relay_status();

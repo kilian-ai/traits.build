@@ -19,6 +19,10 @@ pub static CONFIG: OnceLock<Config> = OnceLock::new();
 pub static START_TIME: OnceLock<Instant> = OnceLock::new();
 pub static HANDLES: OnceLock<Arc<Mutex<HashMap<String, HandleEntry>>>> = OnceLock::new();
 
+/// Server state — set by sys.serve when HTTP server starts.
+pub static SERVER_BIND: OnceLock<String> = OnceLock::new();
+pub static SERVER_PORT: OnceLock<u16> = OnceLock::new();
+
 /// Relay connection state — updated by sys.serve when relay client connects.
 pub static RELAY_URL: OnceLock<String> = OnceLock::new();
 pub static RELAY_CODE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);

@@ -1,8 +1,8 @@
 [trait]
 description = "System status overview or detailed trait info with dispatch location"
-version = "v260326.224746"
+version = "v260327"
 epoch = 0
-checksum = "63f00491a3c410be0751ab754f8a1183a9f63468ff7cd91304c934a8a66c4810"
+checksum = "b4aa372d3ac8d1c5b6be00a1974f9b2923852c9611c138fed1672ac5e2770ebf"
 author = "system"
 tags = ["system", "meta", "discovery"]
 provides = ["sys/info"]
