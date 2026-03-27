@@ -1,6 +1,6 @@
 [package]
 name = "trait-sys-ps"
-version = "0.260327.152038"
+version = "0.260327.152624"
 edition = "2021"
 description = "Process listing trait (cdylib plugin)"
 license = "MIT"
@@ -11,6 +11,6 @@ path = "lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-plugin_api = { package = "traits-plugin-api", path = "../../kernel/plugin_api", version = "0.260327.152038" }
+plugin_api = { package = "traits-plugin-api", path = "../../kernel/plugin_api", version = "0.260327.152624" }
 serde_json = "1"
 libc = "0.2"

@@ -61,6 +61,7 @@ js = js.replace('import.meta.url', '__traits_runtime_script_url')
 exports = [
     'call',
     'callable_traits',
+    'cli_format_rest_result',
     'cli_input',
     'cli_welcome',
     'get_trait_info',
@@ -69,7 +70,10 @@ exports = [
     'is_callable',
     'is_registered',
     'list_traits',
+    'run_tests',
     'search_traits',
+    'set_helper_connected',
+    'set_secret',
     'version',
 ]
 
