@@ -46,6 +46,29 @@ fn main() {
     let traits_dir = root_dir.join("traits");
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
+    // Set TRAITS_BUILD_VERSION for WASM — read from env var (set by build.sh)
+    // or fall back to parsing version.trait.toml
+    let version_toml = root_dir.join("traits/sys/version/version.trait.toml");
+    let build_version = env::var("TRAITS_BUILD_VERSION")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .or_else(|| {
+            fs::read_to_string(&version_toml).ok().and_then(|content| {
+                content.lines().find_map(|line| {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("version") && trimmed.contains('=') {
+                        let val = trimmed.split('=').nth(1)?;
+                        let v = val.trim().trim_matches('"').trim();
+                        if !v.is_empty() { Some(v.to_string()) } else { None }
+                    } else {
+                        None
+                    }
+                })
+            })
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=TRAITS_BUILD_VERSION={}", build_version);
+
     println!("cargo:rerun-if-changed=build.rs");
     watch_dirs_recursive(&traits_dir);
 

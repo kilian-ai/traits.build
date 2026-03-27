@@ -372,12 +372,8 @@ fn hhmmss_build() -> String {
 
 /// Read current version from version.trait.toml, bump with dot notation if
 /// same day, write back, and return the new version string (with "v" prefix).
-fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
-    let toml_path = manifest_dir.join("traits/sys/version/version.trait.toml");
-    let today = yymmdd_build();
-
-    // Read current version from the toml
-    let current = fs::read_to_string(&toml_path)
+fn compute_version_from_toml(toml_path: &Path, today: &str) -> String {
+    let current = fs::read_to_string(toml_path)
         .ok()
         .and_then(|content| {
             content.lines().find_map(|line| {
@@ -385,7 +381,6 @@ fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
                 if trimmed.starts_with("version") && trimmed.contains('=') {
                     let val = trimmed.split('=').nth(1)?;
                     let v = val.trim().trim_matches('"').trim();
-                    // Strip leading "v" for comparison
                     let v = v.strip_prefix('v').unwrap_or(v);
                     if !v.is_empty() { Some(v.to_string()) } else { None }
                 } else {
@@ -395,11 +390,27 @@ fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
         })
         .unwrap_or_default();
 
-    // If current version already starts with today's date, use dot notation
-    let new_ver = if current.starts_with(&today) {
+    if current.starts_with(today) {
         format!("v{}.{}", today, hhmmss_build())
     } else {
         format!("v{}", today)
+    }
+}
+
+fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
+    let toml_path = manifest_dir.join("traits/sys/version/version.trait.toml");
+    let today = yymmdd_build();
+
+    // If TRAITS_BUILD_VERSION is set (e.g. by build.sh), use it directly.
+    // This ensures WASM and native builds share the exact same version.
+    let new_ver = if let Ok(override_ver) = std::env::var("TRAITS_BUILD_VERSION") {
+        if !override_ver.is_empty() {
+            override_ver
+        } else {
+            compute_version_from_toml(&toml_path, &today)
+        }
+    } else {
+        compute_version_from_toml(&toml_path, &today)
     };
 
     // Write back to version.trait.toml (skip if read-only, e.g. during cargo publish)

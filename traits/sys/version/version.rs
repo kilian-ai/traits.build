@@ -64,7 +64,7 @@ fn build_system_version() -> Value {
     {
         serde_json::json!({
             "name": "traits-wasm",
-            "version": env!("CARGO_PKG_VERSION"),
+            "version": env!("TRAITS_BUILD_VERSION"),
             "traits": trait_count,
             "runtime": "wasm32",
         })

@@ -16,6 +16,20 @@ SDK_RUNTIME="traits/www/static/sdk-runtime.js"
 INDEX_HTML="traits/www/static/index.html"
 INDEX_STANDALONE_HTML="traits/www/static/index.standalone.html"
 
+# ── Pre-compute build version so WASM and native builds match ──
+TODAY=$(date -u '+%y%m%d')
+HHMMSS=$(date -u '+%H%M%S')
+VERSION_TOML="traits/sys/version/version.trait.toml"
+CURRENT_VER=$(grep '^version' "$VERSION_TOML" | head -1 | sed 's/.*"\(.*\)".*/\1/' | sed 's/^v//')
+if [[ "$CURRENT_VER" == "${TODAY}"* ]]; then
+    export TRAITS_BUILD_VERSION="v${TODAY}.${HHMMSS}"
+else
+    export TRAITS_BUILD_VERSION="v${TODAY}"
+fi
+# Update version.trait.toml so both build.rs files can read it
+sed -i '' "s/^version = .*/version = \"${TRAITS_BUILD_VERSION}\"/" "$VERSION_TOML"
+echo "Build version: $TRAITS_BUILD_VERSION"
+
 # Build WASM first so the native binary embeds the latest WASM pkg via include_bytes!
 if command -v wasm-pack >/dev/null 2>&1; then
     echo "Building WASM kernel..."
