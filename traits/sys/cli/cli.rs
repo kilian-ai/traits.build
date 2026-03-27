@@ -60,6 +60,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_writer(std::io::stderr)
         .init();
 
+    if is_serve {
+        eprintln!("traits {}", env!("TRAITS_BUILD_VERSION"));
+    }
+
     match cli.command {
         Some(Commands::Call { path, interactive, args }) => {
             if interactive || is_interactive_flag(&args) {
