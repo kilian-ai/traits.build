@@ -3,7 +3,7 @@ name = "trait-sys-ps"
 version = "0.1.0"
 edition = "2021"
 description = "Process listing trait (cdylib plugin)"
-publish = false
+publish = true
 
 [lib]
 path = "lib.rs"
