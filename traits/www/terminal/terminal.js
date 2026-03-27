@@ -206,7 +206,7 @@ export async function createTerminal(mountEl, opts = {}) {
                     }).catch(e => {
                         term.write(`\x1b[31mDispatch error: ${e.message}\x1b[0m\r\n`);
                         term.write(PROMPT);
-                    }).finally(() => { restPending = false; saveState(); });
+                    }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
                 } else {
                     // Fallback: direct REST call (when not in SPA)
                     const restPath = p.replace(/\./g, '/');
@@ -239,13 +239,13 @@ export async function createTerminal(mountEl, opts = {}) {
                         term.write(`\x1b[31mREST error: ${e.message}\x1b[0m\r\n`);
                         term.write(PROMPT);
                     })
-                    .finally(() => { restPending = false; saveState(); });
+                    .finally(() => { restPending = false; requestAnimationFrame(saveState); });
                 }
             } catch (e) {
                 term.write(`\x1b[31mREST parse error: ${e.message}\x1b[0m\r\n`);
                 term.write(PROMPT);
                 restPending = false;
-                saveState();
+                requestAnimationFrame(saveState);
             }
             return;
         }
@@ -258,7 +258,7 @@ export async function createTerminal(mountEl, opts = {}) {
         } else {
             term.write(output);
             // Save after a command completes (output contains newline from Enter)
-            if (data.includes('\r') || data.includes('\n')) saveState();
+            if (data.includes('\r') || data.includes('\n')) requestAnimationFrame(saveState);
         }
     });
 
