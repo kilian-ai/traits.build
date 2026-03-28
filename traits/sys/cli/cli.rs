@@ -600,21 +600,12 @@ fn dispatch_via_rest(path: &str, args: &[serde_json::Value], target: &str) {
     use std::io::Write;
 
     // Determine the server URL based on target
-    let base_url = if target == "helper" {
-        // @helper → localhost (try configured port, then defaults)
-        let port = std::env::var("TRAITS_PORT")
-            .ok()
-            .and_then(|p| p.parse::<u16>().ok())
-            .unwrap_or(8090);
-        format!("http://127.0.0.1:{}", port)
-    } else {
-        // @rest → configured server URL, fall back to localhost
+    let base_url = {
+        // @rest and @helper both target localhost (the running server)
+        // TRAITS_SERVER env var overrides for remote REST.
         std::env::var("TRAITS_SERVER")
             .ok()
             .filter(|v| !v.is_empty())
-            .or_else(|| {
-                crate::globals::RELAY_URL.get().map(|u| u.to_string())
-            })
             .unwrap_or_else(|| {
                 let port = std::env::var("TRAITS_PORT")
                     .ok()
