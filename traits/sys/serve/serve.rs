@@ -935,27 +935,44 @@ async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), St
         // 3. Dispatch via local HTTP server
         let local_url = format!("http://127.0.0.1:{}/traits/{}", local_port, req.path.replace('.', "/"));
         let dispatch_body = serde_json::json!({"args": req.args}).to_string();
+        // Use -s (no -f) so we get the response body even on HTTP errors.
+        // --max-time 25: prevent hanging if the local server is restarting or overloaded.
         let dispatch_output = tokio::process::Command::new("curl")
-            .args(["-sf", "-X", "POST", "-H", "Content-Type: application/json",
+            .args(["-s", "--max-time", "25", "-w", "\n%{http_code}",
+                   "-X", "POST", "-H", "Content-Type: application/json",
                    "-d", &dispatch_body, &local_url])
             .output()
             .await;
 
         let response = match dispatch_output {
-            Ok(out) if out.status.success() => {
-                let result: serde_json::Value = serde_json::from_slice(&out.stdout)
-                    .unwrap_or(serde_json::Value::Null);
-                serde_json::json!({
-                    "code": code,
-                    "id": req.id,
-                    "result": result.get("result").cloned().unwrap_or(result),
-                })
+            Ok(out) => {
+                // Output format: <body>\n<http_code>
+                let raw = String::from_utf8_lossy(&out.stdout);
+                let (body_str, status_code) = raw.rsplit_once('\n')
+                    .map(|(b, c)| (b, c.trim().parse::<u16>().unwrap_or(0)))
+                    .unwrap_or((raw.as_ref(), 0));
+
+                if status_code >= 200 && status_code < 300 {
+                    let result: serde_json::Value = serde_json::from_str(body_str)
+                        .unwrap_or(serde_json::Value::Null);
+                    serde_json::json!({
+                        "code": code,
+                        "id": req.id,
+                        "result": result.get("result").cloned().unwrap_or(result),
+                    })
+                } else {
+                    // Extract error message from response body when available
+                    let detail = serde_json::from_str::<serde_json::Value>(body_str)
+                        .ok()
+                        .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(|s| s.to_string()))
+                        .unwrap_or_else(|| format!("HTTP {}", status_code));
+                    serde_json::json!({
+                        "code": code,
+                        "id": req.id,
+                        "error": format!("Local dispatch failed: {}", detail),
+                    })
+                }
             }
-            Ok(out) => serde_json::json!({
-                "code": code,
-                "id": req.id,
-                "error": format!("Local dispatch failed (exit {})", out.status.code().unwrap_or(-1)),
-            }),
             Err(e) => serde_json::json!({
                 "code": code,
                 "id": req.id,

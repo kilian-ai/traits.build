@@ -1,6 +1,6 @@
 [package]
 name = "trait-www-traits-build"
-version = "0.260328.43919"
+version = "0.260328.44818"
 edition = "2021"
 description = "Landing page for traits.build (cdylib plugin)"
 publish = false
@@ -10,5 +10,5 @@ path = "lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-plugin_api = { package = "traits-plugin-api", path = "../../../kernel/plugin_api", version = "0.260328.43919" }
+plugin_api = { package = "traits-plugin-api", path = "../../../kernel/plugin_api", version = "0.260328.44818" }
 serde_json = "1"
