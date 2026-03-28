@@ -58,13 +58,14 @@ fi
 # on /dev/tty so terminal input behaves like a normal local script launch.
 if [ "${1:-}" = "serve" ] && [ ! -t 0 ] && [ -r /dev/tty ] && [ "${TRAITS_HELPER_REEXEC:-0}" != "1" ]; then
     HELPER_URL="${TRAITS_HELPER_URL:-https://traits.build/local/helper.sh}"
-    HELPER_FILE="$(mktemp "${TMPDIR:-/tmp}/traits-helper.XXXXXX.sh")"
+    HELPER_DIR="$(mktemp -d)"
+    trap 'rm -rf "$HELPER_DIR"' EXIT
+    HELPER_FILE="$HELPER_DIR/helper.sh"
     if curl -fsSL --connect-timeout 10 "$HELPER_URL" -o "$HELPER_FILE" 2>/dev/null; then
         chmod +x "$HELPER_FILE"
         echo "↳ Switching to file-mode helper for interactive REPL"
         exec env TRAITS_HELPER_REEXEC=1 RELAY_URL="$RELAY_URL" TRAITS_REPL_LINE_MODE="${TRAITS_REPL_LINE_MODE:-}" bash "$HELPER_FILE" "$@" < /dev/tty > /dev/tty 2>&1
     fi
-    rm -f "$HELPER_FILE"
     echo "↳ Could not switch to file-mode helper; continuing in pipe mode"
 fi
 
