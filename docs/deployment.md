@@ -106,4 +106,5 @@ When a helper is started with `RELAY_URL=https://relay.traits.build traits serve
 `curl -fsSL https://traits.build/local/helper.sh | bash` now:
 
 - defaults to `RELAY_URL=https://relay.traits.build` for any `serve` invocation when `RELAY_URL` is unset,
+- auto-upgrades legacy `RELAY_URL=https://traits-build.fly.dev` to `https://relay.traits.build`,
 - reattaches stdin from `/dev/tty` for `serve` when launched via a pipe so the REPL remains interactive.

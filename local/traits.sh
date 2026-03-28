@@ -17,7 +17,9 @@ run_traits() {
     shift
 
     if [ "${1:-}" = "serve" ]; then
-        RELAY_URL="${RELAY_URL:-https://relay.traits.build}"
+        if [ -z "${RELAY_URL:-}" ] || [ "$RELAY_URL" = "https://traits-build.fly.dev" ]; then
+            RELAY_URL="https://relay.traits.build"
+        fi
         export RELAY_URL
         echo "↳ Relay URL: $RELAY_URL"
     fi
@@ -39,13 +41,15 @@ run_traits() {
 # ── Default command: serve (with relay) ──
 if [ $# -eq 0 ]; then
     PORT="${TRAITS_PORT:-8090}"
-    RELAY_URL="${RELAY_URL:-https://relay.traits.build}"
+    if [ -z "${RELAY_URL:-}" ] || [ "$RELAY_URL" = "https://traits-build.fly.dev" ]; then
+        RELAY_URL="https://relay.traits.build"
+    fi
     export RELAY_URL
     set -- serve --port "$PORT"
 fi
 
 # Ensure `serve` gets a relay default even when args were provided explicitly.
-if [ "${1:-}" = "serve" ] && [ -z "${RELAY_URL:-}" ]; then
+if [ "${1:-}" = "serve" ] && { [ -z "${RELAY_URL:-}" ] || [ "$RELAY_URL" = "https://traits-build.fly.dev" ]; }; then
     RELAY_URL="https://relay.traits.build"
     export RELAY_URL
 fi

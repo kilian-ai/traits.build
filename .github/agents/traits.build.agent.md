@@ -873,6 +873,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - Relay runs on Cloudflare Workers (`relay/` directory): zero-latency DO coordination;
   Mac client uses `tokio::process::Command("curl")` for all HTTP calls
 - `local/helper.sh` defaults `RELAY_URL` to `https://relay.traits.build` for `serve` commands and reattaches `/dev/tty` when invoked via `curl ... | bash` so REPL input works.
+- Legacy relay endpoint values (`https://traits-build.fly.dev`) are normalized to `https://relay.traits.build` in both helper script startup and `sys.serve` relay selection.
 
 **Relay endpoints** (registered in `sys.serve`):
 ```

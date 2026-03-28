@@ -115,6 +115,20 @@ fn normalize_relay_code(raw: &str) -> Option<String> {
     }
 }
 
+fn normalize_relay_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Migrate the legacy relay endpoint to the current dedicated relay domain.
+    if trimmed.eq_ignore_ascii_case("https://traits-build.fly.dev") {
+        return Some("https://relay.traits.build".to_string());
+    }
+
+    Some(trimmed.to_string())
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct CallQuery {
     #[serde(default)]
@@ -1001,12 +1015,23 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
     let relay_data = web::Data::new(relay.clone());
     spawn_relay_cleanup(relay.clone());
 
-    // If RELAY_URL is set (env var, or persistent config under sys.serve/global), connect as relay client
-    let relay_url = std::env::var("RELAY_URL").ok().filter(|v| !v.is_empty())
-        .or_else(|| {
-            let v = crate::config::trait_config_or("sys.serve", "RELAY_URL", "");
-            if v.is_empty() { None } else { Some(v) }
-        });
+    // If RELAY_URL is set (env var, or persistent config under sys.serve/global), connect as relay client.
+    // Legacy values are normalized to the dedicated relay domain.
+    let env_relay_url = std::env::var("RELAY_URL")
+        .ok()
+        .and_then(|v| normalize_relay_url(&v));
+
+    let config_relay_url_raw = crate::config::trait_config_or("sys.serve", "RELAY_URL", "");
+    let config_relay_url = normalize_relay_url(&config_relay_url_raw);
+
+    if config_relay_url_raw.trim().eq_ignore_ascii_case("https://traits-build.fly.dev") {
+        if let Err(e) = crate::config::write_persistent_config("sys.serve", "RELAY_URL", "https://relay.traits.build") {
+            info!("Failed to migrate legacy relay URL config: {}", e);
+        }
+    }
+
+    let relay_url = env_relay_url.or(config_relay_url);
+
     if let Some(relay_url) = relay_url {
         spawn_relay_client(relay_url, port);
     }

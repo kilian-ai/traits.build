@@ -1,8 +1,8 @@
 [trait]
 description = "Start the HTTP API server"
-version = "v260328"
+version = "v260328.043707"
 epoch = 0
-checksum = "960a6deffd25e869e6487c69c96f1ae384cfd83fed8a2236a4ebd5fc92dcff05"
+checksum = "b23f888c17e2cc656567a15387f1bf71f51c725fd90148684881a7860951a287"
 author = "system"
 tags = ["sys", "server"]
 background = true
