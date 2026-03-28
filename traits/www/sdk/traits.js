@@ -48,7 +48,7 @@ const HELPER_PORTS = [8090, 8091, 9090];
 const HELPER_TIMEOUT = 1500;
 
 // ── Relay state (remote helper via pairing code) ──
-const RELAY_DEFAULT_SERVER = 'https://traits-relay.kiliannc.workers.dev';
+const RELAY_DEFAULT_SERVER = 'https://relay.traits.build';
 
 function _relayServer() {
     try { return localStorage.getItem('traits.relay.server') || RELAY_DEFAULT_SERVER; } catch(e) { return RELAY_DEFAULT_SERVER; }
@@ -851,7 +851,7 @@ export class Traits {
     /**
      * Connect to a remote relay. Stores code + server in localStorage.
      * @param {string} code - 4-char pairing code from Mac helper
-     * @param {string} [server] - Relay server URL (defaults to traits-relay.kiliannc.workers.dev)
+     * @param {string} [server] - Relay server URL (defaults to relay.traits.build)
      * @returns {Promise<{ok: boolean, active?: boolean, error?: string}>}
      */
     async connectRelay(code, server) {

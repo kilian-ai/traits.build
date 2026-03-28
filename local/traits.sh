@@ -15,7 +15,7 @@ REPO="kilian-ai/traits.build"
 # ── Default command: serve (with relay) ──
 if [ $# -eq 0 ]; then
     PORT="${TRAITS_PORT:-8090}"
-    RELAY_URL="${RELAY_URL:-https://traits-relay.kiliannc.workers.dev}"
+    RELAY_URL="${RELAY_URL:-https://relay.traits.build}"
     export RELAY_URL
     set -- serve --port "$PORT"
 fi

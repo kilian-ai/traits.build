@@ -543,7 +543,7 @@ POST /relay/respond               # Mac sends {code, id, result} back
 GET  /relay/status?code=XXXX      # Check if code is active → {active, age_seconds}
 
 # Mac connects to relay (Cloudflare Workers):
-RELAY_URL=https://traits-relay.kiliannc.workers.dev traits serve
+RELAY_URL=https://relay.traits.build traits serve
 # Shows pairing code, phone enters at traits.build/#/settings
 ```
 
@@ -847,7 +847,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 ```
 
 **Relay system** (NAT-traversal via Cloudflare Workers + Durable Objects):
-- Mac starts `RELAY_URL=https://traits-relay.kiliannc.workers.dev traits serve`
+- Mac starts `RELAY_URL=https://relay.traits.build traits serve`
 - Mac registers at `/relay/register` → gets 4-char pairing code (e.g. `A7X9`)
 - Mac long-polls `/relay/poll?code=A7X9` for incoming requests
 - Phone enters code in Settings → stored in `localStorage['traits.relay.code']`
