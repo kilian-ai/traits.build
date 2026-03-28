@@ -1,0 +1,24 @@
+{
+  "trait": "llm.prompt.acp.stop",
+  "features": [
+    {
+      "name": "Stop ACP proxy",
+      "description": "Stops the running ACP proxy process",
+      "tests": [
+        {
+          "name": "stop returns status message",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/llm/prompt/acp/stop",
+          "body": { "args": [] },
+          "expect": {
+            "status": 200,
+            "json_path": "$.result",
+            "type": "string"
+          },
+          "requires_service": "acp-proxy"
+        }
+      ]
+    }
+  ]
+}

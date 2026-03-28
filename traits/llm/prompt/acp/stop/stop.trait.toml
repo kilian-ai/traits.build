@@ -1,0 +1,18 @@
+[trait]
+description = "Stop the ACP proxy"
+version = "v260328.164750"
+checksum = "5f96410718d42efc6165c9625ddbf9f59946baa6ff0008c00e508adbb9d68038"
+author = "user"
+tags = ["llm", "acp", "lifecycle"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "string"
+description = "Status message"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "acp_stop"

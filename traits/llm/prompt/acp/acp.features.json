@@ -1,0 +1,54 @@
+{
+  "trait": "llm.prompt.acp",
+  "description": "ACP proxy — routes prompts to coding agents (OpenCode, Claude Code, Codex, Copilot) via chrome-acp",
+  "features": [
+    {
+      "name": "Route prompt to ACP agent",
+      "description": "Send a prompt through the ACP proxy and receive agent response",
+      "tests": [
+        {
+          "name": "returns string response from default agent",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/llm/prompt/acp",
+          "body": { "args": ["Respond with exactly the word: hello"] },
+          "expect": {
+            "status": 200,
+            "json_path": "$.result",
+            "type": "string"
+          },
+          "requires_service": "acp-proxy"
+        }
+      ],
+      "examples": [
+        {
+          "input": ["What is 2+2?", "opencode"],
+          "output": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auto-start proxy if not running",
+      "description": "If ACP proxy is not running, the trait starts it automatically before sending the prompt",
+      "tests": []
+    },
+    {
+      "name": "Missing prompt returns error",
+      "description": "Calling without a prompt should fail",
+      "tests": [
+        {
+          "name": "error on missing prompt",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/llm/prompt/acp",
+          "body": { "args": [] },
+          "expect": {
+            "status": 400
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+[trait]
+description = "Check the status of the ACP proxy"
+version = "v260328.164750"
+checksum = "083b9071a72f7252a4f96300bf6afd10531788b5c2ae51c457cbe7581c8982cf"
+author = "user"
+tags = ["llm", "acp", "lifecycle"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "map"
+description = "Status object: {running: bool, port: int, pid: int?}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "acp_status"

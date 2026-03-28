@@ -1,0 +1,26 @@
+{
+  "trait": "llm.prompt.acp.status",
+  "features": [
+    {
+      "name": "Check ACP proxy status",
+      "description": "Reports whether the ACP proxy is running, with port and PID",
+      "tests": [
+        {
+          "name": "status returns JSON with running field",
+          "type": "contains",
+          "command": "traits call llm.prompt.acp.status",
+          "contains": "running"
+        }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "type": "object",
+            "description": "{\"running\": bool, \"port\": 9315, \"pid\": int|null}"
+          }
+        }
+      ]
+    }
+  ]
+}

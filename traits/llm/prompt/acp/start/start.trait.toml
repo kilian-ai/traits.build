@@ -1,0 +1,21 @@
+[trait]
+description = "Start the ACP proxy for a specified agent"
+version = "v260328.164750"
+checksum = "293cc3db92c875496009dc9616f09f483f6ad1a476c0b78066a19cb18b0f7087"
+author = "user"
+tags = ["llm", "acp", "lifecycle"]
+
+[[signature.params]]
+name = "agent"
+type = "string"
+description = "ACP agent to start proxy for: opencode, claude, codex, copilot"
+default = "opencode"
+
+[signature.returns]
+type = "string"
+description = "Status message"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "acp_start"

@@ -1,0 +1,24 @@
+{
+  "trait": "llm.prompt.acp.start",
+  "features": [
+    {
+      "name": "Start ACP proxy",
+      "description": "Starts the ACP proxy for a given agent, or reports it is already running",
+      "tests": [
+        {
+          "name": "start returns status message",
+          "type": "rest",
+          "method": "POST",
+          "path": "/traits/llm/prompt/acp/start",
+          "body": { "args": ["opencode"] },
+          "expect": {
+            "status": 200,
+            "json_path": "$.result",
+            "type": "string"
+          },
+          "requires_service": "acp-proxy"
+        }
+      ]
+    }
+  ]
+}
