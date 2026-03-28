@@ -9,6 +9,7 @@ tags = ["llm", "acp", "lifecycle"]
 name = "agent"
 type = "string"
 description = "ACP agent to start proxy for: opencode, claude, codex, copilot"
+required = false
 default = "opencode"
 
 [signature.returns]

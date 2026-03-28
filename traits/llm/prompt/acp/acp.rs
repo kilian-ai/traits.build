@@ -21,11 +21,14 @@ pub const AGENTS: &[(&str, &str, &[&str], &str)] = &[
 
 /// Check if the ACP proxy port is reachable.
 pub fn is_proxy_running() -> bool {
-    TcpStream::connect_timeout(
-        &std::net::SocketAddr::from(([127, 0, 0, 1], ACP_PROXY_PORT)),
-        Duration::from_secs(1),
-    )
-    .is_ok()
+    // Try IPv4 first, then IPv6 — acp-proxy may bind to either
+    let addrs: &[std::net::SocketAddr] = &[
+        std::net::SocketAddr::from(([127, 0, 0, 1], ACP_PROXY_PORT)),
+        std::net::SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 1], ACP_PROXY_PORT)),
+    ];
+    addrs.iter().any(|addr| {
+        TcpStream::connect_timeout(addr, Duration::from_secs(1)).is_ok()
+    })
 }
 
 /// Start the ACP proxy for a given agent.
