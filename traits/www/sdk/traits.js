@@ -492,6 +492,9 @@ export class Traits {
     shutdownWorkerPool() {
         for (const w of this._workers) {
             try { w.worker.terminate(); } catch(e) {}
+            if (wasm && wasm.unregister_task) {
+                try { wasm.unregister_task(`worker-${w.index}`); } catch(e) {}
+            }
         }
         this._workers = [];
         this._workerQueue = [];
@@ -521,14 +524,26 @@ export class Traits {
      */
     executeBackground(task, opts = {}) {
         const id = `task-${this._nextTaskId++}`;
+        const taskName = task.path || task.cmd || 'unknown';
+        const taskType = task.cmd === 'call' ? 'task' : 'task';
+        const detail = task.path ? `${task.cmd}(${task.path})` : task.cmd || '';
         const promise = (async () => {
             if (!this._initPromise) await this.init();
+            // Register with WASM kernel for sys.ps visibility
+            if (wasm && wasm.register_task) {
+                try { wasm.register_task(id, taskName, taskType, Date.now(), detail); } catch(e) {}
+            }
             const impl = opts.impl || this.getBackgroundBinding();
             const adapter = this._backgroundAdapters.get(impl);
             if (!adapter) {
+                if (wasm && wasm.unregister_task) try { wasm.unregister_task(id); } catch(e) {}
                 return { ok: false, id, error: `Unknown background adapter: '${impl}'`, dispatch: 'background' };
             }
-            return adapter.run({ id, task, opts, sdk: this });
+            try {
+                return await adapter.run({ id, task, opts, sdk: this });
+            } finally {
+                if (wasm && wasm.unregister_task) try { wasm.unregister_task(id); } catch(e) {}
+            }
         })();
         return { id, promise };
     }
@@ -589,6 +604,10 @@ export class Traits {
 
         await this._rpcWorker(state, 'ping', {});
         await this._rpcWorker(state, 'init', {});
+        // Register worker as a service for sys.ps
+        if (wasm && wasm.register_task) {
+            try { wasm.register_task(`worker-${index}`, `Web Worker #${index}`, 'worker', Date.now(), BACKGROUND_WORKER); } catch(e) {}
+        }
         return state;
     }
 
@@ -761,6 +780,10 @@ export class Traits {
         callable.forEach(p => wasmCallableSet.add(p));
         syncHelperToWasm();
         this._syncHelperToWorkers();
+        // Register WASM kernel as a service for sys.ps
+        if (mod.register_task) {
+            try { mod.register_task('wasm-kernel', 'WASM Kernel', 'service', Date.now(), `${callable.length} callable traits`); } catch(e) {}
+        }
     }
 
     /**

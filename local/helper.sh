@@ -12,12 +12,32 @@ set -euo pipefail
 
 REPO="kilian-ai/traits.build"
 
+run_traits() {
+    local bin="$1"
+    shift
+
+    # When launched via curl | bash, stdin is usually a closed pipe.
+    # Reattach /dev/tty for `serve` so the interactive REPL remains usable.
+    if [ "${1:-}" = "serve" ] && [ ! -t 0 ] && [ -r /dev/tty ]; then
+        echo "↳ Reattaching terminal input for REPL (/dev/tty)"
+        exec "$bin" "$@" < /dev/tty
+    fi
+
+    exec "$bin" "$@"
+}
+
 # ── Default command: serve (with relay) ──
 if [ $# -eq 0 ]; then
     PORT="${TRAITS_PORT:-8090}"
     RELAY_URL="${RELAY_URL:-https://relay.traits.build}"
     export RELAY_URL
     set -- serve --port "$PORT"
+fi
+
+# Ensure `serve` gets a relay default even when args were provided explicitly.
+if [ "${1:-}" = "serve" ] && [ -z "${RELAY_URL:-}" ]; then
+    RELAY_URL="https://relay.traits.build"
+    export RELAY_URL
 fi
 
 banner() {
@@ -81,7 +101,7 @@ if [ -n "$LOCAL_BIN" ] && [ -n "$LOCAL_VERSION" ]; then
             banner "$@"
             echo "✓ Using local: $LOCAL_BIN ($LOCAL_VERSION)"
             echo ""
-            exec "$LOCAL_BIN" "$@"
+            run_traits "$LOCAL_BIN" "$@"
         else
             echo "  Local $LOCAL_VERSION → remote $LATEST (updating...)"
         fi
@@ -90,7 +110,7 @@ if [ -n "$LOCAL_BIN" ] && [ -n "$LOCAL_VERSION" ]; then
         banner "$@"
         echo "✓ Using local (offline): $LOCAL_BIN ($LOCAL_VERSION)"
         echo ""
-        exec "$LOCAL_BIN" "$@"
+        run_traits "$LOCAL_BIN" "$@"
     fi
 fi
 
@@ -109,7 +129,7 @@ if [ -n "$LATEST" ]; then
             banner "$@"
             echo "✓ Downloaded traits $LATEST"
             echo ""
-            exec "$TMPDIR/traits" "$@"
+            run_traits "$TMPDIR/traits" "$@"
         fi
     fi
     echo "  (no prebuilt binary for $RUST_OS/$RUST_ARCH)"
@@ -127,7 +147,7 @@ if [ -f "$TMPDIR/traits" ] && [ -s "$TMPDIR/traits" ]; then
         banner "$@"
         echo "✓ Downloaded traits binary from server ($REMOTE_OS/$REMOTE_ARCH)"
         echo ""
-        exec "$TMPDIR/traits" "$@"
+        run_traits "$TMPDIR/traits" "$@"
     else
         echo "  Server binary is $REMOTE_OS/$REMOTE_ARCH — need $RUST_OS/$RUST_ARCH"
         rm -f "$TMPDIR/traits"
@@ -140,7 +160,7 @@ if command -v cargo &>/dev/null; then
     cargo install --git "https://github.com/$REPO" --locked 2>&1
     if command -v traits &>/dev/null; then
         banner "$@"
-        exec traits "$@"
+        run_traits traits "$@"
     fi
 fi
 

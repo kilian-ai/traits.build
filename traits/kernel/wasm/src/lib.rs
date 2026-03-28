@@ -169,20 +169,34 @@ fn make_wasm_vfs() -> Box<dyn kernel_logic::vfs::Vfs> {
 
 /// Return WASM kernel runtime state for `sys.ps`.
 ///
-/// No OS processes exist in the browser, so this reports:
-/// - callable/registered trait counts
-/// - helper connection status
-/// - dispatch cascade description
+/// Reports browser background tasks registered by the JS SDK:
+/// - services (terminal, webllm, wasm kernel)
+/// - workers (Web Worker pool)
+/// - tasks (spawned background trait calls)
+/// Plus WASM kernel metadata (callable/registered counts, dispatch cascade).
 fn wasm_background_tasks() -> serde_json::Value {
     let callable: Vec<&str> = wasm_traits::WASM_CALLABLE.to_vec();
     let registered = get_registry().len();
     let helper = is_helper_connected();
 
+    // Read task registry → processes array
+    let processes: Vec<serde_json::Value> = if let Ok(tasks) = TASKS.lock() {
+        tasks.iter().map(|t| serde_json::json!({
+            "id": t.id,
+            "name": t.name,
+            "type": t.task_type,
+            "status": t.status,
+            "started_ms": t.started_ms,
+            "detail": t.detail,
+        })).collect()
+    } else {
+        vec![]
+    };
+
     serde_json::json!({
         "ok": true,
         "runtime": "wasm",
-        "processes": [],
-        "note": "WASM runs in a single-threaded browser context — no OS processes exist.",
+        "processes": processes,
         "wasm": {
             "callable": callable.len(),
             "registered": registered,

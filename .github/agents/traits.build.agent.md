@@ -872,6 +872,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - Mac dispatches locally, responds via `/relay/respond` → relay returns result to phone
 - Relay runs on Cloudflare Workers (`relay/` directory): zero-latency DO coordination;
   Mac client uses `tokio::process::Command("curl")` for all HTTP calls
+- `local/helper.sh` defaults `RELAY_URL` to `https://relay.traits.build` for `serve` commands and reattaches `/dev/tty` when invoked via `curl ... | bash` so REPL input works.
 
 **Relay endpoints** (registered in `sys.serve`):
 ```

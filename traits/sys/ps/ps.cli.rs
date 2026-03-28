@@ -75,7 +75,33 @@ fn format_wasm(obj: &serde_json::Map<String, Value>) -> String {
         }
     }
 
-    out.push_str(&format!("\n\x1b[33mOS Processes\x1b[0m  n/a (single-threaded WASM)\n"));
+    // Browser tasks/services
+    if let Some(procs) = obj.get("processes").and_then(|v| v.as_array()) {
+        if !procs.is_empty() {
+            out.push_str(&format!("\n\x1b[1;97mBackground Tasks\x1b[0m\n"));
+            out.push_str(&format!("{}\n", "─".repeat(50)));
+            out.push_str(&format!("  {:<16} {:<10} {:<10} {}\n",
+                "NAME", "TYPE", "STATUS", "DETAIL"));
+
+            for p in procs {
+                let name = p["name"].as_str().unwrap_or("?");
+                let ttype = p["type"].as_str().unwrap_or("?");
+                let status = p["status"].as_str().unwrap_or("?");
+                let detail = p["detail"].as_str().unwrap_or("");
+                let status_colored = match status {
+                    "running" => format!("\x1b[32m●\x1b[0m {}", status),
+                    "idle" => format!("\x1b[33m○\x1b[0m {}", status),
+                    _ => format!("\x1b[31m○\x1b[0m {}", status),
+                };
+                out.push_str(&format!("  {:<16} {:<10} {:<18} {}\n",
+                    name, ttype, status_colored, detail));
+            }
+        }
+    }
+
+    if obj.get("processes").and_then(|v| v.as_array()).map_or(true, |a| a.is_empty()) {
+        out.push_str(&format!("\n\x1b[33mNo background tasks registered.\x1b[0m\n"));
+    }
 
     out
 }

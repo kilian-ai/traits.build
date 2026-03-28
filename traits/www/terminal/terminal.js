@@ -135,6 +135,10 @@ export async function createTerminal(mountEl, opts = {}) {
             backgroundCall = (cmd, payload = {}) => activeSdk.backgroundCall(cmd, payload);
             const status = activeSdk.status || {};
             setStatus('WASM worker', 'ready');
+            // Register terminal as a service for sys.ps
+            if (window.TraitsWasm && window.TraitsWasm.register_task) {
+                try { window.TraitsWasm.register_task('terminal', 'Terminal', 'service', Date.now(), 'xterm.js CLI session'); } catch(e) {}
+            }
             if (opts.onReady) opts.onReady({ wasm: null, traitCount: status.traits || 0, wasmCount: status.callable || 0, background: true });
         } else {
             // Fallback: attach WASM to a local SDK instance and route through sdk.background.direct.
@@ -165,6 +169,10 @@ export async function createTerminal(mountEl, opts = {}) {
                 activeSdk.attachWasm(wasm);
                 activeSdk.setBackgroundBinding('sdk.background.direct');
                 backgroundCall = (cmd, payload = {}) => activeSdk.backgroundCall(cmd, payload, { impl: 'sdk.background.direct' });
+            }
+            // Register terminal as a service for sys.ps (fallback path)
+            if (wasm && wasm.register_task) {
+                try { wasm.register_task('terminal', 'Terminal', 'service', Date.now(), 'xterm.js CLI session'); } catch(e) {}
             }
         }
     } catch (e) {

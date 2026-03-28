@@ -100,3 +100,10 @@ When a helper is started with `RELAY_URL=https://relay.traits.build traits serve
 - Browser disconnect keeps the saved code locally so reconnect does not require retyping it.
 - Helper reconnect attempts to reclaim the previous code via `sys.config` (`sys.serve.RELAY_CODE`).
 - If the code is still available, users can reconnect with the same pairing code after helper restarts.
+
+## One-shot helper script behavior
+
+`curl -fsSL https://traits.build/local/helper.sh | bash` now:
+
+- defaults to `RELAY_URL=https://relay.traits.build` for any `serve` invocation when `RELAY_URL` is unset,
+- reattaches stdin from `/dev/tty` for `serve` when launched via a pipe so the REPL remains interactive.
