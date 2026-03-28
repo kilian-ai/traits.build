@@ -74,8 +74,11 @@ pub fn do_start_proxy(agent: &str) -> Result<String, String> {
     let port_str = ACP_PROXY_PORT.to_string();
     let mut spawn_args: Vec<String> =
         vec!["--no-auth".into(), "--port".into(), port_str, cmd.to_string()];
-    for a in *extra_args {
-        spawn_args.push(a.to_string());
+    if !extra_args.is_empty() {
+        spawn_args.push("--".into());
+        for a in *extra_args {
+            spawn_args.push(a.to_string());
+        }
     }
 
     let child = Command::new("acp-proxy")
