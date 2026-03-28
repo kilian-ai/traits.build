@@ -9,6 +9,7 @@ provides = ["llm/prompt"]
 params = [
   { name = "prompt", type = "string", description = "User message to send to the model", required = true },
   { name = "model", type = "string", description = "Model name (provider-specific)", required = false },
+  { name = "context", type = "string", description = "Comma-separated file paths or globs to include as context", required = false },
 ]
 
 [signature.returns]

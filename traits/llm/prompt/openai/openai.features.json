@@ -70,6 +70,19 @@
           }
         }
       ]
+    },
+    {
+      "name": "Context file injection",
+      "description": "Pass context files as a system message prepended to the prompt",
+      "tests": [],
+      "examples": [
+        {
+          "input": ["Summarize the context", "gpt-4o-mini", "README.md,docs/*.md"],
+          "output": {
+            "type": "string"
+          }
+        }
+      ]
     }
   ]
 }

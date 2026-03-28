@@ -1,7 +1,7 @@
 [trait]
 description = "In-browser LLM inference via WebLLM (WebGPU) — implements llm/prompt"
-version = "v260326.015612"
-checksum = "c23e0762f2983e2f349ddce174cc5a412aa585105e59dd4ec5ca86a7c3f26841"
+version = "v260328"
+checksum = "543e6f6ec2eff362d9853f9197f9aff7d7c5f42a092a219f211495291fa47ea9"
 author = "system"
 tags = ["llm", "webllm", "webgpu", "wasm", "browser", "prompt"]
 provides = ["llm/prompt"]
@@ -10,6 +10,7 @@ provides = ["llm/prompt"]
 params = [
   { name = "prompt", type = "string", description = "User message to send to the model", required = true },
   { name = "model", type = "string", description = "WebLLM model ID (e.g. Llama-3.1-8B-Instruct-q4f32_1-MLC)", required = false },
+  { name = "context", type = "string", description = "Comma-separated file paths or globs to include as context (e.g. 'agent.md,docs/*.md')", required = false },
 ]
 
 [signature.returns]

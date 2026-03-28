@@ -1,33 +1,16 @@
 [trait]
 description = "OpenAI-compatible prompt→response inference (implements llm/prompt)"
-version = "v260326"
+version = "v260328"
+checksum = "88c74fabc3341e99639a548dc0e0cc898b1db909f5a9af1ec09cb9f8acf11a15"
 author = "system"
 tags = ["llm", "openai", "prompt", "ai"]
 provides = ["llm/prompt"]
 
-[trait.http]
-method = "POST"
-url = "https://api.openai.com/v1/chat/completions"
-auth_secret = "openai_api_key"
-body = '{"model": "{{model}}", "messages": [{"role": "user", "content": "{{prompt}}"}]}'
-response_path = "body.choices.0.message.content"
-
-[trait.http.defaults]
-model = "gpt-4o-mini"
-
-[requires]
-provider = "llm/openai"
-
-[bindings]
-provider = "llm.prompt.openai.rest"
-
-[load]
-llm.prompt.openai = "llm/openai"
-
 [signature]
 params = [
   { name = "prompt", type = "string", description = "User message to send to the model", required = true },
-  { name = "model", type = "string", description = "OpenAI model", optional = true },
+  { name = "model", type = "string", description = "OpenAI model (default: gpt-4o-mini)", required = false, default = "gpt-4o-mini" },
+  { name = "context", type = "string", description = "Comma-separated file paths or globs to include as context (e.g. 'agent.md,docs/*.md')", required = false },
 ]
 
 [signature.returns]
@@ -36,5 +19,5 @@ description = "Assistant response text"
 
 [implementation]
 language = "rust"
-source = "rest"
+source = "builtin"
 entry = "openai"
