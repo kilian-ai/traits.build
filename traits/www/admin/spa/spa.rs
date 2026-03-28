@@ -90,7 +90,7 @@ pub fn spa(_args: &[Value]) -> Value {
                             }
                             div.tier-controls id="relayControls" {
                                 p.note.compact-note {
-                                    "Run " code { "RELAY_URL=https://traits-build.fly.dev traits serve" } " on your Mac, enter the pairing code."
+                                    "Run " code { "RELAY_URL=https://traits-relay.kiliannc.workers.dev traits serve" } " on your Mac, enter the pairing code."
                                 }
                                 div.form-row.compact {
                                     input id="relayCode" type="text" placeholder="Code (e.g. A7X9)"

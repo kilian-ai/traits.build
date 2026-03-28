@@ -15,7 +15,7 @@ REPO="kilian-ai/traits.build"
 # ── Default command: serve (with relay) ──
 if [ $# -eq 0 ]; then
     PORT="${TRAITS_PORT:-8090}"
-    RELAY_URL="${RELAY_URL:-https://traits-build.fly.dev}"
+    RELAY_URL="${RELAY_URL:-https://traits-relay.kiliannc.workers.dev}"
     export RELAY_URL
     set -- serve --port "$PORT"
 fi
@@ -112,7 +112,7 @@ if [ -n "$LATEST" ]; then
 fi
 
 # ── 2. Try Fly.io server binary (fallback — serves its own running binary) ──
-FLY_URL="${RELAY_URL:-https://traits-build.fly.dev}"
+FLY_URL="${RELAY_URL:-https://traits-relay.kiliannc.workers.dev}"
 echo "Checking Fly.io server for $RUST_OS/$RUST_ARCH binary..."
 HEADERS="$(curl -fsSL --connect-timeout 5 -D - -o "$TMPDIR/traits" "$FLY_URL/local/binary" 2>/dev/null || true)"
 if [ -f "$TMPDIR/traits" ] && [ -s "$TMPDIR/traits" ]; then

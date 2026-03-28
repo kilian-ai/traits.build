@@ -455,6 +455,110 @@
           ]
         }
       ]
+    },
+    {
+      "name": "@target dispatch routing",
+      "description": "path@target syntax forces dispatch to specific backend: rest, native, wasm, helper, relay",
+      "tests": [
+        {
+          "name": "@native dispatches locally",
+          "type": "command",
+          "command": "./target/release/traits call 'sys.checksum@native' hash hello 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            },
+            {
+              "type": "contains",
+              "expected": "ok"
+            }
+          ]
+        },
+        {
+          "name": "@native case-insensitive (@Native)",
+          "type": "command",
+          "command": "./target/release/traits call 'sys.checksum@Native' hash hello 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            }
+          ]
+        },
+        {
+          "name": "@rest fails cleanly when no server",
+          "type": "command",
+          "command": "TRAITS_PORT=59999 ./target/release/traits call 'sys.checksum@rest' hash hello 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "rest error"
+            },
+            {
+              "type": "contains",
+              "expected": "connect"
+            }
+          ]
+        },
+        {
+          "name": "@REST uppercase works (case-insensitive)",
+          "type": "command",
+          "command": "TRAITS_PORT=59999 ./target/release/traits call 'sys.checksum@REST' hash hello 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "rest error"
+            }
+          ]
+        },
+        {
+          "name": "invalid target treated as part of path",
+          "type": "command",
+          "command": "./target/release/traits call 'sys.checksum@invalid' hash hello 2>&1",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 1
+            },
+            {
+              "type": "contains",
+              "expected": "not found"
+            }
+          ]
+        },
+        {
+          "name": "shorthand @native works",
+          "type": "command",
+          "command": "./target/release/traits 'checksum@native' hash hello 2>/dev/null",
+          "checks": [
+            {
+              "type": "exit_code",
+              "expected": 0
+            },
+            {
+              "type": "contains",
+              "expected": "checksum"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

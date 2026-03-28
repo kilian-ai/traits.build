@@ -11,6 +11,15 @@
             ]
         },
         {
+            "name": "help mentions @target dispatch",
+            "examples": [
+                {
+                    "input": ["help"],
+                    "contains": ["@rest", "rest, relay, helper, wasm, native"]
+                }
+            ]
+        },
+        {
             "name": "version command",
             "examples": [
                 {
