@@ -1,7 +1,7 @@
 [trait]
 description = "Make outbound HTTP/REST API calls. Supports JSON APIs with Bearer auth via secrets store."
-version = "v260325"
-checksum = "4c960c97325fdf74db021da5bbfa1cd5b446d7fa6e568e23b2e3bc64436fc568"
+version = "v260328"
+checksum = "a1633022898abc41f17602884471c60f16f33108c8b631e7a7f6c19d89ee1d32"
 epoch = 0
 author = "system"
 tags = ["system", "http", "rest", "api", "call"]

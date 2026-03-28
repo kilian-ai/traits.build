@@ -932,8 +932,8 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &
             let files = vfs.borrow().list();
             format_vfs_tree(&files, "")
         }
-        // ls <path/with/slashes> → VFS directory listing for that prefix
-        "ls" if args.len() == 1 && args[0].contains('/') => {
+        // ls <path> → VFS directory listing for that prefix (slash optional)
+        "ls" if args.len() == 1 => {
             let prefix = args[0].trim_end_matches('/');
             let files = vfs.borrow().list();
             let filtered: Vec<String> = files.into_iter()
@@ -944,6 +944,26 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &
                 .collect();
             if filtered.is_empty() {
                 format!("{RED}ls: {}: no such path{RESET}", args[0])
+            } else {
+                format_vfs_tree(&filtered, &format!("{prefix}/"))
+            }
+        }
+        // cd <path> → show contents of that VFS directory
+        "cd" if args.is_empty() || args[0] == "/" || args[0] == "." => {
+            let files = vfs.borrow().list();
+            format_vfs_tree(&files, "")
+        }
+        "cd" if args.len() == 1 => {
+            let prefix = args[0].trim_end_matches('/');
+            let files = vfs.borrow().list();
+            let filtered: Vec<String> = files.into_iter()
+                .filter(|f| {
+                    let k = f.trim_start_matches('/');
+                    k.starts_with(prefix) && k.len() > prefix.len()
+                })
+                .collect();
+            if filtered.is_empty() {
+                format!("{RED}cd: {}: no such directory{RESET}", args[0])
             } else {
                 format_vfs_tree(&filtered, &format!("{prefix}/"))
             }
@@ -1193,7 +1213,9 @@ fn format_help() -> String {
     s.push_str(&format!("  {GREEN}help{RESET}                       Show this help\r\n"));
     s.push_str("\r\n");
     s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Virtual filesystem{RESET}\r\n"));
-    s.push_str(&format!("  {GREEN}ls{RESET}                         List VFS files\r\n"));
+    s.push_str(&format!("  {GREEN}ls{RESET}                         List VFS root\r\n"));
+    s.push_str(&format!("  {GREEN}ls{RESET} {GRAY}<path>{RESET}              List directory (e.g. ls traits/sys)\r\n"));
+    s.push_str(&format!("  {GREEN}cd{RESET} {GRAY}<path>{RESET}              Same as ls <path>\r\n"));
     s.push_str(&format!("  {GREEN}cat{RESET} {GRAY}<file>{RESET}              Read a VFS file\r\n"));
     s.push_str(&format!("  {GREEN}write{RESET} {GRAY}<file> <content>{RESET}  Write text to a VFS file\r\n"));
     s.push_str(&format!("  {GREEN}rm{RESET} {GRAY}<file>{RESET}               Delete a VFS file\r\n"));

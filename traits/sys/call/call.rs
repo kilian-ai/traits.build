@@ -72,7 +72,7 @@ fn execute_request(
     use std::process::Command;
 
     let mut cmd = Command::new("curl");
-    cmd.args(["-s", "-w", "\n%{http_code}", "-X", method, url]);
+    cmd.args(["-sS", "-w", "\n%{http_code}", "-X", method, url]);
     cmd.args(["-H", "Content-Type: application/json"]);
 
     if let Some(token) = auth_token {

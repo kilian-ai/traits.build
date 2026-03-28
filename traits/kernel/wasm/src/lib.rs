@@ -69,25 +69,7 @@ pub fn init() -> Result<JsValue, JsValue> {
         },
         config_get: |_trait_path, _key, default| default.to_string(),
         secret_get: wasm_secrets::get_secret,
-    });
-
-    // ── Seed the CLI VFS with all embedded trait definitions ──────────────────
-    // Every .trait.toml and .features.json bundled into the WASM binary is
-    // mounted as a read-only builtin file so users can browse and cat them
-    // from the terminal:
-    //   ls              → virtual directory tree (traits/, kernel/, sys/, ...)
-    //   ls traits/sys/  → files in sys namespace
-    //   cat traits/sys/checksum/checksum.trait.toml
-    //   cat traits/sys/checksum/checksum.features.json
-    with_session(|session| {
-        let mut vfs = cli_core::LayeredVfs::new();
-        for (_path, rel_path, toml) in BUILTIN_TRAIT_DEFS {
-            vfs.seed(rel_path, toml);
-        }
-        for (_path, rel_path, feat) in BUILTIN_FEATURES {
-            vfs.seed(rel_path, feat);
-        }
-        session.set_vfs(vfs);
+        make_vfs: make_wasm_vfs,
     });
 
     Ok(serde_json::to_string(&serde_json::json!({
@@ -96,6 +78,28 @@ pub fn init() -> Result<JsValue, JsValue> {
         "wasm_callable": callable,
         "version": env!("CARGO_PKG_VERSION"),
     })).unwrap().into())
+}
+
+/// Build a `LayeredVfs` seeded from the embedded WASM binary assets.
+///
+/// Every `.trait.toml` and `.features.json` that was bundled via `include_str!`
+/// in `wasm_builtin_traits.rs` is mounted as a read-only builtin file.
+/// Called via `Platform::make_vfs` each time a `CliSession` is created.
+///
+/// Terminal usage after `init()` + `vfs_load()`:
+///   ls                                            → directory tree
+///   ls traits/sys/                                → files in sys namespace
+///   cat traits/sys/checksum/checksum.trait.toml
+///   cat traits/sys/checksum/checksum.features.json
+fn make_wasm_vfs() -> Box<dyn kernel_logic::vfs::Vfs> {
+    let mut vfs = kernel_logic::vfs::LayeredVfs::new();
+    for (_path, rel_path, toml) in BUILTIN_TRAIT_DEFS {
+        vfs.seed(rel_path, *toml);
+    }
+    for (_path, rel_path, feat) in BUILTIN_FEATURES {
+        vfs.seed(rel_path, *feat);
+    }
+    Box::new(vfs)
 }
 
 /// Check if a trait can be called locally in WASM.
