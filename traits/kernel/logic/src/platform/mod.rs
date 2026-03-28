@@ -1,17 +1,19 @@
 //! Platform abstraction layer.
 //!
 //! Provides a unified API for platform-specific capabilities (dispatch, registry,
-//! config, secrets, time) so trait source files can be platform-agnostic.
+//! config, secrets, time, task tracking) so trait source files can be platform-agnostic.
 //!
 //! - **Compile-time**: `time` module uses cfg-gated implementations (zero overhead).
 //! - **Runtime**: `Platform` struct with function pointers, initialized once at startup
 //!   via `init()`. Native binary and WASM kernel each provide their own adapters.
+//! - **Task registry**: In-memory registry for background tasks/services visible in `sys.ps`.
+//!   Shared across both native and WASM — any code can register tasks.
 
 pub mod time;
 
 use crate::vfs;
 use serde_json::Value;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 /// Platform adapter — runtime-initialized platform services.
 ///
@@ -100,4 +102,81 @@ pub fn make_vfs() -> Box<dyn vfs::Vfs> {
 /// Return platform-specific process/task status (complete JSON for `sys.ps`).
 pub fn background_tasks() -> Value {
     (platform().background_tasks)()
+}
+
+// ── In-memory task registry ──
+
+/// A background task/service registered in the platform layer.
+///
+/// Visible in `sys.ps` output on both native and WASM.
+/// - Native: merged with PID-file scan results.
+/// - WASM: the sole source of "processes".
+pub struct Task {
+    pub id: String,
+    /// Display name (e.g. "Terminal", "Web Worker #0", "sys.serve")
+    pub name: String,
+    /// "service" | "worker" | "task"
+    pub task_type: String,
+    /// "running" | "idle" | "done" | "stopped"
+    pub status: String,
+    /// Monotonic start time in seconds since platform init (native),
+    /// or Date.now() milliseconds from JS (WASM).
+    pub started: f64,
+    /// Optional extra info (adapter name, trait path, etc.)
+    pub detail: String,
+}
+
+static TASK_REGISTRY: Mutex<Vec<Task>> = Mutex::new(Vec::new());
+
+/// Register a background task/service visible in `sys.ps`.
+///
+/// Idempotent: if a task with the same `id` already exists, updates its
+/// status and detail instead of creating a duplicate.
+pub fn register_task(id: &str, name: &str, task_type: &str, started: f64, detail: &str) {
+    if let Ok(mut tasks) = TASK_REGISTRY.lock() {
+        if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
+            t.status = "running".to_string();
+            t.detail = detail.to_string();
+            return;
+        }
+        tasks.push(Task {
+            id: id.to_string(),
+            name: name.to_string(),
+            task_type: task_type.to_string(),
+            status: "running".to_string(),
+            started,
+            detail: detail.to_string(),
+        });
+    }
+}
+
+/// Remove a task from the registry.
+pub fn unregister_task(id: &str) {
+    if let Ok(mut tasks) = TASK_REGISTRY.lock() {
+        tasks.retain(|t| t.id != id);
+    }
+}
+
+/// Update the status of a registered task.
+pub fn update_task_status(id: &str, status: &str) {
+    if let Ok(mut tasks) = TASK_REGISTRY.lock() {
+        if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
+            t.status = status.to_string();
+        }
+    }
+}
+
+/// Return all registered tasks as JSON array.
+pub fn list_tasks() -> Vec<Value> {
+    let Ok(tasks) = TASK_REGISTRY.lock() else { return vec![] };
+    tasks.iter().map(|t| {
+        serde_json::json!({
+            "id": t.id,
+            "name": t.name,
+            "type": t.task_type,
+            "status": t.status,
+            "started": t.started,
+            "detail": t.detail,
+        })
+    }).collect()
 }

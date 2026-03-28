@@ -833,18 +833,11 @@ fn spawn_relay_client(relay_url: String, local_port: u16) {
 }
 
 async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), String> {
-    let preferred_code = crate::config::trait_config("sys.serve", "RELAY_CODE")
-        .and_then(|code| normalize_relay_code(&code));
-
-    // 1. Register
+    // 1. Register — always generate a fresh code (rotation is safe now that
+    //    the client stores a signed token for reconnect via _syncRelayCodeFromHelper)
     let register_url = format!("{}/relay/register", relay_url);
-    let mut register_cmd = tokio::process::Command::new("curl");
-    register_cmd.args(["-sf", "-X", "POST", &register_url]);
-    if let Some(ref code) = preferred_code {
-        let payload = serde_json::json!({ "code": code }).to_string();
-        register_cmd.args(["-H", "Content-Type: application/json", "-d", &payload]);
-    }
-    let output = register_cmd
+    let output = tokio::process::Command::new("curl")
+        .args(["-sf", "-X", "POST", &register_url])
         .output()
         .await
         .map_err(|e| format!("curl register failed: {}", e))?;
@@ -856,10 +849,6 @@ async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), St
     let reg: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("Invalid register response: {}", e))?;
     let code = reg["code"].as_str().ok_or("No code in response")?.to_string();
-
-    if let Err(e) = crate::config::write_persistent_config("sys.serve", "RELAY_CODE", &code) {
-        info!("Failed to persist relay code {}: {}", code, e);
-    }
 
     // Publish pairing code to globals
     if let Ok(mut guard) = crate::globals::RELAY_CODE.write() {

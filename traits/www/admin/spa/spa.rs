@@ -344,6 +344,7 @@ h2 {
 }
 .dot.green { background: var(--accent); box-shadow: 0 0 14px rgba(89, 213, 176, 0.45); }
 .dot.yellow { background: var(--warn); box-shadow: 0 0 14px rgba(245, 185, 66, 0.35); }
+.dot.orange { background: #f58c42; box-shadow: 0 0 14px rgba(245, 140, 66, 0.45); }
 .dot.red { background: var(--danger); box-shadow: 0 0 14px rgba(239, 107, 115, 0.35); }
 .status-text { font-weight: 600; }
 table {
@@ -1036,10 +1037,15 @@ async function refreshDispatchStatus() {
         byId('btnRelayConnect').style.display = 'none';
         byId('btnRelayDisconnect').style.display = '';
         tiers.push('Relay');
-      } else {
-        setTier('Relay', 'red', 'code ' + s.relayCode + ' — helper offline (run traits serve to reactivate)');
+      } else if (rs.hasToken) {
+        // Token exists (connected before) but Mac is currently offline
+        setTier('Relay', 'orange', 'code ' + s.relayCode + ' — server offline (reconnects automatically when Mac restarts)');
         byId('btnRelayConnect').style.display = '';
-        byId('btnRelayDisconnect').style.display = '';  // show so user can clear stale code
+        byId('btnRelayDisconnect').style.display = '';
+      } else {
+        setTier('Relay', 'red', 'code ' + s.relayCode + ' — helper offline (run traits serve, enter the new pairing code)');
+        byId('btnRelayConnect').style.display = '';
+        byId('btnRelayDisconnect').style.display = '';
       }
     } catch (e) {
       setTier('Relay', 'red', 'error: ' + (e.message || e));
