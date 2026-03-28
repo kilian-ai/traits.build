@@ -527,9 +527,10 @@ class Traits {
      */
     executeBackground(task, opts = {}) {
         const id = `task-${this._nextTaskId++}`;
-        const taskName = task.path || task.cmd || 'unknown';
-        const taskType = task.cmd === 'call' ? 'task' : 'task';
-        const detail = task.path ? `${task.cmd}(${task.path})` : task.cmd || '';
+        const meta = this._backgroundTaskMeta(task);
+        const taskName = meta.name;
+        const taskType = meta.taskType;
+        const detail = meta.detail;
         const promise = (async () => {
             if (!this._initPromise) await this.init();
             // Register with WASM kernel for sys.ps visibility
@@ -708,13 +709,36 @@ class Traits {
                 .map((p) => ({
                     id: String(p.id),
                     name: String(p.name || p.id),
-                    task_type: String(p.task_type || 'task'),
+                    task_type: String(p.task_type || p.type || 'task'),
                     started_ms: Number(p.started_ms || Date.now()),
                     detail: String(p.detail || ''),
                 }));
         } catch (e) {
             return [];
         }
+    }
+
+    _backgroundTaskMeta(task) {
+        const cmd = String(task?.cmd || '');
+        const path = String(task?.path || '');
+
+        if (cmd === 'call' && path) {
+            return { name: path, taskType: 'task', detail: `call(${path})` };
+        }
+
+        if (cmd === 'cli_input') {
+            return { name: 'Terminal Input', taskType: 'task', detail: 'interactive CLI input' };
+        }
+
+        if (cmd === 'cli_format_rest_result') {
+            return { name: 'Terminal Format', taskType: 'task', detail: 'REST result formatting' };
+        }
+
+        return {
+            name: cmd || path || 'background task',
+            taskType: 'task',
+            detail: path ? `${cmd}(${path})` : cmd,
+        };
     }
 
     _syncTasksToWorker(state) {

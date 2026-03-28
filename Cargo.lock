@@ -1056,7 +1056,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-logic"
-version = "0.260328.124409"
+version = "0.260328.130109"
 dependencies = [
  "js-sys",
  "serde",
@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "trait-sys-checksum"
-version = "0.260328.124409"
+version = "0.260328.130109"
 dependencies = [
  "regex",
  "serde_json",
@@ -2024,7 +2024,7 @@ dependencies = [
 
 [[package]]
 name = "traits"
-version = "0.260328.124409"
+version = "0.260328.130109"
 dependencies = [
  "actix-cors",
  "actix-rt",
@@ -2058,14 +2058,14 @@ dependencies = [
 
 [[package]]
 name = "traits-plugin-api"
-version = "0.260328.124409"
+version = "0.260328.130109"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "traits-wasm"
-version = "0.260328.124409"
+version = "0.260328.130109"
 dependencies = [
  "js-sys",
  "kernel-logic",
