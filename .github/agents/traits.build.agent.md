@@ -875,6 +875,8 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - `local/helper.sh` defaults `RELAY_URL` to `https://relay.traits.build` for `serve` commands and reattaches `/dev/tty` when invoked via `curl ... | bash` so REPL input works.
 - Legacy relay endpoint values (`https://traits-build.fly.dev`) are normalized to `https://relay.traits.build` in both helper script startup and `sys.serve` relay selection.
 - `sys.serve` also attempts a `/dev/tty` stdio reattach before disabling REPL, so interactive CLI can still start when stdin began as a pipe.
+- `sys.cli::serve_repl` falls back to a `/dev/tty` line-mode REPL if crossterm raw key-event mode fails, so helper startup still has usable input.
+- `TRAITS_REPL_LINE_MODE=1` forces line-mode REPL for `serve` (useful when terminal raw-mode event capture is flaky in piped startup contexts).
 
 **Relay endpoints** (registered in `sys.serve`):
 ```

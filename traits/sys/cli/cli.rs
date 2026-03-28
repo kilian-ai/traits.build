@@ -731,19 +731,30 @@ pub fn serve_repl() {
     let mut session = CliSession::new();
     session.load_history(&backend);
 
+    if std::env::var("TRAITS_REPL_LINE_MODE").ok().as_deref() == Some("1") {
+        serve_repl_line_mode(&mut session, &backend);
+        return;
+    }
+
     let welcome = session.welcome(&backend);
     print!("{}", welcome);
     std::io::stdout().flush().ok();
 
     if terminal::enable_raw_mode().is_err() {
-        eprintln!("Failed to enable raw mode — REPL disabled");
+        eprintln!("Failed to enable raw mode — switching to line-mode REPL");
+        serve_repl_line_mode(&mut session, &backend);
         return;
     }
 
     loop {
         let event = match event::read() {
             Ok(ev) => ev,
-            Err(_) => break,
+            Err(e) => {
+                let _ = terminal::disable_raw_mode();
+                eprintln!("REPL raw input error ({}) — switching to line-mode REPL", e);
+                serve_repl_line_mode(&mut session, &backend);
+                return;
+            }
         };
 
         match event {
@@ -767,9 +778,46 @@ pub fn serve_repl() {
             _ => {}
         }
     }
+}
 
-    let _ = terminal::disable_raw_mode();
-    println!();
+fn serve_repl_line_mode(session: &mut CliSession, backend: &NativeCliBackend) {
+    use std::fs::OpenOptions;
+    use std::io::{BufRead, BufReader, Write};
+
+    let tty = OpenOptions::new().read(true).write(true).open("/dev/tty");
+
+    let (mut out, mut reader): (Box<dyn Write>, Box<dyn BufRead>) = match tty {
+        Ok(file) => {
+            let in_file = file.try_clone();
+            match in_file {
+                Ok(in_file) => (Box::new(file), Box::new(BufReader::new(in_file))),
+                Err(_) => (Box::new(std::io::stdout()), Box::new(BufReader::new(std::io::stdin()))),
+            }
+        }
+        Err(_) => (Box::new(std::io::stdout()), Box::new(BufReader::new(std::io::stdin()))),
+    };
+
+    let _ = writeln!(out, "\n[repl] line mode active (reduced editing features)");
+    let _ = out.flush();
+
+    loop {
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) => break,
+            Ok(_) => {
+                let output = session.feed(&line, backend);
+                if process_session_output(&output, backend) {
+                    continue;
+                }
+                let _ = write!(out, "{}", output);
+                let _ = out.flush();
+            }
+            Err(_) => break,
+        }
+    }
+
+    let _ = writeln!(out);
+    let _ = out.flush();
 }
 
 // ── Trait dispatch entry point ──
