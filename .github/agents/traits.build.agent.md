@@ -261,7 +261,7 @@ All fields live in `[implementation]`:
 
 Same algorithm as native build.rs: count duplicate module names across all traits, qualify with parent segment:
 - `kernel.call` → `kernel_call`, `sys.call` → `sys_call`
-- `sys.cli.wasm` → `cli_wasm`, `sys.ps.wasm` → `ps_wasm`, `www.wasm` → `www_wasm`
+- `sys.cli.wasm` → `cli_wasm`, `www.wasm` → `www_wasm`
 
 #### Cross-Target Compilation (cfg-gating)
 
@@ -312,17 +312,26 @@ Used by: `sys.cli.wasm` — native code in `wasm.rs` has native dependencies, WA
 ```toml
 [implementation]
 wasm = true
-wasm_forward = "sys.ps.wasm"    # dispatch redirects to this trait in WASM
+wasm_forward = "other.trait"    # dispatch redirects to this trait in WASM
 helper_preferred = true          # prefer native helper when connected
 ```
-Used by: `sys.ps` — forwards to `sys.ps.wasm` (a pure-WASM reimplementation) and prefers native dispatch when a helper is connected.
+
+**Pattern 4: Platform abstraction layer** — for traits with heavily platform-specific logic delegated to `Platform` function pointers:
+```rust
+// ps.rs — works on both native and WASM, zero cfg blocks
+pub fn ps(_args: &[Value]) -> Value {
+    kernel_logic::platform::background_tasks()
+}
+```
+Used by: `sys.ps` — calls `platform::background_tasks()` which scans `.run/*.pid` files on native and reports WASM kernel state in the browser.
 
 **When to use which:**
 | Scenario | Pattern | Example |
 |----------|---------|---------|
 | Minor code path differences | cfg-gating | `sys.info`, `sys.list` |
 | Heavily divergent implementations | `wasm_source` | `sys.cli.wasm` |
-| Trait is native-only, sibling has WASM version | `wasm_forward` | `sys.ps` → `sys.ps.wasm` |
+| Platform-specific logic via function pointers | Platform layer | `sys.ps` |
+| Trait forwards dispatch to WASM sibling | `wasm_forward` | (see pattern 3) |
 | Module needed by other WASM traits, not dispatchable itself | `wasm_callable = false` | `kernel.cli` |
 
 #### Generated wasm_compiled_traits.rs
@@ -593,7 +602,7 @@ The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel
 | `sys.serve` | HTTP API server (actix-web) | builtin |
 | `sys.registry` | Registry read API: list, info, search | builtin |
 | `sys.checksum` | SHA-256 checksums | **dylib** |
-| `sys.ps` | List running background processes | **dylib** |
+| `sys.ps` | List running background tasks (via platform abstraction layer) | builtin |
 | `sys.mcp` | MCP stdio server (JSON-RPC 2.0) | builtin |
 | `sys.openapi` | OpenAPI 3.0 spec generation | builtin |
 | `sys.version` | YYMMDD version string | builtin |
