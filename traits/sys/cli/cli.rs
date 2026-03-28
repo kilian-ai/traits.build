@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::types::TraitValue;
-use crate::cli::{CliSession, CliBackend, PROMPT, CLEAR_SENTINEL, REST_SENTINEL_START, REST_SENTINEL_END};
+use crate::cli::{CliSession, CliCallBackend, CliHistoryBackend, CliExamplesBackend, PROMPT, CLEAR_SENTINEL, REST_SENTINEL_START, REST_SENTINEL_END};
 use std::io::Read;
 
 use clap::{Parser, Subcommand};
@@ -417,7 +417,7 @@ impl NativeCliBackend {
     }
 }
 
-impl CliBackend for NativeCliBackend {
+impl CliCallBackend for NativeCliBackend {
     fn call(&self, path: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, String> {
         match self.dispatch_method("call", &[serde_json::json!(path), serde_json::Value::Array(args.to_vec())]) {
             Some(v) => {
@@ -461,6 +461,9 @@ impl CliBackend for NativeCliBackend {
             .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
     }
 
+}
+
+impl CliHistoryBackend for NativeCliBackend {
     fn load_param_history(&self) -> std::collections::HashMap<String, std::collections::HashMap<String, Vec<String>>> {
         self.dispatch_method("load_param_history", &[])
             .and_then(|v| serde_json::from_value(v).ok())
@@ -473,6 +476,9 @@ impl CliBackend for NativeCliBackend {
         }
     }
 
+}
+
+impl CliExamplesBackend for NativeCliBackend {
     fn load_examples(&self, path: &str) -> Vec<Vec<String>> {
         self.dispatch_method("load_examples", &[serde_json::json!(path)])
             .and_then(|v| v.as_array().cloned())

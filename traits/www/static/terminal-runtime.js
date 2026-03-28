@@ -25,6 +25,7 @@ const PROMPT = '\x1b[32mtraits \x1b[0m';
 
 const LS_SCROLLBACK = 'traits.terminal.scrollback';
 const LS_HISTORY    = 'traits.terminal.history';
+const LS_VFS        = 'traits.terminal.vfs';
 
 let Terminal, FitAddon, WebLinksAddon, SerializeAddon;
 
@@ -89,6 +90,7 @@ async function createTerminal(mountEl, opts = {}) {
     // ── Persist scrollback + history to localStorage ──
     let wasm = null;
     let backgroundCall = null;
+    let activeSdk = window._traitsSDK || null;
 
     const saveState = () => {
         if (serializeAddon) {
@@ -98,6 +100,11 @@ async function createTerminal(mountEl, opts = {}) {
             backgroundCall('cli_get_history').then(res => {
                 if (res?.ok && typeof res.result === 'string') {
                     try { localStorage.setItem(LS_HISTORY, res.result); } catch (_) {}
+                }
+            }).catch(() => {});
+            backgroundCall('vfs_dump').then(res => {
+                if (res?.ok && typeof res.result === 'string') {
+                    try { localStorage.setItem(LS_VFS, res.result); } catch (_) {}
                 }
             }).catch(() => {});
         }
@@ -135,15 +142,14 @@ async function createTerminal(mountEl, opts = {}) {
 
     // ── Load background runtime (preferred: SDK adapter; fallback: direct WASM) ──
     try {
-        const traitsSdk = window._traitsSDK;
-        if (traitsSdk && typeof traitsSdk.backgroundCall === 'function') {
-            await traitsSdk.initWorkerPool();
-            backgroundCall = (cmd, payload = {}) => traitsSdk.backgroundCall(cmd, payload);
-            const status = traitsSdk.status || {};
+        if (activeSdk && typeof activeSdk.backgroundCall === 'function') {
+            await activeSdk.initWorkerPool();
+            backgroundCall = (cmd, payload = {}) => activeSdk.backgroundCall(cmd, payload);
+            const status = activeSdk.status || {};
             setStatus('WASM worker', 'ready');
             if (opts.onReady) opts.onReady({ wasm: null, traitCount: status.traits || 0, wasmCount: status.callable || 0, background: true });
         } else {
-            // Legacy fallback: direct WASM calls on main thread.
+            // Fallback: attach WASM to a local SDK instance and route through sdk.background.direct.
             if (window.TraitsWasm && window.TraitsWasm.cli_input) {
                 wasm = window.TraitsWasm;
                 const count = wasm.is_registered ? JSON.parse(wasm.callable_traits()).length : 0;
@@ -162,32 +168,16 @@ async function createTerminal(mountEl, opts = {}) {
                 if (opts.onReady) opts.onReady({ wasm, traitCount: count, wasmCount, background: false });
             }
 
-            backgroundCall = async (cmd, payload = {}) => {
-                try {
-                    switch (cmd) {
-                        case 'cli_input':
-                            return { ok: true, result: wasm.cli_input ? wasm.cli_input(payload.data || '') : '' };
-                        case 'cli_welcome':
-                            return { ok: true, result: wasm.cli_welcome ? wasm.cli_welcome() : '' };
-                        case 'cli_get_history':
-                            return { ok: true, result: wasm.cli_get_history ? wasm.cli_get_history() : '[]' };
-                        case 'cli_set_history':
-                            if (wasm.cli_set_history) wasm.cli_set_history(payload.history_json || '[]');
-                            return { ok: true, result: true };
-                        case 'cli_format_rest_result':
-                            return {
-                                ok: true,
-                                result: wasm.cli_format_rest_result
-                                    ? wasm.cli_format_rest_result(payload.path || '', payload.args_json || '[]', payload.result_json || 'null')
-                                    : '',
-                            };
-                        default:
-                            return { ok: false, error: `Unknown CLI command: ${cmd}` };
-                    }
-                } catch (e) {
-                    return { ok: false, error: e.message || String(e) };
-                }
-            };
+            if (window.Traits) {
+                activeSdk = new window.Traits({
+                    useWasm: false,
+                    useHelper: false,
+                    server: '',
+                });
+                activeSdk.attachWasm(wasm);
+                activeSdk.setBackgroundBinding('sdk.background.direct');
+                backgroundCall = (cmd, payload = {}) => activeSdk.backgroundCall(cmd, payload, { impl: 'sdk.background.direct' });
+            }
         }
     } catch (e) {
         setStatus('background failed', 'error');
@@ -229,9 +219,8 @@ async function createTerminal(mountEl, opts = {}) {
                     const { p, a } = JSON.parse(restMatch[1]);
                     restPending = true;
 
-                    const traitsSdk = window._traitsSDK;
-                    if (traitsSdk) {
-                        traitsSdk.call(p, a).then(async res => {
+                    if (activeSdk) {
+                        activeSdk.call(p, a).then(async res => {
                         term.write('\r\x1b[K'); // Clear progress line
                         if (res.ok && res.result !== undefined) {
                             // Try WASM CLI formatter first, fall back to JSON
@@ -278,7 +267,7 @@ async function createTerminal(mountEl, opts = {}) {
                             term.write(PROMPT);
                         }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
                     } else {
-                    // Fallback: direct REST call (when not in SPA)
+                    // Last-resort REST fallback (SDK unavailable)
                         const restPath = p.replace(/\./g, '/');
                         fetch(`/traits/${restPath}`, {
                         method: 'POST',
@@ -336,10 +325,14 @@ async function createTerminal(mountEl, opts = {}) {
         });
     });
 
-    // ── Restore history into WASM session ──
+    // ── Restore history + VFS into WASM session ──
     const savedHistory = localStorage.getItem(LS_HISTORY);
     if (savedHistory && backgroundCall) {
         try { await backgroundCall('cli_set_history', { history_json: savedHistory }); } catch (_) {}
+    }
+    const savedVfs = localStorage.getItem(LS_VFS);
+    if (savedVfs && backgroundCall) {
+        try { await backgroundCall('vfs_load', { json: savedVfs }); } catch (_) {}
     }
 
     // ── Restore scrollback or show welcome ──

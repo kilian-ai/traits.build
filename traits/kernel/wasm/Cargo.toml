@@ -1,6 +1,6 @@
 [package]
 name = "traits-wasm"
-version = "0.260327.235149"
+version = "0.260328.2542"
 edition = "2021"
 description = "traits.build kernel compiled to WebAssembly"
 publish = false
@@ -9,7 +9,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-kernel-logic = { path = "../logic", version = "0.260327.235149" }
+kernel-logic = { path = "../logic", version = "0.260328.2542" }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -17,6 +17,7 @@ toml = "0.8"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["XmlHttpRequest", "XmlHttpRequestResponseType"] }
 sha2 = "0.10"
+shell-words = "1"
 maud = "0.26"
 pulldown-cmark = "0.12"
 

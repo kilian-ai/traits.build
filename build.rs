@@ -3,6 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use sha2::{Sha256, Digest};
 
+#[path = "scripts/cli_formatters_codegen.rs"]
+mod cli_formatters_codegen;
+
 // Shared SHA-256 helpers (canonical copy at root, mirrored in sys/checksum/)
 include!("sha256.rs");
 
@@ -227,28 +230,17 @@ fn main() {
     // ── Generate cli_formatters.rs (optional CLI output formatters) ──
     cli_formatters.sort_by(|a, b| a.trait_path.cmp(&b.trait_path));
     let cli_path = out_dir.join("cli_formatters.rs");
-    let mut cf = String::new();
-    for f in &cli_formatters {
-        let abs_path = manifest_dir.join(&f.rs_rel_path);
-        cf.push_str(&format!(
-            "#[path = {:?}]\npub mod {};\n\n",
-            abs_path.to_string_lossy(), rust_ident(&f.mod_name)
-        ));
-        println!("cargo:rerun-if-changed={}", abs_path.display());
-    }
-    cf.push_str("/// Look up a CLI formatter for the given trait path.\n");
-    cf.push_str("pub fn format_cli(trait_path: &str, result: &serde_json::Value) -> Option<String> {\n");
-    cf.push_str("    match trait_path {\n");
-    for f in &cli_formatters {
-        cf.push_str(&format!(
-            "        {:?} => Some({}::format_cli(result)),\n",
-            f.trait_path, rust_ident(&f.mod_name)
-        ));
-    }
-    cf.push_str("        _ => None,\n");
-    cf.push_str("    }\n");
-    cf.push_str("}\n");
-    fs::write(cli_path, cf).expect("Failed to write cli_formatters.rs");
+    let cli_entries: Vec<(String, String, String)> = cli_formatters
+        .iter()
+        .map(|f| {
+            (
+                f.trait_path.clone(),
+                rust_ident(&f.mod_name),
+                manifest_dir.join(&f.rs_rel_path).to_string_lossy().to_string(),
+            )
+        })
+        .collect();
+    cli_formatters_codegen::write_cli_formatters(&cli_path, &cli_entries);
 
     // ── Generate kernel_modules.rs (crate-level mod declarations for kernel/) ──
     let kernel_path = out_dir.join("kernel_modules.rs");

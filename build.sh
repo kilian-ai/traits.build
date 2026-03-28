@@ -92,6 +92,8 @@ exports = [
     'set_helper_connected',
     'set_secret',
     'version',
+    'vfs_dump',
+    'vfs_load',
 ]
 
 wasm_b64 = base64.b64encode(wasm_path.read_bytes()).decode('ascii')
@@ -145,6 +147,8 @@ exports = [
     'set_helper_connected',
     'set_secret',
     'version',
+    'vfs_dump',
+    'vfs_load',
 ]
 
 wasm_b64 = base64.b64encode(wasm_path.read_bytes()).decode('ascii')
@@ -186,6 +190,8 @@ worker = (
     + '      case "cli_welcome": sendOk(id, TraitsWasm.cli_welcome()); break;\n'
     + '      case "cli_get_history": sendOk(id, TraitsWasm.cli_get_history()); break;\n'
     + '      case "cli_set_history": TraitsWasm.cli_set_history(payload.history_json || "[]"); sendOk(id, true); break;\n'
+    + '      case "vfs_dump": sendOk(id, TraitsWasm.vfs_dump()); break;\n'
+    + '      case "vfs_load": TraitsWasm.vfs_load(payload.json || "{}"); sendOk(id, true); break;\n'
     + '      case "cli_format_rest_result": sendOk(id, TraitsWasm.cli_format_rest_result(payload.path || "", payload.args_json || "[]", payload.result_json || "null")); break;\n'
     + '      case "call": { const raw = TraitsWasm.call(payload.path || "", JSON.stringify(payload.args || [])); sendOk(id, JSON.parse(raw)); break; }\n'
     + '      case "call_raw": sendOk(id, TraitsWasm.call(payload.path || "", payload.args_json || "[]")); break;\n'

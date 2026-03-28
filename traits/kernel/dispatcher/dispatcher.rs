@@ -132,11 +132,6 @@ pub mod compiled {
     include!(concat!(env!("OUT_DIR"), "/compiled_traits.rs"));
 }
 
-// ── CLI output formatters — auto-discovered *_cli.rs companions ──
-pub mod cli_formatters {
-    include!(concat!(env!("OUT_DIR"), "/cli_formatters.rs"));
-}
-
 // ── Static assets — auto-discovered .css/.js files from trait directories ──
 pub mod static_assets {
     include!(concat!(env!("OUT_DIR"), "/static_assets.rs"));

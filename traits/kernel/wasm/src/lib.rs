@@ -228,7 +228,7 @@ pub fn run_tests(pattern: &str, verbose: bool) -> String {
 // ═══════════════════════════════════════════
 
 use std::cell::RefCell;
-use wasm_traits::cli::{CliBackend, self as cli_core};
+use wasm_traits::cli::{CliCallBackend, CliHistoryBackend, CliExamplesBackend, self as cli_core};
 
 /// WASM implementation of CliBackend — thin dispatch wrapper delegating to sys.cli.wasm.
 struct WasmCliBackend;
@@ -245,7 +245,7 @@ impl WasmCliBackend {
     }
 }
 
-impl CliBackend for WasmCliBackend {
+impl CliCallBackend for WasmCliBackend {
     fn call(&self, path: &str, args: &[Value]) -> Result<Value, String> {
         match self.dispatch_method("call", &[serde_json::json!(path), Value::Array(args.to_vec())]) {
             Some(v) => {
@@ -289,6 +289,9 @@ impl CliBackend for WasmCliBackend {
             .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
     }
 
+}
+
+impl CliExamplesBackend for WasmCliBackend {
     fn load_examples(&self, path: &str) -> Vec<Vec<String>> {
         self.dispatch_method("load_examples", &[serde_json::json!(path)])
             .and_then(|v| v.as_array().cloned())
@@ -302,6 +305,8 @@ impl CliBackend for WasmCliBackend {
             .unwrap_or_default()
     }
 }
+
+impl CliHistoryBackend for WasmCliBackend {}
 
 thread_local! {
     static CLI_SESSION: RefCell<Option<cli_core::CliSession>> = RefCell::new(None);
@@ -364,4 +369,16 @@ pub fn cli_set_history(history_json: &str) {
     if let Ok(history) = serde_json::from_str::<Vec<String>>(history_json) {
         with_session(|session| session.set_history(history));
     }
+}
+
+/// Serialise the VFS to JSON for localStorage persistence.
+#[wasm_bindgen]
+pub fn vfs_dump() -> String {
+    with_session(|session| session.vfs_dump())
+}
+
+/// Restore the VFS from a JSON string (e.g. from localStorage on page load).
+#[wasm_bindgen]
+pub fn vfs_load(json: &str) {
+    with_session(|session| session.vfs_load(json))
 }

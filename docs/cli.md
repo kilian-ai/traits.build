@@ -123,6 +123,22 @@ The CLI supports stdin piping:
 echo "hello" | traits checksum hash
 ```
 
+## Portable CLI backend interfaces
+
+The shared CLI core in `traits/kernel/cli/cli.rs` now uses three backend interfaces:
+
+- `CliCallBackend` for dispatch and registry reads (`call`, `list_all`, `get_info`, `search`, `all_paths`, `version`)
+- `CliHistoryBackend` for interactive parameter history persistence (`load_param_history`, `save_param_history`)
+- `CliExamplesBackend` for interactive example suggestions (`load_examples`)
+
+`CliSession` consumes these interfaces so native and WASM backends can share one session/runtime implementation while keeping persistence and example loading pluggable.
+
+## Terminal background command routing
+
+The browser terminal routes CLI session commands through the SDK background layer (`Traits.backgroundCall`) instead of implementing separate command switches in `terminal.js`.
+
+This keeps command behavior centralized in SDK adapters (`sdk.background.worker`, `sdk.background.direct`, `sdk.background.tokio`) and avoids duplicating CLI command handling between terminal and SDK code.
+
 ## Exit codes
 
 | Code | Meaning |

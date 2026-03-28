@@ -1,5 +1,12 @@
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::cell::RefCell;
+
+pub mod shell;
+pub mod vfs;
+pub use shell::{Shell, DefaultShell, ShellCommand, Redirect};
+pub use vfs::{Vfs, MemVfs};
 
 mod generated_cli_formatters {
     include!(concat!(env!("OUT_DIR"), "/cli_formatters.rs"));
@@ -62,23 +69,34 @@ pub enum KeyEvent {
 
 // ── Backend trait ──
 
-/// Backend that provides trait registry and dispatch.
-/// Implemented differently in WASM vs native.
-pub trait CliBackend {
+/// Registry + dispatch interface used by command execution.
+pub trait CliCallBackend {
     fn call(&self, path: &str, args: &[Value]) -> Result<Value, String>;
     fn list_all(&self) -> Vec<Value>;
     fn get_info(&self, path: &str) -> Option<Value>;
     fn search(&self, query: &str) -> Vec<Value>;
     fn all_paths(&self) -> Vec<String>;
     fn version(&self) -> String;
+}
+
+/// Parameter history interface used by interactive sessions.
+pub trait CliHistoryBackend {
     fn load_param_history(&self) -> HashMap<String, HashMap<String, Vec<String>>> {
         HashMap::new()
     }
     fn save_param_history(&self, _history: &HashMap<String, HashMap<String, Vec<String>>>) {}
+}
+
+/// Example source interface used for interactive suggestions.
+pub trait CliExamplesBackend {
     fn load_examples(&self, _path: &str) -> Vec<Vec<String>> {
         vec![]
     }
 }
+
+/// Full backend used by the session runtime.
+pub trait CliBackend: CliCallBackend + CliHistoryBackend + CliExamplesBackend {}
+impl<T> CliBackend for T where T: CliCallBackend + CliHistoryBackend + CliExamplesBackend {}
 
 // ── Interactive mode state ──
 
@@ -111,6 +129,10 @@ pub struct CliSession {
     hist_idx: isize,
     interactive: Option<InteractiveState>,
     param_history: HashMap<String, HashMap<String, Vec<String>>>,
+    /// Shell parser — swap via `set_shell()` to plug in a full implementation.
+    shell: Arc<dyn Shell>,
+    /// Virtual filesystem — swap via `set_vfs()` for richer backends.
+    vfs: RefCell<Box<dyn Vfs>>,
 }
 
 impl CliSession {
@@ -122,11 +144,33 @@ impl CliSession {
             hist_idx: -1,
             interactive: None,
             param_history: HashMap::new(),
+            shell: Arc::new(DefaultShell),
+            vfs: RefCell::new(Box::new(MemVfs::default())),
         }
     }
 
+    /// Swap the shell parser.  Future: `session.set_shell(Box::new(MvdanShell::new()))`.
+    pub fn set_shell(&mut self, shell: impl Shell + 'static) {
+        self.shell = Arc::new(shell);
+    }
+
+    /// Swap the VFS backend.  Future: bind to Origin Private FS or a real FS.
+    pub fn set_vfs(&mut self, vfs: impl Vfs + 'static) {
+        self.vfs = RefCell::new(Box::new(vfs));
+    }
+
+    /// Serialise the VFS to JSON (for localStorage persistence).
+    pub fn vfs_dump(&self) -> String {
+        self.vfs.borrow().dump()
+    }
+
+    /// Restore the VFS from a JSON string previously produced by `vfs_dump`.
+    pub fn vfs_load(&self, json: &str) {
+        self.vfs.borrow_mut().load(json);
+    }
+
     /// Load persisted param history from backend (call after new).
-    pub fn load_history(&mut self, backend: &dyn CliBackend) {
+    pub fn load_history(&mut self, backend: &dyn CliHistoryBackend) {
         self.param_history = backend.load_param_history();
     }
 
@@ -146,7 +190,7 @@ impl CliSession {
     }
 
     /// Return the welcome banner + initial prompt.
-    pub fn welcome(&self, backend: &dyn CliBackend) -> String {
+    pub fn welcome(&self, backend: &dyn CliCallBackend) -> String {
         let all = backend.list_all();
         let wasm_count = all
             .iter()
@@ -341,7 +385,7 @@ impl CliSession {
                 self.history.push(input.clone());
                 self.hist_idx = self.history.len() as isize;
 
-                let result = exec_line(&input, backend);
+                let result = exec_line(&input, backend, &*self.shell, &self.vfs);
                 if result.contains(CLEAR_SENTINEL) {
                     return format!("{CLEAR_SENTINEL}{PROMPT}");
                 }
@@ -423,7 +467,7 @@ impl CliSession {
             Some(p) if !p.is_empty() => p.clone(),
             _ => {
                 let mut out = format!("{GRAY}No parameters — calling directly{RESET}\r\n");
-                let result = exec_line(&format!("call {path}"), backend);
+                let result = exec_line(&format!("call {path}"), backend, &*self.shell, &self.vfs);
                 if !result.is_empty() && !result.contains(CLEAR_SENTINEL) {
                     out.push_str(&result);
                     if !result.ends_with('\n') && !result.ends_with("\r\n") {
@@ -573,7 +617,7 @@ impl CliSession {
                     }).collect();
                     let cmd = format!("call {} {}", i.path, args_str.join(" "));
 
-                    let result = exec_line(&cmd, backend);
+                    let result = exec_line(&cmd, backend, &*self.shell, &self.vfs);
                     backend.save_param_history(&self.param_history);
 
                     if result.contains(REST_SENTINEL_START) {
@@ -807,43 +851,110 @@ impl CliSession {
 // ═══════════════════════════════════════════
 
 /// Process a single command line. Returns ANSI-formatted output.
-pub fn exec_line(line: &str, backend: &dyn CliBackend) -> String {
+/// Process a single command line through the Shell + Vfs abstraction layer.
+///
+/// `shell` handles word-splitting and redirect detection.
+/// `vfs` is a `RefCell<Box<dyn Vfs>>` so builtins can mutate it without
+/// requiring `exec_line` to take `&mut`.
+///
+/// Returns ANSI-formatted output ready to write to the terminal.
+pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &RefCell<Box<dyn Vfs>>) -> String {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return String::new();
     }
 
-    let parts = parse_command(trimmed);
-    if parts.is_empty() {
+    let mut parsed = shell.parse(trimmed);
+    if parsed.args.is_empty() {
         return String::new();
     }
 
-    let cmd = parts[0].to_lowercase();
-    let args = &parts[1..];
+    // ── @file argument expansion ─────────────────────────────────────────────
+    // Any arg of the form @filename is replaced with the VFS file contents.
+    // This mirrors the common shell convention for feeding file data to commands.
+    {
+        let vfs_ref = vfs.borrow();
+        for arg in &mut parsed.args {
+            if arg.starts_with('@') {
+                let fname = &arg[1..];
+                if let Some(contents) = vfs_ref.read(fname) {
+                    *arg = contents;
+                } else {
+                    return format!("{RED}@{fname}: file not found in VFS{RESET}");
+                }
+            }
+        }
+    }
 
-    match cmd.as_str() {
+    let cmd = parsed.args[0].to_lowercase();
+    let args = parsed.args[1..].to_vec();
+
+    let output = match cmd.as_str() {
+        // ── Shell builtins ───────────────────────────────────────────────────
+        "cat" => {
+            if args.is_empty() {
+                format!("{RED}Usage: cat <file>{RESET}")
+            } else {
+                let vfs_ref = vfs.borrow();
+                match vfs_ref.read(&args[0]) {
+                    Some(content) => content,
+                    None => format!("{RED}cat: {}: no such file{RESET}", args[0]),
+                }
+            }
+        }
+        "write" | "tee" => {
+            // write <file> <content...>
+            if args.len() < 2 {
+                format!("{RED}Usage: write <file> <content>{RESET}")
+            } else {
+                let content = args[1..].join(" ");
+                vfs.borrow_mut().write(&args[0], &content);
+                format!("{GRAY}wrote {} bytes to {}{RESET}", content.len(), args[0])
+            }
+        }
+        "rm" => {
+            if args.is_empty() {
+                format!("{RED}Usage: rm <file>{RESET}")
+            } else {
+                if vfs.borrow_mut().delete(&args[0]) {
+                    format!("{GRAY}removed {}{RESET}", args[0])
+                } else {
+                    format!("{RED}rm: {}: no such file{RESET}", args[0])
+                }
+            }
+        }
+        "ls" if args.is_empty() || args[0] == "/" || args[0] == "." => {
+            let files = vfs.borrow().list();
+            if files.is_empty() {
+                format!("{GRAY}(vfs empty){RESET}")
+            } else {
+                files.iter().map(|f| format!("{CYAN}{f}{RESET}")).collect::<Vec<_>>().join("\r\n")
+            }
+        }
+
+        // ── CLI built-ins (unchanged) ────────────────────────────────────────
         "help" | "h" | "?" => format_help(),
-        "list" | "ls" => format_list(backend, args.first().map(|s| s.as_str())),
+        "list" => format_list(backend, args.first().map(|s| s.as_str())),
         "info" | "i" => {
             if args.is_empty() {
-                return format_system_status(backend);
+                format_system_status(backend)
+            } else {
+                format_info(backend, &args[0])
             }
-            format_info(backend, &args[0])
         }
         "call" | "c" => {
             if args.is_empty() {
                 return format!("{RED}Usage: call <trait_path> [args...]{RESET}");
             }
-            // Strip -i/--interactive from args (handled by session)
-            let clean: Vec<&String> = args
+            let clean: Vec<String> = args
                 .iter()
                 .filter(|a| *a != "-i" && *a != "--interactive")
+                .cloned()
                 .collect();
             if clean.is_empty() {
                 return format!("{RED}Usage: call <trait_path> [args...]{RESET}");
             }
-            let rest: Vec<String> = clean[1..].iter().map(|s| s.to_string()).collect();
-            exec_call(backend, clean[0], &rest)
+            exec_call(backend, &clean[0], &clean[1..])
         }
         "search" | "s" => {
             let q = args.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
@@ -853,18 +964,21 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend) -> String {
             format_search(backend, &q)
         }
         "version" | "v" => format!("{CYAN}traits.build{RESET} {}", backend.version()),
-        "clear" | "cls" => CLEAR_SENTINEL.to_string(),
+        "clear" | "cls" => return CLEAR_SENTINEL.to_string(),
+
+        // ── Shorthand trait dispatch ─────────────────────────────────────────
         _ => {
             let all = backend.all_paths();
-            if all.iter().any(|p| p == &cmd) || all.iter().any(|p| p == parts[0].as_str()) {
-                exec_call(backend, &parts[0], &args.to_vec())
+            let raw = &parsed.args[0];
+            if all.iter().any(|p| p == &cmd) || all.iter().any(|p| p == raw.as_str()) {
+                exec_call(backend, raw, &args)
             } else {
                 let sys_path = format!("sys.{}", cmd);
                 let kernel_path = format!("kernel.{}", cmd);
                 if all.iter().any(|p| p == &sys_path) {
-                    exec_call(backend, &sys_path, &args.to_vec())
+                    exec_call(backend, &sys_path, &args)
                 } else if all.iter().any(|p| p == &kernel_path) {
-                    exec_call(backend, &kernel_path, &args.to_vec())
+                    exec_call(backend, &kernel_path, &args)
                 } else {
                     format!(
                         "{RED}Unknown command: {}{RESET}. Type {BLUE}help{RESET} for usage.",
@@ -873,10 +987,45 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend) -> String {
                 }
             }
         }
+    };
+
+    // ── Output redirection ───────────────────────────────────────────────────
+    // Strip ANSI escapes before writing to VFS so files contain plain text.
+    if let Some(redir) = &parsed.redirect {
+        let plain = strip_ansi(&output);
+        if redir.append {
+            vfs.borrow_mut().append(&redir.file, &plain);
+            vfs.borrow_mut().append(&redir.file, "\n");
+        } else {
+            vfs.borrow_mut().write(&redir.file, &plain);
+        }
+        return format!("{GRAY}→ {}{RESET}", redir.file);
     }
+
+    output
 }
 
-fn exec_call(backend: &dyn CliBackend, path: &str, arg_strs: &[String]) -> String {
+/// Strip ANSI escape sequences so VFS file contents are plain text.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                // consume until a letter (final byte)
+                for c2 in chars.by_ref() {
+                    if c2.is_ascii_alphabetic() { break; }
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn exec_call(backend: &dyn CliCallBackend, path: &str, arg_strs: &[String]) -> String {
     let args: Vec<Value> = arg_strs.iter().map(|s| parse_value(s)).collect();
 
     match backend.call(path, &args) {
@@ -935,6 +1084,15 @@ fn format_help() -> String {
     s.push_str(&format!("  {GREEN}clear{RESET}                      Clear terminal\r\n"));
     s.push_str(&format!("  {GREEN}help{RESET}                       Show this help\r\n"));
     s.push_str("\r\n");
+    s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Virtual filesystem{RESET}\r\n"));
+    s.push_str(&format!("  {GREEN}ls{RESET}                         List VFS files\r\n"));
+    s.push_str(&format!("  {GREEN}cat{RESET} {GRAY}<file>{RESET}              Read a VFS file\r\n"));
+    s.push_str(&format!("  {GREEN}write{RESET} {GRAY}<file> <content>{RESET}  Write text to a VFS file\r\n"));
+    s.push_str(&format!("  {GREEN}rm{RESET} {GRAY}<file>{RESET}               Delete a VFS file\r\n"));
+    s.push_str(&format!("  {GRAY}cmd args > file{RESET}            Redirect output to a VFS file\r\n"));
+    s.push_str(&format!("  {GRAY}cmd args >> file{RESET}           Append output to a VFS file\r\n"));
+    s.push_str(&format!("  {GRAY}cmd @file{RESET}                  Pass VFS file contents as an argument\r\n"));
+    s.push_str("\r\n");
     s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Shortcuts{RESET}\r\n"));
     s.push_str(&format!("  {CYAN}Tab{RESET}          Auto-complete trait paths\r\n"));
     s.push_str(&format!("  {CYAN}↑ / ↓{RESET}        Navigate command history\r\n"));
@@ -959,7 +1117,7 @@ fn format_help() -> String {
     s
 }
 
-fn format_list(backend: &dyn CliBackend, namespace: Option<&str>) -> String {
+fn format_list(backend: &dyn CliCallBackend, namespace: Option<&str>) -> String {
     let all = backend.list_all();
     let filtered: Vec<&Value> = if let Some(ns) = namespace {
         all.iter()
@@ -1010,7 +1168,7 @@ fn format_list(backend: &dyn CliBackend, namespace: Option<&str>) -> String {
     out
 }
 
-fn format_system_status(backend: &dyn CliBackend) -> String {
+fn format_system_status(backend: &dyn CliCallBackend) -> String {
     // Call sys.info with no args to get system status
     match backend.call("sys.info", &[]) {
         Ok(info) => format_trait_result("sys.info", &info)
@@ -1069,7 +1227,7 @@ fn format_basic_status() -> String {
     out
 }
 
-fn format_info(backend: &dyn CliBackend, path: &str) -> String {
+fn format_info(backend: &dyn CliCallBackend, path: &str) -> String {
     let info = match backend.get_info(path) {
         Some(v) => v,
         None => return format!("{RED}Trait \"{}\" not found{RESET}", path),
@@ -1082,7 +1240,7 @@ fn format_info(backend: &dyn CliBackend, path: &str) -> String {
     serde_json::to_string_pretty(&info).unwrap_or_default()
 }
 
-fn format_search(backend: &dyn CliBackend, query: &str) -> String {
+fn format_search(backend: &dyn CliCallBackend, query: &str) -> String {
     let results = backend.search(query);
     if results.is_empty() {
         return format!("{YELLOW}No matches for \"{}\"{RESET}", query);
@@ -1174,13 +1332,13 @@ pub fn tab_completions(prefix: &str, all_paths: &[String]) -> (Vec<String>, Stri
 }
 
 /// Get interactive mode parameter info for a trait.
-pub fn interactive_params(path: &str, backend: &dyn CliBackend) -> Option<Value> {
+pub fn interactive_params(path: &str, backend: &dyn CliCallBackend) -> Option<Value> {
     backend.get_info(path).and_then(|info| info.get("params").cloned())
 }
 
 // ── Helpers ──
 
-fn resolve_path(path: &str, backend: &dyn CliBackend) -> String {
+fn resolve_path(path: &str, backend: &dyn CliCallBackend) -> String {
     let all = backend.all_paths();
     if all.iter().any(|p| p == path) {
         return path.to_string();

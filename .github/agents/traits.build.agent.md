@@ -111,7 +111,7 @@ The `build.rs` at project root does all code generation:
 2. **`builtin_traits.rs`** — embeds all TOML definitions via `include_str!`
 3. **`compiled_traits.rs`** — generates module declarations + `dispatch_compiled()` function
 4. **`kernel_modules.rs`** — crate-level `mod` declarations for kernel subdirectories
-5. **`cli_formatters.rs`** — optional CLI output formatters
+5. **`cli_formatters.rs`** — optional CLI output formatters (generated via shared helper `scripts/cli_formatters_codegen.rs` in both native and WASM build scripts)
 6. **Version management** — YYMMDD format, auto-bumps on same-day changes
 7. **Checksum validation** — SHA-256 of .rs files, bumps version if changed
 
@@ -969,6 +969,7 @@ Test types: `exit_code`, `contains`, `matches` (regex), `json_path`
 
 - **All trait code is Rust.** Frontend JS is in `terminal.js`, `playground.js`, `api.js`, etc. but these are served as static assets.
 - **CLI output formatting uses `.cli.rs` files, NEVER terminal.js.** To format a trait's JSON output for the terminal, create a `{name}.cli.rs` companion file next to the trait's `.rs` file (matching the `*.features.json` and `*.trait.toml` dot-naming convention). It must export `pub fn format_cli(result: &Value) -> String`. The build system auto-discovers these and generates `cli_formatters.rs`. **Never add per-trait formatting logic to terminal.js** — terminal.js is a thin display layer only.
+- **Portable CLI backend is split into interfaces.** Use `CliCallBackend` for dispatch/registry, `CliHistoryBackend` for history persistence, and `CliExamplesBackend` for interactive examples. Compose them through `CliBackend` instead of growing a monolithic backend trait.
 - **`source = "builtin"`** for compiled traits. `source = "dylib"` for cdylib plugins. `source = "rest"` for REST-backed.
 - **Trait files live in `traits/{namespace}/{name}/`** — each directory has `name.trait.toml` + `name.rs` + `name.features.json`
 - **build.rs auto-discovers** everything — no manual module registration needed.
@@ -977,7 +978,7 @@ Test types: `exit_code`, `contains`, `matches` (regex), `json_path`
 - **After modifying traits:** run `bash build.sh` to rebuild native + WASM + static assets.
 - **GitHub Pages deploy:** just `git push origin main` — root `index.html` is auto-served.
 - **Two admin pages exist:** `www.admin` (server-rendered) and `www.admin.spa` (browser-only SPA).
-- **Terminal dispatch:** `terminal.js` uses `window._traitsSDK.call()` (3-tier cascade), NOT raw fetch.
+- **Terminal dispatch:** `terminal.js` uses `window._traitsSDK.call()` (3-tier cascade) and `Traits.backgroundCall()` for CLI session commands, NOT raw fetch/direct trait-specific command switches.
 
 ## Trait .trait.toml Template
 

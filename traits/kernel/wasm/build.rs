@@ -3,6 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 
+#[path = "../../../scripts/cli_formatters_codegen.rs"]
+mod cli_formatters_codegen;
+
 /// Rust reserved keywords that need `r#` prefix when used as identifiers.
 const RUST_KEYWORDS: &[&str] = &[
     "abstract", "as", "async", "await", "become", "box", "break", "const",
@@ -119,27 +122,17 @@ fn main() {
     fs::write(out_dir.join("wasm_builtin_traits.rs"), bt).expect("write builtin_traits");
 
     // ── Generate cli_formatters.rs (portable *.cli.rs registry for kernel/cli) ──
-    let mut cf = String::new();
-    for f in &cli_formatters {
-        cf.push_str(&format!(
-            "#[path = {:?}]\npub mod {};\n\n",
-            f.abs_rs_path, rust_ident(&f.mod_name)
-        ));
-        println!("cargo:rerun-if-changed={}", f.abs_rs_path);
-    }
-    cf.push_str("/// Look up a CLI formatter for the given trait path.\n");
-    cf.push_str("pub fn format_cli(trait_path: &str, result: &serde_json::Value) -> Option<String> {\n");
-    cf.push_str("    match trait_path {\n");
-    for f in &cli_formatters {
-        cf.push_str(&format!(
-            "        {:?} => Some({}::format_cli(result)),\n",
-            f.trait_path, rust_ident(&f.mod_name)
-        ));
-    }
-    cf.push_str("        _ => None,\n");
-    cf.push_str("    }\n");
-    cf.push_str("}\n");
-    fs::write(out_dir.join("cli_formatters.rs"), cf).expect("write cli_formatters");
+    let cli_entries: Vec<(String, String, String)> = cli_formatters
+        .iter()
+        .map(|f| {
+            (
+                f.trait_path.clone(),
+                rust_ident(&f.mod_name),
+                f.abs_rs_path.clone(),
+            )
+        })
+        .collect();
+    cli_formatters_codegen::write_cli_formatters(&out_dir.join("cli_formatters.rs"), &cli_entries);
 
     // ── Resolve WASM module name collisions ──
     {
