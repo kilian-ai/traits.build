@@ -70,6 +70,26 @@ pub fn init() -> Result<JsValue, JsValue> {
         config_get: |_trait_path, _key, default| default.to_string(),
         secret_get: wasm_secrets::get_secret,
     });
+
+    // ── Seed the CLI VFS with all embedded trait definitions ──────────────────
+    // Every .trait.toml and .features.json bundled into the WASM binary is
+    // mounted as a read-only builtin file so users can browse and cat them
+    // from the terminal:
+    //   ls              → virtual directory tree (traits/, kernel/, sys/, ...)
+    //   ls traits/sys/  → files in sys namespace
+    //   cat traits/sys/checksum/checksum.trait.toml
+    //   cat traits/sys/checksum/checksum.features.json
+    with_session(|session| {
+        let mut vfs = cli_core::LayeredVfs::new();
+        for (_path, rel_path, toml) in BUILTIN_TRAIT_DEFS {
+            vfs.seed(rel_path, toml);
+        }
+        for (_path, rel_path, feat) in BUILTIN_FEATURES {
+            vfs.seed(rel_path, feat);
+        }
+        session.set_vfs(vfs);
+    });
+
     Ok(serde_json::to_string(&serde_json::json!({
         "status": "ok",
         "traits_registered": count,

@@ -219,7 +219,7 @@ fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
     let reg = crate::get_registry();
 
     let mut results = Vec::new();
-    for &(trait_path, features_json) in crate::BUILTIN_FEATURES {
+    for &(trait_path, _rel_path, features_json) in crate::BUILTIN_FEATURES {
         let parts: Vec<&str> = trait_path.splitn(2, '.').collect();
         if parts.len() != 2 { continue; }
         let (ns, name) = (parts[0], parts[1]);

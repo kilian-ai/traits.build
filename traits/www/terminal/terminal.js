@@ -203,12 +203,14 @@ export async function createTerminal(mountEl, opts = {}) {
                 if (visible) term.write(visible);
 
             // Parse dispatch info and call via SDK cascade (WASM → helper → REST)
+            // Supports @target routing: sentinel JSON may contain "t" field (rest/relay/helper/wasm)
                 try {
-                    const { p, a } = JSON.parse(restMatch[1]);
+                    const { p, a, t } = JSON.parse(restMatch[1]);
                     restPending = true;
+                    const callOpts = t ? { force: t } : {};
 
                     if (activeSdk) {
-                        activeSdk.call(p, a).then(async res => {
+                        activeSdk.call(p, a, callOpts).then(async res => {
                         term.write('\r\x1b[K'); // Clear progress line
                         if (res.ok && res.result !== undefined) {
                             // Try WASM CLI formatter first, fall back to JSON

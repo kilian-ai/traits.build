@@ -158,7 +158,7 @@ fn method_load_examples(args: &[Value]) -> Value {
     let trait_path = args.first().and_then(|v| v.as_str()).unwrap_or("");
 
     // In WASM, features are embedded at compile time via BUILTIN_FEATURES
-    for &(tp, json_str) in crate::BUILTIN_FEATURES {
+    for &(tp, _rel_path, json_str) in crate::BUILTIN_FEATURES {
         if tp != trait_path {
             continue;
         }

@@ -540,7 +540,7 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
         return true;
     }
 
-    // Handle REST sentinel — extract {p, a} and dispatch directly via native backend
+    // Handle REST sentinel — extract {p, a, t} and dispatch via native backend or HTTP
     if output.contains(REST_SENTINEL_START) {
         if let Some(start) = output.find(REST_SENTINEL_START) {
             print!("{}", &output[..start]);
@@ -550,13 +550,23 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
                 let path = parsed["p"].as_str().unwrap_or("");
                 let args: Vec<serde_json::Value> = parsed["a"].as_array().cloned().unwrap_or_default();
-                match backend.call(path, &args) {
-                    Ok(result) => {
-                        let formatted = crate::cli::format_rest_result(path, &args, &result)
-                            .unwrap_or_else(|| serde_json::to_string_pretty(&result).unwrap_or_default());
-                        print!("{}", formatted);
+                let target = parsed["t"].as_str();
+
+                match target {
+                    Some("rest") | Some("helper") => {
+                        dispatch_via_rest(path, &args, target.unwrap());
                     }
-                    Err(e) => print!("\x1b[31mError: {}\x1b[0m\r\n", e),
+                    _ => {
+                        // Default: dispatch locally via compiled backend
+                        match backend.call(path, &args) {
+                            Ok(result) => {
+                                let formatted = crate::cli::format_rest_result(path, &args, &result)
+                                    .unwrap_or_else(|| serde_json::to_string_pretty(&result).unwrap_or_default());
+                                print!("{}", formatted);
+                            }
+                            Err(e) => print!("\x1b[31mError: {}\x1b[0m\r\n", e),
+                        }
+                    }
                 }
             }
         }
@@ -566,6 +576,72 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
     }
 
     false
+}
+
+/// Dispatch a trait call via HTTP REST (used for @rest and @helper targets).
+fn dispatch_via_rest(path: &str, args: &[serde_json::Value], target: &str) {
+    use std::io::Write;
+
+    // Determine the server URL based on target
+    let base_url = if target == "helper" {
+        // @helper → localhost (try configured port, then defaults)
+        let port = std::env::var("TRAITS_PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(8090);
+        format!("http://127.0.0.1:{}", port)
+    } else {
+        // @rest → configured server URL, fall back to localhost
+        std::env::var("TRAITS_SERVER")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .or_else(|| {
+                crate::globals::RELAY_URL.get().map(|u| u.to_string())
+            })
+            .unwrap_or_else(|| {
+                let port = std::env::var("TRAITS_PORT")
+                    .ok()
+                    .and_then(|p| p.parse::<u16>().ok())
+                    .unwrap_or(8090);
+                format!("http://127.0.0.1:{}", port)
+            })
+    };
+
+    let url = format!("{}/traits/{}", base_url, path.replace('.', "/"));
+    let body = serde_json::json!({"args": args});
+
+    // Use sys.call to make the HTTP POST
+    let result = crate::dispatcher::compiled::dispatch(
+        "sys.call",
+        &[
+            serde_json::Value::String(url.clone()),
+            serde_json::Value::String(body.to_string()),
+            serde_json::Value::Null,  // no auth
+            serde_json::Value::String("POST".to_string()),
+        ],
+    );
+
+    match result {
+        Some(val) => {
+            let ok = val.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            if ok {
+                // Parse the nested response: sys.call returns {ok, body} where body is the REST response
+                let body_val = val.get("body").cloned().unwrap_or(serde_json::Value::Null);
+                // The REST endpoint returns {"result": ...} — extract the inner result
+                let trait_result = body_val.get("result").cloned().unwrap_or(body_val.clone());
+                let formatted = crate::cli::format_rest_result(path, args, &trait_result)
+                    .unwrap_or_else(|| serde_json::to_string_pretty(&trait_result).unwrap_or_default());
+                print!("{}", formatted);
+            } else {
+                let err = val.get("error").and_then(|e| e.as_str()).unwrap_or("HTTP request failed");
+                print!("\x1b[31m{} error: {}\x1b[0m\r\n", target, err);
+            }
+        }
+        None => {
+            print!("\x1b[31m{} error: sys.call dispatch failed\x1b[0m\r\n", target);
+        }
+    }
+    std::io::stdout().flush().ok();
 }
 
 /// Interactive call using the unified kernel CliSession.

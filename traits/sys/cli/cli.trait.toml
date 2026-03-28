@@ -1,8 +1,8 @@
 [trait]
 description = "CLI bootstrap, trait dispatch, stdin injection, arg parsing, result formatting"
-version = "v260328"
+version = "v260328.003659"
 epoch = 0
-checksum = "c49dc9c132d2ed815279c4a8f2e7e549aa7dea8fa1bf6f419e112a5e46902182"
+checksum = "d2a1ceedb0b783f6758f1aefdaea9a40af6f2ec640596ff38e3424c686c95944"
 author = "kilian-ai"
 tags = ["system", "cli"]
 provides = ["sys/cli"]

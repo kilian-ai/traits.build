@@ -591,7 +591,7 @@ export class Traits {
      * @param {string} path - Trait path (e.g. 'sys.checksum')
      * @param {Array} [args=[]] - Positional arguments
      * @param {Object} [opts] - Options
-     * @param {boolean} [opts.force] - 'wasm' or 'rest' to force dispatch mode
+     * @param {string} [opts.force] - Force dispatch target: 'wasm', 'helper', 'native', 'relay', or 'rest'
      * @param {boolean} [opts.stream] - Enable SSE streaming (REST only)
      * @returns {Promise<any>} - Parsed result
      */
@@ -605,11 +605,11 @@ export class Traits {
             return this.call(bound, args, opts);
         }
 
-        const forceMode = opts.force;
+        const forceMode = opts.force === 'native' ? 'helper' : opts.force;
         let wasmResult = null;
 
         // 1. WASM (instant, local)
-        if (forceMode === 'wasm' || (forceMode !== 'rest' && forceMode !== 'helper' && wasmReady && wasmCallableSet.has(path))) {
+        if (forceMode === 'wasm' || (!forceMode && wasmReady && wasmCallableSet.has(path))) {
             wasmResult = this._callWasm(path, args);
             if (wasmResult.ok) {
                 // Intercept WebLLM dispatch sentinel — route to JS-side WebLLM engine
@@ -623,7 +623,7 @@ export class Traits {
         }
 
         // 2. Local helper (privileged traits on localhost)
-        if (forceMode === 'helper' || (forceMode !== 'rest' && helperReady)) {
+        if (forceMode === 'helper' || (!forceMode && helperReady)) {
             const t0 = performance.now();
             const result = await callHelper(path, args);
             if (result) {
@@ -633,7 +633,7 @@ export class Traits {
         }
 
         // 3. Relay (remote helper via pairing code)
-        if (forceMode !== 'rest' && !helperReady && _relayCode()) {
+        if (forceMode === 'relay' || (!forceMode && !helperReady && _relayCode())) {
             const t0 = performance.now();
             const result = await callRelay(path, args);
             if (result) {

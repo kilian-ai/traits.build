@@ -106,14 +106,16 @@ fn main() {
     bt.push_str("];\n");
 
     // ── Generate BUILTIN_FEATURES ──
-    bt.push_str("\npub const BUILTIN_FEATURES: &[(&str, &str)] = &[\n");
+    // Tuple: (trait_path, vfs_rel_path, content)
+    // vfs_rel_path is the natural file path used as the VFS key in LayeredVfs.
+    bt.push_str("\npub const BUILTIN_FEATURES: &[(&str, &str, &str)] = &[\n");
     for (path, rel_path) in &entries {
         let features_rel = rel_path.replace(".trait.toml", ".features.json");
         let features_abs = root_dir.join(&features_rel);
         if features_abs.exists() {
             bt.push_str(&format!(
-                "    ({:?}, include_str!({:?})),\n",
-                path, features_abs.to_string_lossy()
+                "    ({:?}, {:?}, include_str!({:?})),\n",
+                path, features_rel, features_abs.to_string_lossy()
             ));
         }
     }

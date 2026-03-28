@@ -1,8 +1,8 @@
 [trait]
 description = "Generic test runner. Discovers .features.json files for traits matching a glob pattern, runs example-based tests (via internal dispatch) and shell command tests, reports structured pass/fail results."
-version = "v260325.145023"
+version = "v260328"
 epoch = 0
-checksum = "dfc5c86beb510fffac6e7b14ba34087e2305c5bdc5d4cac5dec6d3ccdc3d2005"
+checksum = "d0c171c81af2216202c67663cd3500bc110c021ecd8146b1692e6c8d44d1855a"
 author = "system"
 tags = ["system", "testing", "ci"]
 provides = ["sys/test_runner"]

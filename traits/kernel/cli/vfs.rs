@@ -83,3 +83,83 @@ impl Vfs for MemVfs {
 fn normalize_path(path: &str) -> &str {
     path.trim_start_matches('/')
 }
+
+// ── LayeredVfs — builtin (read-only) layer + user (read-write) layer ─────────
+//
+// Builtin files are seeded from the WASM binary at init time (all `.trait.toml`
+// and `.features.json` files embedded via `include_str!` in `wasm_builtin_traits.rs`).
+// They are always available from the embedded binary so they are NOT included in
+// `dump()` — only the user layer is round-tripped through localStorage.
+//
+// Priority: user layer > builtin layer.  `delete()` removes from the user layer;
+// if the path is builtin-only, `delete()` is a no-op (file re-appears from builtins).
+
+pub struct LayeredVfs {
+    builtins: HashMap<String, &'static str>,
+    user: HashMap<String, String>,
+}
+
+impl LayeredVfs {
+    pub fn new() -> Self {
+        Self { builtins: HashMap::new(), user: HashMap::new() }
+    }
+
+    /// Seed a static (compile-time) read-only file.
+    /// Called during WASM `init()` for every embedded `.trait.toml` / `.features.json`.
+    pub fn seed(&mut self, path: &str, content: &'static str) {
+        self.builtins.insert(normalize_path(path).to_string(), content);
+    }
+}
+
+impl Default for LayeredVfs {
+    fn default() -> Self { Self::new() }
+}
+
+impl Vfs for LayeredVfs {
+    fn read(&self, path: &str) -> Option<String> {
+        let k = normalize_path(path);
+        self.user.get(k).cloned()
+            .or_else(|| self.builtins.get(k).map(|s| (*s).to_string()))
+    }
+
+    fn write(&mut self, path: &str, content: &str) {
+        self.user.insert(normalize_path(path).to_string(), content.to_string());
+    }
+
+    fn append(&mut self, path: &str, content: &str) {
+        let k = normalize_path(path).to_string();
+        let base = self.user.get(&k).cloned()
+            .or_else(|| self.builtins.get(k.as_str()).map(|s| s.to_string()))
+            .unwrap_or_default();
+        self.user.insert(k, base + content);
+    }
+
+    fn delete(&mut self, path: &str) -> bool {
+        self.user.remove(normalize_path(path)).is_some()
+    }
+
+    fn list(&self) -> Vec<String> {
+        let mut keys: std::collections::HashSet<String> = self.user.keys().cloned().collect();
+        keys.extend(self.builtins.keys().cloned());
+        let mut v: Vec<String> = keys.into_iter().collect();
+        v.sort();
+        v
+    }
+
+    fn exists(&self, path: &str) -> bool {
+        let k = normalize_path(path);
+        self.user.contains_key(k) || self.builtins.contains_key(k)
+    }
+
+    /// Serialise only the user layer — builtins are always reconstructed from the binary.
+    fn dump(&self) -> String {
+        serde_json::to_string(&self.user).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Restore only the user layer; builtins stay intact.
+    fn load(&mut self, json: &str) {
+        if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(json) {
+            self.user = map;
+        }
+    }
+}

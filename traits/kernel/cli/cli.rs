@@ -6,7 +6,7 @@ use std::cell::RefCell;
 pub mod shell;
 pub mod vfs;
 pub use shell::{Shell, DefaultShell, ShellCommand, Redirect};
-pub use vfs::{Vfs, MemVfs};
+pub use vfs::{Vfs, MemVfs, LayeredVfs};
 
 mod generated_cli_formatters {
     include!(concat!(env!("OUT_DIR"), "/cli_formatters.rs"));
@@ -923,12 +923,25 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &
                 }
             }
         }
+        // ls with no args or root → show VFS directory tree from root
         "ls" if args.is_empty() || args[0] == "/" || args[0] == "." => {
             let files = vfs.borrow().list();
-            if files.is_empty() {
-                format!("{GRAY}(vfs empty){RESET}")
+            format_vfs_tree(&files, "")
+        }
+        // ls <path/with/slashes> → VFS directory listing for that prefix
+        "ls" if args.len() == 1 && args[0].contains('/') => {
+            let prefix = args[0].trim_end_matches('/');
+            let files = vfs.borrow().list();
+            let filtered: Vec<String> = files.into_iter()
+                .filter(|f| {
+                    let k = f.trim_start_matches('/');
+                    k.starts_with(prefix) && k.len() > prefix.len()
+                })
+                .collect();
+            if filtered.is_empty() {
+                format!("{RED}ls: {}: no such path{RESET}", args[0])
             } else {
-                files.iter().map(|f| format!("{CYAN}{f}{RESET}")).collect::<Vec<_>>().join("\r\n")
+                format_vfs_tree(&filtered, &format!("{prefix}/"))
             }
         }
 
@@ -1010,6 +1023,48 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &
     output
 }
 
+/// Render a VFS file list as a directory tree.
+///
+/// `prefix` is the directory context already shown (e.g. `"traits/sys/"`).
+/// Files at the next depth level are shown as entries; deeper paths are
+/// collapsed into `dir/  (N)` summary lines.
+fn format_vfs_tree(files: &[String], prefix: &str) -> String {
+    use std::collections::BTreeMap;
+    if files.is_empty() {
+        return format!("{GRAY}(vfs empty){RESET}");
+    }
+    let pfx = prefix.trim_end_matches('/');
+    let mut dirs: BTreeMap<String, usize> = BTreeMap::new();
+    let mut file_entries: Vec<String> = Vec::new();
+    for f in files {
+        let rel = if pfx.is_empty() {
+            f.trim_start_matches('/')
+        } else {
+            f.trim_start_matches('/')
+                .strip_prefix(pfx)
+                .unwrap_or(f.as_str())
+                .trim_start_matches('/')
+        };
+        if let Some(slash_pos) = rel.find('/') {
+            *dirs.entry(rel[..slash_pos].to_string()).or_insert(0) += 1;
+        } else if !rel.is_empty() {
+            file_entries.push(rel.to_string());
+        }
+    }
+    let mut out = String::new();
+    for (dir, count) in &dirs {
+        out.push_str(&format!("{CYAN}{dir}/{RESET}  {GRAY}({count}){RESET}\r\n"));
+    }
+    for f in &file_entries {
+        let color = if f.ends_with(".toml") { YELLOW }
+                    else if f.ends_with(".json") { GREEN }
+                    else { BRIGHT_WHITE };
+        out.push_str(&format!("{color}{f}{RESET}\r\n"));
+    }
+    if out.ends_with("\r\n") { out.truncate(out.len() - 2); }
+    out
+}
+
 /// Strip ANSI escape sequences so VFS file contents are plain text.
 fn strip_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -1032,7 +1087,7 @@ fn strip_ansi(s: &str) -> String {
 
 /// Strip `@target` dispatch hint from a trait path.
 /// Returns (clean_path, target) where target is "rest", "relay", "helper", "wasm", or "native".
-fn strip_dispatch_target(path: &str) -> (&str, Option<&str>) {
+pub fn strip_dispatch_target(path: &str) -> (&str, Option<&str>) {
     if let Some(at_pos) = path.rfind('@') {
         let t = &path[at_pos + 1..];
         match t {
