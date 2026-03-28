@@ -7,6 +7,7 @@ primary_region = "sjc"
 [env]
   TRAITS_PORT = "8090"
   TRAITS_BIND = "0.0.0.0"
+  RELAY_URL = "https://traits-relay.kiliannc.workers.dev"
   RUST_LOG = "info"
 
 [http_service]

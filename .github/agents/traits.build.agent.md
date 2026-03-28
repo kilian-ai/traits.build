@@ -542,8 +542,8 @@ POST /relay/call                  # Phone sends {code, path, args} → result
 POST /relay/respond               # Mac sends {code, id, result} back
 GET  /relay/status?code=XXXX      # Check if code is active → {active, age_seconds}
 
-# Mac connects to relay:
-RELAY_URL=https://traits-build.fly.dev traits serve
+# Mac connects to relay (Cloudflare Workers):
+RELAY_URL=https://traits-relay.kiliannc.workers.dev traits serve
 # Shows pairing code, phone enters at traits.build/#/settings
 ```
 
@@ -846,14 +846,14 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 4. Server REST    — POST to origin /traits/{namespace}/{name}
 ```
 
-**Relay system** (NAT-traversal for remote helpers):
-- Mac starts `RELAY_URL=https://traits-build.fly.dev traits serve`
+**Relay system** (NAT-traversal via Cloudflare Workers + Durable Objects):
+- Mac starts `RELAY_URL=https://traits-relay.kiliannc.workers.dev traits serve`
 - Mac registers at `/relay/register` → gets 4-char pairing code (e.g. `A7X9`)
 - Mac long-polls `/relay/poll?code=A7X9` for incoming requests
 - Phone enters code in Settings → stored in `localStorage['traits.relay.code']`
 - Phone SDK calls `/relay/call` with `{code, path, args}` → relay forwards to Mac
 - Mac dispatches locally, responds via `/relay/respond` → relay returns result to phone
-- Zero new dependencies: relay server uses actix-web handlers + tokio channels;
+- Relay runs on Cloudflare Workers (`relay/` directory): zero-latency DO coordination;
   Mac client uses `tokio::process::Command("curl")` for all HTTP calls
 
 **Relay endpoints** (registered in `sys.serve`):
