@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 use serde_json::Value;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 mod registry;
 mod wasm_traits;
@@ -12,6 +13,67 @@ static HELPER_CONNECTED: AtomicBool = AtomicBool::new(false);
 
 pub(crate) fn is_helper_connected() -> bool {
     HELPER_CONNECTED.load(Ordering::Relaxed)
+}
+
+// ── Task registry (browser "processes" tracked by JS) ──
+
+struct WasmTask {
+    id: String,
+    name: String,
+    task_type: String,  // "service" | "worker" | "task"
+    status: String,     // "running" | "idle" | "done"
+    started_ms: f64,    // Date.now() from JS
+    detail: String,     // extra info (e.g. adapter name, trait path)
+}
+
+static TASKS: Mutex<Vec<WasmTask>> = Mutex::new(Vec::new());
+
+/// Register a background task/service visible in `sys.ps`.
+///
+/// Called from JS SDK when spawning workers, starting services (terminal,
+/// webllm), or executing background trait calls.
+///
+/// - `id`:        unique identifier (e.g. "worker-0", "terminal", "task-42")
+/// - `name`:      display name (e.g. "Web Worker #0", "Terminal", "sys.checksum")
+/// - `task_type`: "service" | "worker" | "task"
+/// - `started_ms`: `Date.now()` timestamp from JS
+/// - `detail`:    optional extra info (adapter name, trait path, etc.)
+#[wasm_bindgen]
+pub fn register_task(id: &str, name: &str, task_type: &str, started_ms: f64, detail: &str) {
+    if let Ok(mut tasks) = TASKS.lock() {
+        // Update if already exists (idempotent for services)
+        if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
+            t.status = "running".to_string();
+            t.detail = detail.to_string();
+            return;
+        }
+        tasks.push(WasmTask {
+            id: id.to_string(),
+            name: name.to_string(),
+            task_type: task_type.to_string(),
+            status: "running".to_string(),
+            started_ms,
+            detail: detail.to_string(),
+        });
+    }
+}
+
+/// Remove a task from the registry (task completed or service stopped).
+#[wasm_bindgen]
+pub fn unregister_task(id: &str) {
+    if let Ok(mut tasks) = TASKS.lock() {
+        tasks.retain(|t| t.id != id);
+    }
+}
+
+/// Update the status of a registered task.
+#[wasm_bindgen]
+pub fn update_task_status(id: &str, status: &str) {
+    if let Ok(mut tasks) = TASKS.lock() {
+        if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
+            t.status = status.to_string();
+        }
+    }
 }
 
 // Include generated trait definitions (for registry browsing)

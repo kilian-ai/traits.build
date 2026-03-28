@@ -59,6 +59,7 @@ function _relayServer() {
         if (server.includes('fly.dev') || server.includes('kiliannc.workers.dev')) {
             server = RELAY_DEFAULT_SERVER;
             localStorage.setItem('traits.relay.server', server);
+            localStorage.removeItem('traits.relay.token'); // token is server-scoped
         }
         return server;
     } catch(e) { return RELAY_DEFAULT_SERVER; }
@@ -73,18 +74,45 @@ function _relayCode() {
     const code = _rememberedRelayCode();
     return code && _relayEnabled() ? code : null;
 }
+function _relayToken() {
+    try { return localStorage.getItem('traits.relay.token'); } catch(e) { return null; }
+}
+// Decode the code embedded in a token without verifying signature (client-side read-only).
+function _relayTokenCode() {
+    try {
+        const token = _relayToken();
+        if (!token) return null;
+        const payload = JSON.parse(atob(token.slice(0, token.lastIndexOf('.'))));
+        return payload.code || null;
+    } catch(_) { return null; }
+}
+function _relayTokenExpired() {
+    try {
+        const token = _relayToken();
+        if (!token) return true;
+        const payload = JSON.parse(atob(token.slice(0, token.lastIndexOf('.'))));
+        return !payload.exp || Date.now() / 1000 > payload.exp;
+    } catch(_) { return true; }
+}
 
 async function callRelay(path, args) {
-    const code = _relayCode();
-    if (!code) return null;
+    const token = !_relayTokenExpired() ? _relayToken() : null;
+    const code  = _relayCode();
+    if (!token && !code) return null;
     const server = _relayServer();
     try {
+        const body = token ? { token, path, args } : { code, path, args };
         const res = await fetch(`${server}/relay/call`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, path, args }),
+            body: JSON.stringify(body),
         });
-        if (!res.ok && res.status === 404) return null; // Invalid code — skip relay
+        if (!res.ok && res.status === 401) {
+            // Token rejected — clear it and fall back to code next time
+            try { localStorage.removeItem('traits.relay.token'); } catch(_) {}
+            return null;
+        }
+        if (!res.ok && res.status === 404) return null;
         const data = await res.json();
         if (data.error) return { ok: false, error: data.error, dispatch: 'relay' };
         return { ok: true, result: data.result, dispatch: 'relay' };
@@ -178,6 +206,11 @@ function _syncRelayCodeFromHelper(info) {
         if (storedCode !== code) {
             localStorage.setItem('traits.relay.code', code);
             if (url) localStorage.setItem('traits.relay.server', url);
+            // Clear any stored token if it was issued for a different code
+            const tokenCode = _relayTokenCode();
+            if (tokenCode && tokenCode !== code) {
+                localStorage.removeItem('traits.relay.token');
+            }
         }
     } catch(e) {}
 }
@@ -896,21 +929,34 @@ class Traits {
     async connectRelay(code, server) {
         const relayServer = server || RELAY_DEFAULT_SERVER;
         try {
-            const res = await fetch(`${relayServer}/relay/status?code=${encodeURIComponent(code)}`);
-            const data = await res.json();
-            if (!data.active) return { ok: false, error: 'No helper connected with that code — run traits serve on your Mac first' };
+            // Verify Mac is actually polling before storing anything
+            const statusRes = await fetch(`${relayServer}/relay/status?code=${encodeURIComponent(code)}`);
+            const statusData = await statusRes.json();
+            if (!statusData.active) return { ok: false, error: 'No helper connected with that code — run traits serve on your Mac first' };
             localStorage.setItem('traits.relay.code', code);
             localStorage.setItem('traits.relay.server', relayServer);
             localStorage.setItem(RELAY_ENABLED_KEY, '1');
-            // Send _ping so Mac helper confirms the connection
+            // Request a signed token for password-free future reconnects (best-effort)
+            try {
+                const tokenRes = await fetch(`${relayServer}/relay/connect`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code }),
+                });
+                if (tokenRes.ok) {
+                    const tokenData = await tokenRes.json();
+                    if (tokenData.token) localStorage.setItem('traits.relay.token', tokenData.token);
+                }
+            } catch(_) { /* token is optional — code-based flow still works */ }
+            // Send _ping so Mac logs the connection
             try {
                 await fetch(`${relayServer}/relay/call`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ code, path: '_ping', args: [] }),
                 });
-            } catch(_) { /* ping is best-effort */ }
-            return { ok: true, active: true };
+            } catch(_) {}
+            return { ok: true, active: true, hasToken: !!localStorage.getItem('traits.relay.token') };
         } catch(e) {
             return { ok: false, error: 'Cannot reach relay server: ' + e.message };
         }
@@ -922,6 +968,7 @@ class Traits {
     disconnectRelay() {
         try {
             localStorage.setItem(RELAY_ENABLED_KEY, '0');
+            localStorage.removeItem('traits.relay.token');
         } catch(e) {}
     }
 
@@ -930,13 +977,24 @@ class Traits {
      * @returns {Promise<{connected: boolean, code?: string, server?: string, active?: boolean}>}
      */
     async relayStatus() {
-        const code = _relayCode();
-        if (!code) return { connected: false };
+        const token = !_relayTokenExpired() ? _relayToken() : null;
+        const code  = _relayCode();
+        if (!token && !code) return { connected: false };
         const server = _relayServer();
         try {
-            const res = await fetch(`${server}/relay/status?code=${encodeURIComponent(code)}`);
+            const url = token
+                ? `${server}/relay/status?token=${encodeURIComponent(token)}`
+                : `${server}/relay/status?code=${encodeURIComponent(code)}`;
+            const res  = await fetch(url);
+            if (res.status === 401) {
+                // Token rejected — clear it, fall back to code
+                try { localStorage.removeItem('traits.relay.token'); } catch(_) {}
+                return { connected: false, code, server, error: 'token_expired' };
+            }
             const data = await res.json();
-            return { connected: data.active, code, server, ...data };
+            // Server echoes back the resolved code — keep localStorage in sync
+            if (data.code && data.code !== code) localStorage.setItem('traits.relay.code', data.code);
+            return { connected: data.active, code: data.code || code, server, hasToken: !!token, ...data };
         } catch(e) {
             return { connected: false, code, server, error: e.message };
         }
