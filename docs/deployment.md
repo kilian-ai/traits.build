@@ -107,4 +107,5 @@ When a helper is started with `RELAY_URL=https://relay.traits.build traits serve
 
 - defaults to `RELAY_URL=https://relay.traits.build` for any `serve` invocation when `RELAY_URL` is unset,
 - auto-upgrades legacy `RELAY_URL=https://traits-build.fly.dev` to `https://relay.traits.build`,
-- reattaches stdin from `/dev/tty` for `serve` when launched via a pipe so the REPL remains interactive.
+- reattaches stdin from `/dev/tty` for `serve` when launched via a pipe so the REPL remains interactive,
+- and `sys.serve` now also attempts a server-side `/dev/tty` reattach before disabling REPL if stdin is not a TTY.

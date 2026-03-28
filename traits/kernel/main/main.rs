@@ -26,72 +26,89 @@ fn make_native_vfs() -> Box<dyn kernel_logic::vfs::Vfs> {
 
 // ────────────────── native process status ──────────────────
 
-/// Scan `.run/*.pid` files and return process status as JSON.
+/// Scan `.run/*.pid` files and merge with in-memory task registry.
 ///
 /// Called via `Platform::background_tasks` — provides `sys.ps` with
-/// native OS process data: alive check, uptime, RSS memory.
+/// native OS process data (alive check, uptime, RSS memory) plus
+/// any in-process tasks registered via `platform::register_task()`.
 fn native_background_tasks() -> serde_json::Value {
-    let run_dir = std::path::Path::new(".run");
-    if !run_dir.is_dir() {
-        return serde_json::json!({ "ok": true, "processes": [] });
-    }
-
-    let entries = match std::fs::read_dir(run_dir) {
-        Ok(rd) => rd,
-        Err(_) => return serde_json::json!({ "ok": true, "processes": [] }),
-    };
-
     let mut processes = Vec::new();
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let fname = match path.file_name().and_then(|f| f.to_str()) {
-            Some(f) if f.ends_with(".pid") => f.to_string(),
-            _ => continue,
-        };
-        let trait_path = fname.trim_end_matches(".pid").to_string();
+    // ── 1. PID-file scan (background = true traits spawned by dispatcher) ──
+    let run_dir = std::path::Path::new(".run");
+    if run_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(run_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let fname = match path.file_name().and_then(|f| f.to_str()) {
+                    Some(f) if f.ends_with(".pid") => f.to_string(),
+                    _ => continue,
+                };
+                let trait_path = fname.trim_end_matches(".pid").to_string();
 
-        let pid_str = match std::fs::read_to_string(&path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let pid: u32 = match pid_str.trim().parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
+                let pid_str = match std::fs::read_to_string(&path) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                let pid: u32 = match pid_str.trim().parse() {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
 
-        let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
+                let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
 
-        // PID file modification time as proxy for start time
-        let uptime_secs = path.metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|mtime| std::time::SystemTime::now().duration_since(mtime).ok())
-            .map(|d| d.as_secs_f64());
+                let uptime_secs = path.metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|mtime| std::time::SystemTime::now().duration_since(mtime).ok())
+                    .map(|d| d.as_secs_f64());
 
-        let memory_mb = native_rss_mb(pid);
+                let memory_mb = native_rss_mb(pid);
 
-        let mut proc_info = serde_json::json!({
-            "trait": trait_path,
-            "pid": pid,
-            "alive": alive,
-        });
+                let mut proc_info = serde_json::json!({
+                    "trait": trait_path,
+                    "pid": pid,
+                    "alive": alive,
+                    "source": "pid_file",
+                });
 
-        if let Some(up) = uptime_secs {
-            proc_info["uptime"] = serde_json::json!(format_uptime(up));
-            proc_info["uptime_secs"] = serde_json::json!(up.round() as u64);
+                if let Some(up) = uptime_secs {
+                    proc_info["uptime"] = serde_json::json!(format_uptime(up));
+                    proc_info["uptime_secs"] = serde_json::json!(up.round() as u64);
+                }
+                if let Some(mb) = memory_mb {
+                    proc_info["memory_mb"] = serde_json::json!((mb * 100.0).round() / 100.0);
+                }
+                proc_info["pid_file"] = serde_json::json!(path.to_string_lossy());
+
+                processes.push(proc_info);
+            }
         }
-        if let Some(mb) = memory_mb {
-            proc_info["memory_mb"] = serde_json::json!((mb * 100.0).round() / 100.0);
-        }
-        proc_info["pid_file"] = serde_json::json!(path.to_string_lossy());
+    }
 
+    // ── 2. In-memory task registry (services, workers, tokio tasks) ──
+    let registry_tasks = kernel_logic::platform::list_tasks();
+    for task in registry_tasks {
+        let mut proc_info = task.clone();
+        proc_info["source"] = serde_json::json!("registry");
+        // Compute uptime from started timestamp (epoch seconds)
+        if let Some(started) = task["started"].as_f64() {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            let elapsed = now - started;
+            if elapsed > 0.0 {
+                proc_info["uptime"] = serde_json::json!(format_uptime(elapsed));
+                proc_info["uptime_secs"] = serde_json::json!(elapsed.round() as u64);
+            }
+        }
         processes.push(proc_info);
     }
 
     processes.sort_by(|a, b| {
-        let ta = a["trait"].as_str().unwrap_or("");
-        let tb = b["trait"].as_str().unwrap_or("");
+        let ta = a.get("trait").or_else(|| a.get("name")).and_then(|v| v.as_str()).unwrap_or("");
+        let tb = b.get("trait").or_else(|| b.get("name")).and_then(|v| v.as_str()).unwrap_or("");
         ta.cmp(tb)
     });
 

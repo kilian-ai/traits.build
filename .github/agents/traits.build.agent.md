@@ -874,6 +874,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
   Mac client uses `tokio::process::Command("curl")` for all HTTP calls
 - `local/helper.sh` defaults `RELAY_URL` to `https://relay.traits.build` for `serve` commands and reattaches `/dev/tty` when invoked via `curl ... | bash` so REPL input works.
 - Legacy relay endpoint values (`https://traits-build.fly.dev`) are normalized to `https://relay.traits.build` in both helper script startup and `sys.serve` relay selection.
+- `sys.serve` also attempts a `/dev/tty` stdio reattach before disabling REPL, so interactive CLI can still start when stdin began as a pipe.
 
 **Relay endpoints** (registered in `sys.serve`):
 ```

@@ -129,6 +129,35 @@ fn normalize_relay_url(raw: &str) -> Option<String> {
     Some(trimmed.to_string())
 }
 
+fn ensure_repl_tty() -> bool {
+    if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        return true;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::fs::OpenOptions;
+        use std::os::fd::AsRawFd;
+
+        let tty = match OpenOptions::new().read(true).write(true).open("/dev/tty") {
+            Ok(f) => f,
+            Err(_) => return false,
+        };
+
+        let fd = tty.as_raw_fd();
+        let stdin_ok = unsafe { libc::dup2(fd, libc::STDIN_FILENO) } != -1;
+        let stdout_ok = unsafe { libc::dup2(fd, libc::STDOUT_FILENO) } != -1;
+        let stderr_ok = unsafe { libc::dup2(fd, libc::STDERR_FILENO) } != -1;
+
+        stdin_ok && stdout_ok && stderr_ok && std::io::IsTerminal::is_terminal(&std::io::stdin())
+    }
+
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct CallQuery {
     #[serde(default)]
@@ -827,6 +856,7 @@ fn spawn_relay_client(relay_url: String, local_port: u16) {
             if let Ok(mut guard) = crate::globals::RELAY_CODE.write() {
                 *guard = None;
             }
+            kernel_logic::platform::unregister_task("relay-client");
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     });
@@ -857,6 +887,16 @@ async fn relay_client_session(relay_url: &str, local_port: u16) -> Result<(), St
 
     info!("📡 Relay pairing code: {}", code);
     info!("   Enter this code at traits.build/#/settings to connect from anywhere");
+
+    // Register relay client in task registry
+    let relay_started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    kernel_logic::platform::register_task(
+        "relay-client", "Relay Client", "service", relay_started,
+        &format!("code={} → {}", code, relay_url),
+    );
 
     // 2. Poll loop
     loop {
@@ -1044,6 +1084,16 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
 
     info!("Starting Traits server on {}:{} ({} page routes)", config.traits.bind, port, page_routes.len());
 
+    // Register in the platform task registry so sys.ps shows the server
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    kernel_logic::platform::register_task(
+        "sys.serve", "HTTP Server", "service", now,
+        &format!("{}:{}", config.traits.bind, port),
+    );
+
     // Publish bind/port as globals so sys.info can report server status
     let _ = crate::globals::SERVER_BIND.set(config.traits.bind.clone());
     let _ = crate::globals::SERVER_PORT.set(port);
@@ -1079,13 +1129,15 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
     .workers(2)
     .bind(format!("{}:{}", config.traits.bind, port))?;
 
-    // Spawn REPL on a background thread if stdin is a TTY
-    if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+    // Spawn REPL when we have terminal IO. If stdin is piped, try reattaching /dev/tty.
+    if ensure_repl_tty() {
         std::thread::spawn(|| {
             // Brief delay so the server's INFO log prints first
             std::thread::sleep(std::time::Duration::from_millis(200));
             crate::dispatcher::compiled::cli::serve_repl();
         });
+    } else {
+        info!("REPL disabled: no interactive TTY detected");
     }
 
     server.run().await?;
