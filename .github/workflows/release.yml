@@ -26,6 +26,16 @@ jobs:
             arch: aarch64
             artifact: traits-linux-aarch64
             cross: true
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            os: macos
+            arch: aarch64
+            artifact: traits-macos-aarch64
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            os: macos
+            arch: x86_64
+            artifact: traits-macos-x86_64
 
     steps:
       - uses: actions/checkout@v4

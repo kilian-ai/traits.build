@@ -72,12 +72,12 @@ LATEST=""
 LATEST="$(curl -fsSL --connect-timeout 3 "https://api.github.com/repos/$REPO/tags?per_page=1" 2>/dev/null \
     | grep '"name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || echo "")"
 
-# ── Use local binary if it matches the latest version ──
-# Only use local if we successfully fetched a remote version AND it matches.
+# ── Use local binary if it's up-to-date ──
+# Versions are vYYMMDD.HHMMSS — lexicographic >= works correctly.
 # If we can't reach GitHub (offline), fall back to local binary.
 if [ -n "$LOCAL_BIN" ] && [ -n "$LOCAL_VERSION" ]; then
     if [ -n "$LATEST" ]; then
-        if [ "$LOCAL_VERSION" = "$LATEST" ]; then
+        if [ "$LOCAL_VERSION" = "$LATEST" ] || [[ "$LOCAL_VERSION" > "$LATEST" ]]; then
             banner "$@"
             echo "✓ Using local: $LOCAL_BIN ($LOCAL_VERSION)"
             echo ""
@@ -86,7 +86,11 @@ if [ -n "$LOCAL_BIN" ] && [ -n "$LOCAL_VERSION" ]; then
             echo "  Local $LOCAL_VERSION → remote $LATEST (updating...)"
         fi
     else
-        echo "  Could not check remote version, trying download..."
+        # Offline — use local if available
+        banner "$@"
+        echo "✓ Using local (offline): $LOCAL_BIN ($LOCAL_VERSION)"
+        echo ""
+        exec "$LOCAL_BIN" "$@"
     fi
 fi
 
