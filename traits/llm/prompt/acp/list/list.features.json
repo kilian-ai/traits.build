@@ -1,0 +1,26 @@
+{
+  "trait": "llm.prompt.acp.list",
+  "features": [
+    {
+      "name": "List available ACP models",
+      "description": "Lists models available on the running ACP agent",
+      "tests": [
+        {
+          "name": "list returns JSON output",
+          "type": "exit_code",
+          "command": "traits call llm.prompt.acp.list",
+          "expected": 0
+        }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "type": "object",
+            "description": "{currentModelId: string, availableModels: [{id, displayName, ...}]} or null"
+          }
+        }
+      ]
+    }
+  ]
+}

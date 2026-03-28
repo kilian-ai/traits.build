@@ -157,8 +157,9 @@ pub fn get_proxy_status() -> Value {
 // ── WebSocket ACP client ───────────────────
 // ═══════════════════════════════════════════
 
-/// Send a prompt to the ACP agent via WebSocket and collect the full response.
-fn send_prompt(prompt: &str, cwd: &str) -> Result<String, String> {
+/// Open a WebSocket to the ACP proxy, connect to the agent, and create a session.
+/// Returns (ws, session_created_payload).
+fn open_session(cwd: &str) -> Result<(tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>, Value), String> {
     use tungstenite::{connect, Message};
 
     let (mut ws, _) =
@@ -201,12 +202,16 @@ fn send_prompt(prompt: &str, cwd: &str) -> Result<String, String> {
     ))
     .map_err(|e| format!("Send new_session: {}", e))?;
 
+    let session_payload;
     loop {
         let msg = ws.read().map_err(|e| format!("Read: {}", e))?;
         if let Message::Text(text) = msg {
             let v: Value = serde_json::from_str(&text).unwrap_or_default();
             match v.get("type").and_then(|t| t.as_str()) {
-                Some("session_created") => break,
+                Some("session_created") => {
+                    session_payload = v.get("payload").cloned().unwrap_or_default();
+                    break;
+                }
                 Some("error") => {
                     let m = v
                         .pointer("/payload/message")
@@ -219,12 +224,135 @@ fn send_prompt(prompt: &str, cwd: &str) -> Result<String, String> {
         }
     }
 
-    // ── 3. Send prompt ──
+    Ok((ws, session_payload))
+}
+
+/// Set the model for the current session via WebSocket.
+fn set_session_model(ws: &mut tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>, model_id: &str) -> Result<(), String> {
+    use tungstenite::Message;
+
+    ws.send(Message::Text(
+        json!({"type": "set_session_model", "payload": {"modelId": model_id}}).to_string(),
+    ))
+    .map_err(|e| format!("Send set_session_model: {}", e))?;
+
+    loop {
+        let msg = ws.read().map_err(|e| format!("Read: {}", e))?;
+        if let Message::Text(text) = msg {
+            let v: Value = serde_json::from_str(&text).unwrap_or_default();
+            match v.get("type").and_then(|t| t.as_str()) {
+                Some("model_changed") => return Ok(()),
+                Some("error") => {
+                    let m = v
+                        .pointer("/payload/message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("unknown");
+                    return Err(format!("Set model error: {}", m));
+                }
+                _ => continue,
+            }
+        }
+    }
+}
+
+/// List available models from the current ACP session.
+pub fn list_models(cwd: &str) -> Result<Value, String> {
+    let (mut ws, session) = open_session(cwd)?;
+    let _ = ws.close(None);
+
+    let models = session.get("models").cloned().unwrap_or(Value::Null);
+    Ok(models)
+}
+
+/// Read context files and return as a formatted context block.
+/// Accepts a comma-separated list of file paths (absolute or relative to cwd).
+/// Supports glob patterns (e.g. "docs/*.md").
+pub fn read_context_files(paths_csv: &str, cwd: &str) -> Vec<(String, String)> {
+    let base = std::path::Path::new(cwd);
+    let mut files: Vec<(String, String)> = Vec::new();
+
+    for pattern in paths_csv.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        let abs_pattern = if std::path::Path::new(pattern).is_absolute() {
+            pattern.to_string()
+        } else {
+            base.join(pattern).to_string_lossy().to_string()
+        };
+
+        // Try glob expansion first
+        let matched: Vec<_> = glob::glob(&abs_pattern)
+            .map(|paths| paths.filter_map(|p| p.ok()).collect())
+            .unwrap_or_default();
+
+        if matched.is_empty() {
+            // Not a glob — try as a literal path
+            let p = if std::path::Path::new(pattern).is_absolute() {
+                std::path::PathBuf::from(pattern)
+            } else {
+                base.join(pattern)
+            };
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                let name = p.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| pattern.to_string());
+                files.push((name, content));
+            }
+        } else {
+            for path in matched {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    let name = path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.to_string_lossy().to_string());
+                    files.push((name, content));
+                }
+            }
+        }
+    }
+
+    files
+}
+
+/// Format context files into a single context block for the prompt.
+fn format_context(files: &[(String, String)]) -> String {
+    if files.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("<context>\n");
+    for (name, content) in files {
+        out.push_str(&format!("<file name=\"{}\">\n{}\n</file>\n", name, content));
+    }
+    out.push_str("</context>\n\n");
+    out
+}
+
+/// Send a prompt to the ACP agent via WebSocket and collect the full response.
+fn send_prompt(prompt: &str, cwd: &str, model: Option<&str>, context_files: &[(String, String)]) -> Result<String, String> {
+    use tungstenite::Message;
+
+    let (mut ws, _session) = open_session(cwd)?;
+
+    // ── 2b. Optionally set model ──
+    if let Some(m) = model {
+        set_session_model(&mut ws, m)?;
+    }
+
+    // ── 3. Build content blocks ──
+    let mut content_blocks: Vec<Value> = Vec::new();
+
+    // Prepend context files as a single text block
+    let ctx = format_context(context_files);
+    if !ctx.is_empty() {
+        content_blocks.push(json!({"type": "text", "text": ctx}));
+    }
+
+    // User prompt
+    content_blocks.push(json!({"type": "text", "text": prompt}));
+
+    // ── 4. Send prompt ──
     ws.send(Message::Text(
         json!({
             "type": "prompt",
             "payload": {
-                "content": [{"type": "text", "text": prompt}]
+                "content": content_blocks
             }
         })
         .to_string(),
@@ -298,7 +426,7 @@ fn send_prompt(prompt: &str, cwd: &str) -> Result<String, String> {
 
 /// llm.prompt.acp — Route prompts to ACP agents via WebSocket proxy.
 ///
-/// Args: [prompt, agent?, cwd?, auto_approve?]
+/// Args: [prompt, agent?, cwd?, auto_approve?, model?, context?]
 pub fn acp_proxy_dispatch(args: &[Value]) -> Value {
     let prompt = match args.first().and_then(|v| v.as_str()) {
         Some(p) if !p.is_empty() => p,
@@ -317,6 +445,17 @@ pub fn acp_proxy_dispatch(args: &[Value]) -> Value {
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
 
+    let model = args
+        .get(4)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    let context_csv = args
+        .get(5)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+
     let cwd = std::path::Path::new(cwd_arg)
         .canonicalize()
         .map(|p| p.to_string_lossy().to_string())
@@ -326,12 +465,19 @@ pub fn acp_proxy_dispatch(args: &[Value]) -> Value {
                 .unwrap_or_else(|_| ".".into())
         });
 
+    // Read context files
+    let context_files = if context_csv.is_empty() {
+        Vec::new()
+    } else {
+        read_context_files(context_csv, &cwd)
+    };
+
     // Ensure proxy is running for the requested agent (restarts if agent changed)
     if let Err(e) = ensure_proxy_for(agent) {
         return json!({"ok": false, "error": e});
     }
 
-    match send_prompt(prompt, &cwd) {
+    match send_prompt(prompt, &cwd, model, &context_files) {
         Ok(response) => json!(response),
         Err(e) => json!({"ok": false, "error": e}),
     }

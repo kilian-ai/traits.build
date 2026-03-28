@@ -1,7 +1,7 @@
 [trait]
 description = "Route prompts to ACP agents via chrome-acp proxy (OpenCode, Claude Code, Codex, Copilot)"
-version = "v260328.175327"
-checksum = "37a5a48e762dc4bc1fe8ecc8efca24ffa60d40e8c58c7e58e8a08472af405f3c"
+version = "v260328.193152"
+checksum = "18bf4458dc886c52080481799a14fcbdb5b4ba295912a5c7a2cf30cef5b4264e"
 author = "user"
 tags = ["llm", "acp", "proxy", "opencode", "claude", "codex", "copilot"]
 provides = ["llm/prompt", "llm/acp"]
@@ -12,6 +12,8 @@ params = [
   { name = "agent", type = "string", description = "ACP agent: opencode, claude, codex, copilot", required = false, default = "opencode" },
   { name = "cwd", type = "string", description = "Working directory for the ACP session", required = false, default = "." },
   { name = "auto_approve", type = "boolean", description = "Automatically approve permission prompts", required = false, default = false },
+  { name = "model", type = "string", description = "Model ID to use (e.g. claude-sonnet-4-5-20250514). Omit for agent default.", required = false },
+  { name = "context", type = "string", description = "Comma-separated file paths or globs to include as context (e.g. 'agent.md,docs/*.md')", required = false },
 ]
 
 [signature.returns]

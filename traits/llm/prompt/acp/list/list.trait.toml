@@ -1,0 +1,21 @@
+[trait]
+description = "List available models on the running ACP agent"
+version = "v260328.191320"
+checksum = "e1951882e2338251533981ddd10277965f842e998612a932e297b8265c927221"
+author = "user"
+tags = ["llm", "acp", "models", "list"]
+
+[signature]
+params = [
+  { name = "agent", type = "string", description = "ACP agent: opencode, claude, codex, copilot", required = false, default = "opencode" },
+  { name = "cwd", type = "string", description = "Working directory for the ACP session", required = false, default = "." },
+]
+
+[signature.returns]
+type = "map"
+description = "Model state: {currentModelId, availableModels: [{id, displayName, ...}]}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "acp_list"

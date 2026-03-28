@@ -49,6 +49,19 @@
           }
         }
       ]
+    },
+    {
+      "name": "Context files injection",
+      "description": "Pass context markdown files that are prepended to the prompt as XML-wrapped context blocks",
+      "tests": [],
+      "examples": [
+        {
+          "input": ["Summarize the context", "opencode", ".", false, null, "README.md,docs/*.md"],
+          "output": {
+            "type": "string"
+          }
+        }
+      ]
     }
   ]
 }
