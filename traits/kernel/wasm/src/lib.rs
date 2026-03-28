@@ -2,7 +2,6 @@ use wasm_bindgen::prelude::*;
 use serde_json::Value;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 
 mod registry;
 mod wasm_traits;
@@ -15,18 +14,7 @@ pub(crate) fn is_helper_connected() -> bool {
     HELPER_CONNECTED.load(Ordering::Relaxed)
 }
 
-// ── Task registry (browser "processes" tracked by JS) ──
-
-struct WasmTask {
-    id: String,
-    name: String,
-    task_type: String,  // "service" | "worker" | "task"
-    status: String,     // "running" | "idle" | "done"
-    started_ms: f64,    // Date.now() from JS
-    detail: String,     // extra info (e.g. adapter name, trait path)
-}
-
-static TASKS: Mutex<Vec<WasmTask>> = Mutex::new(Vec::new());
+// ── Task registry — delegates to kernel_logic::platform shared registry ──
 
 /// Register a background task/service visible in `sys.ps`.
 ///
@@ -40,40 +28,19 @@ static TASKS: Mutex<Vec<WasmTask>> = Mutex::new(Vec::new());
 /// - `detail`:    optional extra info (adapter name, trait path, etc.)
 #[wasm_bindgen]
 pub fn register_task(id: &str, name: &str, task_type: &str, started_ms: f64, detail: &str) {
-    if let Ok(mut tasks) = TASKS.lock() {
-        // Update if already exists (idempotent for services)
-        if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
-            t.status = "running".to_string();
-            t.detail = detail.to_string();
-            return;
-        }
-        tasks.push(WasmTask {
-            id: id.to_string(),
-            name: name.to_string(),
-            task_type: task_type.to_string(),
-            status: "running".to_string(),
-            started_ms,
-            detail: detail.to_string(),
-        });
-    }
+    kernel_logic::platform::register_task(id, name, task_type, started_ms, detail);
 }
 
 /// Remove a task from the registry (task completed or service stopped).
 #[wasm_bindgen]
 pub fn unregister_task(id: &str) {
-    if let Ok(mut tasks) = TASKS.lock() {
-        tasks.retain(|t| t.id != id);
-    }
+    kernel_logic::platform::unregister_task(id);
 }
 
 /// Update the status of a registered task.
 #[wasm_bindgen]
 pub fn update_task_status(id: &str, status: &str) {
-    if let Ok(mut tasks) = TASKS.lock() {
-        if let Some(t) = tasks.iter_mut().find(|t| t.id == id) {
-            t.status = status.to_string();
-        }
-    }
+    kernel_logic::platform::update_task_status(id, status);
 }
 
 // Include generated trait definitions (for registry browsing)
@@ -179,19 +146,8 @@ fn wasm_background_tasks() -> serde_json::Value {
     let registered = get_registry().len();
     let helper = is_helper_connected();
 
-    // Read task registry → processes array
-    let processes: Vec<serde_json::Value> = if let Ok(tasks) = TASKS.lock() {
-        tasks.iter().map(|t| serde_json::json!({
-            "id": t.id,
-            "name": t.name,
-            "type": t.task_type,
-            "status": t.status,
-            "started_ms": t.started_ms,
-            "detail": t.detail,
-        })).collect()
-    } else {
-        vec![]
-    };
+    // Read task registry → processes array (shared platform registry)
+    let processes = kernel_logic::platform::list_tasks();
 
     serde_json::json!({
         "ok": true,
