@@ -51,7 +51,15 @@ const HELPER_TIMEOUT = 1500;
 const RELAY_DEFAULT_SERVER = 'https://relay.traits.build';
 
 function _relayServer() {
-    try { return localStorage.getItem('traits.relay.server') || RELAY_DEFAULT_SERVER; } catch(e) { return RELAY_DEFAULT_SERVER; }
+    try {
+        let server = localStorage.getItem('traits.relay.server') || RELAY_DEFAULT_SERVER;
+        // Migrate stale domains from before the CF Workers migration
+        if (server.includes('fly.dev') || server.includes('kiliannc.workers.dev')) {
+            server = RELAY_DEFAULT_SERVER;
+            localStorage.setItem('traits.relay.server', server);
+        }
+        return server;
+    } catch(e) { return RELAY_DEFAULT_SERVER; }
 }
 function _relayCode() {
     try { return localStorage.getItem('traits.relay.code'); } catch(e) { return null; }
@@ -859,7 +867,7 @@ export class Traits {
         try {
             const res = await fetch(`${relayServer}/relay/status?code=${encodeURIComponent(code)}`);
             const data = await res.json();
-            if (!data.active) return { ok: false, error: 'Pairing code not found or expired' };
+            if (!data.active) return { ok: false, error: 'No helper connected with that code — run traits serve on your Mac first' };
             localStorage.setItem('traits.relay.code', code);
             localStorage.setItem('traits.relay.server', relayServer);
             // Send _ping so Mac helper confirms the connection

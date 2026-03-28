@@ -53,6 +53,7 @@ function generateCode() {
 export class RelaySession {
   constructor(state, env) {
     this.created = Date.now();
+    this.lastPollAt = null;     // timestamp of last /poll from Mac
     this.pendingRequest = null; // { id, path, args }
     this.pollResolve = null;    // fn(request) — Mac's waiting resolver
     this.resultResolvers = new Map(); // id → fn(result)
@@ -73,6 +74,7 @@ export class RelaySession {
   // Mac long-polls here. Resolves immediately if a request is already waiting,
   // otherwise suspends for up to 29s then returns 204 (Mac should re-poll).
   _poll() {
+    this.lastPollAt = Date.now(); // track liveness for _status()
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.pollResolve = null;
@@ -135,8 +137,13 @@ export class RelaySession {
   }
 
   _status() {
+    // Mac is considered connected if it's currently in a poll OR polled within the
+    // last 35s (29s poll timeout + 6s grace for reconnect).
+    const macConnected =
+      this.pollResolve !== null ||
+      (this.lastPollAt !== null && Date.now() - this.lastPollAt < 35_000);
     return json({
-      active: true,
+      active: macConnected,
       age_seconds: Math.floor((Date.now() - this.created) / 1000),
     });
   }
