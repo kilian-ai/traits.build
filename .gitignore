@@ -4,6 +4,7 @@
 *.so
 /t
 /logs/
+nohup.out
 fly.toml
 trait_config.toml
 traits/kernel/wasm/pkg/
