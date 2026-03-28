@@ -110,14 +110,20 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else if name == "stop" {
                 call_trait(&config, "__stop__", &rest).await?;
             } else {
-                let sys_path = format!("sys.{}", name);
-                let kernel_path = format!("kernel.{}", name);
-                let trait_path = if crate::trait_exists(&config, &sys_path) {
+                // Strip @target for path resolution, reattach for dispatch
+                let (clean_name, target) = crate::cli::strip_dispatch_target(name);
+                let sys_path = format!("sys.{}", clean_name);
+                let kernel_path = format!("kernel.{}", clean_name);
+                let base_path = if crate::trait_exists(&config, &sys_path) {
                     sys_path
                 } else if crate::trait_exists(&config, &kernel_path) {
                     kernel_path
                 } else {
                     sys_path
+                };
+                let trait_path = match target {
+                    Some(t) => format!("{}@{}", base_path, t),
+                    None => base_path,
                 };
                 // Check for -i in the rest args
                 if is_interactive_flag(&rest) {
@@ -367,20 +373,31 @@ pub async fn call_trait(
     path: &str,
     args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Strip @target dispatch hint from path
+    let (clean_path, target) = crate::cli::strip_dispatch_target(path);
+
+    // Force remote dispatch: use sys.call HTTP POST instead of local dispatch
+    if matches!(target, Some("rest") | Some("relay") | Some("helper")) {
+        let _dispatcher = crate::bootstrap(config)?;
+        let json_args: Vec<serde_json::Value> = args.iter().map(|a| parse_cli_value(a)).collect();
+        dispatch_via_rest(clean_path, &json_args, target.unwrap());
+        return Ok(());
+    }
+
     let dispatcher = crate::bootstrap(config)?;
     let mut args = args.to_vec();
-    collapse_shell_globs(path, &mut args);
-    maybe_inject_stdin(path, &mut args);
-    let trait_args = parse_cli_args(path, &args);
+    collapse_shell_globs(clean_path, &mut args);
+    maybe_inject_stdin(clean_path, &mut args);
+    let trait_args = parse_cli_args(clean_path, &args);
 
-    match dispatcher.call(path, trait_args, &crate::dispatcher::CallConfig::default()).await {
+    match dispatcher.call(clean_path, trait_args, &crate::dispatcher::CallConfig::default()).await {
         Ok(result) => {
-            print_result(path, &result)?;
+            print_result(clean_path, &result)?;
         }
         Err(e) => {
             let msg = e.to_string();
             if msg.contains("Argument count mismatch") || msg.contains("expected") {
-                print_trait_usage(path);
+                print_trait_usage(clean_path);
             }
             dispatcher.shutdown().await;
             return Err(format!("Trait call failed: {}", e).into());
@@ -625,15 +642,32 @@ fn dispatch_via_rest(path: &str, args: &[serde_json::Value], target: &str) {
         Some(val) => {
             let ok = val.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
             if ok {
-                // Parse the nested response: sys.call returns {ok, body} where body is the REST response
+                // Parse the nested response: sys.call returns {ok, status, body} where body is the REST response
                 let body_val = val.get("body").cloned().unwrap_or(serde_json::Value::Null);
                 // The REST endpoint returns {"result": ...} — extract the inner result
                 let trait_result = body_val.get("result").cloned().unwrap_or(body_val.clone());
-                let formatted = crate::cli::format_rest_result(path, args, &trait_result)
-                    .unwrap_or_else(|| serde_json::to_string_pretty(&trait_result).unwrap_or_default());
-                print!("{}", formatted);
+                // Check if the REST response itself reports an error
+                if let Some(err_msg) = body_val.get("error").and_then(|e| e.as_str()) {
+                    print!("\x1b[31m{} error: {}\x1b[0m\r\n", target, err_msg);
+                } else {
+                    let formatted = crate::cli::format_rest_result(path, args, &trait_result)
+                        .unwrap_or_else(|| serde_json::to_string_pretty(&trait_result).unwrap_or_default());
+                    print!("{}", formatted);
+                }
             } else {
-                let err = val.get("error").and_then(|e| e.as_str()).unwrap_or("HTTP request failed");
+                let status = val.get("status").and_then(|v| v.as_u64()).unwrap_or(0);
+                // Check body for server error message
+                let body_err = val.get("body")
+                    .and_then(|b| b.get("error").and_then(|e| e.as_str()));
+                let err = if let Some(msg) = body_err {
+                    format!("HTTP {}: {}", status, msg)
+                } else if status > 0 {
+                    format!("HTTP {}", status)
+                } else {
+                    val.get("error").and_then(|e| e.as_str())
+                        .unwrap_or("connection failed")
+                        .to_string()
+                };
                 print!("\x1b[31m{} error: {}\x1b[0m\r\n", target, err);
             }
         }

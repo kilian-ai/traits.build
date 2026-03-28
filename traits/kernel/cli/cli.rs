@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 pub mod shell;
 pub mod vfs;
-pub use shell::{Shell, DefaultShell, ShellCommand, Redirect};
+pub use shell::{Shell, DefaultShell};
 pub use vfs::{Vfs, MemVfs, LayeredVfs};
 
 mod generated_cli_formatters {
@@ -145,7 +145,11 @@ impl CliSession {
             interactive: None,
             param_history: HashMap::new(),
             shell: Arc::new(DefaultShell),
-            vfs: RefCell::new(Box::new(MemVfs::default())),
+            // Platform::make_vfs() returns the right backend for the current target:
+            //   Native → LayeredVfs seeded by walking the real TRAITS_DIR on disk.
+            //   WASM   → LayeredVfs seeded from embedded include_str! assets.
+            //   Uninitialised → MemVfs fallback (tests, early init).
+            vfs: RefCell::new(kernel_logic::platform::make_vfs()),
         }
     }
 
@@ -1087,12 +1091,21 @@ fn strip_ansi(s: &str) -> String {
 
 /// Strip `@target` dispatch hint from a trait path.
 /// Returns (clean_path, target) where target is "rest", "relay", "helper", "wasm", or "native".
-pub fn strip_dispatch_target(path: &str) -> (&str, Option<&str>) {
+/// Case-insensitive: `@REST`, `@Rest`, `@rest` all match.
+pub fn strip_dispatch_target(path: &str) -> (&str, Option<&'static str>) {
     if let Some(at_pos) = path.rfind('@') {
         let t = &path[at_pos + 1..];
-        match t {
-            "wasm" | "native" | "rest" | "relay" | "helper" => (&path[..at_pos], Some(t)),
-            _ => (path, None),
+        let target = match t.to_ascii_lowercase().as_str() {
+            "wasm" => Some("wasm"),
+            "native" => Some("native"),
+            "rest" => Some("rest"),
+            "relay" => Some("relay"),
+            "helper" => Some("helper"),
+            _ => None,
+        };
+        match target {
+            Some(t) => (&path[..at_pos], Some(t)),
+            None => (path, None),
         }
     } else {
         (path, None)
@@ -1112,6 +1125,10 @@ fn exec_call(backend: &dyn CliCallBackend, path: &str, arg_strs: &[String]) -> S
              {REST_SENTINEL_START}{{\"p\":\"{clean_path}\",\"a\":{args_json},\"t\":\"{t}\"}}{REST_SENTINEL_END}"
         );
     }
+
+    // @wasm: force WASM dispatch — if backend can't handle it, report error locally
+    // @native: force native dispatch — if backend can't handle it, report error locally
+    let force_local = matches!(target, Some("wasm") | Some("native"));
 
     match backend.call(clean_path, &args) {
         Ok(result) => {
@@ -1137,6 +1154,11 @@ fn exec_call(backend: &dyn CliCallBackend, path: &str, arg_strs: &[String]) -> S
             out
         }
         Err(e) if e.starts_with("REST:") => {
+            if force_local {
+                // @wasm/@native: do NOT cascade to REST — show local dispatch failure
+                return format!("{RED}Error: {clean_path} not available locally ({t}){RESET}\r\n",
+                    t = target.unwrap_or("native"));
+            }
             let rest_path = &e[5..];
             let args_json = serde_json::to_string(&args).unwrap_or_else(|_| "[]".to_string());
             format!(

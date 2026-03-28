@@ -9,6 +9,7 @@
 
 pub mod time;
 
+use crate::vfs;
 use serde_json::Value;
 use std::sync::OnceLock;
 
@@ -29,6 +30,11 @@ pub struct Platform {
     pub config_get: fn(&str, &str, &str) -> String,
     /// Retrieve a stored secret by key.
     pub secret_get: fn(&str) -> Option<String>,
+    /// Create a new VFS backend for a CLI session.
+    /// - Native: `LayeredVfs` seeded by walking the real `TRAITS_DIR` on disk.
+    /// - WASM:   `LayeredVfs` seeded from `include_str!` embedded assets.
+    /// Falls back to `MemVfs` if this field is not set (pre-init callers).
+    pub make_vfs: fn() -> Box<dyn vfs::Vfs>,
 }
 
 static PLATFORM: OnceLock<Platform> = OnceLock::new();
@@ -77,4 +83,12 @@ pub fn config_get(trait_path: &str, key: &str, default: &str) -> String {
 /// Retrieve a stored secret by key.
 pub fn secret_get(key: &str) -> Option<String> {
     (platform().secret_get)(key)
+}
+
+/// Create a VFS backend for a new CLI session.
+/// Returns `MemVfs` if the platform has not been initialised yet.
+pub fn make_vfs() -> Box<dyn vfs::Vfs> {
+    PLATFORM.get()
+        .map(|p| (p.make_vfs)())
+        .unwrap_or_else(|| Box::new(vfs::MemVfs::default()))
 }

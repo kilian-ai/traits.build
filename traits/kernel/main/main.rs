@@ -6,6 +6,50 @@ use dispatcher::{CallConfig, Dispatcher};
 use std::path::Path;
 use tracing::info;
 
+// ────────────────── native VFS backend ──────────────────
+
+/// Build a `LayeredVfs` seeded from the real filesystem.
+///
+/// Walks `TRAITS_DIR` and mounts every `.trait.toml` and `.features.json`
+/// with a path of the form `traits/{ns}/{name}/{file}` — matching exactly the
+/// structure the WASM kernel embeds at compile time so `cat` / `ls` paths are
+/// identical across both targets.
+///
+/// Called via `Platform::make_vfs` each time a `CliSession` is created.
+fn make_native_vfs() -> Box<dyn kernel_logic::vfs::Vfs> {
+    let mut vfs = kernel_logic::vfs::LayeredVfs::new();
+    if let Some(traits_dir) = crate::globals::TRAITS_DIR.get() {
+        seed_dir(&mut vfs, traits_dir, traits_dir);
+    }
+    Box::new(vfs)
+}
+
+fn seed_dir(
+    vfs: &mut kernel_logic::vfs::LayeredVfs,
+    root: &std::path::Path,
+    dir: &std::path::Path,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            seed_dir(vfs, root, &path);
+        } else {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.ends_with(".trait.toml") || name.ends_with(".features.json") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(rel) = path.strip_prefix(root) {
+                        // Prepend "traits/" so the path matches the WASM VFS convention:
+                        // traits/sys/checksum/checksum.trait.toml
+                        let key = format!("traits/{}", rel.display());
+                        vfs.seed(&key, content);
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ────────────────── system bootstrap ──────────────────
 
 /// Bootstrap the trait runtime: registry + dylibs + workers + router.
@@ -51,6 +95,7 @@ pub fn bootstrap(config: &Config) -> Result<Dispatcher, Box<dyn std::error::Erro
             let ctx = crate::dispatcher::compiled::secrets::SecretContext::resolve(&[key]);
             ctx.get(key).map(|v| v.to_string())
         },
+        make_vfs: make_native_vfs,
     });
 
     // Load trait dylibs from the entire traits directory (recursive)
