@@ -1037,9 +1037,9 @@ async function refreshDispatchStatus() {
         byId('btnRelayDisconnect').style.display = '';
         tiers.push('Relay');
       } else {
-        setTier('Relay', 'red', 'code ' + s.relayCode + ' — helper offline');
+        setTier('Relay', 'red', 'code ' + s.relayCode + ' — helper offline (run traits serve, enter new code)');
         byId('btnRelayConnect').style.display = '';
-        byId('btnRelayDisconnect').style.display = 'none';
+        byId('btnRelayDisconnect').style.display = '';  // show so user can clear stale code
       }
     } catch (e) {
       setTier('Relay', 'red', 'error: ' + (e.message || e));
