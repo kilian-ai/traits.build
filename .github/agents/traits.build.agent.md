@@ -591,7 +591,7 @@ Layer 2: Native Infrastructure (wasm = false)
 
 The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel traits and warns if any trait is missing an explicit `wasm = true/false` declaration.
 
-### Sys (26) — System utilities & services
+### Sys (25) — System utilities & services
 
 | Trait | Description | Source |
 |-------|-------------|--------|
@@ -756,6 +756,8 @@ pub struct Platform {
     pub registry_detail: fn(&str) -> Option<Value>,         // single trait detail
     pub config_get: fn(&str, &str, &str) -> String,         // per-trait config
     pub secret_get: fn(&str) -> Option<String>,             // secret retrieval
+    pub make_vfs: fn() -> Box<dyn vfs::Vfs>,                // CLI session VFS
+    pub background_tasks: fn() -> Value,                    // sys.ps process/task status
 }
 ```
 
@@ -766,12 +768,16 @@ pub struct Platform {
 - `registry_*` → `crate::globals::REGISTRY.get()`
 - `config_get` → `crate::config::trait_config_or`
 - `secret_get` → `SecretContext::resolve`
+- `make_vfs` → `make_native_vfs` (walks TRAITS_DIR on disk)
+- `background_tasks` → `native_background_tasks` (scans `.run/*.pid` files, libc::kill, RSS)
 
 **WASM** (`kernel/wasm/src/lib.rs` → `init()`):
 - `dispatch` → `wasm_traits::dispatch`
 - `registry_*` → `get_registry()` (WasmRegistry)
 - `config_get` → returns default (no config in browser)
 - `secret_get` → `wasm_secrets::get_secret`
+- `make_vfs` → `make_wasm_vfs` (embedded trait TOMLs)
+- `background_tasks` → `wasm_background_tasks` (callable/registered counts, helper status)
 
 ### Convenience Functions
 
@@ -798,12 +804,13 @@ These traits now use `kernel_logic::platform::*` instead of `#[cfg]` blocks:
 | `sys.version` | cfg `utc_now()` + cfg `build_system_version()` | `platform::time::now_utc()` + `platform::registry_count()` |
 | `sys.registry` | 6 cfg-gated helper functions | `platform::registry_all/detail/count()` |
 | `www.admin` | cfg `crate::config::trait_config_or` | `platform::config_get()` |
+| `sys.ps` | dylib with `wasm_forward = "sys.ps.wasm"` | `platform::background_tasks()` (unified builtin) |
 
 ### Limitations
 
 - **Dylib traits cannot use platform::** — dylibs get separate static address spaces, so the `OnceLock<Platform>` in the dylib's copy of kernel-logic won't be initialized. Only builtin traits (compiled as modules into the binary) share the binary's statics.
 - **Some cfg blocks remain** — `env!("TRAITS_BUILD_VERSION")` vs `env!("CARGO_PKG_VERSION")` in `sys.version` are inherently build-time and cannot be abstracted away.
-- **Not migrated** — `sys/call.rs` (HTTP client, too platform-specific), `sys/test_runner.rs` (heavily native), `chat_*` traits (native-only), filesystem/process management (native-only).
+- **Not migrated** — `sys/call.rs` (HTTP client, too platform-specific), `sys/test_runner.rs` (heavily native), `chat_*` traits (native-only).
 
 ---
 
