@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 
-/// llm.prompt.acp.start — Start the ACP proxy for a specified agent.
+/// llm.prompt.acp.start — Start (or switch) the ACP proxy for an agent.
 ///
-/// Args: [agent?]  (default: "opencode")
+/// Args: [agent?]
 pub fn acp_start(args: &[Value]) -> Value {
     let agent = args
         .first()
@@ -10,7 +10,7 @@ pub fn acp_start(args: &[Value]) -> Value {
         .filter(|s| !s.is_empty())
         .unwrap_or("opencode");
 
-    match super::acp::do_start_proxy(agent) {
+    match super::acp::ensure_proxy_for(agent) {
         Ok(msg) => json!(msg),
         Err(e) => json!({"ok": false, "error": e}),
     }

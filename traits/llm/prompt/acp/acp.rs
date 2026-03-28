@@ -6,6 +6,7 @@ use std::time::Duration;
 pub const ACP_PROXY_PORT: u16 = 9315;
 const ACP_PROXY_WS: &str = "ws://localhost:9315/ws";
 const PID_FILE: &str = "/tmp/acp_proxy.pid";
+const AGENT_FILE: &str = "/tmp/acp_proxy.agent";
 
 /// Agent registry: (name, command, extra_args, api_key_env)
 pub const AGENTS: &[(&str, &str, &[&str], &str)] = &[
@@ -29,6 +30,29 @@ pub fn is_proxy_running() -> bool {
     addrs.iter().any(|addr| {
         TcpStream::connect_timeout(addr, Duration::from_secs(1)).is_ok()
     })
+}
+
+/// Read which agent the proxy was started with.
+pub fn active_agent() -> Option<String> {
+    std::fs::read_to_string(AGENT_FILE).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// Ensure the proxy is running for the requested agent.
+/// If it's already running for a different agent, stop and restart.
+pub fn ensure_proxy_for(agent: &str) -> Result<String, String> {
+    if is_proxy_running() {
+        if let Some(current) = active_agent() {
+            if current == agent {
+                return Ok(format!("ACP proxy already running for {}", agent));
+            }
+            // Different agent requested — restart
+            do_stop_proxy();
+            std::thread::sleep(Duration::from_secs(1));
+        } else {
+            return Ok("ACP proxy already running".into());
+        }
+    }
+    do_start_proxy(agent)
 }
 
 /// Start the ACP proxy for a given agent.
@@ -64,6 +88,7 @@ pub fn do_start_proxy(agent: &str) -> Result<String, String> {
 
     let pid = child.id();
     let _ = std::fs::write(PID_FILE, pid.to_string());
+    let _ = std::fs::write(AGENT_FILE, agent);
 
     // Poll for proxy readiness (up to 15s)
     for _ in 0..30 {
@@ -85,6 +110,7 @@ pub fn do_stop_proxy() -> String {
         if let Ok(pid) = pid_str.trim().parse::<i32>() {
             unsafe { libc::kill(pid, libc::SIGTERM) };
             let _ = std::fs::remove_file(PID_FILE);
+            let _ = std::fs::remove_file(AGENT_FILE);
             return format!("ACP proxy stopped (pid {})", pid);
         }
     }
@@ -100,6 +126,7 @@ pub fn do_stop_proxy() -> String {
                     unsafe { libc::kill(pid, libc::SIGTERM) };
                 }
             }
+            let _ = std::fs::remove_file(AGENT_FILE);
             return "ACP proxy stopped".into();
         }
     }
@@ -113,11 +140,13 @@ pub fn get_proxy_status() -> Value {
     let pid = std::fs::read_to_string(PID_FILE)
         .ok()
         .and_then(|s| s.trim().parse::<u64>().ok());
+    let agent = active_agent();
 
     json!({
         "running": running,
         "port": ACP_PROXY_PORT,
         "pid": pid,
+        "agent": agent,
     })
 }
 
@@ -294,11 +323,9 @@ pub fn acp_proxy_dispatch(args: &[Value]) -> Value {
                 .unwrap_or_else(|_| ".".into())
         });
 
-    // Auto-start proxy if not running
-    if !is_proxy_running() {
-        if let Err(e) = do_start_proxy(agent) {
-            return json!({"ok": false, "error": e});
-        }
+    // Ensure proxy is running for the requested agent (restarts if agent changed)
+    if let Err(e) = ensure_proxy_for(agent) {
+        return json!({"ok": false, "error": e});
     }
 
     match send_prompt(prompt, &cwd) {

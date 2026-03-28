@@ -1,7 +1,7 @@
 [trait]
 description = "Start the ACP proxy for a specified agent"
-version = "v260328.164750"
-checksum = "293cc3db92c875496009dc9616f09f483f6ad1a476c0b78066a19cb18b0f7087"
+version = "v260328.171525"
+checksum = "f7921e8f5e24f98be17dc9531d8eb18f0a09a83d7113c6b12af375683fd7fec4"
 author = "user"
 tags = ["llm", "acp", "lifecycle"]
 
