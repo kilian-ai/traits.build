@@ -16,11 +16,21 @@ run_traits() {
     local bin="$1"
     shift
 
+    if [ "${1:-}" = "serve" ]; then
+        RELAY_URL="${RELAY_URL:-https://relay.traits.build}"
+        export RELAY_URL
+        echo "↳ Relay URL: $RELAY_URL"
+    fi
+
     # When launched via curl | bash, stdin is usually a closed pipe.
     # Reattach /dev/tty for `serve` so the interactive REPL remains usable.
     if [ "${1:-}" = "serve" ] && [ ! -t 0 ] && [ -r /dev/tty ]; then
-        echo "↳ Reattaching terminal input for REPL (/dev/tty)"
-        exec "$bin" "$@" < /dev/tty
+        echo "↳ Reattaching terminal for REPL (/dev/tty)"
+        exec env RELAY_URL="$RELAY_URL" "$bin" "$@" < /dev/tty > /dev/tty 2>&1
+    fi
+
+    if [ "${1:-}" = "serve" ]; then
+        exec env RELAY_URL="$RELAY_URL" "$bin" "$@"
     fi
 
     exec "$bin" "$@"
