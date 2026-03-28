@@ -315,6 +315,7 @@ export class Traits {
         this._workerScriptUrl = null;
         this._workers = [];
         this._workerQueue = [];
+        this._trackedTasks = new Map();
         this._nextWorkerMsgId = 1;
         this._nextTaskId = 1;
 
@@ -495,6 +496,7 @@ export class Traits {
             if (wasm && wasm.unregister_task) {
                 try { wasm.unregister_task(`worker-${w.index}`); } catch(e) {}
             }
+            this._trackedTasks.delete(`worker-${w.index}`);
         }
         this._workers = [];
         this._workerQueue = [];
@@ -533,15 +535,18 @@ export class Traits {
             if (wasm && wasm.register_task) {
                 try { wasm.register_task(id, taskName, taskType, Date.now(), detail); } catch(e) {}
             }
+            this._trackTask(id, taskName, taskType, detail);
             const impl = opts.impl || this.getBackgroundBinding();
             const adapter = this._backgroundAdapters.get(impl);
             if (!adapter) {
+                this._untrackTask(id);
                 if (wasm && wasm.unregister_task) try { wasm.unregister_task(id); } catch(e) {}
                 return { ok: false, id, error: `Unknown background adapter: '${impl}'`, dispatch: 'background' };
             }
             try {
                 return await adapter.run({ id, task, opts, sdk: this });
             } finally {
+                this._untrackTask(id);
                 if (wasm && wasm.unregister_task) try { wasm.unregister_task(id); } catch(e) {}
             }
         })();
@@ -583,7 +588,7 @@ export class Traits {
     async _spawnWorker(index) {
         const worker = new Worker(this._workerScriptUrl);
         const pending = new Map();
-        const state = { index, worker, pending, busy: false };
+        const state = { index, worker, pending, busy: false, syncedTaskIds: [] };
 
         worker.onmessage = (ev) => {
             const msg = ev.data || {};
@@ -604,10 +609,12 @@ export class Traits {
 
         await this._rpcWorker(state, 'ping', {});
         await this._rpcWorker(state, 'init', {});
+        await this._syncTasksToWorker(state);
         // Register worker as a service for sys.ps
         if (wasm && wasm.register_task) {
             try { wasm.register_task(`worker-${index}`, `Web Worker #${index}`, 'worker', Date.now(), BACKGROUND_WORKER); } catch(e) {}
         }
+        this._trackTask(`worker-${index}`, `Web Worker #${index}`, 'worker', BACKGROUND_WORKER);
         return state;
     }
 
@@ -670,6 +677,58 @@ export class Traits {
     _syncHelperToWorkers() {
         for (const state of this._workers) {
             this._rpcWorker(state, 'set_helper_connected', { connected: helperReady }).catch(() => {});
+        }
+    }
+
+    _trackTask(id, name, taskType, detail) {
+        this._trackedTasks.set(String(id), {
+            id: String(id),
+            name: String(name || id),
+            task_type: String(taskType || 'task'),
+            started_ms: Date.now(),
+            detail: String(detail || ''),
+        });
+        this._syncTasksToWorkers();
+    }
+
+    _untrackTask(id) {
+        this._trackedTasks.delete(String(id));
+        this._syncTasksToWorkers();
+    }
+
+    _snapshotMainThreadTasks() {
+        if (!wasm || !wasm.call) return [];
+        try {
+            const raw = wasm.call('sys.ps', '[]');
+            const parsed = JSON.parse(raw);
+            const processes = Array.isArray(parsed?.processes) ? parsed.processes : [];
+            return processes
+                .filter((p) => p && p.id != null)
+                .map((p) => ({
+                    id: String(p.id),
+                    name: String(p.name || p.id),
+                    task_type: String(p.task_type || 'task'),
+                    started_ms: Number(p.started_ms || Date.now()),
+                    detail: String(p.detail || ''),
+                }));
+        } catch (e) {
+            return [];
+        }
+    }
+
+    _syncTasksToWorker(state) {
+        const merged = new Map();
+        for (const t of this._snapshotMainThreadTasks()) merged.set(t.id, t);
+        for (const t of this._trackedTasks.values()) merged.set(t.id, t);
+        const tasks = Array.from(merged.values());
+        const existing_ids = state.syncedTaskIds || [];
+        state.syncedTaskIds = tasks.map((t) => t.id);
+        return this._rpcWorker(state, 'sync_tasks', { tasks, existing_ids });
+    }
+
+    _syncTasksToWorkers() {
+        for (const state of this._workers) {
+            this._syncTasksToWorker(state).catch(() => {});
         }
     }
 
@@ -784,6 +843,7 @@ export class Traits {
         if (mod.register_task) {
             try { mod.register_task('wasm-kernel', 'WASM Kernel', 'service', Date.now(), `${callable.length} callable traits`); } catch(e) {}
         }
+        this._trackTask('wasm-kernel', 'WASM Kernel', 'service', `${callable.length} callable traits`);
     }
 
     /**

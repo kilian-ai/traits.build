@@ -805,7 +805,9 @@ fn serve_repl_line_mode(session: &mut CliSession, backend: &NativeCliBackend) {
         match reader.read_line(&mut line) {
             Ok(0) => break,
             Ok(_) => {
-                let output = session.feed(&line, backend);
+                let line = line.trim_end_matches(['\r', '\n']);
+                let input = format!("{}\r", line);
+                let output = session.feed(&input, backend);
                 if process_session_output(&output, backend) {
                     continue;
                 }

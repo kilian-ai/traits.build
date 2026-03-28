@@ -90,6 +90,8 @@ exports = [
     'run_tests',
     'search_traits',
     'set_helper_connected',
+    'register_task',
+    'unregister_task',
     'set_secret',
     'version',
     'vfs_dump',
@@ -190,6 +192,22 @@ worker = (
     + '      case "cli_welcome": sendOk(id, TraitsWasm.cli_welcome()); break;\n'
     + '      case "cli_get_history": sendOk(id, TraitsWasm.cli_get_history()); break;\n'
     + '      case "cli_set_history": TraitsWasm.cli_set_history(payload.history_json || "[]"); sendOk(id, true); break;\n'
+    + '      case "sync_tasks": {\n'
+    + '        const incoming = Array.isArray(payload.tasks) ? payload.tasks : [];\n'
+    + '        const existing = new Set((Array.isArray(payload.existing_ids) ? payload.existing_ids : []).map(String));\n'
+    + '        const incomingIds = new Set();\n'
+    + '        for (const task of incoming) {\n'
+    + '          if (!task || task.id == null) continue;\n'
+    + '          const idStr = String(task.id);\n'
+    + '          incomingIds.add(idStr);\n'
+    + '          TraitsWasm.register_task(idStr, String(task.name || idStr), String(task.task_type || "task"), Number(task.started_ms || Date.now()), String(task.detail || ""));\n'
+    + '        }\n'
+    + '        for (const idStr of existing) {\n'
+    + '          if (!incomingIds.has(idStr)) TraitsWasm.unregister_task(idStr);\n'
+    + '        }\n'
+    + '        sendOk(id, true);\n'
+    + '        break;\n'
+    + '      }\n'
     + '      case "vfs_dump": sendOk(id, TraitsWasm.vfs_dump()); break;\n'
     + '      case "vfs_load": TraitsWasm.vfs_load(payload.json || "{}"); sendOk(id, true); break;\n'
     + '      case "cli_format_rest_result": sendOk(id, TraitsWasm.cli_format_rest_result(payload.path || "", payload.args_json || "[]", payload.result_json || "null")); break;\n'

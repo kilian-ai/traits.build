@@ -107,9 +107,12 @@ When a helper is started with `RELAY_URL=https://relay.traits.build traits serve
 
 - defaults to `RELAY_URL=https://relay.traits.build` for any `serve` invocation when `RELAY_URL` is unset,
 - auto-upgrades legacy `RELAY_URL=https://traits-build.fly.dev` to `https://relay.traits.build`,
+- auto-reexecs `serve` from a downloaded helper file when started via `curl ... | bash` to recover normal interactive terminal behavior,
 - reattaches stdin from `/dev/tty` for `serve` when launched via a pipe so the REPL remains interactive,
 - `sys.serve` now also attempts a server-side `/dev/tty` reattach before disabling REPL if stdin is not a TTY,
 - and if raw key-event mode cannot be initialized, the CLI automatically falls back to a line-mode REPL on `/dev/tty`.
+
+Line-mode input normalizes Enter to the same carriage-return event used by raw mode, preventing command concatenation (e.g. `helpps`).
 
 Troubleshooting override:
 
