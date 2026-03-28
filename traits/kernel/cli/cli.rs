@@ -970,19 +970,24 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &
         _ => {
             let all = backend.all_paths();
             let raw = &parsed.args[0];
-            if all.iter().any(|p| p == &cmd) || all.iter().any(|p| p == raw.as_str()) {
+            // Strip @target for path lookup, reattach when dispatching
+            let (clean_cmd, _) = strip_dispatch_target(&cmd);
+            let (clean_raw, target) = strip_dispatch_target(raw);
+            if all.iter().any(|p| p == clean_cmd) || all.iter().any(|p| p == clean_raw) {
                 exec_call(backend, raw, &args)
             } else {
-                let sys_path = format!("sys.{}", cmd);
-                let kernel_path = format!("kernel.{}", cmd);
+                let sys_path = format!("sys.{}", clean_cmd);
+                let kernel_path = format!("kernel.{}", clean_cmd);
                 if all.iter().any(|p| p == &sys_path) {
-                    exec_call(backend, &sys_path, &args)
+                    let full = match target { Some(t) => format!("{}@{}", sys_path, t), None => sys_path };
+                    exec_call(backend, &full, &args)
                 } else if all.iter().any(|p| p == &kernel_path) {
-                    exec_call(backend, &kernel_path, &args)
+                    let full = match target { Some(t) => format!("{}@{}", kernel_path, t), None => kernel_path };
+                    exec_call(backend, &full, &args)
                 } else {
                     format!(
                         "{RED}Unknown command: {}{RESET}. Type {BLUE}help{RESET} for usage.",
-                        cmd
+                        clean_cmd
                     )
                 }
             }
@@ -1025,14 +1030,39 @@ fn strip_ansi(s: &str) -> String {
     out
 }
 
+/// Strip `@target` dispatch hint from a trait path.
+/// Returns (clean_path, target) where target is "rest", "relay", "helper", "wasm", or "native".
+fn strip_dispatch_target(path: &str) -> (&str, Option<&str>) {
+    if let Some(at_pos) = path.rfind('@') {
+        let t = &path[at_pos + 1..];
+        match t {
+            "wasm" | "native" | "rest" | "relay" | "helper" => (&path[..at_pos], Some(t)),
+            _ => (path, None),
+        }
+    } else {
+        (path, None)
+    }
+}
+
 fn exec_call(backend: &dyn CliCallBackend, path: &str, arg_strs: &[String]) -> String {
+    let (clean_path, target) = strip_dispatch_target(path);
     let args: Vec<Value> = arg_strs.iter().map(|s| parse_value(s)).collect();
 
-    match backend.call(path, &args) {
+    // Force remote dispatch: skip local backend, emit sentinel with target hint
+    if matches!(target, Some("rest") | Some("relay") | Some("helper")) {
+        let args_json = serde_json::to_string(&args).unwrap_or_else(|_| "[]".to_string());
+        let t = target.unwrap();
+        return format!(
+            "{GRAY}calling {clean_path} via {t}…{RESET}\r\n\
+             {REST_SENTINEL_START}{{\"p\":\"{clean_path}\",\"a\":{args_json},\"t\":\"{t}\"}}{REST_SENTINEL_END}"
+        );
+    }
+
+    match backend.call(clean_path, &args) {
         Ok(result) => {
             let formatted = match &result {
                 Value::String(s) => s.clone(),
-                other => format_trait_result(path, other)
+                other => format_trait_result(clean_path, other)
                     .unwrap_or_else(|| serde_json::to_string_pretty(other).unwrap_or_default()),
             };
             let lines: Vec<&str> = formatted.lines().collect();
@@ -1077,6 +1107,7 @@ fn format_help() -> String {
     s.push_str(&format!("  {GREEN}info{RESET}                       System status\r\n"));
     s.push_str(&format!("  {GREEN}info{RESET} {GRAY}<path>{RESET}              Show trait details + dispatch location\r\n"));
     s.push_str(&format!("  {GREEN}call{RESET} {GRAY}<path> [args...]{RESET}    Call a trait\r\n"));
+    s.push_str(&format!("  {GREEN}call{RESET} {GRAY}<path>@rest [args]{RESET}  Force dispatch via rest, relay, helper, wasm, native\r\n"));
     s.push_str(&format!("  {GREEN}call -i{RESET} {GRAY}<path>{RESET}           Interactive mode (prompt each param)\r\n"));
     s.push_str(&format!("  {GREEN}search{RESET} {GRAY}<query>{RESET}           Search by name or description\r\n"));
     s.push_str(&format!("  {GRAY}<path> [args...]{RESET}           Shorthand — call trait directly\r\n"));
