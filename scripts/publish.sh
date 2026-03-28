@@ -14,14 +14,14 @@ fi
 # 2. kernel-logic — no workspace deps
 # 3. traits       — depends on kernel-logic (--no-verify: index lag)
 # 4. trait-sys-checksum — depends on plugin_api (--no-verify: index lag)
-# 5. trait-sys-ps       — depends on plugin_api (--no-verify: index lag)
 # (trait-www-traits-build has publish = false)
+# (trait-sys-ps removed: now a builtin compiled into the kernel binary)
 
 # Crates with workspace deps need --no-verify because the crates.io sparse
 # index takes time to reflect newly published versions. We've already tested
 # the full build via build.sh, so verification is redundant.
 LEAF_CRATES=("traits-plugin-api" "kernel-logic")
-DEP_CRATES=("traits" "trait-sys-checksum" "trait-sys-ps")
+DEP_CRATES=("traits" "trait-sys-checksum")
 
 wait_for_index() {
     local crate="$1"

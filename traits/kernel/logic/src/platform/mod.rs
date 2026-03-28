@@ -35,6 +35,10 @@ pub struct Platform {
     /// - WASM:   `LayeredVfs` seeded from `include_str!` embedded assets.
     /// Falls back to `MemVfs` if this field is not set (pre-init callers).
     pub make_vfs: fn() -> Box<dyn vfs::Vfs>,
+    /// Return the platform-specific process/task status for `sys.ps`.
+    /// - Native: scans `.run/*.pid` files for background trait processes.
+    /// - WASM:   reports kernel runtime state (callable traits, dispatch cascade).
+    pub background_tasks: fn() -> Value,
 }
 
 static PLATFORM: OnceLock<Platform> = OnceLock::new();
@@ -91,4 +95,9 @@ pub fn make_vfs() -> Box<dyn vfs::Vfs> {
     PLATFORM.get()
         .map(|p| (p.make_vfs)())
         .unwrap_or_else(|| Box::new(vfs::MemVfs::default()))
+}
+
+/// Return platform-specific process/task status (complete JSON for `sys.ps`).
+pub fn background_tasks() -> Value {
+    (platform().background_tasks)()
 }

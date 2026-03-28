@@ -6,6 +6,12 @@ pub fn format_cli(result: &Value) -> String {
         None => return format!("{}\n", result),
     };
 
+    // WASM runtime — show kernel state instead of process table
+    if obj.get("runtime").and_then(|v| v.as_str()) == Some("wasm") {
+        return format_wasm(obj);
+    }
+
+    // Native — show process table
     let processes = match obj.get("processes").and_then(|v| v.as_array()) {
         Some(arr) => arr,
         None => return format!("{}\n", result),
@@ -34,6 +40,42 @@ pub fn format_cli(result: &Value) -> String {
         out.push_str(&format!("{:<25} {:>7}  {:>6}  {:>10}  {}\n",
             name, pid, mem, uptime, status));
     }
+
+    out
+}
+
+fn format_wasm(obj: &serde_json::Map<String, Value>) -> String {
+    let mut out = String::new();
+
+    out.push_str("\x1b[1;97mWASM Runtime Status\x1b[0m\n");
+    out.push_str(&format!("{}\n", "─".repeat(50)));
+
+    if let Some(wasm) = obj.get("wasm").and_then(|v| v.as_object()) {
+        let callable = wasm.get("callable").and_then(|v| v.as_u64()).unwrap_or(0);
+        let registered = wasm.get("registered").and_then(|v| v.as_u64()).unwrap_or(0);
+        let threading = wasm.get("threading").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let helper = wasm.get("helper_connected").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        out.push_str(&format!("  \x1b[36mRuntime\x1b[0m      wasm32 (browser)\n"));
+        out.push_str(&format!("  \x1b[36mThreading\x1b[0m    {}\n", threading));
+        out.push_str(&format!("  \x1b[36mCallable\x1b[0m     {} traits (WASM-local)\n", callable));
+        out.push_str(&format!("  \x1b[36mRegistered\x1b[0m   {} traits (total)\n", registered));
+        out.push_str(&format!("  \x1b[36mREST-only\x1b[0m    {} traits (need helper)\n", registered as i64 - callable as i64));
+        out.push_str(&format!("  \x1b[36mHelper\x1b[0m       {}\n",
+            if helper { "\x1b[32mconnected\x1b[0m" } else { "\x1b[33mnot connected\x1b[0m" }));
+
+        out.push_str(&format!("\n\x1b[1;97mDispatch Cascade\x1b[0m\n"));
+        out.push_str(&format!("{}\n", "─".repeat(50)));
+        if let Some(cascade) = wasm.get("dispatch_cascade").and_then(|v| v.as_array()) {
+            for step in cascade {
+                if let Some(s) = step.as_str() {
+                    out.push_str(&format!("  {}\n", s));
+                }
+            }
+        }
+    }
+
+    out.push_str(&format!("\n\x1b[33mOS Processes\x1b[0m  n/a (single-threaded WASM)\n"));
 
     out
 }

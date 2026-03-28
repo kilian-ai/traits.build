@@ -1,10 +1,10 @@
 {
   "trait": "sys.ps",
-  "description": "List running background traits with process details",
+  "description": "List running background tasks via the platform abstraction layer",
   "features": [
     {
-      "name": "Returns process list structure",
-      "description": "Calling sys.ps returns an object with ok and processes array",
+      "name": "Returns process list on native",
+      "description": "On native, sys.ps returns an object with ok and processes array",
       "tests": [
         {
           "name": "returns ok with processes key",

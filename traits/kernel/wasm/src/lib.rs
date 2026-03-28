@@ -70,6 +70,7 @@ pub fn init() -> Result<JsValue, JsValue> {
         config_get: |_trait_path, _key, default| default.to_string(),
         secret_get: wasm_secrets::get_secret,
         make_vfs: make_wasm_vfs,
+        background_tasks: wasm_background_tasks,
     });
 
     Ok(serde_json::to_string(&serde_json::json!({
@@ -100,6 +101,39 @@ fn make_wasm_vfs() -> Box<dyn kernel_logic::vfs::Vfs> {
         vfs.seed(rel_path, *feat);
     }
     Box::new(vfs)
+}
+
+// ────────────────── WASM process status ──────────────────
+
+/// Return WASM kernel runtime state for `sys.ps`.
+///
+/// No OS processes exist in the browser, so this reports:
+/// - callable/registered trait counts
+/// - helper connection status
+/// - dispatch cascade description
+fn wasm_background_tasks() -> serde_json::Value {
+    let callable: Vec<&str> = wasm_traits::WASM_CALLABLE.to_vec();
+    let registered = get_registry().len();
+    let helper = is_helper_connected();
+
+    serde_json::json!({
+        "ok": true,
+        "runtime": "wasm",
+        "processes": [],
+        "note": "WASM runs in a single-threaded browser context — no OS processes exist.",
+        "wasm": {
+            "callable": callable.len(),
+            "registered": registered,
+            "traits": callable,
+            "threading": "single-threaded (browser main thread)",
+            "helper_connected": helper,
+            "dispatch_cascade": [
+                "1. WASM local (instant, in-browser)",
+                format!("2. Local helper ({})", if helper { "connected" } else { "not connected" }),
+                "3. Server REST (if origin has backend)",
+            ],
+        },
+    })
 }
 
 /// Check if a trait can be called locally in WASM.

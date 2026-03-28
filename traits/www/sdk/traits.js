@@ -165,13 +165,33 @@ async function probeHelper(url, timeout = HELPER_TIMEOUT) {
     return null;
 }
 
+function _syncRelayCodeFromHelper(info) {
+    // If helper reports an active relay code, sync it to localStorage.
+    // This auto-reconnects the relay after a Mac server restart without
+    // requiring the user to manually re-enter the pairing code.
+    try {
+        const code = info?.relay?.code;
+        const url  = info?.relay?.url;
+        if (!code) return;
+        const storedCode = localStorage.getItem('traits.relay.code');
+        if (storedCode !== code) {
+            localStorage.setItem('traits.relay.code', code);
+            if (url) localStorage.setItem('traits.relay.server', url);
+        }
+    } catch(e) {}
+}
+
 async function discoverHelper() {
     // Try stored URL first
     try {
         const stored = localStorage.getItem('traits.helper.url');
         if (stored) {
             const info = await probeHelper(stored, 1000);
-            if (info) { helperUrl = stored; helperInfo = info; helperReady = true; return; }
+            if (info) {
+                helperUrl = stored; helperInfo = info; helperReady = true;
+                _syncRelayCodeFromHelper(info);
+                return;
+            }
         }
     } catch(e) {}
     // Auto-discover on common ports
@@ -181,6 +201,7 @@ async function discoverHelper() {
         if (info) {
             helperUrl = url; helperInfo = info; helperReady = true;
             try { localStorage.setItem('traits.helper.url', url); } catch(e) {}
+            _syncRelayCodeFromHelper(info);
             return;
         }
     }
@@ -740,6 +761,7 @@ export class Traits {
             syncHelperToWasm();
             this._syncHelperToWorkers();
             try { localStorage.setItem('traits.helper.url', helperUrl); } catch(e) {}
+            _syncRelayCodeFromHelper(info);
             return { ok: true, ...info };
         }
         return { ok: false, error: 'Helper not reachable at ' + url };

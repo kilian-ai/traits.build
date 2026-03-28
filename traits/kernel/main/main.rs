@@ -24,6 +24,129 @@ fn make_native_vfs() -> Box<dyn kernel_logic::vfs::Vfs> {
     Box::new(vfs)
 }
 
+// ────────────────── native process status ──────────────────
+
+/// Scan `.run/*.pid` files and return process status as JSON.
+///
+/// Called via `Platform::background_tasks` — provides `sys.ps` with
+/// native OS process data: alive check, uptime, RSS memory.
+fn native_background_tasks() -> serde_json::Value {
+    let run_dir = std::path::Path::new(".run");
+    if !run_dir.is_dir() {
+        return serde_json::json!({ "ok": true, "processes": [] });
+    }
+
+    let entries = match std::fs::read_dir(run_dir) {
+        Ok(rd) => rd,
+        Err(_) => return serde_json::json!({ "ok": true, "processes": [] }),
+    };
+
+    let mut processes = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let fname = match path.file_name().and_then(|f| f.to_str()) {
+            Some(f) if f.ends_with(".pid") => f.to_string(),
+            _ => continue,
+        };
+        let trait_path = fname.trim_end_matches(".pid").to_string();
+
+        let pid_str = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let pid: u32 = match pid_str.trim().parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
+
+        // PID file modification time as proxy for start time
+        let uptime_secs = path.metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|mtime| std::time::SystemTime::now().duration_since(mtime).ok())
+            .map(|d| d.as_secs_f64());
+
+        let memory_mb = native_rss_mb(pid);
+
+        let mut proc_info = serde_json::json!({
+            "trait": trait_path,
+            "pid": pid,
+            "alive": alive,
+        });
+
+        if let Some(up) = uptime_secs {
+            proc_info["uptime"] = serde_json::json!(format_uptime(up));
+            proc_info["uptime_secs"] = serde_json::json!(up.round() as u64);
+        }
+        if let Some(mb) = memory_mb {
+            proc_info["memory_mb"] = serde_json::json!((mb * 100.0).round() / 100.0);
+        }
+        proc_info["pid_file"] = serde_json::json!(path.to_string_lossy());
+
+        processes.push(proc_info);
+    }
+
+    processes.sort_by(|a, b| {
+        let ta = a["trait"].as_str().unwrap_or("");
+        let tb = b["trait"].as_str().unwrap_or("");
+        ta.cmp(tb)
+    });
+
+    serde_json::json!({
+        "ok": true,
+        "count": processes.len(),
+        "processes": processes,
+    })
+}
+
+fn format_uptime(secs: f64) -> String {
+    let total = secs as u64;
+    let h = total / 3600;
+    let m = (total % 3600) / 60;
+    let s = total % 60;
+    if h > 0 {
+        format!("{}h {}m {}s", h, m, s)
+    } else if m > 0 {
+        format!("{}m {}s", m, s)
+    } else {
+        format!("{}s", s)
+    }
+}
+
+/// Get resident set size in MB for a process.
+fn native_rss_mb(pid: u32) -> Option<f64> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "rss=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        let rss_kb: f64 = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse()
+            .ok()?;
+        Some(rss_kb / 1024.0)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::fs::read_to_string(format!("/proc/{}/status", pid)).ok()?;
+        for line in status.lines() {
+            if line.starts_with("VmRSS:") {
+                let kb: f64 = line.split_whitespace().nth(1)?.parse().ok()?;
+                return Some(kb / 1024.0);
+            }
+        }
+        None
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        None
+    }
+}
+
 fn seed_dir(
     vfs: &mut kernel_logic::vfs::LayeredVfs,
     root: &std::path::Path,
@@ -96,6 +219,7 @@ pub fn bootstrap(config: &Config) -> Result<Dispatcher, Box<dyn std::error::Erro
             ctx.get(key).map(|v| v.to_string())
         },
         make_vfs: make_native_vfs,
+        background_tasks: native_background_tasks,
     });
 
     // Load trait dylibs from the entire traits directory (recursive)

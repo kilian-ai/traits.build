@@ -1,8 +1,8 @@
 [trait]
-description = "List running background traits with process details"
-version = "v260320.162258"
+description = "List running background tasks via the platform abstraction layer"
+version = "v260328"
 epoch = 0
-checksum = "b94645feaaaaea7ed69baa9b2242c9825cbb9afabc5c04e9a6bd0c967282b800"
+checksum = "5296ee9639be566efe2c18268e36d1814bce1a8599dbd51f021d4345cf5d6c9a"
 author = "system"
 tags = ["system", "process", "background"]
 provides = ["sys/ps"]
@@ -12,12 +12,10 @@ params = []
 
 [signature.returns]
 type = "object"
-description = "{ ok, processes: [{ trait_path, pid, alive, uptime, memory_mb, pid_file }] }"
+description = "{ ok, processes: [...] } on native; { ok, runtime, wasm: {...} } on WASM"
 
 [implementation]
 language = "rust"
-source = "dylib"
+source = "builtin"
 entry = "ps"
 wasm = true
-wasm_forward = "sys.ps.wasm"
-helper_preferred = true
