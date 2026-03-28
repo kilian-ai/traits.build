@@ -92,3 +92,11 @@ Fly.io auto-scales between 0 and 2 machines:
 - **0 machines** when idle (no traffic)
 - **Auto-starts** on first request (~2 sec cold start)
 - **Scales to 2** under load
+
+## Relay pairing code persistence
+
+When a helper is started with `RELAY_URL=https://relay.traits.build traits serve`, the relay pairing code is now persisted and reused on reconnect when possible.
+
+- Browser disconnect keeps the saved code locally so reconnect does not require retyping it.
+- Helper reconnect attempts to reclaim the previous code via `sys.config` (`sys.serve.RELAY_CODE`).
+- If the code is still available, users can reconnect with the same pairing code after helper restarts.

@@ -849,8 +849,9 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 **Relay system** (NAT-traversal via Cloudflare Workers + Durable Objects):
 - Mac starts `RELAY_URL=https://relay.traits.build traits serve`
 - Mac registers at `/relay/register` → gets 4-char pairing code (e.g. `A7X9`)
+- The helper persists the last relay code in `sys.config` (`sys.serve.RELAY_CODE`) and attempts to reclaim it on reconnect
 - Mac long-polls `/relay/poll?code=A7X9` for incoming requests
-- Phone enters code in Settings → stored in `localStorage['traits.relay.code']`
+- Phone enters code in Settings → stored in `localStorage['traits.relay.code']`; disconnect keeps the saved code locally and only disables relay routing until reconnect
 - Phone SDK calls `/relay/call` with `{code, path, args}` → relay forwards to Mac
 - Mac dispatches locally, responds via `/relay/respond` → relay returns result to phone
 - Relay runs on Cloudflare Workers (`relay/` directory): zero-latency DO coordination;

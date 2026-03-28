@@ -50,6 +50,7 @@ const HELPER_TIMEOUT = 1500;
 
 // ── Relay state (remote helper via pairing code) ──
 const RELAY_DEFAULT_SERVER = 'https://relay.traits.build';
+const RELAY_ENABLED_KEY = 'traits.relay.enabled';
 
 function _relayServer() {
     try {
@@ -62,8 +63,15 @@ function _relayServer() {
         return server;
     } catch(e) { return RELAY_DEFAULT_SERVER; }
 }
-function _relayCode() {
+function _rememberedRelayCode() {
     try { return localStorage.getItem('traits.relay.code'); } catch(e) { return null; }
+}
+function _relayEnabled() {
+    try { return localStorage.getItem(RELAY_ENABLED_KEY) !== '0'; } catch(e) { return true; }
+}
+function _relayCode() {
+    const code = _rememberedRelayCode();
+    return code && _relayEnabled() ? code : null;
 }
 
 async function callRelay(path, args) {
@@ -871,6 +879,7 @@ class Traits {
             if (!data.active) return { ok: false, error: 'No helper connected with that code — run traits serve on your Mac first' };
             localStorage.setItem('traits.relay.code', code);
             localStorage.setItem('traits.relay.server', relayServer);
+            localStorage.setItem(RELAY_ENABLED_KEY, '1');
             // Send _ping so Mac helper confirms the connection
             try {
                 await fetch(`${relayServer}/relay/call`, {
@@ -886,12 +895,11 @@ class Traits {
     }
 
     /**
-     * Disconnect from relay and clear stored code.
+     * Disconnect from relay without forgetting the saved pairing code.
      */
     disconnectRelay() {
         try {
-            localStorage.removeItem('traits.relay.code');
-            localStorage.removeItem('traits.relay.server');
+            localStorage.setItem(RELAY_ENABLED_KEY, '0');
         } catch(e) {}
     }
 
@@ -976,6 +984,7 @@ class Traits {
      */
     get status() {
         const relayCode = _relayCode();
+        const rememberedRelayCode = _rememberedRelayCode();
         return {
             wasm: wasmReady,
             traits: this._wasmInfo?.traits_registered || 0,
@@ -985,7 +994,8 @@ class Traits {
             helperUrl: helperUrl,
             relay: !!relayCode,
             relayCode: relayCode,
-            relayServer: relayCode ? _relayServer() : null,
+            relayRememberedCode: rememberedRelayCode,
+            relayServer: rememberedRelayCode ? _relayServer() : null,
         };
     }
 

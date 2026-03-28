@@ -40,6 +40,12 @@ function generateCode() {
   return Array.from(buf, (v) => CODE_CHARS[v % CODE_CHARS.length]).join("");
 }
 
+function normalizeCode(code) {
+  if (!code) return null;
+  const normalized = String(code).trim().toUpperCase();
+  return /^[A-Z0-9]{4}$/.test(normalized) ? normalized : null;
+}
+
 // ── Durable Object: RelaySession ──────────────────────────────────────────────
 //
 // One instance per pairing code (created via idFromName(code)).
@@ -63,12 +69,22 @@ export class RelaySession {
     const url = new URL(request.url);
 
     switch (url.pathname) {
+      case "/register": return this._register();
       case "/poll":    return this._poll();
       case "/call":    return this._call(request);
       case "/respond": return this._respond(request);
       case "/status":  return this._status();
       default:         return new Response("not found", { status: 404 });
     }
+  }
+
+  _register() {
+    this.created = Date.now();
+    this.lastPollAt = null;
+    this.pendingRequest = null;
+    this.pollResolve = null;
+    this.resultResolvers.clear();
+    return json({ ok: true });
   }
 
   // Mac long-polls here. Resolves immediately if a request is already waiting,
@@ -166,10 +182,18 @@ export default {
 
     // POST /relay/register
     if (url.pathname === "/relay/register" && request.method === "POST") {
-      const code = generateCode();
-      // Touch the DO so it's live (first fetch creates it)
+      let preferred = null;
+      try {
+        const text = await request.text();
+        if (text) {
+          const body = JSON.parse(text);
+          preferred = normalizeCode(body.code);
+        }
+      } catch (_) {
+      }
+      const code = preferred || generateCode();
       const stub = env.RELAY.get(env.RELAY.idFromName(code));
-      await stub.fetch(new Request("http://do/status"));
+      await stub.fetch(new Request("http://do/register", { method: "POST" }));
       return json({ code });
     }
 

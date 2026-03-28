@@ -1037,7 +1037,7 @@ async function refreshDispatchStatus() {
         byId('btnRelayDisconnect').style.display = '';
         tiers.push('Relay');
       } else {
-        setTier('Relay', 'red', 'code ' + s.relayCode + ' — helper offline (run traits serve, enter new code)');
+        setTier('Relay', 'red', 'code ' + s.relayCode + ' — helper offline (run traits serve to reactivate)');
         byId('btnRelayConnect').style.display = '';
         byId('btnRelayDisconnect').style.display = '';  // show so user can clear stale code
       }
@@ -1146,11 +1146,10 @@ async function connectRelay() {
 async function disconnectRelay() {
   var sdk = window._traitsSDK;
   if (sdk) sdk.disconnectRelay();
-  byId('relayCode').value = '';
   byId('btnRelayConnect').style.display = '';
   byId('btnRelayDisconnect').style.display = 'none';
-  setTier('Relay', 'gray', 'disconnected');
-  log('Relay disconnected');
+  setTier('Relay', 'gray', 'disconnected — saved code kept locally');
+  log('Relay disconnected (saved code kept locally)');
   refreshDispatchStatus();
 }
 
