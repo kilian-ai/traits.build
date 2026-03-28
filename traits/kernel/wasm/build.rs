@@ -81,6 +81,10 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
     watch_dirs_recursive(&traits_dir);
+    let docs_dir_watch = root_dir.join("docs");
+    if docs_dir_watch.is_dir() {
+        watch_dirs_recursive(&docs_dir_watch);
+    }
 
     let mut entries: Vec<(String, String)> = Vec::new();
     let mut wasm_traits: Vec<WasmTrait> = Vec::new();
@@ -117,6 +121,27 @@ fn main() {
                 "    ({:?}, {:?}, include_str!({:?})),\n",
                 path, features_rel, features_abs.to_string_lossy()
             ));
+        }
+    }
+    bt.push_str("];\n");
+
+    // ── Generate BUILTIN_DOCS ──
+    // Embeds docs/*.md files so the browser VFS can serve them for context injection.
+    // Tuple: (vfs_rel_path, content)
+    bt.push_str("\npub const BUILTIN_DOCS: &[(&str, &str)] = &[\n");
+    let docs_dir = root_dir.join("docs");
+    if docs_dir.is_dir() {
+        let mut doc_paths: Vec<PathBuf> = Vec::new();
+        collect_md_files(&docs_dir, &mut doc_paths);
+        doc_paths.sort();
+        for doc_path in &doc_paths {
+            if let Ok(rel) = doc_path.strip_prefix(root_dir) {
+                let rel_str = rel.to_string_lossy().to_string();
+                bt.push_str(&format!(
+                    "    ({:?}, include_str!({:?})),\n",
+                    rel_str, doc_path.to_string_lossy()
+                ));
+            }
         }
     }
     bt.push_str("];\n");
@@ -435,6 +460,20 @@ fn watch_dirs_recursive(dir: &Path) {
         for entry in rd.flatten() {
             if entry.path().is_dir() {
                 watch_dirs_recursive(&entry.path());
+            }
+        }
+    }
+}
+
+/// Recursively collect all .md files under a directory.
+fn collect_md_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    if let Ok(rd) = fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_md_files(&path, out);
+            } else if path.extension().map(|e| e == "md").unwrap_or(false) {
+                out.push(path);
             }
         }
     }

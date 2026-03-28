@@ -129,6 +129,9 @@ fn make_wasm_vfs() -> Box<dyn kernel_logic::vfs::Vfs> {
     for (_path, rel_path, feat) in BUILTIN_FEATURES {
         vfs.seed(rel_path, *feat);
     }
+    for (rel_path, content) in BUILTIN_DOCS {
+        vfs.seed(rel_path, *content);
+    }
     Box::new(vfs)
 }
 

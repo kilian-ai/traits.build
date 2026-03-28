@@ -1,7 +1,7 @@
 [trait]
 description = "In-browser LLM inference via WebLLM (WebGPU) — implements llm/prompt"
-version = "v260328"
-checksum = "543e6f6ec2eff362d9853f9197f9aff7d7c5f42a092a219f211495291fa47ea9"
+version = "v260328.234248"
+checksum = "ff99e9d1f61b76c0c50fb530d0799cd81c727d944316293c1deba7453a1a0c49"
 author = "system"
 tags = ["llm", "webllm", "webgpu", "wasm", "browser", "prompt"]
 provides = ["llm/prompt"]
