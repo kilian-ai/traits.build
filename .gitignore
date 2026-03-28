@@ -15,3 +15,10 @@ scripts/add-toml-examples.py
 scripts/check-example-field.py
 scripts/verify-examples.py
 scripts/verify-openapi-examples.py
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
