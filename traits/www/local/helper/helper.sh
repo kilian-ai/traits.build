@@ -147,7 +147,7 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 if [ -n "$LATEST" ]; then
-    # GitHub Actions uploads: traits-linux-x86_64, traits-linux-aarch64, traits-darwin-aarch64, etc.
+    # GitHub Actions uploads: traits-linux-x86_64, traits-linux-aarch64, traits-macos-aarch64, traits-macos-x86_64
     BINARY_NAME="traits-${RUST_OS}-${RUST_ARCH}"
     BINARY_URL="https://github.com/$REPO/releases/download/$LATEST/$BINARY_NAME"
     echo "Downloading traits $LATEST ($RUST_OS/$RUST_ARCH)..."
@@ -163,26 +163,7 @@ if [ -n "$LATEST" ]; then
     echo "  (no prebuilt binary for $RUST_OS/$RUST_ARCH)"
 fi
 
-# ── 2. Try Fly.io server binary (fallback — serves its own running binary) ──
-FLY_URL="${TRAITS_SERVER:-https://traits-build.fly.dev}"
-echo "Checking Fly.io server for $RUST_OS/$RUST_ARCH binary..."
-HEADERS="$(curl -fsSL --connect-timeout 5 -D - -o "$TMPDIR/traits" "$FLY_URL/local/binary" 2>/dev/null || true)"
-if [ -f "$TMPDIR/traits" ] && [ -s "$TMPDIR/traits" ]; then
-    REMOTE_OS="$(echo "$HEADERS" | grep -i 'X-Traits-OS:' | tr -d '\r' | awk '{print $2}')"
-    REMOTE_ARCH="$(echo "$HEADERS" | grep -i 'X-Traits-Arch:' | tr -d '\r' | awk '{print $2}')"
-    if [ "$REMOTE_OS" = "$RUST_OS" ] && [ "$REMOTE_ARCH" = "$RUST_ARCH" ]; then
-        chmod +x "$TMPDIR/traits"
-        banner "$@"
-        echo "✓ Downloaded traits binary from server ($REMOTE_OS/$REMOTE_ARCH)"
-        echo ""
-        run_traits "$TMPDIR/traits" "$@"
-    else
-        echo "  Server binary is $REMOTE_OS/$REMOTE_ARCH — need $RUST_OS/$RUST_ARCH"
-        rm -f "$TMPDIR/traits"
-    fi
-fi
-
-# ── 3. Build from source ──
+# ── 2. Build from source ──
 if command -v cargo &>/dev/null; then
     echo "Building from source..."
     cargo install --git "https://github.com/$REPO" --locked 2>&1
