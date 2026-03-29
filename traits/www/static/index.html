@@ -478,8 +478,21 @@ function updateStatusBar() {
   if (s.helper) parts.push('helper');
   else if (!isLocal) parts.push('REST');
   dot.className = (s.wasm || s.helper || !isLocal) ? 'dot ok' : 'dot off';
-  statusText.textContent = parts.join(' + ') || 'offline';
+  statusText.textContent = _llmStatusText || parts.join(' + ') || 'offline';
 }
+
+let _llmStatusText = null;
+window.addEventListener('webllm-progress', (e) => {
+  const msg = e.detail || '';
+  if (!msg || msg === 'Model ready.') {
+    _llmStatusText = null;
+    updateStatusBar();
+    return;
+  }
+  _llmStatusText = msg.length > 40 ? msg.slice(0, 37) + '…' : msg;
+  if (statusText) statusText.textContent = _llmStatusText;
+  if (dot) dot.className = 'dot loading';
+});
 
 // ── Boot sequence ──
 async function boot() {
@@ -522,6 +535,7 @@ async function boot() {
     mod.initSync(decodeBase64Bytes(mod.WASM_BASE64));
     JSON.parse(mod.init());
     sdk.attachWasm(mod);
+    sdk.preloadWebLLM();
 
     // Pre-load terminal as classic script (import() blocked in file:// mode)
     try {

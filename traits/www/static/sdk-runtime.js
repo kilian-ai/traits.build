@@ -167,11 +167,13 @@ async function _ensureWebLLM(model) {
             _webllmProgress(`Loading model ${modelId}… (first run downloads weights)`);
 
             // Override context_window_size: the prebuilt config caps all models at 4096.
-            // Clone the catalog, find our model, and set context_window_size = -1 (unlimited).
+            // Clone the catalog, find our model, and raise the cap to 128K.
+            // Using a large positive value (not -1) because WebLLM requires
+            // context_window_size, sliding_window_size, or max_window_size > 0.
             const catalog = _webllmLib.prebuiltAppConfig;
             const modifiedList = catalog.model_list.map(rec =>
                 rec.model_id === modelId
-                    ? { ...rec, overrides: { ...rec.overrides, context_window_size: -1 } }
+                    ? { ...rec, overrides: { ...rec.overrides, context_window_size: 131072 } }
                     : rec
             );
 
