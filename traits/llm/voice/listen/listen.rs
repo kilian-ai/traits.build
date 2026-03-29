@@ -81,12 +81,12 @@ fn record_audio(duration: u32) -> Result<String, String> {
                 &out_path,
                 "rate", "16000",
                 "channels", "1",
+                "gain", "6",    // +6dB input gain for quiet mics
                 "trim", "0", &dur_str,
-                // Voice-activity silence detection:
-                //   Start recording after any non-silence (0.1s above 1% threshold),
-                //   stop after 2s of silence (below 1%).
-                //   Low 1% threshold avoids treating quiet speech as silence.
-                "silence", "1", "0.1", "1%", "1", "2.0", "1%",
+                // Stop after 2.5s of silence (0.1% threshold = very sensitive).
+                // No start-gate — recording begins immediately so quiet speech
+                // is never clipped.
+                "silence", "1", "0.0", "0%", "1", "2.5", "0.1%",
             ])
             .stderr(std::process::Stdio::null())
             .status()

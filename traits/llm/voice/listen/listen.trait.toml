@@ -1,7 +1,7 @@
 [trait]
 description = "Speech-to-text transcription using OpenAI Whisper API"
-version = "v260329.221750"
-checksum = "f5da9369162ba903bf469227a3862441fc022c38b416f91255fe7251d632ac8b"
+version = "v260329.222538"
+checksum = "9f899b11556b5203efdf53283075941fcf15c0676047889efc3c9ad4a94411af"
 author = "system"
 tags = ["llm", "voice", "stt", "transcription", "audio"]
 
