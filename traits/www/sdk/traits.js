@@ -1394,6 +1394,7 @@ export class Traits {
         const TIMEOUT_MS = 300_000;
         const t0 = performance.now();
         _lastWebLLMStep = '';
+        let aborted = false;
         try {
             const result = await Promise.race([
                 (async () => {
@@ -1412,6 +1413,7 @@ export class Traits {
                         });
                         let firstToken = true;
                         for await (const chunk of stream) {
+                            if (aborted) break;
                             const delta = chunk.choices?.[0]?.delta?.content || '';
                             if (delta) {
                                 if (firstToken) {
@@ -1431,6 +1433,7 @@ export class Traits {
                         });
                         content = reply.choices?.[0]?.message?.content || '';
                     }
+                    if (aborted) return { ok: true, result: content, dispatch: 'webllm', model: _webllmModel, ms: Math.round((performance.now() - t0) * 10) / 10 };
                     const dt = performance.now() - t0;
                     console.log('[WebLLM] Inference done in', Math.round(dt), 'ms, chars:', content.length);
                     _webllmProgress('');
@@ -1443,11 +1446,14 @@ export class Traits {
                     };
                 })(),
                 new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error(
-                        `WebLLM timed out after ${TIMEOUT_MS / 1000}s` +
-                        (_lastWebLLMStep ? ` (last step: ${_lastWebLLMStep})` : '') +
-                        `. Check browser console (F12) for [WebLLM] logs.`
-                    )), TIMEOUT_MS)
+                    setTimeout(() => {
+                        aborted = true;
+                        reject(new Error(
+                            `WebLLM timed out after ${TIMEOUT_MS / 1000}s` +
+                            (_lastWebLLMStep ? ` (last step: ${_lastWebLLMStep})` : '') +
+                            `. Check browser console (F12) for [WebLLM] logs.`
+                        ));
+                    }, TIMEOUT_MS)
                 ),
             ]);
             return result;
