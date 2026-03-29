@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{json, Value, Map};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
@@ -183,28 +183,34 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
         return Err("Timeout waiting for session.created".into());
     }
 
-    // ── Configure session ──
+    // ── Configure session with tools ──
+    let tools = build_tools();
+    let tool_count = tools.len();
+    let mut session_config = json!({
+        "instructions": instructions,
+        "modalities": ["text", "audio"],
+        "voice": voice_name,
+        "input_audio_format": "pcm16",
+        "output_audio_format": "pcm16",
+        "input_audio_noise_reduction": {
+            "type": "near_field"
+        },
+        "turn_detection": {
+            "type": "server_vad",
+            "threshold": 0.7,
+            "prefix_padding_ms": 300,
+            "silence_duration_ms": 700
+        },
+        "input_audio_transcription": {
+            "model": "whisper-1"
+        }
+    });
+    if !tools.is_empty() {
+        session_config["tools"] = Value::Array(tools);
+    }
     let session_update = json!({
         "type": "session.update",
-        "session": {
-            "instructions": instructions,
-            "modalities": ["text", "audio"],
-            "voice": voice_name,
-            "input_audio_format": "pcm16",
-            "output_audio_format": "pcm16",
-            "input_audio_noise_reduction": {
-                "type": "near_field"
-            },
-            "turn_detection": {
-                "type": "server_vad",
-                "threshold": 0.7,
-                "prefix_padding_ms": 300,
-                "silence_duration_ms": 700
-            },
-            "input_audio_transcription": {
-                "model": "whisper-1"
-            }
-        }
+        "session": session_config
     });
 
     ws.send(Message::Text(session_update.to_string()))
@@ -241,7 +247,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
     };
 
     // ── Print UI ──
-    eprintln!("\x1b[96m\x1b[1mRealtime voice chat\x1b[0m \x1b[90m(model: {model}, voice: {voice_name})\x1b[0m");
+    eprintln!("\x1b[96m\x1b[1mRealtime voice chat\x1b[0m \x1b[90m(model: {model}, voice: {voice_name}, {tool_count} tools)\x1b[0m");
     eprintln!("\x1b[90mSpeak naturally. Press Ctrl+C to stop.\x1b[0m\n");
 
     // ── Main event loop ──
@@ -324,6 +330,42 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                         eprintln!("\x1b[90m✓ Session configured\x1b[0m");
                     }
 
+                    // ── Function call — model wants to invoke a tool ──
+                    "response.function_call_arguments.done" => {
+                        let call_id = ev.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let func_name = ev.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let arguments = ev.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+
+                        eprintln!("\x1b[93m⚡ {func_name}\x1b[0m");
+
+                        // Dispatch the tool call
+                        let result = dispatch_tool_call(func_name, arguments);
+
+                        // Truncate very long results for voice context
+                        let output = if result.len() > 2000 {
+                            format!("{}…(truncated)", &result[..2000])
+                        } else {
+                            result
+                        };
+
+                        // Send function call output back to the model
+                        let output_event = json!({
+                            "type": "conversation.item.create",
+                            "item": {
+                                "type": "function_call_output",
+                                "call_id": call_id,
+                                "output": output
+                            }
+                        });
+                        ws.send(Message::Text(output_event.to_string())).ok();
+
+                        // Ask model to continue responding (with audio)
+                        let continue_event = json!({
+                            "type": "response.create"
+                        });
+                        ws.send(Message::Text(continue_event.to_string())).ok();
+                    }
+
                     // ── Error from server ──
                     "error" => {
                         let msg = ev.pointer("/error/message")
@@ -340,6 +382,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                     | "response.output_item.added" | "response.output_item.done"
                     | "response.content_part.added" | "response.content_part.done"
                     | "response.audio_transcript.delta"
+                    | "response.function_call_arguments.delta"
                     | "input_audio_buffer.speech_stopped" | "input_audio_buffer.committed"
                     | "conversation.item.created" | "rate_limits.updated" => {}
 
@@ -556,5 +599,143 @@ fn playback_loop(rx: mpsc::Receiver<PlayCmd>) {
                 break;
             }
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tool registration — expose traits as Realtime API function-calling tools
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Traits to exclude from voice tool calling (internal/dangerous/interactive).
+const TOOL_EXCLUDE: &[&str] = &[
+    "sys.voice", "sys.mcp", "sys.serve", "sys.cli", "sys.cli.native", "sys.cli.wasm",
+    "sys.dylib_loader", "sys.reload", "sys.release", "sys.secrets",
+    "kernel.main", "kernel.dispatcher", "kernel.globals", "kernel.registry",
+    "kernel.config", "kernel.plugin_api", "kernel.cli",
+    "www.admin", "www.admin.deploy", "www.admin.fast_deploy",
+    "www.admin.scale", "www.admin.destroy", "www.admin.save_config",
+];
+
+/// Build OpenAI Realtime API tool definitions from the trait registry.
+fn build_tools() -> Vec<Value> {
+    let registry = match crate::globals::REGISTRY.get() {
+        Some(r) => r,
+        None => return Vec::new(),
+    };
+
+    let mut tools: Vec<Value> = Vec::new();
+    let mut entries = registry.all();
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+
+    for entry in &entries {
+        if TOOL_EXCLUDE.contains(&entry.path.as_str()) {
+            continue;
+        }
+        // Skip www.* traits (they return HTML, not useful for voice)
+        if entry.path.starts_with("www.") {
+            continue;
+        }
+        // Skip non-callable / library traits
+        if entry.kind == "library" || entry.kind == "interface" {
+            continue;
+        }
+
+        let tool_name = entry.path.replace('.', "_");
+        let schema = build_tool_schema(&entry.signature);
+
+        tools.push(json!({
+            "type": "function",
+            "name": tool_name,
+            "description": entry.description,
+            "parameters": schema
+        }));
+    }
+
+    tools
+}
+
+/// Build JSON Schema parameters object from a trait's signature.
+fn build_tool_schema(sig: &crate::types::TraitSignature) -> Value {
+    let mut properties = Map::new();
+    let mut required: Vec<Value> = Vec::new();
+
+    for param in &sig.params {
+        let mut prop = match trait_type_to_schema(&param.param_type) {
+            Value::Object(m) => m,
+            _ => Map::new(),
+        };
+        if !param.description.is_empty() {
+            prop.insert("description".to_string(), json!(param.description));
+        }
+        properties.insert(param.name.clone(), Value::Object(prop));
+        if !param.optional {
+            required.push(json!(param.name));
+        }
+    }
+
+    let mut schema = Map::new();
+    schema.insert("type".to_string(), json!("object"));
+    schema.insert("properties".to_string(), Value::Object(properties));
+    if !required.is_empty() {
+        schema.insert("required".to_string(), Value::Array(required));
+    }
+    Value::Object(schema)
+}
+
+/// Map TraitType → JSON Schema type.
+fn trait_type_to_schema(tt: &crate::types::TraitType) -> Value {
+    match tt {
+        crate::types::TraitType::Int => json!({"type": "integer"}),
+        crate::types::TraitType::Float => json!({"type": "number"}),
+        crate::types::TraitType::String => json!({"type": "string"}),
+        crate::types::TraitType::Bool => json!({"type": "boolean"}),
+        crate::types::TraitType::Bytes => json!({"type": "string"}),
+        crate::types::TraitType::List(inner) => json!({
+            "type": "array",
+            "items": trait_type_to_schema(inner)
+        }),
+        crate::types::TraitType::Map(_k, v) => json!({
+            "type": "object",
+            "additionalProperties": trait_type_to_schema(v)
+        }),
+        crate::types::TraitType::Optional(inner) => trait_type_to_schema(inner),
+        crate::types::TraitType::Any => json!({"type": "string"}),
+        crate::types::TraitType::Handle => json!({"type": "string"}),
+        crate::types::TraitType::Null => json!({"type": "string"}),
+    }
+}
+
+/// Build ordered args array from function call arguments, matching param order.
+fn build_args_from_call(
+    sig: &crate::types::TraitSignature,
+    arguments: &Map<String, Value>,
+) -> Vec<Value> {
+    sig.params.iter().map(|param| {
+        arguments.get(&param.name).cloned().unwrap_or(Value::Null)
+    }).collect()
+}
+
+/// Dispatch a tool call: look up trait, build args, call, return result string.
+fn dispatch_tool_call(tool_name: &str, arguments_json: &str) -> String {
+    let trait_path = tool_name.replace('_', ".");
+
+    let registry = match crate::globals::REGISTRY.get() {
+        Some(r) => r,
+        None => return "Registry not available".to_string(),
+    };
+
+    let entry = match registry.get(&trait_path) {
+        Some(e) => e,
+        None => return format!("Unknown tool: {tool_name} (trait: {trait_path})"),
+    };
+
+    let arguments: Map<String, Value> = serde_json::from_str(arguments_json)
+        .unwrap_or_default();
+    let args = build_args_from_call(&entry.signature, &arguments);
+
+    match crate::dispatcher::compiled::dispatch(&trait_path, &args) {
+        Some(Value::String(s)) => s,
+        Some(other) => serde_json::to_string_pretty(&other).unwrap_or_default(),
+        None => format!("Dispatch failed for {trait_path}"),
     }
 }
