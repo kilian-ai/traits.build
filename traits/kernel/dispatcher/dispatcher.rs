@@ -618,7 +618,19 @@ impl Dispatcher {
             });
         }
 
-        // 3. Execute — send single result to stream channel
+        // 3. Execute — stream chunks for traits with native streaming support
+        if path == "llm.prompt.acp" {
+            let args_json: Vec<serde_json::Value> = args.iter().map(|a| a.to_json()).collect();
+            let tx = stream_tx.clone();
+            tokio::task::spawn_blocking(move || {
+                compiled::acp::acp_proxy_dispatch_streaming(&args_json, &mut |chunk: &str| {
+                    let _ = tx.blocking_send(TraitValue::String(chunk.to_string()));
+                });
+            }).await.map_err(|e| RouterError::ExecError(e.to_string()))?;
+            return Ok(());
+        }
+
+        // Fallback: single-shot dispatch, send full result
         let result = self.execute(path, args, false).await?;
         let _ = stream_tx.send(result).await;
         Ok(())

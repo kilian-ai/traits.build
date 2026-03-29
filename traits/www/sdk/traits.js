@@ -319,15 +319,19 @@ async function discoverHelper() {
     }
 }
 
-async function callHelper(path, args) {
+async function callHelper(path, args, opts = {}) {
     if (!helperReady) return null;
     const rest = path.replace(/\./g, '/');
     try {
-        const res = await fetch(`${helperUrl}/traits/${rest}`, {
+        const url = `${helperUrl}/traits/${rest}` + (opts.stream ? '?stream=1' : '');
+        const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ args }),
         });
+        if (opts.stream && res.headers.get('content-type')?.includes('text/event-stream')) {
+            return { ok: true, stream: readHelperSSE(res.body), dispatch: 'helper' };
+        }
         const data = await res.json();
         return {
             ok: res.ok,
@@ -336,6 +340,30 @@ async function callHelper(path, args) {
             dispatch: 'helper',
         };
     } catch(e) { return null; }
+}
+
+async function* readHelperSSE(body) {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = line.slice(6);
+                    if (data === '[DONE]') return;
+                    try { yield JSON.parse(data); } catch { yield data; }
+                }
+            }
+        }
+    } finally {
+        reader.releaseLock();
+    }
 }
 
 function syncHelperToWasm() {
@@ -886,7 +914,7 @@ export class Traits {
         // 2. Local helper (privileged traits on localhost)
         if (forceMode === 'helper' || (!forceMode && helperReady)) {
             const t0 = performance.now();
-            const result = await callHelper(path, args);
+            const result = await callHelper(path, args, opts);
             if (result) {
                 result.ms = Math.round((performance.now() - t0) * 10) / 10;
                 return result;

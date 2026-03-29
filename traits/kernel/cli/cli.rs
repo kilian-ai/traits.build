@@ -979,13 +979,14 @@ impl CliSession {
                     }
                 }
 
-                // Build REST sentinel for llm.prompt.acp
+                // Build REST sentinel for llm.prompt.acp (streaming)
                 let model_arg = if model.is_empty() { "" } else { &model };
                 let sentinel = serde_json::json!({
                     "p": "llm.prompt.acp",
                     "a": [&input, &agent, &cwd, "false", model_arg],
                     "sid": &session_id,
-                    "rp": CHAT_PROMPT
+                    "rp": CHAT_PROMPT,
+                    "stream": true
                 });
 
                 out.push_str(&format!("{GRAY}thinking…{RESET}\r\n"));

@@ -227,10 +227,11 @@ async function createTerminal(mountEl, opts = {}) {
             // Supports @target routing: sentinel JSON may contain "t" field (rest/relay/helper/wasm)
             // Chat mode: "rp" = return prompt (instead of PROMPT), "sid" = session ID for VFS storage
                 try {
-                    const { p, a, t, rp, sid } = JSON.parse(restMatch[1]);
+                    const { p, a, t, rp, sid, stream: useStream } = JSON.parse(restMatch[1]);
                     const returnPrompt = rp || PROMPT;
                     restPending = true;
                     const callOpts = t ? { force: t } : {};
+                    if (useStream) callOpts.stream = true;
 
                     // Helper: store assistant response in WASM VFS for chat history
                     const storeChatResponse = (text) => {
@@ -246,6 +247,29 @@ async function createTerminal(mountEl, opts = {}) {
 
                     if (activeSdk) {
                         activeSdk.call(p, a, callOpts).then(async res => {
+                        // Streaming path: consume async generator, write tokens to terminal
+                        if (res.ok && res.stream) {
+                            let streamStarted = false;
+                            let fullText = '';
+                            try {
+                                for await (const chunk of res.stream) {
+                                    const text = typeof chunk === 'string' ? chunk : (chunk?.result ?? JSON.stringify(chunk));
+                                    if (!streamStarted) {
+                                        term.write('\r\x1b[K'); // Clear "thinking…" line
+                                        streamStarted = true;
+                                    }
+                                    term.write(text.replace(/\n/g, '\r\n'));
+                                    fullText += text;
+                                }
+                            } catch (e) {
+                                term.write(`\r\n\x1b[31mStream error: ${e.message}\x1b[0m\r\n`);
+                            }
+                            if (fullText && !fullText.endsWith('\n')) term.write('\r\n');
+                            storeChatResponse(fullText);
+                            term.write(returnPrompt);
+                            return;
+                        }
+                        // Non-streaming path (fallback)
                         term.write('\r\x1b[K'); // Clear progress line
                         if (res.ok && res.result !== undefined) {
                             // Try WASM CLI formatter first, fall back to JSON

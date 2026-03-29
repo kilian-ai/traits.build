@@ -363,6 +363,162 @@ fn send_prompt(prompt: &str, cwd: &str, model: Option<&str>, context_files: &[(S
     }
 }
 
+/// Send a prompt to the ACP agent via WebSocket and stream chunks to a callback.
+/// Each `agent_message_chunk` text is passed to `on_chunk` immediately.
+/// Returns the full concatenated response or an error.
+fn send_prompt_streaming(
+    prompt: &str,
+    cwd: &str,
+    model: Option<&str>,
+    context_files: &[(String, String)],
+    on_chunk: &mut dyn FnMut(&str),
+) -> Result<String, String> {
+    use tungstenite::Message;
+
+    let (mut ws, _session) = open_session(cwd)?;
+
+    if let Some(m) = model {
+        set_session_model(&mut ws, m)?;
+    }
+
+    let mut content_blocks: Vec<Value> = Vec::new();
+    let ctx = context::format_context(context_files);
+    if !ctx.is_empty() {
+        content_blocks.push(json!({"type": "text", "text": ctx}));
+    }
+    content_blocks.push(json!({"type": "text", "text": prompt}));
+
+    ws.send(Message::Text(
+        json!({
+            "type": "prompt",
+            "payload": { "content": content_blocks }
+        })
+        .to_string(),
+    ))
+    .map_err(|e| format!("Send prompt: {}", e))?;
+
+    let mut parts: Vec<String> = Vec::new();
+
+    loop {
+        let msg = ws.read().map_err(|e| format!("Read: {}", e))?;
+        if let Message::Text(text) = msg {
+            let v: Value = serde_json::from_str(&text).unwrap_or_default();
+            match v.get("type").and_then(|t| t.as_str()) {
+                Some("session_update") => {
+                    if let Some(update) = v.pointer("/payload/update") {
+                        match update.get("sessionUpdate").and_then(|s| s.as_str()) {
+                            Some("agent_message_chunk") => {
+                                if let Some(t) =
+                                    update.pointer("/content/text").and_then(|t| t.as_str())
+                                {
+                                    on_chunk(t);
+                                    parts.push(t.to_string());
+                                }
+                            }
+                            Some("agent_message") => {
+                                // Final message — don't double-emit if chunks already sent
+                                if parts.is_empty() {
+                                    if let Some(arr) =
+                                        update.get("content").and_then(|c| c.as_array())
+                                    {
+                                        for item in arr {
+                                            if item.get("type").and_then(|t| t.as_str())
+                                                == Some("text")
+                                            {
+                                                if let Some(t) =
+                                                    item.get("text").and_then(|t| t.as_str())
+                                                {
+                                                    on_chunk(t);
+                                                    parts.push(t.to_string());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Some("prompt_complete") => break,
+                Some("error") => {
+                    let m = v
+                        .pointer("/payload/message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("unknown");
+                    return Err(format!("Prompt error: {}", m));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let _ = ws.close(None);
+
+    if parts.is_empty() {
+        Ok("[No response from agent]".into())
+    } else {
+        Ok(parts.join(""))
+    }
+}
+
+/// Streaming entry point for llm.prompt.acp.
+/// Same args as `acp_proxy_dispatch` but streams chunks via callback.
+/// Returns the final JSON result.
+pub fn acp_proxy_dispatch_streaming(args: &[Value], on_chunk: &mut dyn FnMut(&str)) -> Value {
+    let prompt = match args.first().and_then(|v| v.as_str()) {
+        Some(p) if !p.is_empty() => p,
+        _ => return json!({"ok": false, "error": "prompt is required"}),
+    };
+
+    let agent = args
+        .get(1)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("opencode");
+
+    let cwd_arg = args
+        .get(2)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(".");
+
+    let model = args
+        .get(4)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    let context_csv = args
+        .get(5)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+
+    let cwd = std::path::Path::new(cwd_arg)
+        .canonicalize()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| ".".into())
+        });
+
+    let context_files = if context_csv.is_empty() {
+        Vec::new()
+    } else {
+        context::read_context_files(context_csv, &cwd)
+    };
+
+    if let Err(e) = ensure_proxy_for(agent) {
+        return json!({"ok": false, "error": e});
+    }
+
+    match send_prompt_streaming(prompt, &cwd, model, &context_files, on_chunk) {
+        Ok(response) => json!(response),
+        Err(e) => json!({"ok": false, "error": e}),
+    }
+}
+
 // ═══════════════════════════════════════════
 // ── Trait entry point ──────────────────────
 // ═══════════════════════════════════════════

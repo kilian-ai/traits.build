@@ -570,20 +570,43 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                 let path = parsed["p"].as_str().unwrap_or("");
                 let args: Vec<serde_json::Value> = parsed["a"].as_array().cloned().unwrap_or_default();
                 let target = parsed["t"].as_str();
+                let use_stream = parsed["stream"].as_bool().unwrap_or(false);
 
                 match target {
                     Some("rest") | Some("helper") => {
-                        dispatch_via_rest(path, &args, target.unwrap());
+                        if use_stream {
+                            dispatch_via_rest_stream(path, &args, target.unwrap());
+                        } else {
+                            dispatch_via_rest(path, &args, target.unwrap());
+                        }
                     }
                     _ => {
-                        // Default: dispatch locally via compiled backend
-                        match backend.call(path, &args) {
-                            Ok(result) => {
-                                let formatted = crate::cli::format_rest_result(path, &args, &result)
-                                    .unwrap_or_else(|| serde_json::to_string_pretty(&result).unwrap_or_default());
-                                print!("{}", formatted);
+                        if use_stream && path == "llm.prompt.acp" {
+                            // Streaming: call ACP directly, print chunks as they arrive
+                            let mut first = true;
+                            crate::dispatcher::compiled::acp::acp_proxy_dispatch_streaming(
+                                &args,
+                                &mut |chunk: &str| {
+                                    if first {
+                                        // Clear the "thinking…" line
+                                        print!("\x1b[A\x1b[2K");
+                                        first = false;
+                                    }
+                                    print!("{}", chunk);
+                                    std::io::stdout().flush().ok();
+                                },
+                            );
+                            if !first { println!(); } // newline after streamed output
+                        } else {
+                            // Default: non-streaming compiled dispatch
+                            match backend.call(path, &args) {
+                                Ok(result) => {
+                                    let formatted = crate::cli::format_rest_result(path, &args, &result)
+                                        .unwrap_or_else(|| serde_json::to_string_pretty(&result).unwrap_or_default());
+                                    print!("{}", formatted);
+                                }
+                                Err(e) => print!("\x1b[31mError: {}\x1b[0m\r\n", e),
                             }
-                            Err(e) => print!("\x1b[31mError: {}\x1b[0m\r\n", e),
                         }
                     }
                 }
@@ -675,6 +698,70 @@ fn dispatch_via_rest(path: &str, args: &[serde_json::Value], target: &str) {
         }
         None => {
             print!("\x1b[31m{} error: sys.call dispatch failed\x1b[0m\r\n", target);
+        }
+    }
+    std::io::stdout().flush().ok();
+}
+
+/// Dispatch a streaming trait call via HTTP SSE (used for @rest and @helper streaming targets).
+fn dispatch_via_rest_stream(path: &str, args: &[serde_json::Value], target: &str) {
+    use std::io::{BufRead, BufReader, Write};
+
+    let base_url = {
+        std::env::var("TRAITS_SERVER")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| {
+                let port = std::env::var("TRAITS_PORT")
+                    .ok()
+                    .and_then(|p| p.parse::<u16>().ok())
+                    .unwrap_or(8090);
+                format!("http://127.0.0.1:{}", port)
+            })
+    };
+
+    let url = format!("{}/traits/{}?stream=1", base_url, path.replace('.', "/"));
+    let body = serde_json::json!({"args": args}).to_string();
+
+    // Use a raw HTTP POST via sys.call with stream reading
+    // sys.call doesn't support SSE, so we use a subprocess curl for streaming
+    let result = std::process::Command::new("curl")
+        .args(["-sS", "-N", "--no-buffer"])
+        .args(["-X", "POST"])
+        .args(["-H", "Content-Type: application/json"])
+        .args(["-d", &body])
+        .arg(&url)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    match result {
+        Ok(mut child) => {
+            let stdout = child.stdout.take().unwrap();
+            let reader = BufReader::new(stdout);
+            let mut first = true;
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    if line.starts_with("data: ") {
+                        let data = &line[6..];
+                        if data == "[DONE]" { break; }
+                        // Parse the SSE data — it's a JSON string (the chunk text)
+                        let text: String = serde_json::from_str(data)
+                            .unwrap_or_else(|_| data.to_string());
+                        if first {
+                            print!("\x1b[A\x1b[2K"); // Clear "thinking…" line
+                            first = false;
+                        }
+                        print!("{}", text);
+                        std::io::stdout().flush().ok();
+                    }
+                }
+            }
+            if !first { println!(); }
+            let _ = child.wait();
+        }
+        Err(e) => {
+            print!("\x1b[31m{} stream error: {}\x1b[0m\r\n", target, e);
         }
     }
     std::io::stdout().flush().ok();
