@@ -136,25 +136,31 @@ async function _ensureWebLLM(model) {
     const modelId = model || WEBLLM_DEFAULT_MODEL;
 
     // Already loaded with same model
-    if (_webllmEngine && _webllmModel === modelId) return _webllmEngine;
+    if (_webllmEngine && _webllmModel === modelId) {
+        _webllmProgress('Engine ready.');
+        return _webllmEngine;
+    }
 
     // Detect concurrent load for same model — wait for it
     if (_webllmLoading) {
+        _webllmProgress('Waiting for model to finish loading…');
         try { await _webllmLoading; } catch(e) {}
         if (_webllmModel === modelId && _webllmEngine) return _webllmEngine;
     }
 
     // Check WebGPU support
+    _webllmProgress('Checking WebGPU…');
     if (!navigator.gpu) throw new Error('WebGPU not supported in this browser (requires Chrome 113+ or Edge 113+)');
     const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) throw new Error('WebGPU adapter not available');
+    if (!adapter) throw new Error('WebGPU adapter not available — no compatible GPU found');
 
     _webllmLoading = (async () => {
         try {
             // Lazy-load WebLLM library
             if (!_webllmLib) {
-                _webllmProgress('Loading WebLLM library…');
+                _webllmProgress('Downloading WebLLM library from CDN…');
                 _webllmLib = await import('https://esm.run/@mlc-ai/web-llm');
+                _webllmProgress('WebLLM library loaded.');
             }
 
             // Clean up existing engine
@@ -163,7 +169,7 @@ async function _ensureWebLLM(model) {
                 _webllmEngine = null; _webllmModel = null;
             }
 
-            _webllmProgress(`Loading model ${modelId}… (first run downloads weights)`);
+            _webllmProgress(`Loading model ${modelId}… (first run downloads ~1.7 GB)`);
 
             // Override context_window_size: the prebuilt config caps all models at 4096.
             // Clone the catalog, find our model, and raise the cap to 32K.
@@ -1325,24 +1331,39 @@ export class Traits {
     }
 
     async _callWebLLM(prompt, model) {
+        const TIMEOUT_MS = 120_000; // 2 minutes max for engine load + inference
         const t0 = performance.now();
         try {
-            const engine = await _ensureWebLLM(model);
-            const reply = await engine.chat.completions.create({
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.7,
-                max_tokens: 1024,
-            });
-            const dt = performance.now() - t0;
-            const content = reply.choices?.[0]?.message?.content || '';
-            return {
-                ok: true,
-                result: content,
-                dispatch: 'webllm',
-                model: _webllmModel,
-                ms: Math.round(dt * 10) / 10,
-            };
+            // Race the entire WebLLM flow against a timeout
+            const result = await Promise.race([
+                (async () => {
+                    const engine = await _ensureWebLLM(model);
+                    _webllmProgress('Running inference…');
+                    const reply = await engine.chat.completions.create({
+                        messages: [{ role: 'user', content: prompt }],
+                        temperature: 0.7,
+                        max_tokens: 1024,
+                    });
+                    const dt = performance.now() - t0;
+                    const content = reply.choices?.[0]?.message?.content || '';
+                    _webllmProgress('');
+                    return {
+                        ok: true,
+                        result: content,
+                        dispatch: 'webllm',
+                        model: _webllmModel,
+                        ms: Math.round(dt * 10) / 10,
+                    };
+                })(),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error(
+                        `WebLLM timed out after ${TIMEOUT_MS / 1000}s — model may still be downloading. Try again.`
+                    )), TIMEOUT_MS)
+                ),
+            ]);
+            return result;
         } catch (e) {
+            _webllmProgress('');
             return { ok: false, error: e.message || String(e), dispatch: 'webllm' };
         }
     }

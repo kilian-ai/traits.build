@@ -336,11 +336,14 @@ async function createTerminal(mountEl, opts = {}) {
                             term.write(text.replace(/\n/g, '\r\n'));
                             if (!text.endsWith('\n')) term.write('\r\n');
                         } else if (res.error) {
-                            term.write(`\x1b[31mError: ${res.error}\x1b[0m\r\n`);
+                            term.write(`\x1b[31mWebLLM: ${res.error}\x1b[0m\r\n`);
+                        } else {
+                            term.write('\x1b[33mWebLLM returned empty result\x1b[0m\r\n');
                         }
                         term.write(PROMPT);
                     }).catch(e => {
-                        term.write(`\x1b[31mWebLLM error: ${e.message}\x1b[0m\r\n`);
+                        console.error('[terminal] WebLLM dispatch error:', e);
+                        term.write(`\r\x1b[K\x1b[31mWebLLM error: ${e.message || e}\x1b[0m\r\n`);
                         term.write(PROMPT);
                     }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
                 } catch (e) {
