@@ -610,11 +610,14 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                             std::io::stdout().flush().ok();
                         } else {
                             // Default: non-streaming compiled dispatch
+                            // Clear the progress line (e.g. "Fetching models…") above
+                            print!("\x1b[A\x1b[2K\r");
                             match backend.call(path, &args) {
                                 Ok(result) => {
                                     let formatted = crate::cli::format_rest_result(path, &args, &result)
                                         .unwrap_or_else(|| serde_json::to_string_pretty(&result).unwrap_or_default());
-                                    print!("{}", formatted);
+                                    // Raw mode: ensure \n → \r\n (normalize first to avoid \r\r\n)
+                                    print!("{}", formatted.replace("\r\n", "\n").replace('\n', "\r\n"));
                                 }
                                 Err(e) => print!("\x1b[31mError: {}\x1b[0m\r\n", e),
                             }
