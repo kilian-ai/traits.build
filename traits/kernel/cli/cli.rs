@@ -878,10 +878,11 @@ impl CliSession {
                         "/models" => {
                             // List models via REST sentinel (native-only trait)
                             let agent = self.chat.as_ref().unwrap().agent.clone();
+                            let cwd = self.chat.as_ref().unwrap().cwd.clone();
                             out.push_str(&format!("{GRAY}Fetching models…{RESET}\r\n"));
                             let sentinel = serde_json::json!({
                                 "p": "llm.prompt.acp.list",
-                                "a": [".", &agent],
+                                "a": [&agent, &cwd],
                                 "rp": CHAT_PROMPT
                             });
                             out.push_str(&format!("{REST_SENTINEL_START}{}{REST_SENTINEL_END}", sentinel));
