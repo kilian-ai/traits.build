@@ -167,6 +167,12 @@ async function _ensureWebLLM(model) {
             _webllmEngine = await _webllmLib.CreateMLCEngine(modelId, {
                 initProgressCallback: (report) => {
                     _webllmProgress(report.text || `${Math.round((report.progress || 0) * 100)}%`);
+                },
+                appConfig: {
+                    model_list: [{
+                        model_id: modelId,
+                        overrides: { context_window_size: -1 },
+                    }]
                 }
             });
             _webllmModel = modelId;
@@ -868,6 +874,17 @@ export class Traits {
             try { mod.register_task('wasm-kernel', 'WASM Kernel', 'service', Date.now(), `${callable.length} callable traits`); } catch(e) {}
         }
         this._trackTask('wasm-kernel', 'WASM Kernel', 'service', `${callable.length} callable traits`);
+    }
+
+    /**
+     * Start loading the default WebLLM model in the background.
+     * If the model is already loaded, this is a no-op.
+     * When a WebLLM call arrives later, it reuses the in-flight or completed engine.
+     * @param {string} [model] - Model ID (default: WEBLLM_DEFAULT_MODEL)
+     */
+    preloadWebLLM(model) {
+        if (typeof navigator === 'undefined' || !navigator.gpu) return; // no WebGPU
+        _ensureWebLLM(model).catch(() => {}); // fire-and-forget, errors swallowed
     }
 
     /**
