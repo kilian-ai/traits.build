@@ -132,9 +132,9 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
             "output_audio_format": "pcm16",
             "turn_detection": {
                 "type": "server_vad",
-                "threshold": 0.5,
+                "threshold": 0.7,
                 "prefix_padding_ms": 300,
-                "silence_duration_ms": 500
+                "silence_duration_ms": 700
             },
             "input_audio_transcription": {
                 "model": "whisper-1"
@@ -199,8 +199,18 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
                         }
                     }
 
-                    // ── Model finished speaking — unmute mic ──
+                    // ── Model finished speaking — flush stale mic data, clear server buffer, unmute ──
                     "response.audio.done" => {
+                        // 1. Drain any mic chunks that accumulated during playback
+                        while mic_rx.try_recv().is_ok() {}
+                        // 2. Clear server-side input buffer (may contain leaked speaker audio)
+                        let clear_ev = json!({"type": "input_audio_buffer.clear"});
+                        ws.send(Message::Text(clear_ev.to_string())).ok();
+                        // 3. Small delay to let speaker audio fully decay
+                        std::thread::sleep(Duration::from_millis(150));
+                        // 4. Drain again after delay (mic was still recording during sleep)
+                        while mic_rx.try_recv().is_ok() {}
+                        // 5. Now unmute
                         MIC_MUTED.store(false, Ordering::Relaxed);
                     }
 
@@ -352,6 +362,10 @@ fn mic_capture_loop(tx: mpsc::Sender<Vec<u8>>) {
     while VOICE_RUNNING.load(Ordering::Relaxed) {
         match reader.read_exact(&mut buf) {
             Ok(()) => {
+                // Discard audio while muted (model is speaking)
+                if MIC_MUTED.load(Ordering::Relaxed) {
+                    continue;
+                }
                 if tx.send(buf.clone()).is_err() {
                     break; // receiver dropped
                 }
