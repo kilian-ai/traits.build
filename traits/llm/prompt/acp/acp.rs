@@ -314,10 +314,27 @@ fn send_prompt(prompt: &str, cwd: &str, model: Option<&str>, context_files: &[(S
                     if let Some(update) = v.pointer("/payload/update") {
                         match update.get("sessionUpdate").and_then(|s| s.as_str()) {
                             Some("agent_message_chunk") => {
+                                // Try content.text (object format)
                                 if let Some(t) =
                                     update.pointer("/content/text").and_then(|t| t.as_str())
                                 {
                                     parts.push(t.to_string());
+                                }
+                                // Fallback: content as array of {type:"text", text:"..."}
+                                else if let Some(arr) =
+                                    update.get("content").and_then(|c| c.as_array())
+                                {
+                                    for item in arr {
+                                        if item.get("type").and_then(|t| t.as_str())
+                                            == Some("text")
+                                        {
+                                            if let Some(t) =
+                                                item.get("text").and_then(|t| t.as_str())
+                                            {
+                                                parts.push(t.to_string());
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             Some("agent_message") => {
@@ -408,11 +425,41 @@ fn send_prompt_streaming(
                     if let Some(update) = v.pointer("/payload/update") {
                         match update.get("sessionUpdate").and_then(|s| s.as_str()) {
                             Some("agent_message_chunk") => {
-                                if let Some(t) =
-                                    update.pointer("/content/text").and_then(|t| t.as_str())
-                                {
-                                    on_chunk(t);
-                                    parts.push(t.to_string());
+                                // Try content.text (object format)
+                                let text = update
+                                    .pointer("/content/text")
+                                    .and_then(|t| t.as_str())
+                                    .map(|s| s.to_string())
+                                    // Fallback: content as array of {type:"text", text:"..."}
+                                    .or_else(|| {
+                                        update
+                                            .get("content")
+                                            .and_then(|c| c.as_array())
+                                            .and_then(|arr| {
+                                                let mut out = String::new();
+                                                for item in arr {
+                                                    if item
+                                                        .get("type")
+                                                        .and_then(|t| t.as_str())
+                                                        == Some("text")
+                                                    {
+                                                        if let Some(t) =
+                                                            item.get("text").and_then(|t| t.as_str())
+                                                        {
+                                                            out.push_str(t);
+                                                        }
+                                                    }
+                                                }
+                                                if out.is_empty() {
+                                                    None
+                                                } else {
+                                                    Some(out)
+                                                }
+                                            })
+                                    });
+                                if let Some(t) = text {
+                                    on_chunk(&t);
+                                    parts.push(t);
                                 }
                             }
                             Some("agent_message") => {

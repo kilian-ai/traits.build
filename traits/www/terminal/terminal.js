@@ -252,6 +252,7 @@ export async function createTerminal(mountEl, opts = {}) {
                             } catch (e) {
                                 term.write(`\r\n\x1b[31mStream error: ${e.message}\x1b[0m\r\n`);
                             }
+                            if (!streamStarted) term.write('\r\x1b[K'); // Clear "thinking…" if no chunks
                             if (fullText && !fullText.endsWith('\n')) term.write('\r\n');
                             storeChatResponse(fullText);
                             term.write(returnPrompt);

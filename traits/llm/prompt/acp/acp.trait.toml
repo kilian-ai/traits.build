@@ -1,7 +1,7 @@
 [trait]
 description = "Route prompts to ACP agents via chrome-acp proxy (OpenCode, Claude Code, Codex, Copilot)"
-version = "v260329"
-checksum = "889e9eb7772b4355be95ee4ba62343ad5466e370d3e9567aa2e02007ecb78929"
+version = "v260329.170906"
+checksum = "36839970048acb7693882ed7b01abeb5ac3103805bcc87dac6ac17bfd0309f9c"
 author = "user"
 tags = ["llm", "acp", "proxy", "opencode", "claude", "codex", "copilot"]
 provides = ["llm/prompt", "llm/acp"]

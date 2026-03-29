@@ -585,7 +585,7 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                             // Streaming: call ACP directly, print chunks as they arrive
                             // Raw mode: \n alone doesn't carriage-return, so convert to \r\n
                             let mut first = true;
-                            crate::dispatcher::compiled::acp::acp_proxy_dispatch_streaming(
+                            let result = crate::dispatcher::compiled::acp::acp_proxy_dispatch_streaming(
                                 &args,
                                 &mut |chunk: &str| {
                                     if first {
@@ -597,7 +597,17 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                                     std::io::stdout().flush().ok();
                                 },
                             );
-                            if !first { print!("\r\n"); } // newline after streamed output
+                            if first {
+                                // No chunks arrived — fallback: print full result
+                                print!("\x1b[A\x1b[2K\r"); // clear "thinking…"
+                                if let Some(text) = result.as_str() {
+                                    print!("{}", text.replace('\n', "\r\n"));
+                                } else if let Some(err) = result.get("error").and_then(|e| e.as_str()) {
+                                    print!("\x1b[31mError: {}\x1b[0m", err);
+                                }
+                            }
+                            print!("\r\n");
+                            std::io::stdout().flush().ok();
                         } else {
                             // Default: non-streaming compiled dispatch
                             match backend.call(path, &args) {
