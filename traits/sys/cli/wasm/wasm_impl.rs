@@ -54,8 +54,18 @@ fn method_call(args: &[Value]) -> Value {
     // Try WASM-local dispatch (helper-preferred check is inside dispatch())
     match super::dispatch(path, &call_args) {
         Some(result) => {
-            // Check for dispatch sentinel (e.g. webllm) — delegate to SDK
-            if result.get("dispatch").and_then(|d| d.as_str()).is_some() {
+            // Check for WebLLM dispatch sentinel — pass through with enriched prompt
+            if result.get("dispatch").and_then(|d| d.as_str()) == Some("webllm") {
+                let prompt = result.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
+                let model = result.get("model").and_then(|v| v.as_str()).unwrap_or("");
+                let sentinel_json = serde_json::json!({"prompt": prompt, "model": model});
+                serde_json::json!({
+                    "ok": false,
+                    "error": format!("WEBLLM:{}", sentinel_json)
+                })
+            }
+            // Other dispatch sentinels — delegate to REST
+            else if result.get("dispatch").and_then(|d| d.as_str()).is_some() {
                 serde_json::json!({
                     "ok": false,
                     "error": format!("REST:{}", path)

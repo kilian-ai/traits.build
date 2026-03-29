@@ -20,6 +20,7 @@
 
 const CLEAR_SENTINEL = '\x1b[CLEAR]';
 const REST_RE = /\x1b\[REST\]([\s\S]*?)\x1b\[\/REST\]/;
+const WEBLLM_RE = /\x1b\[WEBLLM\]([\s\S]*?)\x1b\[\/WEBLLM\]/;
 // Source of truth: kernel/cli/cli.rs PROMPT constant. Must stay in sync.
 const PROMPT = '\x1b[32mtraits \x1b[0m';
 
@@ -312,6 +313,38 @@ async function createTerminal(mountEl, opts = {}) {
                     }
                 } catch (e) {
                     term.write(`\x1b[31mREST parse error: ${e.message}\x1b[0m\r\n`);
+                    term.write(PROMPT);
+                    restPending = false;
+                    requestAnimationFrame(saveState);
+                }
+                return;
+            }
+
+            // Check for WebLLM dispatch sentinel
+            const webllmMatch = output.match(WEBLLM_RE);
+            if (webllmMatch && activeSdk) {
+                const visible = output.replace(WEBLLM_RE, '');
+                if (visible) term.write(visible);
+                try {
+                    const { prompt, model } = JSON.parse(webllmMatch[1]);
+                    restPending = true;
+                    activeSdk._callWebLLM(prompt, model).then(res => {
+                        term.write('\r\x1b[K'); // Clear progress line
+                        if (res.ok && res.result !== undefined) {
+                            const text = typeof res.result === 'string'
+                                ? res.result : JSON.stringify(res.result, null, 2);
+                            term.write(text.replace(/\n/g, '\r\n'));
+                            if (!text.endsWith('\n')) term.write('\r\n');
+                        } else if (res.error) {
+                            term.write(`\x1b[31mError: ${res.error}\x1b[0m\r\n`);
+                        }
+                        term.write(PROMPT);
+                    }).catch(e => {
+                        term.write(`\x1b[31mWebLLM error: ${e.message}\x1b[0m\r\n`);
+                        term.write(PROMPT);
+                    }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
+                } catch (e) {
+                    term.write(`\x1b[31mWebLLM parse error: ${e.message}\x1b[0m\r\n`);
                     term.write(PROMPT);
                     restPending = false;
                     requestAnimationFrame(saveState);

@@ -44,6 +44,10 @@ pub const CLEAR_SENTINEL: &str = "\x1b[CLEAR]";
 pub const REST_SENTINEL_START: &str = "\x1b[REST]";
 pub const REST_SENTINEL_END: &str = "\x1b[/REST]";
 
+/// WebLLM dispatch sentinels — frontend intercepts and calls WebLLM engine.
+pub const WEBLLM_SENTINEL_START: &str = "\x1b[WEBLLM]";
+pub const WEBLLM_SENTINEL_END: &str = "\x1b[/WEBLLM]";
+
 // ── Key events ──
 
 pub enum KeyEvent {
@@ -393,9 +397,9 @@ impl CliSession {
                 if result.contains(CLEAR_SENTINEL) {
                     return format!("{CLEAR_SENTINEL}{PROMPT}");
                 }
-                if result.contains(REST_SENTINEL_START) {
+                if result.contains(REST_SENTINEL_START) || result.contains(WEBLLM_SENTINEL_START) {
                     out.push_str(&result);
-                    return out; // No prompt — JS handles async REST
+                    return out; // No prompt — JS handles async REST/WebLLM
                 }
                 if !result.is_empty() {
                     out.push_str(&result);
@@ -624,9 +628,9 @@ impl CliSession {
                     let result = exec_line(&cmd, backend, &*self.shell, &self.vfs);
                     backend.save_param_history(&self.param_history);
 
-                    if result.contains(REST_SENTINEL_START) {
+                    if result.contains(REST_SENTINEL_START) || result.contains(WEBLLM_SENTINEL_START) {
                         out.push_str(&result);
-                        return out; // No prompt — JS handles async REST
+                        return out; // No prompt — JS handles async REST/WebLLM
                     }
                     if !result.is_empty() && !result.contains(CLEAR_SENTINEL) {
                         out.push_str(&result);
@@ -1172,6 +1176,13 @@ fn exec_call(backend: &dyn CliCallBackend, path: &str, arg_strs: &[String]) -> S
                 }
             }
             out
+        }
+        Err(e) if e.starts_with("WEBLLM:") => {
+            let sentinel_json = &e[7..];
+            format!(
+                "{GRAY}calling WebLLM…{RESET}\r\n\
+                 {WEBLLM_SENTINEL_START}{sentinel_json}{WEBLLM_SENTINEL_END}"
+            )
         }
         Err(e) if e.starts_with("REST:") => {
             if force_local {
