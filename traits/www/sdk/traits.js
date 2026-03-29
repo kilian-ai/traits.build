@@ -123,10 +123,16 @@ let _webllmLib = null;
 let _webllmEngine = null;
 let _webllmModel = null;
 let _webllmLoading = null;
+let _lastWebLLMStep = '';
+let _webllmProgressTime = 0;
 
 const WEBLLM_DEFAULT_MODEL = 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
 
 function _webllmProgress(text) {
+    if (text) {
+        _lastWebLLMStep = text;
+        _webllmProgressTime = Date.now();
+    }
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('webllm-progress', { detail: text }));
     }
@@ -206,12 +212,40 @@ async function _ensureWebLLM(model) {
                     : rec
             );
 
-            _webllmEngine = await _webllmLib.CreateMLCEngine(modelId, {
+            // Watchdog: if no progress callback fires for 60s, CreateMLCEngine is stuck
+            let progressFired = false;
+            const watchdog = new Promise((_, reject) => {
+                const check = setInterval(() => {
+                    const elapsed = Date.now() - _webllmProgressTime;
+                    if (progressFired && elapsed < 60_000) return; // still making progress
+                    if (!progressFired && elapsed > 60_000) {
+                        clearInterval(check);
+                        reject(new Error(
+                            'WebLLM engine stalled — no progress for 60s. ' +
+                            'This may indicate a browser/GPU compatibility issue. ' +
+                            'Try Chrome 113+ with WebGPU enabled.'
+                        ));
+                    }
+                }, 5_000);
+                // Clean up watchdog when engine finishes (via .then below)
+                watchdog._clearWatchdog = () => clearInterval(check);
+            });
+
+            const enginePromise = _webllmLib.CreateMLCEngine(modelId, {
                 initProgressCallback: (report) => {
-                    _webllmProgress(report.text || `${Math.round((report.progress || 0) * 100)}%`);
+                    progressFired = true;
+                    const text = report.text || `${Math.round((report.progress || 0) * 100)}%`;
+                    console.log('[WebLLM] progress:', text);
+                    _webllmProgress(text);
                 },
                 appConfig: { ...catalog, model_list: modifiedList },
             });
+
+            try {
+                _webllmEngine = await Promise.race([enginePromise, watchdog]);
+            } finally {
+                if (watchdog._clearWatchdog) watchdog._clearWatchdog();
+            }
             _webllmModel = modelId;
             console.log('[WebLLM] Engine ready');
             _webllmProgress('Model ready.');
@@ -1359,6 +1393,7 @@ export class Traits {
         // 5 minutes for first-time model download (~1.7 GB), subsequent calls are fast
         const TIMEOUT_MS = 300_000;
         const t0 = performance.now();
+        _lastWebLLMStep = '';
         try {
             const result = await Promise.race([
                 (async () => {
@@ -1384,7 +1419,9 @@ export class Traits {
                 })(),
                 new Promise((_, reject) =>
                     setTimeout(() => reject(new Error(
-                        `WebLLM timed out after ${TIMEOUT_MS / 1000}s. Check browser console (F12) for details.`
+                        `WebLLM timed out after ${TIMEOUT_MS / 1000}s` +
+                        (_lastWebLLMStep ? ` (last step: ${_lastWebLLMStep})` : '') +
+                        `. Check browser console (F12) for [WebLLM] logs.`
                     )), TIMEOUT_MS)
                 ),
             ]);
