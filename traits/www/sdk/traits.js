@@ -141,25 +141,50 @@ async function _ensureWebLLM(model) {
         return _webllmEngine;
     }
 
-    // Detect concurrent load for same model — wait for it
+    // If a previous load is in progress, wait briefly for it.
+    // If it's stale (e.g. preload CDN import hanging), abandon and start fresh.
     if (_webllmLoading) {
-        _webllmProgress('Waiting for model to finish loading…');
-        try { await _webllmLoading; } catch(e) {}
-        if (_webllmModel === modelId && _webllmEngine) return _webllmEngine;
+        _webllmProgress('Waiting for previous load…');
+        console.log('[WebLLM] Waiting for existing _webllmLoading…');
+        const race = await Promise.race([
+            _webllmLoading.then(() => 'done').catch(() => 'failed'),
+            new Promise(r => setTimeout(() => r('stale'), 15_000)),
+        ]);
+        if (race === 'stale') {
+            console.warn('[WebLLM] Previous load stale after 15s — starting fresh');
+            _webllmProgress('Previous load timed out, restarting…');
+            _webllmLoading = null;
+            _webllmLib = null; // CDN import may have been the problem
+        } else if (_webllmModel === modelId && _webllmEngine) {
+            return _webllmEngine;
+        }
+        // else: previous load finished but different model or failed — continue
     }
 
     // Check WebGPU support
     _webllmProgress('Checking WebGPU…');
+    console.log('[WebLLM] Checking WebGPU…');
     if (!navigator.gpu) throw new Error('WebGPU not supported in this browser (requires Chrome 113+ or Edge 113+)');
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('WebGPU adapter not available — no compatible GPU found');
+    console.log('[WebLLM] WebGPU adapter OK');
 
     _webllmLoading = (async () => {
         try {
-            // Lazy-load WebLLM library
+            // Lazy-load WebLLM library with a 30s timeout
             if (!_webllmLib) {
                 _webllmProgress('Downloading WebLLM library from CDN…');
-                _webllmLib = await import('https://esm.run/@mlc-ai/web-llm');
+                console.log('[WebLLM] Importing from https://esm.run/@mlc-ai/web-llm …');
+                const imported = await Promise.race([
+                    import('https://esm.run/@mlc-ai/web-llm'),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error(
+                            'WebLLM CDN import timed out after 30s — check network/ad blocker'
+                        )), 30_000)
+                    ),
+                ]);
+                _webllmLib = imported;
+                console.log('[WebLLM] Library imported OK');
                 _webllmProgress('WebLLM library loaded.');
             }
 
@@ -170,12 +195,10 @@ async function _ensureWebLLM(model) {
             }
 
             _webllmProgress(`Loading model ${modelId}… (first run downloads ~1.7 GB)`);
+            console.log('[WebLLM] Creating engine for', modelId);
 
             // Override context_window_size: the prebuilt config caps all models at 4096.
             // Clone the catalog, find our model, and raise the cap to 32K.
-            // Using a large positive value (not -1) because WebLLM requires
-            // context_window_size, sliding_window_size, or max_window_size > 0.
-            // 32768 is practical for GPU memory while allowing substantial context.
             const catalog = _webllmLib.prebuiltAppConfig;
             const modifiedList = catalog.model_list.map(rec =>
                 rec.model_id === modelId
@@ -190,9 +213,11 @@ async function _ensureWebLLM(model) {
                 appConfig: { ...catalog, model_list: modifiedList },
             });
             _webllmModel = modelId;
+            console.log('[WebLLM] Engine ready');
             _webllmProgress('Model ready.');
             return _webllmEngine;
         } catch(e) {
+            console.error('[WebLLM] Engine load failed:', e);
             _webllmEngine = null; _webllmModel = null;
             _webllmProgress('');
             throw e;
@@ -1331,14 +1356,15 @@ export class Traits {
     }
 
     async _callWebLLM(prompt, model) {
-        const TIMEOUT_MS = 120_000; // 2 minutes max for engine load + inference
+        // 5 minutes for first-time model download (~1.7 GB), subsequent calls are fast
+        const TIMEOUT_MS = 300_000;
         const t0 = performance.now();
         try {
-            // Race the entire WebLLM flow against a timeout
             const result = await Promise.race([
                 (async () => {
                     const engine = await _ensureWebLLM(model);
                     _webllmProgress('Running inference…');
+                    console.log('[WebLLM] Starting inference, prompt length:', prompt.length);
                     const reply = await engine.chat.completions.create({
                         messages: [{ role: 'user', content: prompt }],
                         temperature: 0.7,
@@ -1346,6 +1372,7 @@ export class Traits {
                     });
                     const dt = performance.now() - t0;
                     const content = reply.choices?.[0]?.message?.content || '';
+                    console.log('[WebLLM] Inference done in', Math.round(dt), 'ms');
                     _webllmProgress('');
                     return {
                         ok: true,
@@ -1357,12 +1384,13 @@ export class Traits {
                 })(),
                 new Promise((_, reject) =>
                     setTimeout(() => reject(new Error(
-                        `WebLLM timed out after ${TIMEOUT_MS / 1000}s — model may still be downloading. Try again.`
+                        `WebLLM timed out after ${TIMEOUT_MS / 1000}s. Check browser console (F12) for details.`
                     )), TIMEOUT_MS)
                 ),
             ]);
             return result;
         } catch (e) {
+            console.error('[WebLLM] _callWebLLM error:', e);
             _webllmProgress('');
             return { ok: false, error: e.message || String(e), dispatch: 'webllm' };
         }
