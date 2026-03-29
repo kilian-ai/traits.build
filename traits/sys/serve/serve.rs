@@ -1134,7 +1134,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
         std::thread::spawn(|| {
             // Brief delay so the server's INFO log prints first
             std::thread::sleep(std::time::Duration::from_millis(200));
-            crate::dispatcher::compiled::cli::serve_repl();
+            crate::dispatcher::compiled::sys_cli::serve_repl();
         });
     } else {
         info!("REPL disabled: no interactive TTY detected");

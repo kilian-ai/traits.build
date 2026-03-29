@@ -475,3 +475,15 @@ pub fn vfs_dump() -> String {
 pub fn vfs_load(json: &str) {
     with_session(|session| session.vfs_load(json))
 }
+
+/// Read a single file from the VFS.  Returns empty string if not found.
+#[wasm_bindgen]
+pub fn vfs_read(path: &str) -> String {
+    with_session(|session| session.vfs_read(path).unwrap_or_default())
+}
+
+/// Write a single file to the VFS.
+#[wasm_bindgen]
+pub fn vfs_write(path: &str, content: &str) {
+    with_session(|session| session.vfs_write(path, content))
+}

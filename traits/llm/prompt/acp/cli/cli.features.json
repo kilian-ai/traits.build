@@ -1,0 +1,21 @@
+{
+  "features": [
+    {
+      "name": "returns usage info",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["opencode", "chat mode", "/quit"] }
+        },
+        {
+          "input": ["claude"],
+          "output": { "contains": ["claude", "chat mode"] }
+        },
+        {
+          "input": ["opencode", "gpt-4"],
+          "output": { "contains": ["gpt-4", "opencode"] }
+        }
+      ]
+    }
+  ]
+}

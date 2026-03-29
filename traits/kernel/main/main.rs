@@ -299,5 +299,5 @@ pub fn main_info(args: &[serde_json::Value]) -> serde_json::Value {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dispatcher::compiled::cli::run().await
+    dispatcher::compiled::sys_cli::run().await
 }

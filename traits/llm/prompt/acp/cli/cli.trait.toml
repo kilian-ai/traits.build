@@ -1,0 +1,21 @@
+[trait]
+description = "Interactive chat CLI for ACP agents (Claude, Codex, Copilot, OpenCode)"
+version = "v260329"
+checksum = "a8494d146b127b5df0dad6a5b25353b5ad561ea4bcef0318a47b20ae8f33d608"
+author = "system"
+tags = ["llm", "acp", "cli", "chat", "interactive"]
+
+[signature]
+params = [
+  { name = "agent", type = "string", description = "ACP agent: opencode, claude, codex, copilot", required = false, default = "opencode" },
+  { name = "model", type = "string", description = "Model ID (empty = agent default)", required = false, default = "" },
+]
+
+[signature.returns]
+type = "map"
+description = "Usage instructions and available / commands"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "acp_cli"

@@ -225,10 +225,24 @@ async function createTerminal(mountEl, opts = {}) {
 
             // Parse dispatch info and call via SDK cascade (WASM → helper → REST)
             // Supports @target routing: sentinel JSON may contain "t" field (rest/relay/helper/wasm)
+            // Chat mode: "rp" = return prompt (instead of PROMPT), "sid" = session ID for VFS storage
                 try {
-                    const { p, a, t } = JSON.parse(restMatch[1]);
+                    const { p, a, t, rp, sid } = JSON.parse(restMatch[1]);
+                    const returnPrompt = rp || PROMPT;
                     restPending = true;
                     const callOpts = t ? { force: t } : {};
+
+                    // Helper: store assistant response in WASM VFS for chat history
+                    const storeChatResponse = (text) => {
+                        if (!sid || !backgroundCall) return;
+                        const vfsKey = `chat/${sid}.json`;
+                        backgroundCall('vfs_read', { path: vfsKey }).then(res => {
+                            let msgs = [];
+                            try { if (res?.ok && res.result) msgs = JSON.parse(res.result); } catch (_) {}
+                            msgs.push({ role: 'assistant', content: text });
+                            backgroundCall('vfs_write', { path: vfsKey, content: JSON.stringify(msgs) });
+                        }).catch(() => {});
+                    };
 
                     if (activeSdk) {
                         activeSdk.call(p, a, callOpts).then(async res => {
@@ -254,6 +268,7 @@ async function createTerminal(mountEl, opts = {}) {
                             }
                             term.write(text.replace(/\n/g, '\r\n'));
                             if (!text.endsWith('\n')) term.write('\r\n');
+                            storeChatResponse(text);
                         } else if (res.error) {
                             // Try WASM formatter with null result (local fallback)
                             let fallback = '';
@@ -272,10 +287,10 @@ async function createTerminal(mountEl, opts = {}) {
                                 term.write(`\x1b[31mError: ${res.error}\x1b[0m\r\n`);
                             }
                         }
-                        term.write(PROMPT);
+                        term.write(returnPrompt);
                         }).catch(e => {
                             term.write(`\x1b[31mDispatch error: ${e.message}\x1b[0m\r\n`);
-                            term.write(PROMPT);
+                            term.write(returnPrompt);
                         }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
                     } else {
                     // Last-resort REST fallback (SDK unavailable)
@@ -300,14 +315,15 @@ async function createTerminal(mountEl, opts = {}) {
                             }
                             term.write(text.replace(/\n/g, '\r\n'));
                             if (!text.endsWith('\n')) term.write('\r\n');
+                            storeChatResponse(text);
                         } else if (data.error) {
                             term.write(`\x1b[31mError: ${data.error}\x1b[0m\r\n`);
                         }
-                        term.write(PROMPT);
+                        term.write(returnPrompt);
                     })
                     .catch(e => {
                         term.write(`\x1b[31mREST error: ${e.message}\x1b[0m\r\n`);
-                        term.write(PROMPT);
+                        term.write(returnPrompt);
                     })
                     .finally(() => { restPending = false; requestAnimationFrame(saveState); });
                     }

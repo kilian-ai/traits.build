@@ -1,8 +1,8 @@
 [trait]
 path = "kernel.main"
 description = "Binary entry point, system bootstrap, and trait-exists probe"
-version = "v260328.114100"
-checksum = "be5254edcd761453e60c8475c454b789482267d08ae00fc31f27163bfdf0f435"
+version = "v260329"
+checksum = "8a413df2a8d79cd52df0936f68d4d786d26672237750fc348fe5083d998aa01e"
 epoch = 0
 author = "system"
 tags = ["kernel", "bootstrap", "entry"]

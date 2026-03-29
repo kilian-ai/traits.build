@@ -15,3 +15,4 @@ scripts/add-toml-examples.py
 scripts/check-example-field.py
 scripts/verify-examples.py
 scripts/verify-openapi-examples.py
+.DS_Store

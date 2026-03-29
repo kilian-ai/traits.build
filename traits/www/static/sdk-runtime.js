@@ -491,6 +491,16 @@ class Traits {
                                 : '',
                             dispatch: 'direct',
                         };
+                    case 'vfs_dump':
+                        return { ok: true, id, result: wasm.vfs_dump ? wasm.vfs_dump() : '{}', dispatch: 'direct' };
+                    case 'vfs_load':
+                        if (wasm.vfs_load) wasm.vfs_load(task.json || '{}');
+                        return { ok: true, id, result: true, dispatch: 'direct' };
+                    case 'vfs_read':
+                        return { ok: true, id, result: wasm.vfs_read ? wasm.vfs_read(task.path || '') : '', dispatch: 'direct' };
+                    case 'vfs_write':
+                        if (wasm.vfs_write) wasm.vfs_write(task.path || '', task.content || '');
+                        return { ok: true, id, result: true, dispatch: 'direct' };
                     default:
                         return { ok: false, id, error: `Unsupported direct background command: '${task.cmd}'`, dispatch: 'direct' };
                 }

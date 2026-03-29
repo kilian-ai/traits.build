@@ -124,6 +124,23 @@ struct InteractiveState {
     tab_idx: Option<usize>,
 }
 
+// ── Chat mode state ──
+
+/// Chat sentinel — terminal.js intercepts this and handles the ACP REST call,
+/// stores the conversation, then writes the return prompt.
+pub const CHAT_SENTINEL_START: &str = "\x1b[CHAT]";
+pub const CHAT_SENTINEL_END: &str = "\x1b[/CHAT]";
+
+const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
+
+struct ChatState {
+    agent: String,
+    model: String,
+    cwd: String,
+    session_id: String,
+    message_count: usize,
+}
+
 // ── CLI Session ──
 
 pub struct CliSession {
@@ -132,6 +149,7 @@ pub struct CliSession {
     history: Vec<String>,
     hist_idx: isize,
     interactive: Option<InteractiveState>,
+    chat: Option<ChatState>,
     param_history: HashMap<String, HashMap<String, Vec<String>>>,
     /// Shell parser — swap via `set_shell()` to plug in a full implementation.
     shell: Arc<dyn Shell>,
@@ -147,6 +165,7 @@ impl CliSession {
             history: Vec::new(),
             hist_idx: -1,
             interactive: None,
+            chat: None,
             param_history: HashMap::new(),
             shell: Arc::new(DefaultShell),
             // Platform::make_vfs() returns the right backend for the current target:
@@ -175,6 +194,16 @@ impl CliSession {
     /// Restore the VFS from a JSON string previously produced by `vfs_dump`.
     pub fn vfs_load(&self, json: &str) {
         self.vfs.borrow_mut().load(json);
+    }
+
+    /// Read a single file from the VFS.
+    pub fn vfs_read(&self, path: &str) -> Option<String> {
+        self.vfs.borrow().read(path)
+    }
+
+    /// Write a single file to the VFS.
+    pub fn vfs_write(&self, path: &str, content: &str) {
+        self.vfs.borrow_mut().write(path, content);
     }
 
     /// Load persisted param history from backend (call after new).
@@ -341,6 +370,8 @@ impl CliSession {
     pub fn handle_key(&mut self, key: KeyEvent, backend: &dyn CliBackend) -> String {
         if self.interactive.is_some() {
             self.handle_interactive_key(key, backend)
+        } else if self.chat.is_some() {
+            self.handle_chat_key(key, backend)
         } else {
             self.handle_normal_key(key, backend)
         }
@@ -387,6 +418,16 @@ impl CliSession {
                         out.push_str(&self.start_interactive(&resolved, backend));
                         return out;
                     }
+                }
+
+                // Check for chat mode command
+                if parts.first().map(|s| s.to_lowercase()).as_deref() == Some("chat") {
+                    let agent = parts.get(1).map(|s| s.as_str()).unwrap_or("opencode");
+                    let model = parts.get(2).map(|s| s.as_str()).unwrap_or("");
+                    self.history.push(input);
+                    self.hist_idx = self.history.len() as isize;
+                    out.push_str(&self.start_chat(agent, model));
+                    return out;
                 }
 
                 // Normal execution
@@ -732,6 +773,265 @@ impl CliSession {
         }
     }
 
+    // ── Chat mode ──
+
+    /// Enter interactive chat mode with an ACP agent.
+    pub fn start_chat(&mut self, agent: &str, model: &str) -> String {
+        let cwd = ".".to_string();
+        // Generate session ID from platform time
+        let (y, mo, d, h, m, s) = kernel_logic::platform::time::now_utc();
+        let session_id = format!("{y:04}{mo:02}{d:02}_{h:02}{m:02}{s:02}");
+        self.chat = Some(ChatState {
+            agent: agent.to_string(),
+            model: model.to_string(),
+            cwd,
+            session_id,
+            message_count: 0,
+        });
+        let mut out = String::new();
+        out.push_str(&format!("\r\n{CYAN}{BOLD}Chat mode{RESET}"));
+        out.push_str(&format!(" {GRAY}(agent: {agent}"));
+        if !model.is_empty() {
+            out.push_str(&format!(", model: {model}"));
+        }
+        out.push_str(&format!("){RESET}\r\n"));
+        out.push_str(&format!("{GRAY}Type a message to chat. Commands: /agent, /model, /models, /status, /history, /clear, /quit{RESET}\r\n"));
+        out.push_str(CHAT_PROMPT);
+        out
+    }
+
+    /// Check if session is in chat mode.
+    pub fn is_chat(&self) -> bool {
+        self.chat.is_some()
+    }
+
+    fn handle_chat_key(&mut self, key: KeyEvent, _backend: &dyn CliBackend) -> String {
+        match key {
+            KeyEvent::Char(c) => {
+                self.line_buffer.insert(self.cursor_pos, c);
+                self.cursor_pos += c.len_utf8();
+                self.refresh_line()
+            }
+            KeyEvent::Enter => {
+                let input = self.line_buffer.trim().to_string();
+                self.line_buffer.clear();
+                self.cursor_pos = 0;
+
+                if input.is_empty() {
+                    return format!("\r\n{CHAT_PROMPT}");
+                }
+
+                let mut out = String::from("\r\n");
+
+                // Handle / commands
+                if input.starts_with('/') {
+                    let parts: Vec<&str> = input.splitn(2, char::is_whitespace).collect();
+                    let cmd = parts[0].to_lowercase();
+                    let arg = parts.get(1).map(|s| s.trim()).unwrap_or("");
+
+                    match cmd.as_str() {
+                        "/quit" | "/exit" | "/q" => {
+                            self.chat = None;
+                            out.push_str(&format!("{GRAY}Exited chat mode{RESET}\r\n{PROMPT}"));
+                            return out;
+                        }
+                        "/agent" => {
+                            if arg.is_empty() {
+                                let agent = &self.chat.as_ref().unwrap().agent;
+                                out.push_str(&format!("{GRAY}Current agent: {CYAN}{agent}{RESET}\r\n"));
+                                out.push_str(&format!("{GRAY}Available: opencode, claude, codex, copilot{RESET}\r\n"));
+                            } else {
+                                let valid = ["opencode", "claude", "codex", "copilot"];
+                                if valid.contains(&arg) {
+                                    self.chat.as_mut().unwrap().agent = arg.to_string();
+                                    out.push_str(&format!("{GREEN}Agent set to {CYAN}{arg}{RESET}\r\n"));
+                                } else {
+                                    out.push_str(&format!("{RED}Unknown agent: {arg}. Available: opencode, claude, codex, copilot{RESET}\r\n"));
+                                }
+                            }
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        "/model" => {
+                            if arg.is_empty() {
+                                let model = &self.chat.as_ref().unwrap().model;
+                                if model.is_empty() {
+                                    out.push_str(&format!("{GRAY}Model: (agent default){RESET}\r\n"));
+                                } else {
+                                    out.push_str(&format!("{GRAY}Model: {CYAN}{model}{RESET}\r\n"));
+                                }
+                                out.push_str(&format!("{GRAY}Use /model <id> to change, /models to list available{RESET}\r\n"));
+                            } else {
+                                self.chat.as_mut().unwrap().model = arg.to_string();
+                                out.push_str(&format!("{GREEN}Model set to {CYAN}{arg}{RESET}\r\n"));
+                            }
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        "/models" => {
+                            // List models via REST sentinel (native-only trait)
+                            let agent = self.chat.as_ref().unwrap().agent.clone();
+                            out.push_str(&format!("{GRAY}Fetching models…{RESET}\r\n"));
+                            out.push_str(&format!(
+                                "{REST_SENTINEL_START}{{\"p\":\"llm.prompt.acp.list\",\"a\":[\".\",\"{agent}\"],\"rp\":\"{}\"}}{REST_SENTINEL_END}",
+                                CHAT_PROMPT.replace('"', "\\\"")
+                            ));
+                            return out;
+                        }
+                        "/status" => {
+                            let chat = self.chat.as_ref().unwrap();
+                            out.push_str(&format!("{GRAY}Agent: {CYAN}{}{RESET}\r\n", chat.agent));
+                            let m = if chat.model.is_empty() { "(agent default)" } else { &chat.model };
+                            out.push_str(&format!("{GRAY}Model: {CYAN}{m}{RESET}\r\n"));
+                            out.push_str(&format!("{GRAY}Session: {}{RESET}\r\n", chat.session_id));
+                            out.push_str(&format!("{GRAY}Messages: {}{RESET}\r\n", chat.message_count));
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        "/clear" => {
+                            out.push_str(CLEAR_SENTINEL);
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        "/history" => {
+                            let session_id = self.chat.as_ref().unwrap().session_id.clone();
+                            let key = format!("chat/{session_id}.json");
+                            let vfs_ref = self.vfs.borrow();
+                            match vfs_ref.read(&key) {
+                                Some(content) => {
+                                    // Parse and display nicely
+                                    if let Ok(msgs) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                                        for msg in &msgs {
+                                            let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("?");
+                                            let text = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                            let color = if role == "user" { GREEN } else { CYAN };
+                                            let label = if role == "user" { "You" } else { "AI" };
+                                            out.push_str(&format!("{color}{BOLD}{label}:{RESET} "));
+                                            for line in text.lines() {
+                                                out.push_str(line);
+                                                out.push_str("\r\n");
+                                            }
+                                        }
+                                        if msgs.is_empty() {
+                                            out.push_str(&format!("{GRAY}No messages yet{RESET}\r\n"));
+                                        }
+                                    } else {
+                                        out.push_str(&content.replace('\n', "\r\n"));
+                                        out.push_str("\r\n");
+                                    }
+                                }
+                                None => {
+                                    out.push_str(&format!("{GRAY}No messages yet{RESET}\r\n"));
+                                }
+                            }
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        "/help" | "/?" => {
+                            out.push_str(&format!("{BOLD}{BRIGHT_WHITE}Chat commands{RESET}\r\n"));
+                            out.push_str(&format!("  {GREEN}/agent{RESET} {GRAY}[name]{RESET}     Show or switch ACP agent\r\n"));
+                            out.push_str(&format!("  {GREEN}/model{RESET} {GRAY}[id]{RESET}       Show or switch model\r\n"));
+                            out.push_str(&format!("  {GREEN}/models{RESET}              List available models\r\n"));
+                            out.push_str(&format!("  {GREEN}/status{RESET}              Show session status\r\n"));
+                            out.push_str(&format!("  {GREEN}/history{RESET}             Show conversation history\r\n"));
+                            out.push_str(&format!("  {GREEN}/clear{RESET}               Clear terminal\r\n"));
+                            out.push_str(&format!("  {GREEN}/quit{RESET}                Exit chat mode\r\n"));
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        _ => {
+                            out.push_str(&format!("{RED}Unknown command: {cmd}. Type /help for commands.{RESET}\r\n"));
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                    }
+                }
+
+                // Regular message — save to VFS and dispatch via ACP
+                self.history.push(input.clone());
+                self.hist_idx = self.history.len() as isize;
+
+                let (agent, model, cwd, session_id) = {
+                    let c = self.chat.as_mut().unwrap();
+                    c.message_count += 1;
+                    (c.agent.clone(), c.model.clone(), c.cwd.clone(), c.session_id.clone())
+                };
+
+                // Save user message to VFS
+                {
+                    let vfs_key = format!("chat/{session_id}.json");
+                    let mut vfs_ref = self.vfs.borrow_mut();
+                    let mut msgs: Vec<serde_json::Value> = vfs_ref.read(&vfs_key)
+                        .and_then(|s| serde_json::from_str(&s).ok())
+                        .unwrap_or_default();
+                    msgs.push(serde_json::json!({"role": "user", "content": &input}));
+                    if let Ok(json) = serde_json::to_string(&msgs) {
+                        vfs_ref.write(&vfs_key, &json);
+                    }
+                }
+
+                // Build REST sentinel for llm.prompt.acp
+                let escaped_prompt = input.replace('\\', "\\\\").replace('"', "\\\"");
+                let model_arg = if model.is_empty() { "".to_string() } else { model.clone() };
+                let escaped_rp = CHAT_PROMPT.replace('\\', "\\\\").replace('"', "\\\"");
+                let chat_meta = format!(
+                    "\"sid\":\"{session_id}\",\"rp\":\"{escaped_rp}\""
+                );
+
+                out.push_str(&format!("{GRAY}thinking…{RESET}\r\n"));
+                out.push_str(&format!(
+                    "{REST_SENTINEL_START}{{\"p\":\"llm.prompt.acp\",\"a\":[\"{escaped_prompt}\",\"{agent}\",\"{cwd}\",\"false\",\"{model_arg}\"],{chat_meta}}}{REST_SENTINEL_END}"
+                ));
+                out
+            }
+
+            KeyEvent::Tab => String::new(), // No tab completion in chat mode
+            KeyEvent::Up => {
+                if self.history.is_empty() { return String::new(); }
+                if self.hist_idx > 0 { self.hist_idx -= 1; }
+                if self.hist_idx >= 0 {
+                    self.line_buffer = self.history[self.hist_idx as usize].clone();
+                    self.cursor_pos = self.line_buffer.len();
+                }
+                self.refresh_line()
+            }
+            KeyEvent::Down => {
+                if self.hist_idx < 0 { return String::new(); }
+                if (self.hist_idx as usize) < self.history.len() - 1 {
+                    self.hist_idx += 1;
+                    self.line_buffer = self.history[self.hist_idx as usize].clone();
+                    self.cursor_pos = self.line_buffer.len();
+                } else {
+                    self.hist_idx = self.history.len() as isize;
+                    self.line_buffer.clear();
+                    self.cursor_pos = 0;
+                }
+                self.refresh_line()
+            }
+            KeyEvent::CtrlC => {
+                self.chat = None;
+                self.line_buffer.clear();
+                self.cursor_pos = 0;
+                format!("^C\r\n{GRAY}Exited chat mode{RESET}\r\n{PROMPT}")
+            }
+            KeyEvent::CtrlD => {
+                self.chat = None;
+                self.line_buffer.clear();
+                self.cursor_pos = 0;
+                format!("\r\n{GRAY}Exited chat mode{RESET}\r\n{PROMPT}")
+            }
+            KeyEvent::CtrlL => {
+                let mut out = String::from(CLEAR_SENTINEL);
+                out.push_str(CHAT_PROMPT);
+                out.push_str(&self.line_buffer);
+                let tail = self.line_buffer.len() - self.cursor_pos;
+                if tail > 0 { out.push_str(&format!("\x1b[{}D", tail)); }
+                out
+            }
+            _ => self.handle_editing_key(key),
+        }
+    }
+
     // ── Tab completion (normal mode) ──
 
     fn tab_complete_normal(&mut self, backend: &dyn CliBackend) -> String {
@@ -844,7 +1144,9 @@ impl CliSession {
     // ── Line refresh ──
 
     fn refresh_line(&self) -> String {
-        let prompt = if self.interactive.is_some() { IPROMPT } else { PROMPT };
+        let prompt = if self.interactive.is_some() { IPROMPT }
+                     else if self.chat.is_some() { CHAT_PROMPT }
+                     else { PROMPT };
         let mut out = format!("\x1b[2K\r{}{}", prompt, self.line_buffer);
         let tail = self.line_buffer.len() - self.cursor_pos;
         if tail > 0 {
@@ -1219,6 +1521,7 @@ fn format_help() -> String {
     s.push_str(&format!("  {GREEN}call -i{RESET} {GRAY}<path>{RESET}           Interactive mode (prompt each param)\r\n"));
     s.push_str(&format!("  {GREEN}search{RESET} {GRAY}<query>{RESET}           Search by name or description\r\n"));
     s.push_str(&format!("  {GRAY}<path> [args...]{RESET}           Shorthand — call trait directly\r\n"));
+    s.push_str(&format!("  {GREEN}chat{RESET} {GRAY}[agent] [model]{RESET}     Enter interactive chat mode (ACP)\r\n"));
     s.push_str(&format!("  {GREEN}version{RESET}                    Show kernel version\r\n"));
     s.push_str(&format!("  {GREEN}clear{RESET}                      Clear terminal\r\n"));
     s.push_str(&format!("  {GREEN}help{RESET}                       Show this help\r\n"));
