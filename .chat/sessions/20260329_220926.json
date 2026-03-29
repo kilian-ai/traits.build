@@ -337,6 +337,74 @@
     {
       "content": "Okay.",
       "role": "user"
+    },
+    {
+      "content": "Kannst du jetzt die Instruktionen in dem Kontext sehen? Sind die injected?",
+      "role": "user"
+    },
+    {
+      "content": "Ich kann die Instruktionen nicht direkt sehen. Ich folge einfach dem Kontext unserer Unterhaltung und passe meine Antworten entsprechend an. Wenn du etwas Bestimmtes brauchst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "You",
+      "role": "user"
+    },
+    {
+      "content": "Perfekt, dann weiß ich Bescheid. Wenn du was anpassen willst, einfach sagen. Ich bin flexibel.",
+      "role": "assistant"
+    },
+    {
+      "content": "Okay, wir müssen das mal stoppen.",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, kein Problem. Sag einfach Bescheid, wenn du wieder weitermachen möchtest.",
+      "role": "assistant"
+    },
+    {
+      "content": "so kannst du die mcp-tools sehen",
+      "role": "user"
+    },
+    {
+      "content": "Ich kann sehen, dass es hier Funktionsaufrufe gibt, die MCP-Tools repräsentieren. Also ja, ich habe Zugriff auf Funktionen, die als Tools genutzt werden können. Wenn du eine bestimmte Funktion aufrufen willst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "You",
+      "role": "user"
+    },
+    {
+      "content": "Dann können wir schon die Stimme umstellen, im Sinne von der Stimme.",
+      "role": "user"
+    },
+    {
+      "content": "Die Stimme, die du hier hörst, ist aktuell fest eingestellt. Eine dynamische Anpassung der Stimme an andere Stile oder Tonlagen ist im Moment leider nicht möglich. Wenn sich das in Zukunft ändert, kann ich dich gern informieren.",
+      "role": "assistant"
+    },
+    {
+      "content": "You",
+      "role": "user"
+    },
+    {
+      "content": "Kein Problem, ich passe mich einfach an das an, was gerade geht. Wenn du noch andere Fragen hast oder über etwas anderes sprechen willst, immer her damit.",
+      "role": "assistant"
+    },
+    {
+      "content": "Bye.",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, dann warte ich einfach, bis du wieder etwas brauchst. Lass dir ruhig Zeit.",
+      "role": "assistant"
+    },
+    {
+      "content": "you",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, ich bin hier, wenn du wieder etwas brauchst.",
+      "role": "assistant"
     }
   ],
   "model": "",

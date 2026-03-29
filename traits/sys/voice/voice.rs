@@ -1,6 +1,7 @@
 use serde_json::{json, Value, Map};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::time::Instant;
 
 const VOICE_INSTRUCTIONS: &str = include_str!("realtime_instructions.md");
 
@@ -193,13 +194,13 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
         "input_audio_format": "pcm16",
         "output_audio_format": "pcm16",
         "input_audio_noise_reduction": {
-            "type": "near_field"
+            "type": "far_field"
         },
         "turn_detection": {
             "type": "server_vad",
-            "threshold": 0.7,
+            "threshold": 0.8,
             "prefix_padding_ms": 300,
-            "silence_duration_ms": 700
+            "silence_duration_ms": 800
         },
         "input_audio_transcription": {
             "model": "whisper-1"
@@ -252,6 +253,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
 
     // ── Main event loop ──
     let mut turns = 0u32;
+    let mut unmute_at: Option<Instant> = None;
 
     while VOICE_RUNNING.load(Ordering::Relaxed) {
         // 1. Read server events
@@ -411,16 +413,30 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
             _ => {}
         }
 
-        // 2. Check if playback finished — unmute mic
+        // 2. Check if playback finished — unmute mic with settling delay
+        //    The mic thread's read_exact may still contain speaker tail audio
+        //    right after the play process exits. Wait 400ms to let room settle.
         if !PLAYBACK_IDLE.load(Ordering::Relaxed) {
-            // Still playing — keep mic muted
+            // Still playing — keep mic muted, reset settle timer
+            unmute_at = None;
         } else if MIC_MUTED.load(Ordering::Relaxed) {
-            // Playback is idle — drain stale mic data, then unmute
-            while mic_rx.try_recv().is_ok() {}
-            // One more server buffer clear after playback actually finished
-            let clear_ev = json!({"type": "input_audio_buffer.clear"});
-            ws.send(Message::Text(clear_ev.to_string())).ok();
-            MIC_MUTED.store(false, Ordering::Relaxed);
+            if unmute_at.is_none() {
+                // Playback just finished — start 400ms settling period
+                while mic_rx.try_recv().is_ok() {}
+                let clear_ev = json!({"type": "input_audio_buffer.clear"});
+                ws.send(Message::Text(clear_ev.to_string())).ok();
+                unmute_at = Some(Instant::now() + Duration::from_millis(400));
+            } else if Instant::now() >= unmute_at.unwrap() {
+                // Settling done — drain once more and unmute
+                while mic_rx.try_recv().is_ok() {}
+                let clear_ev = json!({"type": "input_audio_buffer.clear"});
+                ws.send(Message::Text(clear_ev.to_string())).ok();
+                MIC_MUTED.store(false, Ordering::Relaxed);
+                unmute_at = None;
+            } else {
+                // Still settling — keep draining stale mic data
+                while mic_rx.try_recv().is_ok() {}
+            }
         }
 
         // 3. Send queued mic audio to server (drop chunks while muted)
