@@ -583,20 +583,21 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                     _ => {
                         if use_stream && path == "llm.prompt.acp" {
                             // Streaming: call ACP directly, print chunks as they arrive
+                            // Raw mode: \n alone doesn't carriage-return, so convert to \r\n
                             let mut first = true;
                             crate::dispatcher::compiled::acp::acp_proxy_dispatch_streaming(
                                 &args,
                                 &mut |chunk: &str| {
                                     if first {
                                         // Clear the "thinking…" line
-                                        print!("\x1b[A\x1b[2K");
+                                        print!("\x1b[A\x1b[2K\r");
                                         first = false;
                                     }
-                                    print!("{}", chunk);
+                                    print!("{}", chunk.replace('\n', "\r\n"));
                                     std::io::stdout().flush().ok();
                                 },
                             );
-                            if !first { println!(); } // newline after streamed output
+                            if !first { print!("\r\n"); } // newline after streamed output
                         } else {
                             // Default: non-streaming compiled dispatch
                             match backend.call(path, &args) {
@@ -749,15 +750,16 @@ fn dispatch_via_rest_stream(path: &str, args: &[serde_json::Value], target: &str
                         let text: String = serde_json::from_str(data)
                             .unwrap_or_else(|_| data.to_string());
                         if first {
-                            print!("\x1b[A\x1b[2K"); // Clear "thinking…" line
+                            print!("\x1b[A\x1b[2K\r"); // Clear "thinking…" line
                             first = false;
                         }
-                        print!("{}", text);
+                        // Raw mode: \n alone doesn't carriage-return
+                        print!("{}", text.replace('\n', "\r\n"));
                         std::io::stdout().flush().ok();
                     }
                 }
             }
-            if !first { println!(); }
+            if !first { print!("\r\n"); }
             let _ = child.wait();
         }
         Err(e) => {
