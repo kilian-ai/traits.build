@@ -76,14 +76,29 @@ fn record_audio(duration: u32) -> Result<String, String> {
     // Try sox/rec first (cross-platform, best quality)
     if which("rec") {
         let status = Command::new("rec")
-            .args([&out_path, "rate", "16000", "channels", "1",
-                   "trim", "0", &dur_str,
-                   // Voice-activity silence detection: stop after 1.5s of silence
-                   "silence", "1", "0.1", "3%", "1", "1.5", "3%"])
+            .args([
+                "-q",           // suppress progress output
+                &out_path,
+                "rate", "16000",
+                "channels", "1",
+                "trim", "0", &dur_str,
+                // Voice-activity silence detection:
+                //   Start recording after any non-silence (0.1s above 1% threshold),
+                //   stop after 2s of silence (below 1%).
+                //   Low 1% threshold avoids treating quiet speech as silence.
+                "silence", "1", "0.1", "1%", "1", "2.0", "1%",
+            ])
+            .stderr(std::process::Stdio::null())
             .status()
             .map_err(|e| format!("rec failed: {}", e))?;
         if !status.success() {
             return Err("Audio recording failed (rec)".into());
+        }
+        // Check if file has meaningful content (sox may exit 0 with tiny/empty file)
+        let file_size = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
+        if file_size < 1000 {
+            let _ = std::fs::remove_file(&out_path);
+            return Err("No speech detected. If your mic is working, check that your terminal app has Microphone permission in System Settings → Privacy & Security.".into());
         }
         return Ok(out_path);
     }

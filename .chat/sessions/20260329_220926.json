@@ -1,0 +1,32 @@
+{
+  "agent": "speech",
+  "created": "20260329_220926",
+  "messages": [
+    {
+      "content": "voice",
+      "role": "user"
+    },
+    {
+      "content": "speech",
+      "role": "user"
+    },
+    {
+      "content": "how to enable the voice",
+      "role": "user"
+    },
+    {
+      "content": "There's a `sys.voice` trait that starts a voice chat loop. Enable it with:\n\n```bash\ntraits call sys.voice\n```\n\n**Options:**\n- `agent` — which AI to chat with: `opencode`, `claude`, `codex`, `copilot` (default: `opencode`)\n- `voice` — TTS voice: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` (default: `nova`)\n- `model` — model override\n- `duration` — max listen time per turn in seconds (default: `15`)\n\n**Example with options:**\n```bash\ntraits call sys.voice agent=claude voice=shimmer duration=20\n```\n\nIt replaces the terminal keyboard/screen with microphone/speaker for a full voice chat session.",
+      "role": "assistant"
+    },
+    {
+      "content": "voice alloy",
+      "role": "user"
+    },
+    {
+      "content": "voice alloy",
+      "role": "user"
+    }
+  ],
+  "model": "",
+  "session_id": "20260329_220926"
+}
