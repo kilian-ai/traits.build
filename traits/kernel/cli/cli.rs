@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::cell::RefCell;
@@ -426,7 +426,7 @@ impl CliSession {
                     let model = parts.get(2).map(|s| s.as_str()).unwrap_or("");
                     self.history.push(input);
                     self.hist_idx = self.history.len() as isize;
-                    out.push_str(&self.start_chat(agent, model));
+                    out.push_str(&self.start_chat(agent, model, None));
                     return out;
                 }
 
@@ -776,28 +776,80 @@ impl CliSession {
     // ── Chat mode ──
 
     /// Enter interactive chat mode with an ACP agent.
-    pub fn start_chat(&mut self, agent: &str, model: &str) -> String {
+    ///
+    /// If `resume_id` is Some, resumes that session from disk.
+    /// If None, creates a new session via sys.chat.
+    pub fn start_chat(&mut self, agent: &str, model: &str, resume_id: Option<&str>) -> String {
         let cwd = ".".to_string();
-        // Generate session ID from platform time
-        let (y, mo, d, h, m, s) = kernel_logic::platform::time::now_utc();
-        let session_id = format!("{y:04}{mo:02}{d:02}_{h:02}{m:02}{s:02}");
+
+        let (session_id, message_count, actual_agent, actual_model, resumed) =
+            if let Some(rid) = resume_id {
+                // Try resuming: load session metadata from disk
+                if let Some(result) = kernel_logic::platform::dispatch(
+                    "sys.chat", &[json!("get"), json!(rid)],
+                ) {
+                    if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                        if let Some(sess) = result.get("session") {
+                            let mc = sess.get("messages")
+                                .and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+                            let sa = sess.get("agent").and_then(|v| v.as_str())
+                                .unwrap_or(agent).to_string();
+                            let sm = sess.get("model").and_then(|v| v.as_str())
+                                .unwrap_or(model).to_string();
+                            // Mark it as current
+                            kernel_logic::platform::dispatch(
+                                "sys.chat", &[json!("switch"), json!(rid)],
+                            );
+                            (rid.to_string(), mc, sa, sm, true)
+                        } else {
+                            // Session data missing — create new
+                            Self::create_chat_session(agent, model)
+                        }
+                    } else {
+                        Self::create_chat_session(agent, model)
+                    }
+                } else {
+                    Self::create_chat_session(agent, model)
+                }
+            } else {
+                Self::create_chat_session(agent, model)
+            };
+
         self.chat = Some(ChatState {
-            agent: agent.to_string(),
-            model: model.to_string(),
+            agent: actual_agent.clone(),
+            model: actual_model.clone(),
             cwd,
-            session_id,
-            message_count: 0,
+            session_id: session_id.clone(),
+            message_count,
         });
         let mut out = String::new();
         out.push_str(&format!("\r\n{CYAN}{BOLD}Chat mode{RESET}"));
-        out.push_str(&format!(" {GRAY}(agent: {agent}"));
-        if !model.is_empty() {
-            out.push_str(&format!(", model: {model}"));
+        out.push_str(&format!(" {GRAY}(agent: {actual_agent}"));
+        if !actual_model.is_empty() {
+            out.push_str(&format!(", model: {actual_model}"));
+        }
+        if resumed {
+            out.push_str(&format!(", session: {session_id}, {message_count} msgs"));
         }
         out.push_str(&format!("){RESET}\r\n"));
-        out.push_str(&format!("{GRAY}Type a message to chat. Commands: /agent, /model, /models, /status, /history, /clear, /quit{RESET}\r\n"));
+        out.push_str(&format!("{GRAY}Type a message to chat. Commands: /sessions, /new, /agent, /model, /status, /history, /help, /quit{RESET}\r\n"));
         out.push_str(CHAT_PROMPT);
         out
+    }
+
+    /// Create a new chat session via sys.chat and return (id, count, agent, model, resumed).
+    fn create_chat_session(agent: &str, model: &str) -> (String, usize, String, String, bool) {
+        if let Some(result) = kernel_logic::platform::dispatch(
+            "sys.chat", &[json!("new"), json!(agent), json!(model)],
+        ) {
+            if let Some(sid) = result.get("session_id").and_then(|v| v.as_str()) {
+                return (sid.to_string(), 0, agent.to_string(), model.to_string(), false);
+            }
+        }
+        // Fallback: generate ID locally if sys.chat not available
+        let (y, mo, d, h, m, s) = kernel_logic::platform::time::now_utc();
+        let session_id = format!("{y:04}{mo:02}{d:02}_{h:02}{m:02}{s:02}");
+        (session_id, 0, agent.to_string(), model.to_string(), false)
     }
 
     /// Check if session is in chat mode.
@@ -905,13 +957,16 @@ impl CliSession {
                         }
                         "/history" => {
                             let session_id = self.chat.as_ref().unwrap().session_id.clone();
-                            let key = format!("chat/{session_id}.json");
-                            let vfs_ref = self.vfs.borrow();
-                            match vfs_ref.read(&key) {
-                                Some(content) => {
-                                    // Parse and display nicely
-                                    if let Ok(msgs) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-                                        for msg in &msgs {
+                            // Read from disk via sys.chat (persistent)
+                            if let Some(result) = kernel_logic::platform::dispatch(
+                                "sys.chat", &[json!("get"), json!(&session_id)],
+                            ) {
+                                if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                                    if let Some(msgs) = result.get("session")
+                                        .and_then(|s| s.get("messages"))
+                                        .and_then(|m| m.as_array())
+                                    {
+                                        for msg in msgs {
                                             let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("?");
                                             let text = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
                                             let color = if role == "user" { GREEN } else { CYAN };
@@ -926,12 +981,105 @@ impl CliSession {
                                             out.push_str(&format!("{GRAY}No messages yet{RESET}\r\n"));
                                         }
                                     } else {
-                                        out.push_str(&content.replace('\n', "\r\n"));
-                                        out.push_str("\r\n");
+                                        out.push_str(&format!("{GRAY}No messages yet{RESET}\r\n"));
+                                    }
+                                } else {
+                                    out.push_str(&format!("{GRAY}No messages yet{RESET}\r\n"));
+                                }
+                            } else {
+                                out.push_str(&format!("{GRAY}No messages yet{RESET}\r\n"));
+                            }
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        "/sessions" | "/ls" => {
+                            if let Some(result) = kernel_logic::platform::dispatch(
+                                "sys.chat", &[json!("list")],
+                            ) {
+                                if let Some(sessions) = result.get("sessions").and_then(|v| v.as_array()) {
+                                    if sessions.is_empty() {
+                                        out.push_str(&format!("{GRAY}No saved sessions{RESET}\r\n"));
+                                    } else {
+                                        let current_sid = self.chat.as_ref().map(|c| c.session_id.as_str());
+                                        out.push_str(&format!("{BOLD}{BRIGHT_WHITE}Sessions:{RESET}\r\n"));
+                                        for s in sessions {
+                                            let sid = s.get("session_id").and_then(|v| v.as_str()).unwrap_or("?");
+                                            let agent = s.get("agent").and_then(|v| v.as_str()).unwrap_or("?");
+                                            let mc = s.get("messages").and_then(|v| v.as_u64()).unwrap_or(0);
+                                            let marker = if current_sid == Some(sid) { " ◀" } else { "" };
+                                            out.push_str(&format!("  {CYAN}{sid}{RESET} {GRAY}{agent} ({mc} msgs){marker}{RESET}\r\n"));
+                                        }
+                                        out.push_str(&format!("{GRAY}Switch: /session <id>{RESET}\r\n"));
                                     }
                                 }
-                                None => {
-                                    out.push_str(&format!("{GRAY}No messages yet{RESET}\r\n"));
+                            } else {
+                                out.push_str(&format!("{GRAY}Session listing not available{RESET}\r\n"));
+                            }
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        "/session" => {
+                            if arg.is_empty() {
+                                let chat = self.chat.as_ref().unwrap();
+                                out.push_str(&format!("{GRAY}Current session: {CYAN}{}{RESET}\r\n", chat.session_id));
+                                out.push_str(&format!("{GRAY}Use /session <id> to switch{RESET}\r\n"));
+                            } else {
+                                // Switch to a different session
+                                if let Some(result) = kernel_logic::platform::dispatch(
+                                    "sys.chat", &[json!("switch"), json!(arg)],
+                                ) {
+                                    if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                                        let mc = result.get("messages").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                        let agent = result.get("agent").and_then(|v| v.as_str())
+                                            .unwrap_or(&self.chat.as_ref().unwrap().agent).to_string();
+                                        let model = result.get("model").and_then(|v| v.as_str())
+                                            .unwrap_or(&self.chat.as_ref().unwrap().model).to_string();
+                                        let chat = self.chat.as_mut().unwrap();
+                                        chat.session_id = arg.to_string();
+                                        chat.message_count = mc;
+                                        chat.agent = agent;
+                                        chat.model = model.clone();
+                                        out.push_str(&format!("{GREEN}Switched to session {CYAN}{arg}{RESET}"));
+                                        out.push_str(&format!(" {GRAY}({mc} msgs){RESET}\r\n"));
+                                    } else {
+                                        let err = result.get("error").and_then(|v| v.as_str()).unwrap_or("not found");
+                                        out.push_str(&format!("{RED}{err}{RESET}\r\n"));
+                                    }
+                                }
+                            }
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        "/new" => {
+                            let chat = self.chat.as_ref().unwrap();
+                            let agent = if !arg.is_empty() { arg.to_string() } else { chat.agent.clone() };
+                            let model = chat.model.clone();
+                            let (sid, _, _, _, _) = Self::create_chat_session(&agent, &model);
+                            let chat = self.chat.as_mut().unwrap();
+                            chat.session_id = sid.clone();
+                            chat.message_count = 0;
+                            chat.agent = agent.clone();
+                            out.push_str(&format!("{GREEN}New session: {CYAN}{sid}{RESET}"));
+                            out.push_str(&format!(" {GRAY}(agent: {agent}){RESET}\r\n"));
+                            out.push_str(CHAT_PROMPT);
+                            return out;
+                        }
+                        "/delete" => {
+                            if arg.is_empty() {
+                                out.push_str(&format!("{GRAY}Usage: /delete <session_id>{RESET}\r\n"));
+                            } else {
+                                let current_sid = self.chat.as_ref().map(|c| c.session_id.as_str());
+                                if current_sid == Some(arg) {
+                                    out.push_str(&format!("{RED}Cannot delete the active session{RESET}\r\n"));
+                                } else if let Some(result) = kernel_logic::platform::dispatch(
+                                    "sys.chat", &[json!("delete"), json!(arg)],
+                                ) {
+                                    if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                                        out.push_str(&format!("{GREEN}Deleted session {arg}{RESET}\r\n"));
+                                    } else {
+                                        let err = result.get("error").and_then(|v| v.as_str()).unwrap_or("failed");
+                                        out.push_str(&format!("{RED}{err}{RESET}\r\n"));
+                                    }
                                 }
                             }
                             out.push_str(CHAT_PROMPT);
@@ -953,10 +1101,14 @@ impl CliSession {
                         }
                         "/help" | "/?" => {
                             out.push_str(&format!("{BOLD}{BRIGHT_WHITE}Chat commands{RESET}\r\n"));
-                            out.push_str(&format!("  {GREEN}/agent{RESET} {GRAY}[name]{RESET}     Show or switch ACP agent\r\n"));
-                            out.push_str(&format!("  {GREEN}/model{RESET} {GRAY}[id]{RESET}       Show or switch model\r\n"));
+                            out.push_str(&format!("  {GREEN}/sessions{RESET}            List all saved sessions\r\n"));
+                            out.push_str(&format!("  {GREEN}/session{RESET} {GRAY}[id]{RESET}      Show or switch session\r\n"));
+                            out.push_str(&format!("  {GREEN}/new{RESET} {GRAY}[agent]{RESET}       Start a new session\r\n"));
+                            out.push_str(&format!("  {GREEN}/delete{RESET} {GRAY}<id>{RESET}       Delete a session\r\n"));
+                            out.push_str(&format!("  {GREEN}/agent{RESET} {GRAY}[name]{RESET}      Show or switch ACP agent\r\n"));
+                            out.push_str(&format!("  {GREEN}/model{RESET} {GRAY}[id]{RESET}        Show or switch model\r\n"));
                             out.push_str(&format!("  {GREEN}/models{RESET}              List available models\r\n"));
-                            out.push_str(&format!("  {GREEN}/voice{RESET} {GRAY}[name]{RESET}     Switch to voice I/O (speak/listen)\r\n"));
+                            out.push_str(&format!("  {GREEN}/voice{RESET} {GRAY}[name]{RESET}      Switch to voice I/O (speak/listen)\r\n"));
                             out.push_str(&format!("  {GREEN}/status{RESET}              Show session status\r\n"));
                             out.push_str(&format!("  {GREEN}/history{RESET}             Show conversation history\r\n"));
                             out.push_str(&format!("  {GREEN}/clear{RESET}               Clear terminal\r\n"));
@@ -972,7 +1124,7 @@ impl CliSession {
                     }
                 }
 
-                // Regular message — save to VFS and dispatch via ACP
+                // Regular message — persist to disk and dispatch via ACP
                 self.history.push(input.clone());
                 self.hist_idx = self.history.len() as isize;
 
@@ -982,18 +1134,11 @@ impl CliSession {
                     (c.agent.clone(), c.model.clone(), c.cwd.clone(), c.session_id.clone())
                 };
 
-                // Save user message to VFS
-                {
-                    let vfs_key = format!("chat/{session_id}.json");
-                    let mut vfs_ref = self.vfs.borrow_mut();
-                    let mut msgs: Vec<serde_json::Value> = vfs_ref.read(&vfs_key)
-                        .and_then(|s| serde_json::from_str(&s).ok())
-                        .unwrap_or_default();
-                    msgs.push(serde_json::json!({"role": "user", "content": &input}));
-                    if let Ok(json) = serde_json::to_string(&msgs) {
-                        vfs_ref.write(&vfs_key, &json);
-                    }
-                }
+                // Save user message to disk via sys.chat
+                kernel_logic::platform::dispatch(
+                    "sys.chat",
+                    &[json!("append"), json!(&session_id), json!("user"), json!(&input)],
+                );
 
                 // Build REST sentinel for llm.prompt.acp (streaming)
                 let model_arg = if model.is_empty() { "" } else { &model };

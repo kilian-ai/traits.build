@@ -1,0 +1,72 @@
+{
+  "trait": "sys.chat",
+  "description": "Chat session management — persistent session CRUD",
+  "features": [
+    {
+      "name": "list sessions (empty)",
+      "tests": [
+        {
+          "type": "json_path",
+          "command": "traits call sys.chat list",
+          "path": "$.ok",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "create new session",
+      "tests": [
+        {
+          "type": "json_path",
+          "command": "traits call sys.chat new test-agent test-model",
+          "path": "$.ok",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "current session after create",
+      "tests": [
+        {
+          "type": "json_path",
+          "command": "traits call sys.chat current",
+          "path": "$.ok",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "missing action returns error",
+      "tests": [
+        {
+          "type": "json_path",
+          "command": "traits call sys.chat",
+          "path": "$.ok",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "name": "get nonexistent session",
+      "tests": [
+        {
+          "type": "json_path",
+          "command": "traits call sys.chat get nonexistent_session",
+          "path": "$.ok",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "name": "unknown action returns error",
+      "tests": [
+        {
+          "type": "json_path",
+          "command": "traits call sys.chat foobar",
+          "path": "$.ok",
+          "expected": false
+        }
+      ]
+    }
+  ]
+}

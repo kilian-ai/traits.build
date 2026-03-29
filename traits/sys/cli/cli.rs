@@ -585,6 +585,7 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                             // Streaming: call ACP directly, print chunks as they arrive
                             // Raw mode: \n alone doesn't carriage-return, so convert to \r\n
                             let mut first = true;
+                            let mut full_response = String::new();
                             let result = crate::dispatcher::compiled::acp::acp_proxy_dispatch_streaming(
                                 &args,
                                 &mut |chunk: &str| {
@@ -593,6 +594,7 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                                         print!("\x1b[A\x1b[2K\r");
                                         first = false;
                                     }
+                                    full_response.push_str(chunk);
                                     print!("{}", chunk.replace('\n', "\r\n"));
                                     std::io::stdout().flush().ok();
                                 },
@@ -601,6 +603,7 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                                 // No chunks arrived — fallback: print full result
                                 print!("\x1b[A\x1b[2K\r"); // clear "thinking…"
                                 if let Some(text) = result.as_str() {
+                                    full_response = text.to_string();
                                     print!("{}", text.replace('\n', "\r\n"));
                                 } else if let Some(err) = result.get("error").and_then(|e| e.as_str()) {
                                     print!("\x1b[31mError: {}\x1b[0m", err);
@@ -608,6 +611,21 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                             }
                             print!("\r\n");
                             std::io::stdout().flush().ok();
+
+                            // Save assistant response to session on disk
+                            if let Some(sid) = parsed.get("sid").and_then(|v| v.as_str()) {
+                                if !full_response.is_empty() {
+                                    crate::dispatcher::compiled::dispatch(
+                                        "sys.chat",
+                                        &[
+                                            serde_json::json!("append"),
+                                            serde_json::json!(sid),
+                                            serde_json::json!("assistant"),
+                                            serde_json::json!(full_response),
+                                        ],
+                                    );
+                                }
+                            }
                         } else {
                             // Default: non-streaming compiled dispatch
                             // Clear the progress line (e.g. "Fetching models…") above
@@ -884,8 +902,20 @@ async fn chat_call(
     let mut session = CliSession::new();
     session.load_history(&backend);
 
-    // Enter chat mode directly
-    let banner = session.start_chat(agent, model);
+    // Check for last session to resume
+    let resume_id: Option<String> = crate::dispatcher::compiled::dispatch(
+        "sys.chat",
+        &[serde_json::json!("current")],
+    ).and_then(|r| {
+        if r.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+            r.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string())
+        } else {
+            None
+        }
+    });
+
+    // Enter chat mode — resume last session or create new
+    let banner = session.start_chat(agent, model, resume_id.as_deref());
     print!("{}", banner);
     std::io::stdout().flush()?;
 

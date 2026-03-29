@@ -1,0 +1,23 @@
+[trait]
+description = "Chat session management — list, create, switch, delete sessions (MCP-callable)"
+version = "v260329.220223"
+checksum = "c4469450f7494aad78cccfcb82b1d5f0660ba38475b23c67a257746082f1307d"
+author = "system"
+tags = ["sys", "chat", "session", "mcp"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "Action: list, get, new, switch, delete, current, append", required = true },
+  { name = "session_id", type = "string", description = "Session ID (for get/switch/delete/append) or agent name (for new)", required = false },
+  { name = "data", type = "string", description = "Extra data: model (for new), role (for append), message content", required = false },
+  { name = "extra", type = "string", description = "Message content (for append when data=role)", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "{ok: bool, sessions?: [...], session?: {...}, error?: string}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "chat_session"
