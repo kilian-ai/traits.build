@@ -165,16 +165,21 @@ async function _ensureWebLLM(model) {
             }
 
             _webllmProgress(`Loading model ${modelId}… (first run downloads weights)`);
+
+            // Override context_window_size: the prebuilt config caps all models at 4096.
+            // Clone the catalog, find our model, and set context_window_size = -1 (unlimited).
+            const catalog = _webllmLib.prebuiltAppConfig;
+            const modifiedList = catalog.model_list.map(rec =>
+                rec.model_id === modelId
+                    ? { ...rec, overrides: { ...rec.overrides, context_window_size: -1 } }
+                    : rec
+            );
+
             _webllmEngine = await _webllmLib.CreateMLCEngine(modelId, {
                 initProgressCallback: (report) => {
                     _webllmProgress(report.text || `${Math.round((report.progress || 0) * 100)}%`);
                 },
-                appConfig: {
-                    model_list: [{
-                        model_id: modelId,
-                        overrides: { context_window_size: -1 },
-                    }]
-                }
+                appConfig: { ...catalog, model_list: modifiedList },
             });
             _webllmModel = modelId;
             _webllmProgress('Model ready.');
