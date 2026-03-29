@@ -214,6 +214,7 @@ async function _ensureWebLLM(model) {
 
             // Watchdog: if no progress callback fires for 60s, CreateMLCEngine is stuck
             let progressFired = false;
+            let clearWatchdog = () => {};
             const watchdog = new Promise((_, reject) => {
                 const check = setInterval(() => {
                     const elapsed = Date.now() - _webllmProgressTime;
@@ -227,8 +228,7 @@ async function _ensureWebLLM(model) {
                         ));
                     }
                 }, 5_000);
-                // Clean up watchdog when engine finishes (via .then below)
-                watchdog._clearWatchdog = () => clearInterval(check);
+                clearWatchdog = () => clearInterval(check);
             });
 
             const enginePromise = _webllmLib.CreateMLCEngine(modelId, {
@@ -244,7 +244,7 @@ async function _ensureWebLLM(model) {
             try {
                 _webllmEngine = await Promise.race([enginePromise, watchdog]);
             } finally {
-                if (watchdog._clearWatchdog) watchdog._clearWatchdog();
+                clearWatchdog();
             }
             _webllmModel = modelId;
             console.log('[WebLLM] Engine ready');
