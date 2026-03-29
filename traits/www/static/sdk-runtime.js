@@ -1390,7 +1390,7 @@ class Traits {
         }
     }
 
-    async _callWebLLM(prompt, model) {
+    async _callWebLLM(prompt, model, onToken) {
         // 5 minutes for first-time model download (~1.7 GB), subsequent calls are fast
         const TIMEOUT_MS = 300_000;
         const t0 = performance.now();
@@ -1401,14 +1401,39 @@ class Traits {
                     const engine = await _ensureWebLLM(model);
                     _webllmProgress('Running inference…');
                     console.log('[WebLLM] Starting inference, prompt length:', prompt.length);
-                    const reply = await engine.chat.completions.create({
-                        messages: [{ role: 'user', content: prompt }],
-                        temperature: 0.7,
-                        max_tokens: 1024,
-                    });
+                    let content = '';
+                    if (typeof onToken === 'function') {
+                        // Streaming mode: tokens arrive one at a time
+                        const stream = await engine.chat.completions.create({
+                            messages: [{ role: 'user', content: prompt }],
+                            temperature: 0.7,
+                            max_tokens: 1024,
+                            stream: true,
+                            stream_options: { include_usage: true },
+                        });
+                        let firstToken = true;
+                        for await (const chunk of stream) {
+                            const delta = chunk.choices?.[0]?.delta?.content || '';
+                            if (delta) {
+                                if (firstToken) {
+                                    _webllmProgress('');   // clear progress line on first token
+                                    firstToken = false;
+                                }
+                                content += delta;
+                                onToken(delta);
+                            }
+                        }
+                    } else {
+                        // Non-streaming fallback
+                        const reply = await engine.chat.completions.create({
+                            messages: [{ role: 'user', content: prompt }],
+                            temperature: 0.7,
+                            max_tokens: 1024,
+                        });
+                        content = reply.choices?.[0]?.message?.content || '';
+                    }
                     const dt = performance.now() - t0;
-                    const content = reply.choices?.[0]?.message?.content || '';
-                    console.log('[WebLLM] Inference done in', Math.round(dt), 'ms');
+                    console.log('[WebLLM] Inference done in', Math.round(dt), 'ms, chars:', content.length);
                     _webllmProgress('');
                     return {
                         ok: true,

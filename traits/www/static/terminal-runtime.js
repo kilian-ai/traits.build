@@ -328,17 +328,36 @@ async function createTerminal(mountEl, opts = {}) {
                 try {
                     const { prompt, model } = JSON.parse(webllmMatch[1]);
                     restPending = true;
-                    activeSdk._callWebLLM(prompt, model).then(res => {
-                        term.write('\r\x1b[K'); // Clear progress line
-                        if (res.ok && res.result !== undefined) {
-                            const text = typeof res.result === 'string'
-                                ? res.result : JSON.stringify(res.result, null, 2);
-                            term.write(text.replace(/\n/g, '\r\n'));
-                            if (!text.endsWith('\n')) term.write('\r\n');
-                        } else if (res.error) {
-                            term.write(`\x1b[31mWebLLM: ${res.error}\x1b[0m\r\n`);
+                    let streamStarted = false;
+                    const onToken = (text) => {
+                        if (!streamStarted) {
+                            term.write('\r\x1b[K'); // Clear progress line on first token
+                            streamStarted = true;
+                        }
+                        term.write(text.replace(/\n/g, '\r\n'));
+                    };
+                    activeSdk._callWebLLM(prompt, model, onToken).then(res => {
+                        if (streamStarted) {
+                            // Streaming completed — just add newline + prompt
+                            if (res.ok) {
+                                const text = typeof res.result === 'string' ? res.result : '';
+                                if (!text.endsWith('\n')) term.write('\r\n');
+                            } else if (res.error) {
+                                term.write(`\r\n\x1b[31mWebLLM: ${res.error}\x1b[0m\r\n`);
+                            }
                         } else {
-                            term.write('\x1b[33mWebLLM returned empty result\x1b[0m\r\n');
+                            // No tokens streamed (non-streaming fallback or empty result)
+                            term.write('\r\x1b[K');
+                            if (res.ok && res.result !== undefined) {
+                                const text = typeof res.result === 'string'
+                                    ? res.result : JSON.stringify(res.result, null, 2);
+                                term.write(text.replace(/\n/g, '\r\n'));
+                                if (!text.endsWith('\n')) term.write('\r\n');
+                            } else if (res.error) {
+                                term.write(`\x1b[31mWebLLM: ${res.error}\x1b[0m\r\n`);
+                            } else {
+                                term.write('\x1b[33mWebLLM returned empty result\x1b[0m\r\n');
+                            }
                         }
                         term.write(PROMPT);
                     }).catch(e => {
