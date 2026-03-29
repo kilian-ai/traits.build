@@ -493,7 +493,11 @@ async function refreshWorkspaces() {
     }
     setWorkspaceMeta(`Found ${workspaceEntries.length} workspace candidates.`);
   } catch (error) {
-    setWorkspaceMeta(error.message);
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Helper not connected';
+    document.getElementById('workspaceSelect').appendChild(opt);
+    setWorkspaceMeta('Cannot reach local helper — start it with: curl -fsSL https://www.traits.build/local/helper | bash');
   }
 }
 
@@ -519,46 +523,55 @@ function normalizeSessions(result) {
   const sessions = [];
   const seenIds = new Set();
 
-  // 1. state.vscdb — ChatSessionStore entries (all agent/Copilot chat sessions)
+  // Build a lookup from sessionId → JSON session (for transcript data)
+  const jsonBySessionId = {};
+  for (const session of (result?.sources?.json?.sessions || [])) {
+    if (session?.session_id) jsonBySessionId[session.session_id] = session;
+  }
+
+  // Primary source: chat.ChatSessionStore.index — ALL sessions with metadata + titles
   const dbEntries = result?.sources?.state_vscdb?.entries || [];
-  for (const entry of dbEntries) {
-    const key = entry?.key || '';
-    if (!key.startsWith('chat.ChatSessionStore.') ||
-        key === 'chat.ChatSessionStore.index' ||
-        key === 'chat.ChatSessionStore.activeSessionId') continue;
-    const data = entry?.value;
-    if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
-    const sessionId = data.sessionId || key.replace('chat.ChatSessionStore.', '');
+  const indexEntry = dbEntries.find(e => e?.key === 'chat.ChatSessionStore.index');
+  const indexEntries = indexEntry?.value?.entries || {};
+
+  for (const [sessionId, meta] of Object.entries(indexEntries)) {
     if (seenIds.has(sessionId)) continue;
     seenIds.add(sessionId);
-    const requests = data.requests || [];
-    const transcript = extractTranscript(requests, 'state_vscdb');
-    const firstUser = transcript.find(t => t.role === 'user');
-    const title = data.title || (firstUser?.text?.slice(0, 70)) || sessionId;
-    const ts = data.creationDate || data.lastMessageDate;
+
+    const jsonSession = jsonBySessionId[sessionId];
+    const transcript = extractTranscript(jsonSession?.data?.requests, 'json');
+    const isEmpty = meta?.isEmpty === true;
+
+    // Skip truly empty sessions with no persisted JSON
+    if (isEmpty && !jsonSession) continue;
+
+    const title = meta?.title || jsonSession?.title || sessionId;
+    const ts = meta?.lastMessageDate || meta?.timing?.startTime || 0;
     sessions.push({
       id: sessionId,
       title,
-      summary: `${requests.length} request(s)`,
-      source: 'state_vscdb',
-      ts: ts || 0,
+      summary: jsonSession
+        ? `${jsonSession.request_count || transcript.length} request(s)`
+        : (isEmpty ? 'empty' : 'session'),
+      source: jsonSession ? 'json+db' : 'db',
+      ts,
       transcript,
-      raw: data
+      raw: jsonSession || meta
     });
   }
+
   // Sort newest first
   sessions.sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
-  // 2. JSON chatSessions files (legacy persisted sessions)
-  const jsonSessions = result?.sources?.json?.sessions || [];
-  for (const session of jsonSessions) {
-    const sid = session.session_id || `json-${sessions.length}`;
-    if (seenIds.has(sid)) continue;
+  // Fallback: JSON sessions not covered by the index (legacy persisted files)
+  for (const session of (result?.sources?.json?.sessions || [])) {
+    const sid = session?.session_id;
+    if (!sid || seenIds.has(sid)) continue;
     seenIds.add(sid);
     const transcript = extractTranscript(session?.data?.requests, 'json');
     sessions.push({
       id: sid,
-      title: session.title || sid || 'JSON session',
+      title: session.title || sid,
       summary: `${session.request_count || transcript.length} request(s)`,
       source: 'json',
       ts: 0,
@@ -567,7 +580,7 @@ function normalizeSessions(result) {
     });
   }
 
-  // 3. Legacy live interactive history (old format fallback)
+  // Legacy: live interactive history (very old VS Code format)
   const liveHistory = result?.sources?.state_vscdb?.live_history?.value?.history?.copilot || [];
   if (liveHistory.length && !seenIds.has('live-history')) {
     const transcript = liveHistory
@@ -580,7 +593,7 @@ function normalizeSessions(result) {
       source: 'state_vscdb',
       ts: 0,
       transcript,
-      raw: result.sources.state_vscdb.live_history
+      raw: liveHistory
     });
   }
 
