@@ -558,7 +558,7 @@ RELAY_URL=https://relay.traits.build traits serve
 
 ---
 
-## Trait Inventory (~65 traits)
+## Trait Inventory (~73 traits)
 
 ### Kernel — 3-Layer Architecture
 
@@ -591,7 +591,7 @@ Layer 2: Native Infrastructure (wasm = false)
 
 The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel traits and warns if any trait is missing an explicit `wasm = true/false` declaration.
 
-### Sys (25) — System utilities & services
+### Sys (26) — System utilities & services
 
 | Trait | Description | Source |
 |-------|-------------|--------|
@@ -617,15 +617,11 @@ The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel
 | `sys.dylib_loader` | Runtime cdylib plugin loading | builtin |
 | `sys.reload` | Registry hot-reload from disk | builtin |
 | `sys.release` | Configurable release pipeline | builtin |
+| `sys.voice` | Voice I/O chat service (listen→transcribe→send→speak loop) | builtin |
 | `sys.chat_workspaces` | VS Code workspace scanner | builtin |
 | `sys.chat_protocols` | Chat protocol reader interface | builtin |
 | `sys.chat_protocols.vscode` | VS Code chat extractor | builtin |
 | `sys.docs.skills` | Generate SKILL.md from OpenAPI | builtin |
-
-### WWW (20) — Web/SPA traits
-
-| Trait | Description | Source |
-|-------|-------------|--------|
 | `www.traits.build` | Landing page (homepage) | **dylib** |
 | `www.static` | SPA shell (WASM kernel + SDK) | builtin |
 | `www.static.sdk` | TypeScript SDK for browser dispatch | builtin |
@@ -647,7 +643,7 @@ The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel
 | `www.llm.openai` | OpenAI chat interface | builtin |
 | `www.llm_test` | LLM inference tester | builtin |
 
-### LLM (4) — Language model providers
+### LLM (6) — Language model providers
 
 | Trait | Description | Source |
 |-------|-------------|--------|
@@ -655,6 +651,8 @@ The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel
 | `llm.prompt.openai` | OpenAI-compatible inference (implements llm/prompt) | rest |
 | `llm.prompt.openai.rest` | Default REST-backed provider for llm.prompt.openai | rest |
 | `llm.prompt.webllm` | In-browser LLM via WebGPU/WebLLM (WASM-only, implements llm/prompt) | builtin |
+| `llm.voice.speak` | Text-to-speech synthesis via OpenAI TTS API (6 voices, tts-1/tts-1-hd) | builtin |
+| `llm.voice.listen` | Speech-to-text transcription via OpenAI Whisper API (mic or file) | builtin |
 
 ---
 
@@ -973,6 +971,7 @@ Test types: `exit_code`, `contains`, `matches` (regex), `json_path`
 | HTTP server | Present | `sys.serve` via actix-web |
 | Secrets store | Present | `sys.secrets` — AES-256-GCM encrypted |
 | LLM integration | Present | `sys.llm` + `llm.prompt.openai` + `llm.prompt.webllm` provider chain |
+| Voice I/O | Present | `llm.voice.speak` (TTS) + `llm.voice.listen` (STT) + `sys.voice` (chat loop) |
 | Chat analytics | Present | `sys.chat_protocols`, `sys.chat_workspaces` |
 | Terminal UI | Present | `www.terminal` — xterm.js + WASM CLI |
 | Playground | Present | `www.playground` — interactive trait testing |
