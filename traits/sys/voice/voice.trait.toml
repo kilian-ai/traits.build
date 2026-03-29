@@ -1,7 +1,7 @@
 [trait]
 description = "Voice I/O chat service — replaces terminal typing/reading with speaking/listening"
-version = "v260329.214502"
-checksum = "00600f28403ad5d49c29c51a154ece9aa157e987e26af1a1c041a145bb6e8642"
+version = "v260329.223946"
+checksum = "d67111a1a92b4125360dc4817d05ee7ce69189a6e309c2e3a55fd92b590bbb6b"
 author = "system"
 tags = ["sys", "voice", "chat", "tts", "stt", "io"]
 

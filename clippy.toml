@@ -1,0 +1,7 @@
+msrv = "1.75"
+cognitive-complexity-threshold = 25
+avoid-breaking-exported-api = true
+type-complexity-threshold = 500
+too-many-arguments-threshold = 8
+warn-on-all-wildcard-imports = true
+too-large-for-stack = 200

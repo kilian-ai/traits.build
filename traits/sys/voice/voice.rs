@@ -113,40 +113,71 @@ fn voice_loop(agent: &str, model: &str, tts_voice: &str, duration: u32, cwd: &st
             break;
         }
 
-        // ── 2. Send to ACP ──
+        // ── 2. Stream response from ACP, speak sentence-by-sentence ──
         eprint!("\x1b[90mthinking…\x1b[0m ");
         std::io::stderr().flush().ok();
 
         let model_arg = if model.is_empty() { "" } else { model };
-        let acp_result = kernel_logic::platform::dispatch(
-            "llm.prompt.acp",
-            &[json!(text), json!(agent), json!(cwd), json!("false"), json!(model_arg)],
-        ).unwrap_or_else(|| json!({"ok": false, "error": "llm.prompt.acp not available"}));
+        let args = [json!(text), json!(agent), json!(cwd), json!("false"), json!(model_arg)];
 
-        let response = if let Some(s) = acp_result.as_str() {
-            s.to_string()
-        } else if let Some(err) = acp_result.get("error").and_then(|e| e.as_str()) {
-            eprintln!("\n\x1b[31m✗ {err}\x1b[0m\n");
-            continue;
-        } else {
-            serde_json::to_string(&acp_result).unwrap_or_default()
-        };
+        let mut sentence_buf = String::new();
+        let mut full_response = String::new();
+        let mut first_chunk = true;
+        let tts_voice_owned = tts_voice.to_string();
 
-        // Clear "thinking…" and print response for visual feedback
-        eprint!("\r\x1b[2K");
-        eprintln!("\x1b[96m💬 {response}\x1b[0m\n");
+        crate::dispatcher::compiled::acp::acp_proxy_dispatch_streaming(
+            &args,
+            &mut |chunk: &str| {
+                if first_chunk {
+                    // Clear "thinking…"
+                    eprint!("\r\x1b[2K\x1b[96m💬 \x1b[0m");
+                    std::io::stderr().flush().ok();
+                    first_chunk = false;
+                }
 
-        turns += 1;
+                full_response.push_str(chunk);
+                sentence_buf.push_str(chunk);
 
-        // ── 3. Speak response ──
-        // Strip markdown-heavy content for cleaner speech
-        let speak_text = clean_for_speech(&response);
-        if !speak_text.is_empty() {
+                // Check for sentence boundaries and speak completed sentences
+                while let Some(boundary) = find_sentence_boundary(&sentence_buf) {
+                    let sentence = sentence_buf[..boundary].to_string();
+                    sentence_buf = sentence_buf[boundary..].trim_start().to_string();
+
+                    let cleaned = clean_for_speech(&sentence);
+                    if !cleaned.is_empty() {
+                        // Print sentence for visual feedback
+                        eprint!("{cleaned} ");
+                        std::io::stderr().flush().ok();
+                        // Speak it immediately
+                        kernel_logic::platform::dispatch(
+                            "llm.voice.speak",
+                            &[json!(cleaned), json!(&tts_voice_owned)],
+                        );
+                    }
+                }
+            },
+        );
+
+        // Speak any remaining buffered text
+        let remaining = clean_for_speech(&sentence_buf);
+        if !remaining.is_empty() {
+            eprint!("{remaining}");
+            std::io::stderr().flush().ok();
             kernel_logic::platform::dispatch(
                 "llm.voice.speak",
-                &[json!(speak_text), json!(tts_voice)],
+                &[json!(remaining), json!(tts_voice)],
             );
         }
+
+        if first_chunk {
+            // No streaming chunks received — clear "thinking…"
+            eprint!("\r\x1b[2K");
+            eprintln!("\x1b[90m(no response)\x1b[0m");
+        } else {
+            eprintln!(); // newline after streamed text
+        }
+
+        turns += 1;
     }
 
     json!({"ok": true, "turns": turns})
@@ -186,6 +217,37 @@ fn clean_for_speech(text: &str) -> String {
     }
 
     result
+}
+
+/// Find the byte offset of the first sentence boundary in a buffer.
+/// Returns the position just past the boundary character (., !, ?, or newline).
+/// Only splits on sentence-ending punctuation followed by a space or end of buffer.
+fn find_sentence_boundary(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'.' || b == b'!' || b == b'?' {
+            // Must be followed by space, newline, or be near end of buffer
+            let next = bytes.get(i + 1);
+            if next == Some(&b' ') || next == Some(&b'\n') || next == Some(&b'\r') || next.is_none() {
+                return Some(i + 1);
+            }
+        }
+        if b == b'\n' {
+            // Double newline = paragraph break — good split point
+            if i > 0 && bytes.get(i.wrapping_sub(1)) == Some(&b'\n') {
+                return Some(i + 1);
+            }
+        }
+    }
+    // If buffer is getting long (>200 chars), split on the first comma or semicolon
+    if text.len() > 200 {
+        for (i, &b) in bytes.iter().enumerate() {
+            if (b == b',' || b == b';' || b == b':') && bytes.get(i + 1) == Some(&b' ') {
+                return Some(i + 1);
+            }
+        }
+    }
+    None
 }
 
 /// Check if a command is available in PATH.

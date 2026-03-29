@@ -1,9 +1,14 @@
 use serde_json::Value;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 
 // ─── Secret primitive: zeroizes on drop, masks on Debug ────────────────────
 
@@ -31,19 +36,13 @@ impl std::fmt::Debug for Secret {
 
 // ─── AES-256-GCM crypto layer ──────────────────────────────────────────────
 //
-// We use a simplified AES-256-GCM-like construction with:
+// Uses AES-256-GCM for authenticated encryption:
 //   - 32-byte key derived from master secret via SHA-256
-//   - 12-byte random nonce prepended to ciphertext
-//   - XOR-based stream cipher (lightweight, no external crypto crate needed)
+//   - 12-byte random nonce per encryption (cryptographically secure)
+//   - Authenticated encryption (AEAD) prevents tampering
 //
-// For production deployments, swap this with the `aes-gcm` crate.
-// The current implementation provides:
-//   - Unique nonce per encryption (random 12 bytes)
-//   - Key derivation via SHA-256
-//   - Data confidentiality via XOR stream
-//
-// NOTE: This is NOT authenticated encryption. For AEAD, add aes-gcm to Cargo.toml.
-// The trait is designed so the crypto module can be swapped without changing the API.
+// This provides both confidentiality and integrity, unlike the previous
+// XOR-based implementation which only provided confidentiality.
 
 fn derive_key(master: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -54,46 +53,13 @@ fn derive_key(master: &[u8]) -> [u8; 32] {
     key
 }
 
-fn keystream(key: &[u8; 32], nonce: &[u8; 12], len: usize) -> Vec<u8> {
-    let mut stream = Vec::with_capacity(len);
-    let mut counter = 0u64;
-    while stream.len() < len {
-        let mut hasher = Sha256::new();
-        hasher.update(key);
-        hasher.update(nonce);
-        hasher.update(counter.to_le_bytes());
-        let block = hasher.finalize();
-        stream.extend_from_slice(&block);
-        counter += 1;
-    }
-    stream.truncate(len);
-    stream
-}
-
 fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Vec<u8> {
-    // Generate random 12-byte nonce
-    let nonce: [u8; 12] = {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-        let mut n = [0u8; 12];
-        let nanos = dur.as_nanos();
-        n[..8].copy_from_slice(&(nanos as u64).to_le_bytes());
-        // Mix in some entropy from thread ID hash
-        let tid = format!("{:?}", std::thread::current().id());
-        let mut hasher = Sha256::new();
-        hasher.update(tid.as_bytes());
-        hasher.update(&dur.as_secs().to_le_bytes());
-        let h = hasher.finalize();
-        n[8..12].copy_from_slice(&h[..4]);
-        n
-    };
-
-    let ks = keystream(key, &nonce, plaintext.len());
-    let ciphertext: Vec<u8> = plaintext.iter().zip(ks.iter()).map(|(p, k)| p ^ k).collect();
-
-    // nonce (12) || ciphertext
+    let cipher = Aes256Gcm::new_from_slice(key).expect("valid key size");
+    let nonce_bytes: [u8; 12] = rand::random();
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher.encrypt(nonce, plaintext).expect("encryption failed");
     let mut output = Vec::with_capacity(12 + ciphertext.len());
-    output.extend_from_slice(&nonce);
+    output.extend_from_slice(&nonce_bytes);
     output.extend_from_slice(&ciphertext);
     output
 }
@@ -103,12 +69,9 @@ fn decrypt(key: &[u8; 32], data: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let (nonce_bytes, ciphertext) = data.split_at(12);
-    let mut nonce = [0u8; 12];
-    nonce.copy_from_slice(nonce_bytes);
-
-    let ks = keystream(key, &nonce, ciphertext.len());
-    let plaintext: Vec<u8> = ciphertext.iter().zip(ks.iter()).map(|(c, k)| c ^ k).collect();
-    Some(plaintext)
+    let cipher = Aes256Gcm::new_from_slice(key).ok()?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+    cipher.decrypt(nonce, ciphertext).ok()
 }
 
 // ─── Secret Store: encrypted at rest ────────────────────────────────────────
@@ -170,20 +133,7 @@ impl SecretStore {
         }
 
         // Generate new random key
-        let key = {
-            use std::time::{SystemTime, UNIX_EPOCH};
-            let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-            let mut hasher = Sha256::new();
-            hasher.update(dur.as_nanos().to_le_bytes());
-            hasher.update(format!("{:?}", std::thread::current().id()).as_bytes());
-            let mut hasher2 = Sha256::new();
-            hasher2.update(hasher.finalize());
-            hasher2.update(dur.as_secs().to_le_bytes());
-            let result = hasher2.finalize();
-            let mut key = [0u8; 32];
-            key.copy_from_slice(&result);
-            key
-        };
+        let key: [u8; 32] = rand::random();
 
         // Best effort: restrict permissions before writing key
         let _ = fs::write(&key_path, &key);
@@ -202,9 +152,7 @@ impl SecretStore {
             Err(_) => return HashMap::new(),
         };
         match decrypt(&self.key, &data) {
-            Some(plaintext) => {
-                serde_json::from_slice(&plaintext).unwrap_or_default()
-            }
+            Some(plaintext) => serde_json::from_slice(&plaintext).unwrap_or_default(),
             None => HashMap::new(),
         }
     }
@@ -235,9 +183,7 @@ impl SecretStore {
     fn get(&self, id: &str) -> Option<Secret> {
         let secrets = self.load();
         secrets.get(id).and_then(|enc| {
-            decrypt(&self.key, enc).and_then(|bytes| {
-                String::from_utf8(bytes).ok().map(Secret)
-            })
+            decrypt(&self.key, enc).and_then(|bytes| String::from_utf8(bytes).ok().map(Secret))
         })
     }
 
@@ -343,7 +289,10 @@ fn secrets_exec(action: &str, id: &str, value: &str) -> Value {
                 return serde_json::json!({ "error": "secret value is required" });
             }
             // Validate ID: alphanumeric + underscores only
-            if !id.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+            if !id
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+            {
                 return serde_json::json!({ "error": "secret id must be alphanumeric (a-z, 0-9, _, .)" });
             }
             let ok = with_store(|store| store.set(id, value));
@@ -438,9 +387,16 @@ mod tests {
         let key = derive_key(b"test-key");
         let e1 = encrypt(&key, b"data");
         let e2 = encrypt(&key, b"data");
-        // Same plaintext should produce different ciphertext (different nonces)
         assert_ne!(e1, e2);
-        // But both decrypt to the same value
         assert_eq!(decrypt(&key, &e1), decrypt(&key, &e2));
+    }
+
+    #[test]
+    fn test_tamper_detection() {
+        let key = derive_key(b"test-key");
+        let encrypted = encrypt(&key, b"secret data");
+        let mut tampered = encrypted.clone();
+        tampered[13] ^= 0x42;
+        assert!(decrypt(&key, &tampered).is_none());
     }
 }
