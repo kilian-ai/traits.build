@@ -1,7 +1,7 @@
 [trait]
 description = "Portable CLI command processor — shared between WASM and native targets"
-version = "v260329.164530"
-checksum = "76dce1a3f58fc8c4bdca9547ababbc6885141d6755b9b1400c7599adc52fa5d3"
+version = "v260329.214502"
+checksum = "550f1dabe15f634bbda3111622690bd6d7a7d45170d47f045482481667c870de"
 author = "system"
 tags = ["kernel", "cli"]
 provides = ["kernel/cli"]

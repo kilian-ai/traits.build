@@ -1,5 +1,4 @@
 use serde_json::{json, Value};
-use std::io::Write;
 
 /// llm.voice.speak — Text-to-speech synthesis using OpenAI TTS API.
 ///

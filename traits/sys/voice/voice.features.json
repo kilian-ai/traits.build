@@ -1,0 +1,33 @@
+{
+  "trait": "sys.voice",
+  "features": [
+    {
+      "name": "Voice chat I/O service",
+      "description": "Starts a voice chat loop using microphone and speakers instead of keyboard and screen",
+      "tests": [
+        {
+          "name": "voice requires audio tools",
+          "type": "exit_code",
+          "command": "traits call sys.voice",
+          "expected": 0
+        }
+      ],
+      "examples": [
+        {
+          "input": ["opencode"],
+          "output": {
+            "type": "object",
+            "description": "{ok: true, turns: int} or {ok: false, error: string}"
+          }
+        },
+        {
+          "input": ["opencode", "", "nova", "15"],
+          "output": {
+            "type": "object",
+            "description": "Voice chat with default model, nova voice, 15s listen duration"
+          }
+        }
+      ]
+    }
+  ]
+}

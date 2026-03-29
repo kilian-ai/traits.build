@@ -850,11 +850,39 @@ async fn chat_call(
     let _dispatcher = crate::bootstrap(config)?;
     let backend = NativeCliBackend;
 
+    // Parse args: filter out "voice" flag, rest are [agent, model]
+    let voice_mode = args.iter().any(|a| a.eq_ignore_ascii_case("voice") || a == "--voice" || a == "-v");
+    let positional: Vec<&str> = args.iter()
+        .filter(|a| !a.eq_ignore_ascii_case("voice") && *a != "--voice" && *a != "-v")
+        .map(|s| s.as_str())
+        .collect();
+
+    let agent = positional.first().copied().unwrap_or("opencode");
+    let model = positional.get(1).copied().unwrap_or("");
+
+    // ── Voice mode: delegate to sys.voice for listen/speak loop ──
+    if voice_mode {
+        let result = crate::dispatcher::compiled::dispatch(
+            "sys.voice",
+            &[
+                serde_json::json!(agent),
+                serde_json::json!(model),
+                serde_json::json!("nova"),
+                serde_json::json!(15),
+            ],
+        );
+        if let Some(r) = result {
+            if r.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+                let err = r.get("error").and_then(|e| e.as_str()).unwrap_or("voice mode failed");
+                return Err(err.into());
+            }
+        }
+        return Ok(());
+    }
+
+    // ── Text mode: normal keyboard-driven chat ──
     let mut session = CliSession::new();
     session.load_history(&backend);
-
-    let agent = args.first().map(|s| s.as_str()).unwrap_or("opencode");
-    let model = args.get(1).map(|s| s.as_str()).unwrap_or("");
 
     // Enter chat mode directly
     let banner = session.start_chat(agent, model);

@@ -1,7 +1,7 @@
 [trait]
 description = "Text-to-speech synthesis using OpenAI TTS API"
-version = "v260329.214238"
-checksum = "e6539424b230c30d3e708658d41d1342796212624bded0530ce397212968b2e3"
+version = "v260329.214606"
+checksum = "5e220cbc7f3b9b01bfc7a6e238386a5a5fb27acdba309e0535d50170fd2c68ab"
 author = "system"
 tags = ["llm", "voice", "tts", "speech", "audio"]
 

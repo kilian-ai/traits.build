@@ -937,11 +937,26 @@ impl CliSession {
                             out.push_str(CHAT_PROMPT);
                             return out;
                         }
+                        "/voice" => {
+                            // Switch to voice mode — dispatch via REST sentinel
+                            let agent = self.chat.as_ref().unwrap().agent.clone();
+                            let model = self.chat.as_ref().unwrap().model.clone();
+                            let voice_name = if arg.is_empty() { "nova" } else { arg };
+                            out.push_str(&format!("{GRAY}Switching to voice mode…{RESET}\r\n"));
+                            let sentinel = serde_json::json!({
+                                "p": "sys.voice",
+                                "a": [&agent, &model, voice_name, 15],
+                                "rp": CHAT_PROMPT,
+                            });
+                            out.push_str(&format!("{REST_SENTINEL_START}{}{REST_SENTINEL_END}", sentinel));
+                            return out;
+                        }
                         "/help" | "/?" => {
                             out.push_str(&format!("{BOLD}{BRIGHT_WHITE}Chat commands{RESET}\r\n"));
                             out.push_str(&format!("  {GREEN}/agent{RESET} {GRAY}[name]{RESET}     Show or switch ACP agent\r\n"));
                             out.push_str(&format!("  {GREEN}/model{RESET} {GRAY}[id]{RESET}       Show or switch model\r\n"));
                             out.push_str(&format!("  {GREEN}/models{RESET}              List available models\r\n"));
+                            out.push_str(&format!("  {GREEN}/voice{RESET} {GRAY}[name]{RESET}     Switch to voice I/O (speak/listen)\r\n"));
                             out.push_str(&format!("  {GREEN}/status{RESET}              Show session status\r\n"));
                             out.push_str(&format!("  {GREEN}/history{RESET}             Show conversation history\r\n"));
                             out.push_str(&format!("  {GREEN}/clear{RESET}               Clear terminal\r\n"));
