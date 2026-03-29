@@ -464,6 +464,17 @@ async function refreshWorkspaces() {
     const baseDir = workspaceBaseDir();
     if (baseDir) args.push(baseDir);
     const result = await traitsCall('sys/chat_workspaces', args);
+    if (result.ok === false) {
+      const isWasm = (result.error || '').includes('not available in WASM');
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'No workspaces found';
+      select.appendChild(option);
+      setWorkspaceMeta(isWasm
+        ? 'Chat Logs requires a local helper. Run: curl -fsSL https://www.traits.build/local/helper | bash'
+        : `Error: ${result.error}`);
+      return;
+    }
     workspaceEntries = result.workspaces || [];
     if (!workspaceEntries.length) {
       const option = document.createElement('option');
@@ -486,43 +497,88 @@ async function refreshWorkspaces() {
   }
 }
 
-function normalizeSessions(result) {
-  const sessions = [];
-  const jsonSessions = result?.sources?.json?.sessions || [];
-  for (const session of jsonSessions) {
-    const transcript = [];
-    const requests = session?.data?.requests || [];
-    for (const request of requests) {
-      if (request?.message?.text) {
-        transcript.push({ role: 'user', text: request.message.text, source: 'json' });
-      }
-      const responses = request?.response || [];
-      for (const response of responses) {
-        if (typeof response?.value === 'string') {
-          transcript.push({ role: 'assistant', text: response.value, source: 'json' });
-        }
+function extractTranscript(requests, source) {
+  const transcript = [];
+  for (const request of (requests || [])) {
+    if (request?.message?.text) {
+      transcript.push({ role: 'user', text: request.message.text, source });
+    }
+    for (const response of (request?.response || [])) {
+      if (typeof response?.value === 'string') {
+        transcript.push({ role: 'assistant', text: response.value, source });
+      } else if (Array.isArray(response?.parts)) {
+        const text = response.parts.map(p => p?.value || '').filter(Boolean).join('');
+        if (text) transcript.push({ role: 'assistant', text, source });
       }
     }
+  }
+  return transcript;
+}
+
+function normalizeSessions(result) {
+  const sessions = [];
+  const seenIds = new Set();
+
+  // 1. state.vscdb — ChatSessionStore entries (all agent/Copilot chat sessions)
+  const dbEntries = result?.sources?.state_vscdb?.entries || [];
+  for (const entry of dbEntries) {
+    const key = entry?.key || '';
+    if (!key.startsWith('chat.ChatSessionStore.') ||
+        key === 'chat.ChatSessionStore.index' ||
+        key === 'chat.ChatSessionStore.activeSessionId') continue;
+    const data = entry?.value;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
+    const sessionId = data.sessionId || key.replace('chat.ChatSessionStore.', '');
+    if (seenIds.has(sessionId)) continue;
+    seenIds.add(sessionId);
+    const requests = data.requests || [];
+    const transcript = extractTranscript(requests, 'state_vscdb');
+    const firstUser = transcript.find(t => t.role === 'user');
+    const title = data.title || (firstUser?.text?.slice(0, 70)) || sessionId;
+    const ts = data.creationDate || data.lastMessageDate;
     sessions.push({
-      id: session.session_id || `json-${sessions.length}`,
-      title: session.title || session.session_id || 'JSON session',
+      id: sessionId,
+      title,
+      summary: `${requests.length} request(s)`,
+      source: 'state_vscdb',
+      ts: ts || 0,
+      transcript,
+      raw: data
+    });
+  }
+  // Sort newest first
+  sessions.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  // 2. JSON chatSessions files (legacy persisted sessions)
+  const jsonSessions = result?.sources?.json?.sessions || [];
+  for (const session of jsonSessions) {
+    const sid = session.session_id || `json-${sessions.length}`;
+    if (seenIds.has(sid)) continue;
+    seenIds.add(sid);
+    const transcript = extractTranscript(session?.data?.requests, 'json');
+    sessions.push({
+      id: sid,
+      title: session.title || sid || 'JSON session',
       summary: `${session.request_count || transcript.length} request(s)`,
       source: 'json',
+      ts: 0,
       transcript,
       raw: session
     });
   }
 
+  // 3. Legacy live interactive history (old format fallback)
   const liveHistory = result?.sources?.state_vscdb?.live_history?.value?.history?.copilot || [];
-  if (liveHistory.length) {
+  if (liveHistory.length && !seenIds.has('live-history')) {
     const transcript = liveHistory
-      .filter(item => item && item.inputText)
+      .filter(item => item?.inputText)
       .map(item => ({ role: 'user', text: item.inputText, source: 'state_vscdb' }));
-    sessions.unshift({
+    sessions.push({
       id: 'live-history',
-      title: 'Live interactive session',
+      title: 'Live interactive session (legacy)',
       summary: `${transcript.length} live prompt(s)`,
       source: 'state_vscdb',
+      ts: 0,
       transcript,
       raw: result.sources.state_vscdb.live_history
     });

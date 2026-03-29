@@ -1,0 +1,22 @@
+[trait]
+description = "Voice I/O chat service — replaces terminal typing/reading with speaking/listening"
+version = "v260329"
+author = "system"
+tags = ["sys", "voice", "chat", "tts", "stt", "io"]
+
+[signature]
+params = [
+  { name = "agent", type = "string", description = "ACP agent: opencode, claude, codex, copilot", required = false, default = "opencode" },
+  { name = "model", type = "string", description = "Model override (default: agent default)", required = false },
+  { name = "voice", type = "string", description = "TTS voice: alloy, echo, fable, onyx, nova, shimmer", required = false, default = "nova" },
+  { name = "duration", type = "int", description = "Max listening duration per turn in seconds", required = false, default = "15" },
+]
+
+[signature.returns]
+type = "map"
+description = "{ok: bool, turns?: int, error?: string}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "voice"

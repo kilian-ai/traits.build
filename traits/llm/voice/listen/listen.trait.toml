@@ -1,0 +1,22 @@
+[trait]
+description = "Speech-to-text transcription using OpenAI Whisper API"
+version = "v260329.214238"
+checksum = "6e978d3a53f129a75b17577d8bd9ccd1a629f429a02dd871a0c2570b96b9ca2e"
+author = "system"
+tags = ["llm", "voice", "stt", "transcription", "audio"]
+
+[signature]
+params = [
+  { name = "file", type = "string", description = "Path to audio file to transcribe (if empty, records from microphone)", required = false },
+  { name = "duration", type = "int", description = "Max recording duration in seconds (default: 10, max: 30)", required = false, default = "10" },
+  { name = "language", type = "string", description = "Language hint (ISO 639-1, e.g. 'en')", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "{ok: bool, text?: string, file?: string, error?: string}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "listen"

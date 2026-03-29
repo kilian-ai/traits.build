@@ -1,0 +1,33 @@
+{
+  "trait": "llm.voice.listen",
+  "features": [
+    {
+      "name": "Speech-to-text transcription",
+      "description": "Transcribes speech from audio file or microphone via OpenAI Whisper API",
+      "tests": [
+        {
+          "name": "listen returns without crash",
+          "type": "exit_code",
+          "command": "traits call llm.voice.listen /dev/null",
+          "expected": 0
+        }
+      ],
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "type": "object",
+            "description": "{ok: true, text: string} or {ok: false, error: string}"
+          }
+        },
+        {
+          "input": ["recording.wav"],
+          "output": {
+            "type": "object",
+            "description": "{ok: true, text: string, file: 'recording.wav'}"
+          }
+        }
+      ]
+    }
+  ]
+}

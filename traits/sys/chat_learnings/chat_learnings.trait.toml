@@ -1,7 +1,7 @@
 [trait]
 description = "Extract durable learnings from chat history and append them to LEARNINGS.md"
-version = "v260325.143538"
-checksum = "fb6832ed8ff56049c408a08488e2840ce33a6341aa42dc7c80becc691e626f62"
+version = "v260329"
+checksum = "d3c64464b39cd190ade728f7b74c57546e7a1c3a9b7058ef53710e926fc18aa5"
 author = "system"
 tags = ["sys", "chat", "learnings", "llm", "memory"]
 
@@ -12,13 +12,19 @@ params = [
   { name = "output_path", type = "string", description = "Markdown file to append learnings to", optional = true, example = "LEARNINGS.md" },
   { name = "base_dir", type = "string", description = "Optional workspaceStorage root override", optional = true },
   { name = "method", type = "string", description = "Extraction method: auto | json | state_vscdb | all", optional = true },
-  { name = "model", type = "string", description = "Model passed to the llm/openai interface", optional = true },
+  { name = "model", type = "string", description = "Model passed to the llm/prompt interface", optional = true },
   { name = "mock_response", type = "string", description = "Optional deterministic markdown response for tests", optional = true }
 ]
 
 [signature.returns]
 type = "object"
 description = "Learning extraction status, appended response, and tracked comment hashes"
+
+[requires]
+llm = "llm/prompt"
+
+[bindings]
+llm = "llm.prompt.openai"
 
 [implementation]
 language = "rust"

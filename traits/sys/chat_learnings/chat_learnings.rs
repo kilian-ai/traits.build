@@ -264,14 +264,14 @@ fn call_llm_openai(prompt: &str, model: &str) -> Result<String, String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|error| format!("Failed to create runtime for llm/openai call: {}", error))?;
-        runtime.block_on(dispatcher.call("llm/openai", args, &config))
+            .map_err(|error| format!("Failed to create runtime for llm/prompt call: {}", error))?;
+        runtime.block_on(dispatcher.call("llm/prompt", args, &config))
             .map_err(|error| error.to_string())
     });
 
     let result = worker
         .join()
-        .map_err(|_| "llm/openai worker thread panicked".to_string())??;
+        .map_err(|_| "llm/prompt worker thread panicked".to_string())??;
 
     match result {
         crate::types::TraitValue::String(text) => Ok(text),

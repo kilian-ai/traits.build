@@ -1,0 +1,33 @@
+{
+  "trait": "llm.voice.speak",
+  "features": [
+    {
+      "name": "Text-to-speech synthesis",
+      "description": "Synthesizes speech from text using OpenAI TTS API",
+      "tests": [
+        {
+          "name": "speak requires text argument",
+          "type": "contains",
+          "command": "traits call llm.voice.speak",
+          "expected": "text is required"
+        }
+      ],
+      "examples": [
+        {
+          "input": ["Hello, world!"],
+          "output": {
+            "type": "object",
+            "description": "{ok: true, file: '/tmp/traits_tts_*.mp3'}"
+          }
+        },
+        {
+          "input": ["Hello!", "alloy", "tts-1", "false"],
+          "output": {
+            "type": "object",
+            "description": "{ok: true, file: string} without playback"
+          }
+        }
+      ]
+    }
+  ]
+}
