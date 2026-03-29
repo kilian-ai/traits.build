@@ -878,15 +878,13 @@ async fn chat_call(
     let agent = positional.first().copied().unwrap_or("opencode");
     let model = positional.get(1).copied().unwrap_or("");
 
-    // ── Voice mode: delegate to sys.voice for listen/speak loop ──
+    // ── Voice mode: delegate to sys.voice (OpenAI Realtime API) ──
     if voice_mode {
         let result = crate::dispatcher::compiled::dispatch(
             "sys.voice",
             &[
-                serde_json::json!(agent),
-                serde_json::json!(model),
-                serde_json::json!("nova"),
-                serde_json::json!(15),
+                serde_json::json!("cedar"),
+                serde_json::json!("gpt-4o-realtime-preview"),
             ],
         );
         if let Some(r) = result {

@@ -1,16 +1,14 @@
 [trait]
-description = "Voice I/O chat service — replaces terminal typing/reading with speaking/listening"
-version = "v260329.223946"
-checksum = "d67111a1a92b4125360dc4817d05ee7ce69189a6e309c2e3a55fd92b590bbb6b"
+description = "Real-time voice chat via OpenAI Realtime API — speech-to-speech over WebSocket"
+version = "v260329.232052"
+checksum = "62f8c49dcac688a524b3bdb5a21f566361e7fdac3e7322ca6c74a3a88c9db7a4"
 author = "system"
-tags = ["sys", "voice", "chat", "tts", "stt", "io"]
+tags = ["sys", "voice", "chat", "realtime", "speech"]
 
 [signature]
 params = [
-  { name = "agent", type = "string", description = "ACP agent: opencode, claude, codex, copilot", required = false, default = "opencode" },
-  { name = "model", type = "string", description = "Model override (default: agent default)", required = false },
-  { name = "voice", type = "string", description = "TTS voice: alloy, echo, fable, onyx, nova, shimmer", required = false, default = "nova" },
-  { name = "duration", type = "int", description = "Max listening duration per turn in seconds", required = false, default = "30" },
+  { name = "voice", type = "string", description = "Voice: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar", required = false, default = "cedar" },
+  { name = "model", type = "string", description = "Realtime model: gpt-4o-realtime-preview, gpt-4o-mini-realtime-preview", required = false, default = "gpt-4o-realtime-preview" },
 ]
 
 [signature.returns]

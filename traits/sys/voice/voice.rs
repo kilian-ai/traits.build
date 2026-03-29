@@ -1,256 +1,56 @@
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 
-/// sys.voice — Voice I/O chat service.
+const INSTRUCTIONS: &str = include_str!("realtime_instructions.md");
+
+/// Global flag for SIGINT handling.
+static VOICE_RUNNING: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn sigint_handler(_: libc::c_int) {
+    VOICE_RUNNING.store(false, Ordering::SeqCst);
+}
+
+/// sys.voice — Real-time voice chat via OpenAI Realtime API.
 ///
-/// Starts an interactive voice chat loop that replaces terminal I/O:
-/// - Listens via microphone → transcribes (llm.voice.listen)
-/// - Sends transcribed text to ACP agent (llm.prompt.acp)
-/// - Speaks response via TTS (llm.voice.speak)
-/// - Repeat until silence/quit
+/// Opens a WebSocket to OpenAI's Realtime API for direct speech-to-speech
+/// conversation. Mic audio is streamed continuously; the model responds
+/// with audio directly. No intermediate STT/TTS pipeline.
 ///
-/// Args: [agent?, model?, voice?, duration?]
+/// Args: [voice?, model?]
 pub fn voice(args: &[Value]) -> Value {
-    let agent = args.first()
+    let voice_name = args.first()
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("opencode");
+        .unwrap_or("cedar");
 
     let model = args.get(1)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("");
+        .unwrap_or("gpt-4o-realtime-preview");
 
-    let tts_voice = args.get(2)
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or("nova");
+    // Resolve API key
+    let api_key = match resolve_api_key() {
+        Some(k) => k,
+        None => return json!({"ok": false, "error": "OpenAI API key not found. Set via: traits call sys.secrets set openai_api_key <key>"}),
+    };
 
-    let duration = args.get(3)
-        .and_then(|v| {
-            v.as_i64()
-                .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
-        })
-        .unwrap_or(15)
-        .clamp(1, 30) as u32;
-
-    // Verify API key is available before starting loop
-    let has_key = kernel_logic::platform::secret_get("openai_api_key").is_some()
-        || std::env::var("OPENAI_API_KEY").is_ok();
-    if !has_key {
-        return json!({"ok": false, "error": "OpenAI API key not found. Set via: traits call sys.secrets set openai_api_key <key>"});
+    // Verify sox is available (provides `rec` and `play`)
+    if !which("rec") {
+        return json!({"ok": false, "error": "sox not found. Install: brew install sox"});
     }
 
-    // Verify audio tools are available
-    if !which("rec") && !(cfg!(target_os = "macos") && which("ffmpeg")) {
-        return json!({"ok": false, "error": "No audio recorder found. Install sox (brew install sox) or ffmpeg (brew install ffmpeg)."});
+    match realtime_session(&api_key, model, voice_name) {
+        Ok(turns) => json!({"ok": true, "turns": turns}),
+        Err(e) => json!({"ok": false, "error": e}),
     }
-
-    // Ensure ACP proxy is running
-    let ensure_result = kernel_logic::platform::dispatch(
-        "llm.prompt.acp.start",
-        &[json!(agent)],
-    );
-    if let Some(r) = &ensure_result {
-        if r.get("ok").and_then(|v| v.as_bool()) == Some(false) {
-            return json!({"ok": false, "error": format!("Failed to start ACP proxy: {}", r.get("error").and_then(|e| e.as_str()).unwrap_or("unknown"))});
-        }
-    }
-
-    let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| ".".into());
-
-    voice_loop(agent, model, tts_voice, duration, &cwd)
 }
 
-/// Main voice chat loop.
-fn voice_loop(agent: &str, model: &str, tts_voice: &str, duration: u32, cwd: &str) -> Value {
-    use std::io::Write;
-
-    let mut turns = 0u32;
-
-    eprintln!("\x1b[96m\x1b[1mVoice chat\x1b[0m \x1b[90m(agent: {agent}{model_info})\x1b[0m",
-        model_info = if model.is_empty() { String::new() } else { format!(", model: {model}") });
-    eprintln!("\x1b[90mSpeak after the 🎤 prompt. Say \"quit\" or \"exit\" to stop.\x1b[0m");
-    eprintln!("\x1b[90mPress Ctrl+C to abort at any time.\x1b[0m\n");
-
-    loop {
-        // ── 1. Listen ──
-        eprint!("\x1b[96m🎤 Listening…\x1b[0m ");
-        std::io::stderr().flush().ok();
-
-        let listen_result = kernel_logic::platform::dispatch(
-            "llm.voice.listen",
-            &[json!(null), json!(duration)],
-        ).unwrap_or_else(|| json!({"ok": false, "error": "llm.voice.listen not available"}));
-
-        if listen_result.get("ok").and_then(|v| v.as_bool()) != Some(true) {
-            let err = listen_result.get("error").and_then(|e| e.as_str()).unwrap_or("listen failed");
-            eprintln!("\n\x1b[31m✗ {err}\x1b[0m");
-            if err.contains("API key") {
-                return json!({"ok": false, "error": err, "turns": turns});
-            }
-            continue; // retry on transient errors
-        }
-
-        let text = listen_result.get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .trim();
-
-        if text.is_empty() {
-            eprintln!("\x1b[90m(no speech detected)\x1b[0m\n");
-            continue;
-        }
-
-        eprintln!("\x1b[0m\x1b[92m\"{text}\"\x1b[0m");
-
-        // Check for quit commands
-        let lower = text.to_lowercase();
-        if lower == "quit" || lower == "exit" || lower == "stop"
-            || lower == "goodbye" || lower == "bye" {
-            eprintln!("\n\x1b[90mEnding voice chat.\x1b[0m");
-            break;
-        }
-
-        // ── 2. Stream response from ACP, speak sentence-by-sentence ──
-        eprint!("\x1b[90mthinking…\x1b[0m ");
-        std::io::stderr().flush().ok();
-
-        let model_arg = if model.is_empty() { "" } else { model };
-        let args = [json!(text), json!(agent), json!(cwd), json!("false"), json!(model_arg)];
-
-        let mut sentence_buf = String::new();
-        let mut full_response = String::new();
-        let mut first_chunk = true;
-        let tts_voice_owned = tts_voice.to_string();
-
-        crate::dispatcher::compiled::acp::acp_proxy_dispatch_streaming(
-            &args,
-            &mut |chunk: &str| {
-                if first_chunk {
-                    // Clear "thinking…"
-                    eprint!("\r\x1b[2K\x1b[96m💬 \x1b[0m");
-                    std::io::stderr().flush().ok();
-                    first_chunk = false;
-                }
-
-                full_response.push_str(chunk);
-                sentence_buf.push_str(chunk);
-
-                // Check for sentence boundaries and speak completed sentences
-                while let Some(boundary) = find_sentence_boundary(&sentence_buf) {
-                    let sentence = sentence_buf[..boundary].to_string();
-                    sentence_buf = sentence_buf[boundary..].trim_start().to_string();
-
-                    let cleaned = clean_for_speech(&sentence);
-                    if !cleaned.is_empty() {
-                        // Print sentence for visual feedback
-                        eprint!("{cleaned} ");
-                        std::io::stderr().flush().ok();
-                        // Speak it immediately
-                        kernel_logic::platform::dispatch(
-                            "llm.voice.speak",
-                            &[json!(cleaned), json!(&tts_voice_owned)],
-                        );
-                    }
-                }
-            },
-        );
-
-        // Speak any remaining buffered text
-        let remaining = clean_for_speech(&sentence_buf);
-        if !remaining.is_empty() {
-            eprint!("{remaining}");
-            std::io::stderr().flush().ok();
-            kernel_logic::platform::dispatch(
-                "llm.voice.speak",
-                &[json!(remaining), json!(tts_voice)],
-            );
-        }
-
-        if first_chunk {
-            // No streaming chunks received — clear "thinking…"
-            eprint!("\r\x1b[2K");
-            eprintln!("\x1b[90m(no response)\x1b[0m");
-        } else {
-            eprintln!(); // newline after streamed text
-        }
-
-        turns += 1;
-    }
-
-    json!({"ok": true, "turns": turns})
+fn resolve_api_key() -> Option<String> {
+    kernel_logic::platform::secret_get("openai_api_key")
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
 }
 
-/// Strip markdown artifacts and code blocks to produce cleaner speech.
-fn clean_for_speech(text: &str) -> String {
-    let mut result = String::new();
-    let mut in_code_block = false;
-
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("```") {
-            in_code_block = !in_code_block;
-            if !in_code_block {
-                result.push_str(" (code omitted) ");
-            }
-            continue;
-        }
-        if in_code_block {
-            continue;
-        }
-        // Strip leading # for headers
-        let cleaned = if trimmed.starts_with('#') {
-            trimmed.trim_start_matches('#').trim()
-        } else {
-            trimmed
-        };
-        // Strip bold/italic markers
-        let cleaned = cleaned.replace("**", "").replace("__", "");
-        if !cleaned.is_empty() {
-            if !result.is_empty() {
-                result.push(' ');
-            }
-            result.push_str(&cleaned);
-        }
-    }
-
-    result
-}
-
-/// Find the byte offset of the first sentence boundary in a buffer.
-/// Returns the position just past the boundary character (., !, ?, or newline).
-/// Only splits on sentence-ending punctuation followed by a space or end of buffer.
-fn find_sentence_boundary(text: &str) -> Option<usize> {
-    let bytes = text.as_bytes();
-    for (i, &b) in bytes.iter().enumerate() {
-        if b == b'.' || b == b'!' || b == b'?' {
-            // Must be followed by space, newline, or be near end of buffer
-            let next = bytes.get(i + 1);
-            if next == Some(&b' ') || next == Some(&b'\n') || next == Some(&b'\r') || next.is_none() {
-                return Some(i + 1);
-            }
-        }
-        if b == b'\n' {
-            // Double newline = paragraph break — good split point
-            if i > 0 && bytes.get(i.wrapping_sub(1)) == Some(&b'\n') {
-                return Some(i + 1);
-            }
-        }
-    }
-    // If buffer is getting long (>200 chars), split on the first comma or semicolon
-    if text.len() > 200 {
-        for (i, &b) in bytes.iter().enumerate() {
-            if (b == b',' || b == b';' || b == b':') && bytes.get(i + 1) == Some(&b' ') {
-                return Some(i + 1);
-            }
-        }
-    }
-    None
-}
-
-/// Check if a command is available in PATH.
 fn which(cmd: &str) -> bool {
     std::process::Command::new("which")
         .arg(cmd)
@@ -259,4 +59,373 @@ fn which(cmd: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Playback thread commands
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum PlayCmd {
+    /// PCM audio data to write to speaker
+    Audio(Vec<u8>),
+    /// Interrupt: kill current playback, drain queue
+    Flush,
+    /// Shut down the playback thread
+    Shutdown,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Main Realtime session
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32, String> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    use tungstenite::{connect, Message};
+    use tungstenite::client::IntoClientRequest;
+    use tungstenite::stream::MaybeTlsStream;
+    use std::time::Duration;
+
+    // ── Connect ──
+    let url = format!("wss://api.openai.com/v1/realtime?model={}", model);
+    eprintln!("\x1b[90mConnecting to {model}…\x1b[0m");
+
+    let mut request = url.into_client_request().map_err(|e| format!("Build request: {e}"))?;
+    request.headers_mut().insert(
+        "Authorization",
+        format!("Bearer {}", api_key).parse().map_err(|e| format!("Auth header: {e}"))?
+    );
+    request.headers_mut().insert(
+        "OpenAI-Beta",
+        "realtime=v1".parse().map_err(|e| format!("Beta header: {e}"))?
+    );
+
+    let (mut ws, _) = connect(request).map_err(|e| format!("WebSocket connect: {e}"))?;
+
+    // ── Wait for session.created ──
+    let mut session_ready = false;
+    for _ in 0..100 {
+        match ws.read() {
+            Ok(Message::Text(text)) => {
+                let ev: Value = serde_json::from_str(&text).unwrap_or_default();
+                if ev.get("type").and_then(|t| t.as_str()) == Some("session.created") {
+                    session_ready = true;
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    if !session_ready {
+        return Err("Timeout waiting for session.created".into());
+    }
+
+    // ── Configure session ──
+    let session_update = json!({
+        "type": "session.update",
+        "session": {
+            "instructions": INSTRUCTIONS,
+            "modalities": ["text", "audio"],
+            "voice": voice_name,
+            "input_audio_format": "pcm16",
+            "output_audio_format": "pcm16",
+            "turn_detection": {
+                "type": "server_vad",
+                "threshold": 0.5,
+                "prefix_padding_ms": 300,
+                "silence_duration_ms": 500
+            },
+            "input_audio_transcription": {
+                "model": "whisper-1"
+            }
+        }
+    });
+
+    ws.send(Message::Text(session_update.to_string()))
+        .map_err(|e| format!("Send session.update: {e}"))?;
+
+    // ── Set read timeout for non-blocking interleave ──
+    match ws.get_ref() {
+        MaybeTlsStream::NativeTls(tls) => {
+            tls.get_ref().set_read_timeout(Some(Duration::from_millis(20))).ok();
+        }
+        MaybeTlsStream::Plain(tcp) => {
+            tcp.set_read_timeout(Some(Duration::from_millis(20))).ok();
+        }
+        _ => {}
+    }
+
+    // ── Start mic capture thread ──
+    let (mic_tx, mic_rx) = mpsc::channel::<Vec<u8>>();
+    let mic_handle = std::thread::spawn(move || {
+        mic_capture_loop(mic_tx);
+    });
+
+    // ── Start playback thread ──
+    let (play_tx, play_rx) = mpsc::channel::<PlayCmd>();
+    let play_handle = std::thread::spawn(move || {
+        playback_loop(play_rx);
+    });
+
+    // ── Install SIGINT handler ──
+    VOICE_RUNNING.store(true, Ordering::SeqCst);
+    let prev_handler = unsafe {
+        libc::signal(libc::SIGINT, sigint_handler as *const () as libc::sighandler_t)
+    };
+
+    // ── Print UI ──
+    eprintln!("\x1b[96m\x1b[1mRealtime voice chat\x1b[0m \x1b[90m(model: {model}, voice: {voice_name})\x1b[0m");
+    eprintln!("\x1b[90mSpeak naturally. Press Ctrl+C to stop.\x1b[0m\n");
+
+    // ── Main event loop ──
+    let mut turns = 0u32;
+
+    while VOICE_RUNNING.load(Ordering::Relaxed) {
+        // 1. Read server events
+        match ws.read() {
+            Ok(Message::Text(text)) => {
+                let ev: Value = serde_json::from_str(&text).unwrap_or_default();
+                let event_type = ev.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+                match event_type {
+                    // ── Audio output from model ──
+                    "response.audio.delta" => {
+                        if let Some(delta) = ev.get("delta").and_then(|d| d.as_str()) {
+                            if let Ok(pcm) = BASE64.decode(delta) {
+                                play_tx.send(PlayCmd::Audio(pcm)).ok();
+                            }
+                        }
+                    }
+
+                    // ── User started speaking — interrupt playback ──
+                    "input_audio_buffer.speech_started" => {
+                        play_tx.send(PlayCmd::Flush).ok();
+                    }
+
+                    // ── User's transcribed speech ──
+                    "conversation.item.input_audio_transcription.completed" => {
+                        if let Some(transcript) = ev.get("transcript").and_then(|t| t.as_str()) {
+                            let trimmed = transcript.trim();
+                            if !trimmed.is_empty() {
+                                eprintln!("\x1b[92m🎤 {trimmed}\x1b[0m");
+                            }
+                        }
+                        turns += 1;
+                    }
+
+                    // ── Model's response transcript ──
+                    "response.audio_transcript.done" => {
+                        if let Some(transcript) = ev.get("transcript").and_then(|t| t.as_str()) {
+                            let trimmed = transcript.trim();
+                            if !trimmed.is_empty() {
+                                eprintln!("\x1b[96m💬 {trimmed}\x1b[0m");
+                            }
+                        }
+                    }
+
+                    // ── Session configured ──
+                    "session.updated" => {
+                        eprintln!("\x1b[90m✓ Session configured\x1b[0m");
+                    }
+
+                    // ── Error from server ──
+                    "error" => {
+                        let msg = ev.pointer("/error/message")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("unknown error");
+                        eprintln!("\x1b[31m✗ {msg}\x1b[0m");
+                        if msg.contains("auth") || msg.contains("key") || msg.contains("quota") {
+                            VOICE_RUNNING.store(false, Ordering::Relaxed);
+                        }
+                    }
+
+                    // Lifecycle events we can ignore
+                    "response.created" | "response.done"
+                    | "response.output_item.added" | "response.output_item.done"
+                    | "response.content_part.added" | "response.content_part.done"
+                    | "response.audio.done" | "response.audio_transcript.delta"
+                    | "input_audio_buffer.speech_stopped" | "input_audio_buffer.committed"
+                    | "conversation.item.created" | "rate_limits.updated" => {}
+
+                    _ => {
+                        // Uncomment to debug:
+                        // eprintln!("\x1b[90m[{event_type}]\x1b[0m");
+                    }
+                }
+            }
+            Ok(Message::Close(_)) => {
+                eprintln!("\x1b[90mSession closed by server.\x1b[0m");
+                break;
+            }
+            // Read timeout — no message, that's fine
+            Err(tungstenite::Error::Io(ref e))
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                || e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(e) => {
+                // Connection reset or other fatal error
+                let msg = e.to_string();
+                if !msg.contains("Connection reset") {
+                    eprintln!("\x1b[31m✗ WebSocket: {msg}\x1b[0m");
+                }
+                break;
+            }
+            _ => {}
+        }
+
+        // 2. Send queued mic audio to server
+        let mut sent = 0;
+        while let Ok(chunk) = mic_rx.try_recv() {
+            let b64 = BASE64.encode(&chunk);
+            let event = json!({
+                "type": "input_audio_buffer.append",
+                "audio": b64
+            });
+            if ws.send(Message::Text(event.to_string())).is_err() {
+                VOICE_RUNNING.store(false, Ordering::Relaxed);
+                break;
+            }
+            sent += 1;
+            if sent > 10 { break; } // Don't block too long on sends
+        }
+    }
+
+    // ── Cleanup ──
+    VOICE_RUNNING.store(false, Ordering::Relaxed);
+    unsafe { libc::signal(libc::SIGINT, prev_handler); }
+    let _ = ws.close(None);
+    play_tx.send(PlayCmd::Shutdown).ok();
+    drop(play_tx);
+    drop(mic_rx);
+    let _ = mic_handle.join();
+    let _ = play_handle.join();
+
+    eprintln!("\n\x1b[90mVoice chat ended.\x1b[0m");
+    Ok(turns)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Mic capture thread — records PCM 24kHz 16-bit mono, sends chunks
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn mic_capture_loop(tx: mpsc::Sender<Vec<u8>>) {
+    use std::process::{Command, Stdio};
+    use std::io::Read;
+
+    let mut child = match Command::new("rec")
+        .args([
+            "-q",            // suppress progress
+            "-t", "raw",     // raw PCM output
+            "-r", "24000",   // 24 kHz (Realtime API requirement)
+            "-c", "1",       // mono
+            "-e", "signed",  // signed integer
+            "-b", "16",      // 16-bit
+            "-",             // output to stdout
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("\x1b[31m✗ Failed to start mic: {e}\x1b[0m");
+            return;
+        }
+    };
+
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = std::io::BufReader::new(stdout);
+    // 100ms of audio at 24kHz 16-bit mono = 24000 * 2 * 0.1 = 4800 bytes
+    let mut buf = vec![0u8; 4800];
+
+    while VOICE_RUNNING.load(Ordering::Relaxed) {
+        match reader.read_exact(&mut buf) {
+            Ok(()) => {
+                if tx.send(buf.clone()).is_err() {
+                    break; // receiver dropped
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Audio playback thread — receives PCM chunks from server, plays via sox
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn playback_loop(rx: mpsc::Receiver<PlayCmd>) {
+    use std::process::{Command, Stdio, Child, ChildStdin};
+    use std::io::Write;
+
+    let mut player: Option<Child> = None;
+    let mut stdin: Option<ChildStdin> = None;
+
+    fn start_player() -> Option<(Child, ChildStdin)> {
+        let mut child = Command::new("play")
+            .args([
+                "-q",            // suppress progress
+                "-t", "raw",     // raw PCM input
+                "-r", "24000",   // 24 kHz
+                "-c", "1",       // mono
+                "-e", "signed",  // signed integer
+                "-b", "16",      // 16-bit
+                "-",             // read from stdin
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        let s = child.stdin.take()?;
+        Some((child, s))
+    }
+
+    while let Ok(cmd) = rx.recv() {
+        match cmd {
+            PlayCmd::Audio(pcm) => {
+                // Lazily start player on first audio chunk
+                if stdin.is_none() {
+                    if let Some((p, s)) = start_player() {
+                        player = Some(p);
+                        stdin = Some(s);
+                    }
+                }
+                if let Some(ref mut s) = stdin {
+                    if s.write_all(&pcm).is_err() {
+                        // Player died — restart
+                        if let Some(ref mut p) = player {
+                            let _ = p.wait();
+                        }
+                        if let Some((p, s2)) = start_player() {
+                            player = Some(p);
+                            stdin = Some(s2);
+                            stdin.as_mut().unwrap().write_all(&pcm).ok();
+                        }
+                    }
+                }
+            }
+            PlayCmd::Flush => {
+                // Kill current playback immediately (interruption)
+                drop(stdin.take());
+                if let Some(ref mut p) = player {
+                    let _ = p.kill();
+                    let _ = p.wait();
+                }
+                player = None;
+                // Drain any queued audio commands
+                while let Ok(cmd) = rx.try_recv() {
+                    if matches!(cmd, PlayCmd::Shutdown) { return; }
+                }
+            }
+            PlayCmd::Shutdown => {
+                drop(stdin.take());
+                if let Some(ref mut p) = player {
+                    let _ = p.wait();
+                }
+                break;
+            }
+        }
+    }
 }

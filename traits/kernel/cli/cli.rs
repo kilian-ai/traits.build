@@ -1086,14 +1086,12 @@ impl CliSession {
                             return out;
                         }
                         "/voice" => {
-                            // Switch to voice mode — dispatch via REST sentinel
-                            let agent = self.chat.as_ref().unwrap().agent.clone();
-                            let model = self.chat.as_ref().unwrap().model.clone();
-                            let voice_name = if arg.is_empty() { "nova" } else { arg };
+                            // Switch to voice mode — OpenAI Realtime API
+                            let voice_name = if arg.is_empty() { "cedar" } else { arg };
                             out.push_str(&format!("{GRAY}Switching to voice mode…{RESET}\r\n"));
                             let sentinel = serde_json::json!({
                                 "p": "sys.voice",
-                                "a": [&agent, &model, voice_name, 15],
+                                "a": [voice_name, "gpt-4o-realtime-preview"],
                                 "rp": CHAT_PROMPT,
                             });
                             out.push_str(&format!("{REST_SENTINEL_START}{}{REST_SENTINEL_END}", sentinel));

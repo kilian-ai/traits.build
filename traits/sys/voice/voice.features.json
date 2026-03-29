@@ -2,11 +2,11 @@
   "trait": "sys.voice",
   "features": [
     {
-      "name": "Voice chat I/O service",
-      "description": "Starts a voice chat loop using microphone and speakers instead of keyboard and screen",
+      "name": "Real-time voice chat via OpenAI Realtime API",
+      "description": "Opens a WebSocket to OpenAI Realtime API for direct speech-to-speech voice chat",
       "tests": [
         {
-          "name": "voice requires audio tools",
+          "name": "voice requires API key and sox",
           "type": "exit_code",
           "command": "traits call sys.voice",
           "expected": 0
@@ -14,17 +14,17 @@
       ],
       "examples": [
         {
-          "input": ["opencode"],
+          "input": ["cedar"],
           "output": {
             "type": "object",
             "description": "{ok: true, turns: int} or {ok: false, error: string}"
           }
         },
         {
-          "input": ["opencode", "", "nova", "15"],
+          "input": ["marin", "gpt-4o-realtime-preview"],
           "output": {
             "type": "object",
-            "description": "Voice chat with default model, nova voice, 15s listen duration"
+            "description": "Voice chat with marin voice using gpt-4o-realtime-preview model"
           }
         }
       ]
