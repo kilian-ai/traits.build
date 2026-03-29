@@ -125,7 +125,7 @@ let _webllmEngine = null;
 let _webllmModel = null;
 let _webllmLoading = null;
 
-const WEBLLM_DEFAULT_MODEL = 'SmolLM2-360M-Instruct-q4f16_1-MLC';
+const WEBLLM_DEFAULT_MODEL = 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
 
 function _webllmProgress(text) {
     if (typeof window !== 'undefined') {
@@ -164,7 +164,7 @@ async function _ensureWebLLM(model) {
                 _webllmEngine = null; _webllmModel = null;
             }
 
-            _webllmProgress(`Loading model ${modelId}… (first run downloads ~200 MB)`);
+            _webllmProgress(`Loading model ${modelId}… (first run downloads weights)`);
             _webllmEngine = await _webllmLib.CreateMLCEngine(modelId, {
                 initProgressCallback: (report) => {
                     _webllmProgress(report.text || `${Math.round((report.progress || 0) * 100)}%`);
