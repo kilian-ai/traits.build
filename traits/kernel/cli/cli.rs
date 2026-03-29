@@ -810,7 +810,14 @@ impl CliSession {
             KeyEvent::Char(c) => {
                 self.line_buffer.insert(self.cursor_pos, c);
                 self.cursor_pos += c.len_utf8();
-                self.refresh_line()
+                // In chat mode, echo char directly when appending at end
+                // to avoid full refresh_line which breaks with line-wrapping
+                // in native terminals (\x1b[2K only clears one physical line).
+                if self.cursor_pos == self.line_buffer.len() {
+                    c.to_string()
+                } else {
+                    self.refresh_line()
+                }
             }
             KeyEvent::Enter => {
                 let input = self.line_buffer.trim().to_string();
@@ -872,10 +879,12 @@ impl CliSession {
                             // List models via REST sentinel (native-only trait)
                             let agent = self.chat.as_ref().unwrap().agent.clone();
                             out.push_str(&format!("{GRAY}Fetching models…{RESET}\r\n"));
-                            out.push_str(&format!(
-                                "{REST_SENTINEL_START}{{\"p\":\"llm.prompt.acp.list\",\"a\":[\".\",\"{agent}\"],\"rp\":\"{}\"}}{REST_SENTINEL_END}",
-                                CHAT_PROMPT.replace('"', "\\\"")
-                            ));
+                            let sentinel = serde_json::json!({
+                                "p": "llm.prompt.acp.list",
+                                "a": [".", &agent],
+                                "rp": CHAT_PROMPT
+                            });
+                            out.push_str(&format!("{REST_SENTINEL_START}{}{REST_SENTINEL_END}", sentinel));
                             return out;
                         }
                         "/status" => {
@@ -971,16 +980,17 @@ impl CliSession {
                 }
 
                 // Build REST sentinel for llm.prompt.acp
-                let escaped_prompt = input.replace('\\', "\\\\").replace('"', "\\\"");
-                let model_arg = if model.is_empty() { "".to_string() } else { model.clone() };
-                let escaped_rp = CHAT_PROMPT.replace('\\', "\\\\").replace('"', "\\\"");
-                let chat_meta = format!(
-                    "\"sid\":\"{session_id}\",\"rp\":\"{escaped_rp}\""
-                );
+                let model_arg = if model.is_empty() { "" } else { &model };
+                let sentinel = serde_json::json!({
+                    "p": "llm.prompt.acp",
+                    "a": [&input, &agent, &cwd, "false", model_arg],
+                    "sid": &session_id,
+                    "rp": CHAT_PROMPT
+                });
 
                 out.push_str(&format!("{GRAY}thinking…{RESET}\r\n"));
                 out.push_str(&format!(
-                    "{REST_SENTINEL_START}{{\"p\":\"llm.prompt.acp\",\"a\":[\"{escaped_prompt}\",\"{agent}\",\"{cwd}\",\"false\",\"{model_arg}\"],{chat_meta}}}{REST_SENTINEL_END}"
+                    "{REST_SENTINEL_START}{}{REST_SENTINEL_END}", sentinel
                 ));
                 out
             }

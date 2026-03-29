@@ -109,6 +109,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 call_trait(&config, name, &rest).await?;
             } else if name == "stop" {
                 call_trait(&config, "__stop__", &rest).await?;
+            } else if name == "chat" {
+                chat_call(&config, &rest).await?;
             } else {
                 // Strip @target for path resolution, reattach for dispatch
                 let (clean_name, target) = crate::cli::strip_dispatch_target(name);
@@ -557,7 +559,7 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
         return true;
     }
 
-    // Handle REST sentinel — extract {p, a, t} and dispatch via native backend or HTTP
+    // Handle REST sentinel — extract {p, a, t, rp} and dispatch via native backend or HTTP
     if output.contains(REST_SENTINEL_START) {
         if let Some(start) = output.find(REST_SENTINEL_START) {
             print!("{}", &output[..start]);
@@ -585,9 +587,18 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                         }
                     }
                 }
+                // Print the return prompt (chat mode's custom prompt, or default)
+                if let Some(rp) = parsed["rp"].as_str() {
+                    print!("{}", rp);
+                } else {
+                    print!("{}", PROMPT);
+                }
+            } else {
+                print!("{}", PROMPT);
             }
+        } else {
+            print!("{}", PROMPT);
         }
-        print!("{}", PROMPT);
         std::io::stdout().flush().ok();
         return true;
     }
@@ -719,6 +730,69 @@ async fn interactive_call(
     terminal::disable_raw_mode()?;
     println!();
     result
+}
+
+/// Standalone `traits chat [agent] [model]` entry point.
+/// Bootstraps the registry, then runs a raw-mode REPL starting in chat mode.
+async fn chat_call(
+    config: &Config,
+    args: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    use crossterm::{terminal, event::{self, Event, KeyCode, KeyModifiers}};
+    use std::io::{IsTerminal, Write};
+
+    if !std::io::stdin().is_terminal() {
+        return Err("Chat mode requires a terminal (stdin must be a TTY)".into());
+    }
+
+    let _dispatcher = crate::bootstrap(config)?;
+    let backend = NativeCliBackend;
+
+    let mut session = CliSession::new();
+    session.load_history(&backend);
+
+    let agent = args.first().map(|s| s.as_str()).unwrap_or("opencode");
+    let model = args.get(1).map(|s| s.as_str()).unwrap_or("");
+
+    // Enter chat mode directly
+    let banner = session.start_chat(agent, model);
+    print!("{}", banner);
+    std::io::stdout().flush()?;
+
+    terminal::enable_raw_mode()?;
+    loop {
+        match event::read() {
+            Ok(Event::Key(key)) => {
+                // Ctrl+D: exit
+                if key.code == KeyCode::Char('d') && key.modifiers == KeyModifiers::CONTROL {
+                    let _ = terminal::disable_raw_mode();
+                    println!();
+                    return Ok(());
+                }
+
+                if let Some(bytes) = keycode_to_bytes(&key) {
+                    let output = session.feed(&bytes, &backend);
+                    if process_session_output(&output, &backend) {
+                        continue;
+                    }
+                    print!("{}", output);
+                    std::io::stdout().flush()?;
+
+                    // Exit when chat mode is left (user typed /quit or Ctrl+C)
+                    if !session.is_chat() {
+                        let _ = terminal::disable_raw_mode();
+                        println!();
+                        return Ok(());
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                let _ = terminal::disable_raw_mode();
+                return Err(format!("Input error: {}", e).into());
+            }
+        }
+    }
 }
 
 /// REPL that runs alongside `traits serve`.
