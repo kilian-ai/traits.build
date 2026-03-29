@@ -6,6 +6,8 @@ const INSTRUCTIONS: &str = include_str!("realtime_instructions.md");
 
 /// Global flag for SIGINT handling.
 static VOICE_RUNNING: AtomicBool = AtomicBool::new(false);
+/// Mute mic while model is speaking to prevent feedback.
+static MIC_MUTED: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn sigint_handler(_: libc::c_int) {
     VOICE_RUNNING.store(false, Ordering::SeqCst);
@@ -189,6 +191,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
                 match event_type {
                     // ── Audio output from model ──
                     "response.audio.delta" => {
+                        MIC_MUTED.store(true, Ordering::Relaxed);
                         if let Some(delta) = ev.get("delta").and_then(|d| d.as_str()) {
                             if let Ok(pcm) = BASE64.decode(delta) {
                                 play_tx.send(PlayCmd::Audio(pcm)).ok();
@@ -196,8 +199,14 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
                         }
                     }
 
-                    // ── User started speaking — interrupt playback ──
+                    // ── Model finished speaking — unmute mic ──
+                    "response.audio.done" => {
+                        MIC_MUTED.store(false, Ordering::Relaxed);
+                    }
+
+                    // ── User started speaking — interrupt playback, unmute ──
                     "input_audio_buffer.speech_started" => {
+                        MIC_MUTED.store(false, Ordering::Relaxed);
                         play_tx.send(PlayCmd::Flush).ok();
                     }
 
@@ -242,7 +251,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
                     "response.created" | "response.done"
                     | "response.output_item.added" | "response.output_item.done"
                     | "response.content_part.added" | "response.content_part.done"
-                    | "response.audio.done" | "response.audio_transcript.delta"
+                    | "response.audio_transcript.delta"
                     | "input_audio_buffer.speech_stopped" | "input_audio_buffer.committed"
                     | "conversation.item.created" | "rate_limits.updated" => {}
 
@@ -271,9 +280,12 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
             _ => {}
         }
 
-        // 2. Send queued mic audio to server
+        // 2. Send queued mic audio to server (drop chunks while muted)
         let mut sent = 0;
         while let Ok(chunk) = mic_rx.try_recv() {
+            if MIC_MUTED.load(Ordering::Relaxed) {
+                continue; // drop mic data while model is speaking
+            }
             let b64 = BASE64.encode(&chunk);
             let event = json!({
                 "type": "input_audio_buffer.append",
@@ -290,6 +302,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
 
     // ── Cleanup ──
     VOICE_RUNNING.store(false, Ordering::Relaxed);
+    MIC_MUTED.store(false, Ordering::Relaxed);
     unsafe { libc::signal(libc::SIGINT, prev_handler); }
     let _ = ws.close(None);
     play_tx.send(PlayCmd::Shutdown).ok();
