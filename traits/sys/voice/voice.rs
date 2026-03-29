@@ -2,12 +2,14 @@ use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
-const INSTRUCTIONS: &str = include_str!("realtime_instructions.md");
+const VOICE_INSTRUCTIONS: &str = include_str!("realtime_instructions.md");
 
 /// Global flag for SIGINT handling.
 static VOICE_RUNNING: AtomicBool = AtomicBool::new(false);
 /// Mute mic while model is speaking to prevent feedback.
 static MIC_MUTED: AtomicBool = AtomicBool::new(false);
+/// Set by playback thread when `play` process finishes all buffered audio.
+static PLAYBACK_IDLE: AtomicBool = AtomicBool::new(true);
 
 extern "C" fn sigint_handler(_: libc::c_int) {
     VOICE_RUNNING.store(false, Ordering::SeqCst);
@@ -19,7 +21,7 @@ extern "C" fn sigint_handler(_: libc::c_int) {
 /// conversation. Mic audio is streamed continuously; the model responds
 /// with audio directly. No intermediate STT/TTS pipeline.
 ///
-/// Args: [voice?, model?]
+/// Args: [voice?, model?, agent?, session_id?]
 pub fn voice(args: &[Value]) -> Value {
     let voice_name = args.first()
         .and_then(|v| v.as_str())
@@ -30,6 +32,16 @@ pub fn voice(args: &[Value]) -> Value {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or("gpt-4o-realtime-preview");
+
+    let agent = args.get(2)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+
+    let session_id = args.get(3)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
 
     // Resolve API key
     let api_key = match resolve_api_key() {
@@ -42,10 +54,58 @@ pub fn voice(args: &[Value]) -> Value {
         return json!({"ok": false, "error": "sox not found. Install: brew install sox"});
     }
 
-    match realtime_session(&api_key, model, voice_name) {
+    // Build combined instructions: agent context + voice-specific tuning
+    let instructions = build_instructions(agent, session_id.as_deref());
+
+    match realtime_session(&api_key, model, voice_name, &instructions, session_id.as_deref()) {
         Ok(turns) => json!({"ok": true, "turns": turns}),
         Err(e) => json!({"ok": false, "error": e}),
     }
+}
+
+/// Build combined instructions from agent context + voice-specific tuning.
+fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    // 1. Agent context — tell the model who it's acting as
+    if !agent.is_empty() {
+        parts.push(format!(
+            "You are operating as the \"{}\" coding agent on the traits.build platform. \
+             The user is a developer who may ask about code, architecture, or technical topics. \
+             Maintain awareness of this agent context in your responses.",
+            agent
+        ));
+    }
+
+    // 2. Conversation history — provide recent context from the chat session
+    if let Some(sid) = session_id {
+        if let Some(result) = kernel_logic::platform::dispatch(
+            "sys.chat", &[json!("get"), json!(sid)],
+        ) {
+            if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                if let Some(messages) = result.pointer("/session/messages").and_then(|v| v.as_array()) {
+                    // Include last few messages as context (not too many — voice is concise)
+                    let recent: Vec<&Value> = messages.iter().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect();
+                    if !recent.is_empty() {
+                        let mut ctx = String::from("Recent conversation context (for continuity):\n");
+                        for msg in &recent {
+                            let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("?");
+                            let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                            // Truncate long messages for voice context
+                            let short = if content.len() > 200 { &content[..200] } else { content };
+                            ctx.push_str(&format!("  {}: {}\n", role, short));
+                        }
+                        parts.push(ctx);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Voice-specific tuning (always last — most specific)
+    parts.push(VOICE_INSTRUCTIONS.to_string());
+
+    parts.join("\n\n")
 }
 
 fn resolve_api_key() -> Option<String> {
@@ -72,6 +132,8 @@ enum PlayCmd {
     Audio(Vec<u8>),
     /// Interrupt: kill current playback, drain queue
     Flush,
+    /// Close current player (end of response), signal PLAYBACK_IDLE when done
+    FinishResponse,
     /// Shut down the playback thread
     Shutdown,
 }
@@ -80,7 +142,7 @@ enum PlayCmd {
 // Main Realtime session
 // ═══════════════════════════════════════════════════════════════════════════
 
-fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32, String> {
+fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: &str, session_id: Option<&str>) -> Result<u32, String> {
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use tungstenite::{connect, Message};
     use tungstenite::client::IntoClientRequest;
@@ -125,11 +187,14 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
     let session_update = json!({
         "type": "session.update",
         "session": {
-            "instructions": INSTRUCTIONS,
+            "instructions": instructions,
             "modalities": ["text", "audio"],
             "voice": voice_name,
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
+            "input_audio_noise_reduction": {
+                "type": "near_field"
+            },
             "turn_detection": {
                 "type": "server_vad",
                 "threshold": 0.7,
@@ -170,6 +235,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
 
     // ── Install SIGINT handler ──
     VOICE_RUNNING.store(true, Ordering::SeqCst);
+    PLAYBACK_IDLE.store(true, Ordering::SeqCst);
     let prev_handler = unsafe {
         libc::signal(libc::SIGINT, sigint_handler as *const () as libc::sighandler_t)
     };
@@ -192,6 +258,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
                     // ── Audio output from model ──
                     "response.audio.delta" => {
                         MIC_MUTED.store(true, Ordering::Relaxed);
+                        PLAYBACK_IDLE.store(false, Ordering::Relaxed);
                         if let Some(delta) = ev.get("delta").and_then(|d| d.as_str()) {
                             if let Ok(pcm) = BASE64.decode(delta) {
                                 play_tx.send(PlayCmd::Audio(pcm)).ok();
@@ -199,24 +266,21 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
                         }
                     }
 
-                    // ── Model finished speaking — flush stale mic data, clear server buffer, unmute ──
+                    // ── Model finished sending audio — close player, wait for actual playback to finish ──
                     "response.audio.done" => {
-                        // 1. Drain any mic chunks that accumulated during playback
+                        // Tell playback thread to close stdin and wait for play to exit
+                        play_tx.send(PlayCmd::FinishResponse).ok();
+                        // Drain any mic chunks sent during playback
                         while mic_rx.try_recv().is_ok() {}
-                        // 2. Clear server-side input buffer (may contain leaked speaker audio)
+                        // Clear server input buffer
                         let clear_ev = json!({"type": "input_audio_buffer.clear"});
                         ws.send(Message::Text(clear_ev.to_string())).ok();
-                        // 3. Small delay to let speaker audio fully decay
-                        std::thread::sleep(Duration::from_millis(150));
-                        // 4. Drain again after delay (mic was still recording during sleep)
-                        while mic_rx.try_recv().is_ok() {}
-                        // 5. Now unmute
-                        MIC_MUTED.store(false, Ordering::Relaxed);
                     }
 
                     // ── User started speaking — interrupt playback, unmute ──
                     "input_audio_buffer.speech_started" => {
                         MIC_MUTED.store(false, Ordering::Relaxed);
+                        PLAYBACK_IDLE.store(true, Ordering::Relaxed);
                         play_tx.send(PlayCmd::Flush).ok();
                     }
 
@@ -226,6 +290,13 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
                             let trimmed = transcript.trim();
                             if !trimmed.is_empty() {
                                 eprintln!("\x1b[92m🎤 {trimmed}\x1b[0m");
+                                // Persist user turn to session
+                                if let Some(sid) = session_id {
+                                    kernel_logic::platform::dispatch(
+                                        "sys.chat",
+                                        &[json!("append"), json!(sid), json!("user"), json!(trimmed)],
+                                    );
+                                }
                             }
                         }
                         turns += 1;
@@ -237,6 +308,13 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
                             let trimmed = transcript.trim();
                             if !trimmed.is_empty() {
                                 eprintln!("\x1b[96m💬 {trimmed}\x1b[0m");
+                                // Persist assistant turn to session
+                                if let Some(sid) = session_id {
+                                    kernel_logic::platform::dispatch(
+                                        "sys.chat",
+                                        &[json!("append"), json!(sid), json!("assistant"), json!(trimmed)],
+                                    );
+                                }
                             }
                         }
                     }
@@ -290,7 +368,19 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
             _ => {}
         }
 
-        // 2. Send queued mic audio to server (drop chunks while muted)
+        // 2. Check if playback finished — unmute mic
+        if !PLAYBACK_IDLE.load(Ordering::Relaxed) {
+            // Still playing — keep mic muted
+        } else if MIC_MUTED.load(Ordering::Relaxed) {
+            // Playback is idle — drain stale mic data, then unmute
+            while mic_rx.try_recv().is_ok() {}
+            // One more server buffer clear after playback actually finished
+            let clear_ev = json!({"type": "input_audio_buffer.clear"});
+            ws.send(Message::Text(clear_ev.to_string())).ok();
+            MIC_MUTED.store(false, Ordering::Relaxed);
+        }
+
+        // 3. Send queued mic audio to server (drop chunks while muted)
         let mut sent = 0;
         while let Ok(chunk) = mic_rx.try_recv() {
             if MIC_MUTED.load(Ordering::Relaxed) {
@@ -313,6 +403,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str) -> Result<u32,
     // ── Cleanup ──
     VOICE_RUNNING.store(false, Ordering::Relaxed);
     MIC_MUTED.store(false, Ordering::Relaxed);
+    PLAYBACK_IDLE.store(true, Ordering::Relaxed);
     unsafe { libc::signal(libc::SIGINT, prev_handler); }
     let _ = ws.close(None);
     play_tx.send(PlayCmd::Shutdown).ok();
@@ -441,10 +532,21 @@ fn playback_loop(rx: mpsc::Receiver<PlayCmd>) {
                     let _ = p.wait();
                 }
                 player = None;
+                PLAYBACK_IDLE.store(true, Ordering::SeqCst);
                 // Drain any queued audio commands
                 while let Ok(cmd) = rx.try_recv() {
                     if matches!(cmd, PlayCmd::Shutdown) { return; }
                 }
+            }
+            PlayCmd::FinishResponse => {
+                // Close stdin → player finishes buffered audio → wait for exit
+                drop(stdin.take());
+                if let Some(ref mut p) = player {
+                    let _ = p.wait(); // blocks until all buffered audio plays out
+                }
+                player = None;
+                // NOW signal that speakers are truly silent
+                PLAYBACK_IDLE.store(true, Ordering::SeqCst);
             }
             PlayCmd::Shutdown => {
                 drop(stdin.take());

@@ -1,7 +1,7 @@
 [trait]
 description = "Real-time voice chat via OpenAI Realtime API — speech-to-speech over WebSocket"
-version = "v260329.232952"
-checksum = "f236913a1acdb7b97c1b354443142366db19f6dd51cab09a7084df5c23f5bcd5"
+version = "v260329.233906"
+checksum = "a038445e32546a0e1b9009c61bbb608f369ff4bd82a9d7cac8a7267bdcc21238"
 author = "system"
 tags = ["sys", "voice", "chat", "realtime", "speech"]
 
@@ -9,6 +9,8 @@ tags = ["sys", "voice", "chat", "realtime", "speech"]
 params = [
   { name = "voice", type = "string", description = "Voice: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar", required = false, default = "cedar" },
   { name = "model", type = "string", description = "Realtime model: gpt-4o-realtime-preview, gpt-4o-mini-realtime-preview", required = false, default = "gpt-4o-realtime-preview" },
+  { name = "agent", type = "string", description = "ACP agent name for context (opencode, claude, codex, copilot)", required = false, default = "" },
+  { name = "session_id", type = "string", description = "Chat session ID to persist voice turns to", required = false, default = "" },
 ]
 
 [signature.returns]

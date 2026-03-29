@@ -880,11 +880,30 @@ async fn chat_call(
 
     // ── Voice mode: delegate to sys.voice (OpenAI Realtime API) ──
     if voice_mode {
+        // Look up current session for context
+        let (session_id, session_agent) = crate::dispatcher::compiled::dispatch(
+            "sys.chat",
+            &[serde_json::json!("current")],
+        ).and_then(|r| {
+            if r.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                let sid = r.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let sa = r.get("agent").and_then(|v| v.as_str()).map(|s| s.to_string());
+                Some((sid, sa))
+            } else {
+                None
+            }
+        }).unwrap_or((None, None));
+
+        let voice_agent = if !agent.is_empty() { agent.to_string() } else { session_agent.unwrap_or_default() };
+        let voice_session = session_id.unwrap_or_default();
+
         let result = crate::dispatcher::compiled::dispatch(
             "sys.voice",
             &[
                 serde_json::json!("cedar"),
                 serde_json::json!("gpt-4o-realtime-preview"),
+                serde_json::json!(voice_agent),
+                serde_json::json!(voice_session),
             ],
         );
         if let Some(r) = result {
