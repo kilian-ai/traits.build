@@ -591,7 +591,7 @@ Layer 2: Native Infrastructure (wasm = false)
 
 The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel traits and warns if any trait is missing an explicit `wasm = true/false` declaration.
 
-### Sys (26) — System utilities & services
+### Sys (27) — System utilities & services
 
 | Trait | Description | Source |
 |-------|-------------|--------|
@@ -618,6 +618,7 @@ The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel
 | `sys.reload` | Registry hot-reload from disk | builtin |
 | `sys.release` | Configurable release pipeline | builtin |
 | `sys.voice` | Voice I/O chat service (listen→transcribe→send→speak loop) | builtin |
+| `sys.chat` | Chat session management — persistent CRUD, MCP-callable | builtin |
 | `sys.chat_workspaces` | VS Code workspace scanner | builtin |
 | `sys.chat_protocols` | Chat protocol reader interface | builtin |
 | `sys.chat_protocols.vscode` | VS Code chat extractor | builtin |
