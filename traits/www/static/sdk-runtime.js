@@ -169,10 +169,13 @@ function _traitTypeToSchema(typeStr) {
     return { type: 'string' };
 }
 
-/** Build OpenAI Realtime API tool definitions from the trait registry. */
+/** Build OpenAI Realtime API tool definitions from the trait registry.
+ *  In WASM-only mode (no helper/server), only WASM-callable traits are included
+ *  since non-WASM traits cannot be dispatched in the browser. */
 async function _buildVoiceTools(sdk) {
     let traits = [];
     try { traits = await sdk.list(); } catch(e) { return []; }
+    const wasmOnly = wasmReady && !helperReady;
     const tools = [];
     for (const t of traits) {
         if (!t.path) continue;
@@ -180,6 +183,7 @@ async function _buildVoiceTools(sdk) {
         if (t.path.startsWith('www.')) continue;
         const kind = (t.source || t.kind || '').toLowerCase();
         if (kind === 'library' || kind === 'interface') continue;
+        if (wasmOnly && !t.wasm_callable) continue;
 
         const toolName = t.path.replace(/\./g, '_');
         const properties = {};
@@ -1272,10 +1276,33 @@ class Traits {
 
             // Handle data channel open — send session config
             _voiceDc.addEventListener('open', () => {
+                const defaultInstructions = `You are a concise, helpful voice assistant powered by the traits.build platform.
+
+Keep responses short and conversational — aim for 1–3 sentences unless the user asks for detail.
+Use natural spoken language. Avoid bullet points, markdown, code blocks, or structured formatting — the user is listening, not reading.
+When the user asks a technical question, give the answer directly. Don't over-explain unless asked to elaborate.
+If you don't know something, say so briefly. Don't hedge excessively.
+
+Be warm but not effusive. No filler greetings like "Great question!" or "Absolutely!".
+Mirror the user's energy — if they're terse, be terse. If they're chatty, match it.
+Use contractions naturally (I'm, you'll, that's, etc.).
+Avoid repeating the user's question back to them.
+
+Never output code blocks, URLs, file paths, or anything hard to speak aloud. If the user needs code, say "I can help with that — you'll want to check the docs or switch to text mode."
+For numbers, spell them out when short (e.g. "three" not "3"), use digits for long ones.
+Don't say "as an AI" or "as a language model." Just answer.
+
+Don't monologue. Pause after answering to let the user respond.
+If interrupted, stop immediately and listen to the new input.
+
+You're running in the browser on the traits.build platform. The user is a developer.
+You have access to function-calling tools that execute locally in the browser via WebAssembly.
+When the user asks you to do something and a matching tool exists, call it directly — don't say you can't.`;
+
                 const sessionConfig = {
                     type: 'realtime',
                     model: model,
-                    instructions: opts.instructions || 'You are a helpful voice assistant. Keep responses concise for voice conversation.',
+                    instructions: opts.instructions || defaultInstructions,
                     modalities: ['text', 'audio'],
                     voice: voice,
                     input_audio_transcription: { model: 'whisper-1' },

@@ -237,6 +237,7 @@ pub fn list_traits() -> String {
             "description": e.description,
             "version": e.version,
             "tags": e.tags,
+            "source": e.source_type,
             "wasm_callable": e.wasm_callable,
             "params": e.params,
             "returns": e.returns_type,
