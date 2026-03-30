@@ -1,0 +1,49 @@
+{
+  "features": [
+    {
+      "name": "get voice preference",
+      "examples": [
+        {
+          "input": ["get", "voice"],
+          "output": { "contains": ["ok", "voice"] }
+        }
+      ]
+    },
+    {
+      "name": "get all preferences",
+      "examples": [
+        {
+          "input": ["get", ""],
+          "output": { "contains": ["ok", "voice", "model", "agent"] }
+        }
+      ]
+    },
+    {
+      "name": "set and read voice",
+      "examples": [
+        {
+          "input": ["set", "voice", "shimmer"],
+          "output": { "contains": ["ok", "shimmer"] }
+        }
+      ]
+    },
+    {
+      "name": "reject invalid voice",
+      "examples": [
+        {
+          "input": ["set", "voice", "invalid_voice_name"],
+          "output": { "contains": ["Invalid voice"] }
+        }
+      ]
+    },
+    {
+      "name": "reject invalid key",
+      "examples": [
+        {
+          "input": ["set", "badkey", "foo"],
+          "output": { "contains": ["Unknown key"] }
+        }
+      ]
+    }
+  ]
+}

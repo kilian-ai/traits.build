@@ -405,6 +405,102 @@
     {
       "content": "Alles klar, ich bin hier, wenn du wieder etwas brauchst.",
       "role": "assistant"
+    },
+    {
+      "content": "Klar, ich kann die Modelle wechseln.",
+      "role": "assistant"
+    },
+    {
+      "content": "Okay, kannst du das Modell ändern?",
+      "role": "user"
+    },
+    {
+      "content": "MTP.",
+      "role": "user"
+    },
+    {
+      "content": "Welches Modell hättest du denn gerne?",
+      "role": "assistant"
+    },
+    {
+      "content": "Claude Opus 4.6",
+      "role": "user"
+    },
+    {
+      "content": "Das Modell steht leider nicht zur Verfügung. Es gibt aktuell zum Beispiel nur GPT-Modelle. Möchtest du eins davon nehmen?",
+      "role": "assistant"
+    },
+    {
+      "content": "5.4",
+      "role": "user"
+    },
+    {
+      "content": "Im Moment kann ich nur zwischen zwei Modellen wählen: GPT-4o oder GPT-4o-mini. Welches davon passt für dich?",
+      "role": "assistant"
+    },
+    {
+      "content": "Welches haben wir denn jetzt gerade?",
+      "role": "user"
+    },
+    {
+      "content": "Im Moment nutzen wir die Standard-Einstellung, also das normale GPT-4o. Wenn du möchtest, kann ich auf die Mini-Version umschalten.",
+      "role": "assistant"
+    },
+    {
+      "content": "Ne, lass mal die normale Version.",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, dann bleiben wir bei der Standard-Version. Wenn du noch was brauchst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "Alles klar, dann machen wir so weiter. Wenn du nochmal etwas ändern willst oder Fragen hast, einfach melden.",
+      "role": "assistant"
+    },
+    {
+      "content": "Okay.",
+      "role": "user"
+    },
+    {
+      "content": "okay kannst du mir bitte nicht ins wort fallen und kannst du mal schauen gibt es das mcp tool um shell",
+      "role": "user"
+    },
+    {
+      "content": "Generelle Execution zu machen.",
+      "role": "user"
+    },
+    {
+      "content": "Also ein direktes Tool für Shell-Execution scheint es gerade nicht zu geben. Willst du vielleicht eine andere Lösung oder einen Workaround überlegen?",
+      "role": "assistant"
+    },
+    {
+      "content": "ja kannst du ein tool für shell execution machen",
+      "role": "user"
+    },
+    {
+      "content": "Ein eigenes Tool dafür zu bauen würde etwas mehr Aufwand bedeuten, je nachdem wie komplex du es brauchst. Aber grundsätzlich wäre es möglich. Was genau soll das Tool denn können?",
+      "role": "assistant"
+    },
+    {
+      "content": "Hmm.",
+      "role": "user"
+    },
+    {
+      "content": "Kein Stress, wir können das ja auch Schritt für Schritt angehen. Überleg dir einfach, welche Funktionen du genau brauchst und dann schauen wir, wie wir das umsetzen können.",
+      "role": "assistant"
+    },
+    {
+      "content": "Ja, jetzt habe ich eine Idee und zwar wir müssen dieses Sprachmodell mit dem Coding-Modell interagieren lassen.",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, also die Idee ist, dass wir zum Beispiel deine Anweisungen an ein Coding-Modell weitergeben, das dann Shell-Befehle generiert. Dann könnte man die ausführen. Wir können auch ein Skript erstellen, das die Interaktion übernimmt. Das wäre vermutlich der einfachste Weg. Was meinst du?",
+      "role": "assistant"
+    },
+    {
+      "content": "soll. Hast du eine bestimmte Struktur oder ein Interface im Kopf?",
+      "role": "user"
     }
   ],
   "model": "",

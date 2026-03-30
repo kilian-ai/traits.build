@@ -24,20 +24,25 @@ extern "C" fn sigint_handler(_: libc::c_int) {
 ///
 /// Args: [voice?, model?, agent?, session_id?]
 pub fn voice(args: &[Value]) -> Value {
+    // Read persistent defaults from sys.config, then allow arg overrides
+    let default_voice = read_voice_pref("voice").unwrap_or_else(|| "cedar".into());
+    let default_model = read_voice_pref("model").unwrap_or_else(|| "gpt-4o-realtime-preview".into());
+    let default_agent = read_voice_pref("agent").unwrap_or_default();
+
     let voice_name = args.first()
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("cedar");
+        .unwrap_or(&default_voice);
 
     let model = args.get(1)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("gpt-4o-realtime-preview");
+        .unwrap_or(&default_model);
 
     let agent = args.get(2)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("");
+        .unwrap_or(&default_agent);
 
     let session_id = args.get(3)
         .and_then(|v| v.as_str())
@@ -112,6 +117,16 @@ fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
 fn resolve_api_key() -> Option<String> {
     kernel_logic::platform::secret_get("openai_api_key")
         .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+}
+
+/// Read a voice preference from persistent config (sys.config sys.voice <key>).
+fn read_voice_pref(key: &str) -> Option<String> {
+    kernel_logic::platform::dispatch(
+        "sys.config",
+        &[json!("get"), json!("sys.voice"), json!(key)],
+    )
+    .and_then(|r| r.get("value").and_then(|v| v.as_str()).map(|s| s.to_string()))
+    .filter(|s| !s.is_empty())
 }
 
 fn which(cmd: &str) -> bool {
@@ -349,6 +364,11 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                         } else {
                             result
                         };
+
+                        // If the model changed voice preferences, apply live
+                        if func_name == "sys_voice_config" {
+                            apply_live_config_change(arguments, session_id, &mut ws);
+                        }
 
                         // Send function call output back to the model
                         let output_event = json!({
@@ -615,6 +635,57 @@ fn playback_loop(rx: mpsc::Receiver<PlayCmd>) {
                 break;
             }
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Live config change — apply voice/agent changes mid-session via session.update
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// After sys.voice.config set is called by the model, apply relevant changes
+/// to the live WebSocket session. Voice changes take effect on next response.
+/// Agent changes update the instructions immediately.
+fn apply_live_config_change(
+    arguments_json: &str,
+    session_id: Option<&str>,
+    ws: &mut tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
+) {
+    use tungstenite::Message;
+
+    let args: Map<String, Value> = serde_json::from_str(arguments_json).unwrap_or_default();
+    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    let key = args.get("key").and_then(|v| v.as_str()).unwrap_or("");
+    let value = args.get("value").and_then(|v| v.as_str()).unwrap_or("");
+
+    if action != "set" || key.is_empty() || value.is_empty() {
+        return;
+    }
+
+    match key {
+        "voice" => {
+            // Send session.update with new voice — takes effect on next response
+            let update = json!({
+                "type": "session.update",
+                "session": { "voice": value }
+            });
+            ws.send(Message::Text(update.to_string())).ok();
+            eprintln!("\x1b[90m✓ Voice changed to {value}\x1b[0m");
+        }
+        "agent" => {
+            // Rebuild instructions with new agent and send session.update
+            let instructions = build_instructions(value, session_id);
+            let update = json!({
+                "type": "session.update",
+                "session": { "instructions": instructions }
+            });
+            ws.send(Message::Text(update.to_string())).ok();
+            eprintln!("\x1b[90m✓ Agent changed to {value}\x1b[0m");
+        }
+        "model" => {
+            // Model is fixed at WebSocket connect time — just inform
+            eprintln!("\x1b[90m✓ Model set to {value} (takes effect next session)\x1b[0m");
+        }
+        _ => {}
     }
 }
 
