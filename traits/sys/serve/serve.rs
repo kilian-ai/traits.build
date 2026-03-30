@@ -44,6 +44,114 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 use dashmap::DashMap;
 use std::sync::Arc;
+use std::time::Instant;
+
+struct RateLimiter {
+    relay: DashMap<String, RateLimitState>,
+    admin: DashMap<String, RateLimitState>,
+    relay_limit: u32,
+    admin_limit: u32,
+    window_secs: u64,
+}
+
+struct RateLimitState {
+    requests: Vec<Instant>,
+    limit: u32,
+}
+
+impl RateLimiter {
+    fn new(relay_limit: u32, admin_limit: u32) -> Self {
+        Self {
+            relay: DashMap::new(),
+            admin: DashMap::new(),
+            relay_limit,
+            admin_limit,
+            window_secs: 60,
+        }
+    }
+
+    fn check(&self, key: &str, is_admin: bool) -> bool {
+        let map = if is_admin { &self.admin } else { &self.relay };
+        let limit = if is_admin { self.admin_limit } else { self.relay_limit };
+        
+        let mut state = map.entry(key.to_string()).or_insert_with(|| RateLimitState {
+            requests: Vec::new(),
+            limit,
+        });
+
+        let now = Instant::now();
+        state.requests.retain(|t| now.duration_since(*t).as_secs() < self.window_secs);
+        
+        if state.requests.len() >= limit as usize {
+            return false;
+        }
+        
+        state.requests.push(now);
+        true
+    }
+}
+
+struct RateLimitData {
+    limiter: Arc<RateLimiter>,
+}
+
+impl RateLimitData {
+    fn new(relay_limit: u32, admin_limit: u32) -> Self {
+        Self {
+            limiter: Arc::new(RateLimiter::new(relay_limit, admin_limit)),
+        }
+    }
+}
+
+fn check_rate_limit(req: &HttpRequest, rate_data: &web::Data<RateLimitData>, is_admin: bool) -> Result<(), HttpResponse> {
+    let client_ip = req.connection_info()
+        .peer_addr()
+        .map(|a| a.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    
+    if !rate_data.limiter.check(&client_ip, is_admin) {
+        return Err(HttpResponse::TooManyRequests()
+            .content_type("text/plain")
+            .body("Rate limit exceeded. Please try again later."));
+    }
+    Ok(())
+}
+
+fn check_admin_token(req: &HttpRequest) -> Result<(), HttpResponse> {
+    let ctx = crate::dispatcher::compiled::secrets::SecretContext::resolve(&["admin_token"]);
+    let token = if let Some(t) = ctx.get("admin_token") {
+        t.to_string()
+    } else {
+        match std::env::var("ADMIN_TOKEN") {
+            Ok(t) if !t.is_empty() => t,
+            _ => return Err(HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body("ADMIN_TOKEN not configured (set via secrets store or env var)")),
+        }
+    };
+
+    let auth_header = match req.headers().get("Authorization") {
+        Some(h) => h,
+        None => return Err(HttpResponse::Unauthorized()
+            .insert_header(("WWW-Authenticate", "Bearer realm=\"traits.build admin\""))
+            .body("Authorization required")),
+    };
+
+    let auth_str = auth_header.to_str().unwrap_or("");
+    let provided_token = if auth_str.starts_with("Bearer ") {
+        &auth_str[7..]
+    } else {
+        auth_str
+    };
+
+    if provided_token == token {
+        Ok(())
+    } else {
+        Err(HttpResponse::Unauthorized()
+            .insert_header(("WWW-Authenticate", "Bearer realm=\"traits.build admin\""))
+            .body("Invalid token"))
+    }
+}
 
 struct AppState {
     dispatcher: Dispatcher,
@@ -520,9 +628,16 @@ async fn serve_binary() -> HttpResponse {
 
 /// POST /admin/update — Self-update: download latest binary from GitHub releases,
 /// replace /data/traits, and exit so Fly.io auto-restarts with the new binary.
-/// Requires admin Basic Auth.
-async fn admin_update(req: HttpRequest) -> HttpResponse {
-    if let Err(resp) = check_basic_auth(&req) {
+/// Requires admin Bearer token auth.
+async fn admin_update(
+    req: HttpRequest,
+    rate: web::Data<RateLimitData>,
+) -> HttpResponse {
+    if let Err(resp) = check_rate_limit(&req, &rate, true) {
+        return resp;
+    }
+    
+    if let Err(resp) = check_admin_token(&req) {
         return resp;
     }
 
@@ -653,11 +768,20 @@ async fn admin_update(req: HttpRequest) -> HttpResponse {
 
 /// Serve pages by resolving keyed interface bindings from sys.serve's [requires]/[bindings].
 /// Each key is a URL path (e.g. "/", "/admin"), resolved to a page trait.
-async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
+async fn serve_page(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    rate: web::Data<RateLimitData>,
+) -> HttpResponse {
     let url_path = req.path();
 
-    // Protect /admin, /settings, and /llm-test paths with HTTP Basic Auth
+    // Rate limiting for /admin, /settings, and /llm-test paths
     if url_path.starts_with("/admin") || url_path.starts_with("/settings") || url_path.starts_with("/llm-test") {
+        if let Err(resp) = check_rate_limit(&req, &rate, true) {
+            return resp;
+        }
+        
+        // Protect /admin, /settings, and /llm-test paths with HTTP Basic Auth
         if let Err(resp) = check_basic_auth(&req) {
             return resp;
         }
@@ -699,9 +823,15 @@ async fn serve_page(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
 
 /// POST /relay/register — Reserve a pairing code
 async fn relay_register(
+    req: HttpRequest,
     relay: web::Data<Arc<RelayState>>,
+    rate: web::Data<RateLimitData>,
     body: web::Bytes,
 ) -> HttpResponse {
+    if let Err(resp) = check_rate_limit(&req, &rate, false) {
+        return resp;
+    }
+    
     let requested_code = if body.is_empty() {
         None
     } else {
@@ -725,9 +855,15 @@ async fn relay_register(
 
 /// GET /relay/poll?code=XXXX — Mac long-polls for next request
 async fn relay_poll(
+    req: HttpRequest,
     relay: web::Data<Arc<RelayState>>,
+    rate: web::Data<RateLimitData>,
     query: web::Query<RelayCodeQuery>,
 ) -> HttpResponse {
+    if let Err(resp) = check_rate_limit(&req, &rate, false) {
+        return resp;
+    }
+    
     let session = match relay.sessions.get(&query.code) {
         Some(s) => s.clone(),
         None => return HttpResponse::NotFound().json(serde_json::json!({"error": "Invalid code"})),
@@ -744,9 +880,15 @@ async fn relay_poll(
 
 /// POST /relay/call — Phone sends trait call, waits for Mac response
 async fn relay_call_handler(
+    req: HttpRequest,
     relay: web::Data<Arc<RelayState>>,
+    rate: web::Data<RateLimitData>,
     body: web::Json<RelayCallBody>,
 ) -> HttpResponse {
+    if let Err(resp) = check_rate_limit(&req, &rate, false) {
+        return resp;
+    }
+    
     let session = match relay.sessions.get(&body.code) {
         Some(s) => s.clone(),
         None => return HttpResponse::NotFound().json(serde_json::json!({
@@ -797,9 +939,15 @@ async fn relay_call_handler(
 
 /// POST /relay/respond — Mac sends result back
 async fn relay_respond(
+    req: HttpRequest,
     relay: web::Data<Arc<RelayState>>,
+    rate: web::Data<RateLimitData>,
     body: web::Json<serde_json::Value>,
 ) -> HttpResponse {
+    if let Err(resp) = check_rate_limit(&req, &rate, false) {
+        return resp;
+    }
+    
     let code = match body.get("code").and_then(|v| v.as_str()) {
         Some(c) => c.to_string(),
         None => return HttpResponse::BadRequest().json(serde_json::json!({"error": "Missing code"})),
@@ -825,9 +973,15 @@ async fn relay_respond(
 
 /// GET /relay/status?code=XXXX — Check if a pairing code is active
 async fn relay_status(
+    req: HttpRequest,
     relay: web::Data<Arc<RelayState>>,
+    rate: web::Data<RateLimitData>,
     query: web::Query<RelayCodeQuery>,
 ) -> HttpResponse {
+    if let Err(resp) = check_rate_limit(&req, &rate, false) {
+        return resp;
+    }
+    
     match relay.sessions.get(&query.code) {
         Some(s) => HttpResponse::Ok().json(serde_json::json!({
             "active": true,
@@ -1054,7 +1208,16 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
         info!("Page route '{}' → {}", url_path, trait_path);
     }
 
-    let state = web::Data::new(AppState { dispatcher, start_time: std::time::Instant::now() });
+    let state = web::Data::new(AppState { 
+        dispatcher, 
+        start_time: std::time::Instant::now(),
+    });
+
+    let rate_limit_data = web::Data::new(RateLimitData::new(
+        config.traits.rate_limit_relay,
+        config.traits.rate_limit_admin,
+    ));
+    let rate_limit_for_middleware = rate_limit_data.clone();
 
     // Relay state (shared across all workers)
     let relay = Arc::new(RelayState::new());
@@ -1098,15 +1261,23 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
     let _ = crate::globals::SERVER_BIND.set(config.traits.bind.clone());
     let _ = crate::globals::SERVER_PORT.set(port);
 
+    let cors_origins = config.traits.cors_origins.clone();
     let server = HttpServer::new(move || {
-        let cors = Cors::default()
-            .allow_any_origin()
-            .allow_any_method()
-            .allow_any_header()
+        let origins = cors_origins.clone();
+        let mut cors_builder = Cors::default()
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+            .allowed_headers(vec!["Content-Type", "Authorization", "Accept"])
             .max_age(3600);
+        
+        for origin in &origins {
+            cors_builder = cors_builder.allowed_origin(origin);
+        }
+
+        let cors = cors_builder;
 
         App::new()
             .wrap(cors)
+            .app_data(rate_limit_for_middleware.clone())
             .app_data(state.clone())
             .app_data(relay_data.clone())
             .route("/health", web::get().to(health_check))

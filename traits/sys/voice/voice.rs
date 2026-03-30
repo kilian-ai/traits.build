@@ -304,6 +304,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
     // ── Main event loop ──
     let mut turns = 0u32;
     let mut unmute_at: Option<Instant> = None;
+    let mut glow_proc: Option<std::process::Child> = None;
 
     while VOICE_RUNNING.load(Ordering::Relaxed) {
         // 1. Read server events
@@ -542,9 +543,33 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
         while let Ok(msg) = bg_tool_rx.try_recv() {
             match msg {
                 BgToolMsg::Chunk(text) => {
-                    eprint!("{}", text);
+                    // Lazy-start glow for markdown rendering
+                    if glow_proc.is_none() {
+                        glow_proc = std::process::Command::new("glow")
+                            .args(["--style", "dark", "-"])
+                            .stdin(std::process::Stdio::piped())
+                            .stderr(std::process::Stdio::inherit())
+                            .stdout(std::process::Stdio::inherit())
+                            .spawn()
+                            .ok();
+                    }
+                    if let Some(ref mut proc) = glow_proc {
+                        if let Some(ref mut stdin) = proc.stdin {
+                            use std::io::Write;
+                            let _ = stdin.write_all(text.as_bytes());
+                            let _ = stdin.flush();
+                        }
+                    } else {
+                        // Fallback if glow not available
+                        eprint!("{}", text);
+                    }
                 }
                 BgToolMsg::Done { result } => {
+                    // Close glow stdin so it renders and exits
+                    if let Some(mut proc) = glow_proc.take() {
+                        drop(proc.stdin.take());
+                        let _ = proc.wait();
+                    }
                     eprintln!("\n\x1b[90m--- ACP agent done ---\x1b[0m");
                     let truncated = if result.len() > 2000 {
                         let mut end = 2000;

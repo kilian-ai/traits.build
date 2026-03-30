@@ -22,6 +22,12 @@ pub struct TraitsConfig {
     pub timeout: u64,
     #[serde(default = "default_bindings_file")]
     pub bindings_file: String,
+    #[serde(default = "default_cors_origins")]
+    pub cors_origins: Vec<String>,
+    #[serde(default = "default_rate_limit_relay")]
+    pub rate_limit_relay: u32,
+    #[serde(default = "default_rate_limit_admin")]
+    pub rate_limit_admin: u32,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -61,6 +67,21 @@ fn default_bindings_file() -> String {
     "./state/bindings.cl".into()
 }
 
+fn default_cors_origins() -> Vec<String> {
+    vec![
+        "https://traits.build".to_string(),
+        "https://admin.traits.build".to_string(),
+    ]
+}
+
+fn default_rate_limit_relay() -> u32 {
+    60
+}
+
+fn default_rate_limit_admin() -> u32 {
+    30
+}
+
 impl Config {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
@@ -88,6 +109,22 @@ impl Config {
                     config.traits.timeout = t;
                 }
             }
+            if let Ok(origins) = std::env::var("TRAITS_CORS_ORIGINS") {
+                if !origins.is_empty() {
+                    config.traits.cors_origins =
+                        origins.split(',').map(|s| s.trim().to_string()).collect();
+                }
+            }
+            if let Ok(rl) = std::env::var("TRAITS_RATE_LIMIT_RELAY") {
+                if let Ok(r) = rl.parse() {
+                    config.traits.rate_limit_relay = r;
+                }
+            }
+            if let Ok(rl) = std::env::var("TRAITS_RATE_LIMIT_ADMIN") {
+                if let Ok(r) = rl.parse() {
+                    config.traits.rate_limit_admin = r;
+                }
+            }
 
             Ok(config)
         } else {
@@ -99,6 +136,9 @@ impl Config {
                     bind: default_bind(),
                     timeout: default_timeout(),
                     bindings_file: default_bindings_file(),
+                    cors_origins: default_cors_origins(),
+                    rate_limit_relay: default_rate_limit_relay(),
+                    rate_limit_admin: default_rate_limit_admin(),
                 },
                 workers: HashMap::new(),
             })
@@ -177,7 +217,8 @@ pub fn trait_config(trait_path: &str, key: &str) -> Option<String> {
     }
 
     // 3. Look up [config] default from registry
-    let default_val = crate::globals::REGISTRY.get()
+    let default_val = crate::globals::REGISTRY
+        .get()
         .and_then(|reg| reg.get(trait_path))
         .and_then(|entry| entry.config.get(key).cloned());
 
@@ -213,7 +254,8 @@ pub fn read_persistent_config(trait_path: &str, key: &str) -> Option<String> {
     let content = std::fs::read_to_string(persistent_config_path()).ok()?;
     let table: toml::Value = toml::from_str(&content).ok()?;
     // Trait paths use dots, TOML sections use quoted keys: ["www.admin"]
-    table.get(trait_path)?
+    table
+        .get(trait_path)?
         .get(key)?
         .as_str()
         .map(|s| s.to_string())
@@ -231,7 +273,8 @@ pub fn read_persistent_config_section(trait_path: &str) -> Vec<(String, String)>
         Err(_) => return Vec::new(),
     };
     match table.get(trait_path).and_then(|v| v.as_table()) {
-        Some(section) => section.iter()
+        Some(section) => section
+            .iter()
             .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
             .collect(),
         None => Vec::new(),
@@ -249,10 +292,12 @@ pub fn read_persistent_config_all() -> Vec<(String, std::collections::HashMap<St
         Ok(t) => t,
         Err(_) => return Vec::new(),
     };
-    table.iter()
+    table
+        .iter()
         .filter_map(|(path, val)| {
             val.as_table().map(|section| {
-                let map: std::collections::HashMap<String, String> = section.iter()
+                let map: std::collections::HashMap<String, String> = section
+                    .iter()
                     .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                     .collect();
                 (path.clone(), map)
@@ -279,13 +324,17 @@ pub fn delete_persistent_config(trait_path: &str, key: &str) -> Result<bool, Str
 
     if deleted {
         // Remove empty sections
-        if table.get(trait_path).and_then(|v| v.as_table()).map(|t| t.is_empty()).unwrap_or(false) {
+        if table
+            .get(trait_path)
+            .and_then(|v| v.as_table())
+            .map(|t| t.is_empty())
+            .unwrap_or(false)
+        {
             table.remove(trait_path);
         }
-        let content = toml::to_string_pretty(&table)
-            .map_err(|e| format!("TOML serialize error: {}", e))?;
-        std::fs::write(path, content)
-            .map_err(|e| format!("Cannot write {}: {}", path, e))?;
+        let content =
+            toml::to_string_pretty(&table).map_err(|e| format!("TOML serialize error: {}", e))?;
+        std::fs::write(path, content).map_err(|e| format!("Cannot write {}: {}", path, e))?;
     }
 
     Ok(deleted)
@@ -302,16 +351,16 @@ pub fn write_persistent_config(trait_path: &str, key: &str, value: &str) -> Resu
         toml::value::Table::new()
     };
 
-    let section = table.entry(trait_path.to_string())
+    let section = table
+        .entry(trait_path.to_string())
         .or_insert_with(|| toml::Value::Table(toml::value::Table::new()));
     if let Some(t) = section.as_table_mut() {
         t.insert(key.to_string(), toml::Value::String(value.to_string()));
     }
 
-    let content = toml::to_string_pretty(&table)
-        .map_err(|e| format!("TOML serialize error: {}", e))?;
-    std::fs::write(path, content)
-        .map_err(|e| format!("Cannot write {}: {}", path, e))
+    let content =
+        toml::to_string_pretty(&table).map_err(|e| format!("TOML serialize error: {}", e))?;
+    std::fs::write(path, content).map_err(|e| format!("Cannot write {}: {}", path, e))
 }
 
 #[cfg(test)]

@@ -4,6 +4,17 @@ port = 8090
 bind = "127.0.0.1"  # use "0.0.0.0" for Docker/production (set via TRAITS_BIND env)
 timeout = 30
 
+# CORS configuration - restrict to specific origins for security
+# Set via env var TRAITS_CORS_ORIGINS as comma-separated list
+cors_origins = ["https://traits.build", "https://admin.traits.build"]
+
+# Rate limiting configuration (requests per minute)
+rate_limit_relay = 60      # Rate limit for relay endpoints
+rate_limit_admin = 30      # Rate limit for admin endpoints
+
+# Admin token for /admin/update (set via secrets store or ADMIN_TOKEN env var)
+# Format: "Bearer <token>" or just the token value
+
 # [deploy]
 # fly_app and fly_region are read from FLY_APP / FLY_REGION env vars.
 # Set them here to override, or pass via env.

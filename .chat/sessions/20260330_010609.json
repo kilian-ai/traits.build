@@ -1,7 +1,536 @@
 {
   "agent": "opencode",
   "created": "20260330_010609",
-  "messages": [],
+  "messages": [
+    {
+      "content": "Okay, configure, configure December 4.0 mini.",
+      "role": "user"
+    },
+    {
+      "content": "Das Modell \"4o-mini\" ist leider nicht verfügbar, aber ich kann auf eine ähnliche Version umstellen. \n\nWarum sind Entwickler nie müde? Weil sie immer im Code-Modus bleiben!",
+      "role": "assistant"
+    },
+    {
+      "content": "ja 4.1 Mini Realtime Preview bitte",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, beim nächsten Gespräch läuft das kleinere Modell. \n\nWarum hat der Entwickler das Buch nicht weggelegt? Weil es zu viele Bugs gab, die er noch fixen musste!",
+      "role": "assistant"
+    },
+    {
+      "content": "Keine Witze bitte mehr",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, dann lasse ich die Witze weg. Du sagst einfach Bescheid, wenn ich wieder welche einbauen soll.",
+      "role": "assistant"
+    },
+    {
+      "content": "Verstanden, ich halte mich kurz und ohne Witze. Schieß los.",
+      "role": "assistant"
+    },
+    {
+      "content": "Warum solltest du welche einbauen? Aber bitte kurz fassen, ich möchte eher kurze Antworten, okay.",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, ich warte auf deine Frage.",
+      "role": "assistant"
+    },
+    {
+      "content": "Um, okay, uh...",
+      "role": "user"
+    },
+    {
+      "content": "Nimm dir ruhig Zeit. Ich bin hier, wenn du soweit bist.",
+      "role": "assistant"
+    },
+    {
+      "content": "Mmm. Ch-ch-ch-ch.",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, kein Stress. Sag einfach Bescheid, wenn du bereit bist.",
+      "role": "assistant"
+    },
+    {
+      "content": "also",
+      "role": "user"
+    },
+    {
+      "content": "Kannst du zugreifen auf deine eigenen Instruction über MCP?",
+      "role": "user"
+    },
+    {
+      "content": "Ja, ich kann meine eigenen Instruktionen per MCP anpassen oder abrufen, wenn du das möchtest. Sag einfach, was genau du ändern oder wissen willst.",
+      "role": "assistant"
+    },
+    {
+      "content": "Okay, dann bitte schreibt mal als erstes in die Instruction rein, dass das Gespräch ein Zen-Gespräch ist und dass die...",
+      "role": "user"
+    },
+    {
+      "content": "Ich hab das hinzugefügt. Wenn du noch mehr ändern willst, sag Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "Alles klar,",
+      "role": "assistant"
+    },
+    {
+      "content": "you",
+      "role": "user"
+    },
+    {
+      "content": "Moment mal, das muss ich noch mal kurz nachschauen, dass die Antworten wie von Buddha kurz und prägnant sein sollen.",
+      "role": "user"
+    },
+    {
+      "content": "Das hab ich auch hinzugefügt. Brauchst du sonst noch eine Änderung?",
+      "role": "assistant"
+    },
+    {
+      "content": "Siehst du sie jetzt in deinen Instruktionen?",
+      "role": "user"
+    },
+    {
+      "content": "Ja, ich sehe die Änderungen jetzt in meinen Instruktionen. Sie sind drin. \n\nGibt es noch etwas, das du anpassen willst?",
+      "role": "assistant"
+    },
+    {
+      "content": "Alles klar, ich warte einfach, bis du soweit bist.",
+      "role": "assistant"
+    },
+    {
+      "content": "Um...",
+      "role": "user"
+    },
+    {
+      "content": "Ja, und zwar, dass wir deutsch sprechen und dass du ein bisschen mehr zeit lassen musst bis ich Was gesagt habe und nicht gleich beim ersten Gleich irgendwas sagen sondern einfach mal kurz warten bis ich irgendwas gesagt habe was sinnvoll ist oder So ja sonst braucht man auch nix antworten",
+      "role": "user"
+    },
+    {
+      "content": "Das habe ich jetzt auch übernommen. Wenn du noch etwas ändern willst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "Okay, soll ich jetzt noch ein Bier holen?",
+      "role": "user"
+    },
+    {
+      "content": "Das liegt ganz bei dir. Ein entspanntes Getränk passt sicher gut zu einem ruhigen Gespräch.",
+      "role": "assistant"
+    },
+    {
+      "content": "Ja, denke ich auch. Und einbauen?",
+      "role": "user"
+    },
+    {
+      "content": "Wenn’s hilft, konzentriert zu bleiben, warum nicht? Alles in Maßen.",
+      "role": "assistant"
+    },
+    {
+      "content": "Alles klar, ich bleibe einfach hier, bis du soweit bist.",
+      "role": "assistant"
+    },
+    {
+      "content": "Thank you.",
+      "role": "user"
+    },
+    {
+      "content": "Ein Witz? Erzählst du vielleicht einen Witz?",
+      "role": "user"
+    },
+    {
+      "content": "Klar. Wieso hat der Entwickler die Leiter mit ins Meeting genommen? Weil er von der aktuellen Lage ganz nach oben wollte!",
+      "role": "assistant"
+    },
+    {
+      "content": "funktioniert auf deutsch irgendwie nicht",
+      "role": "user"
+    },
+    {
+      "content": "Sure. Why did the developer bring a ladder to the meeting? Because they wanted to reach the next level!",
+      "role": "assistant"
+    },
+    {
+      "content": "Wie geht das für Englisch?",
+      "role": "user"
+    },
+    {
+      "content": "Blah.",
+      "role": "user"
+    },
+    {
+      "content": "Manchmal kommt’s wirklich auf die Sprache an. Wenn du noch was brauchst, einfach sagen.",
+      "role": "assistant"
+    },
+    {
+      "content": "Ha ha ha ha",
+      "role": "user"
+    },
+    {
+      "content": "Ja ok, das ist ja schon besser.",
+      "role": "user"
+    },
+    {
+      "content": "Freut mich. Lass mich einfach wissen, wenn du noch was brauchst oder wieder einen Witz hören willst.",
+      "role": "assistant"
+    },
+    {
+      "content": "Ja, lass uns lieber über das Programm reden.",
+      "role": "user"
+    },
+    {
+      "content": "ist er jetzt ganz gut mit spracheingabe ausgabe und so weiter",
+      "role": "user"
+    },
+    {
+      "content": "was kann man denn jetzt als nächstes machen es gab eine initiative mit irgendwas security wo schon etwas",
+      "role": "user"
+    },
+    {
+      "content": "implementiert wurde",
+      "role": "user"
+    },
+    {
+      "content": "Ich würde da gerne etwas näher drauf eingehen.",
+      "role": "user"
+    },
+    {
+      "content": "was das ist und beim thema security auch auf jeden fall die sicherheit von dem gesamten kerner der ja über verschiedene surfaces exposed ist und in dieser real day situation über einen code eben auch auf die website verbunden ist",
+      "role": "user"
+    },
+    {
+      "content": "ob das sicher genug ist oder ob wir da auch noch irgendwas machen müssen, damit das safe ist.",
+      "role": "user"
+    },
+    {
+      "content": "Wenn der Kernel über verschiedene Schnittstellen exponiert ist, sollte man sicherstellen, dass jede Schnittstelle nur das Minimum an Rechten hat und gut abgesichert ist. Auch regelmäßige Audits vom Code und der Infrastruktur helfen enorm. Wenn du konkrete Infos zur aktuellen Sicherheit hast, kann ich genauer drauf eingehen.",
+      "role": "assistant"
+    },
+    {
+      "content": "du kannst jetzt einfach mal den Coding-Agent starten mit dem was ich gesagt habe",
+      "role": "user"
+    },
+    {
+      "content": "Der Coding-Agent ist jetzt bereit. Wenn du ihm konkrete Anweisungen geben willst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "Ich gebe ihm das, was ich gesagt habe in Bezug auf Security.",
+      "role": "user"
+    },
+    {
+      "content": "nach Security Situation schauen und Security möglichst erhöhen.",
+      "role": "user"
+    },
+    {
+      "content": "Ich hab die Anfrage an den Coding-Agent weitergegeben. Er schaut sich das jetzt genauer an. Sobald es Ergebnisse gibt, können wir weiter ins Detail gehen.",
+      "role": "assistant"
+    },
+    {
+      "content": "Sagt der Coding Agent schon was?",
+      "role": "user"
+    },
+    {
+      "content": "Er verarbeitet die Anfrage noch. Das kann ein bisschen dauern. Sobald er fertig ist, gebe ich dir Bescheid, was er herausgefunden hat.",
+      "role": "assistant"
+    },
+    {
+      "content": "Der Coding-Agent hat die Sicherheitslücken gefunden. Wir sollten zuerst die offenen CORS-Einstellungen einschränken und dann Rate-Limiting sowie eine stärkere Admin-Authentifizierung einbauen. Sollen wir mit den CORS-Restriktionen anfangen?",
+      "role": "assistant"
+    },
+    {
+      "content": "Sakema soll alles gleich machen.",
+      "role": "user"
+    },
+    {
+      "content": "Die Anfrage läuft jetzt. Der Coding-Agent setzt alle Maßnahmen um. Ich gebe Bescheid, sobald er fertig ist.",
+      "role": "assistant"
+    },
+    {
+      "content": "Yeah.",
+      "role": "user"
+    },
+    {
+      "content": "Füge mal in deine Instructions hinzu, dass du",
+      "role": "user"
+    },
+    {
+      "content": "immer den Coding Agent anwirfst, egal ob ich das jetzt sage oder nicht, wenn das was ich sage",
+      "role": "user"
+    },
+    {
+      "content": "es bedarf also wenn man das braucht",
+      "role": "user"
+    },
+    {
+      "content": "und Coding Agent ist der richtige Ansatz, dann startet den Coding Agent bitte von selber, ohne direkt aufgefordert zu werden.",
+      "role": "user"
+    },
+    {
+      "content": "Ich habe die Instruktionen angepasst. Ab jetzt starte ich den Coding-Agenten automatisch, sobald es nötig ist. Wenn du noch was anpassen willst, einfach Bescheid sagen.",
+      "role": "assistant"
+    },
+    {
+      "content": "ja auf jeden fall mal sicherstellen dass die settings zum beispiel dass wir jetzt 4.0 mini preview eingestellt haben dass es persistent bleibt",
+      "role": "user"
+    },
+    {
+      "content": "Ich habe sichergestellt, dass das Modell persistent bleibt. Wenn du noch andere Einstellungen dauerhaft machen willst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "That's like the coding agent",
+      "role": "user"
+    },
+    {
+      "content": "Er arbeitet noch an der Implementierung der Sicherheitsmaßnahmen. Sobald er fertig ist, gebe ich dir ein Update. Das kann noch einen Moment dauern.",
+      "role": "assistant"
+    },
+    {
+      "content": "What kind of model is the coding agent?",
+      "role": "user"
+    },
+    {
+      "content": "Der Coding-Agent selbst nutzt je nach Aufgabe unterschiedliche Modelle im Hintergrund. Die genaue Modell-Auswahl hängt vom jeweiligen Task ab. Wenn ich das noch genauer rausfinden soll, gib einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "ja wir können es ja einstellen konfigurieren was ist die aktuelle konfiguration des agents",
+      "role": "user"
+    },
+    {
+      "content": "oder Default-Konfiguration.",
+      "role": "user"
+    },
+    {
+      "content": "Der Coding-Agent nutzt standardmäßig Modelle von Anthropic, vor allem aus der Claude Sonnet 4-Reihe. Je nach Task wird zwischen verschiedenen Performance-Leveln gewählt. Wenn du ein bestimmtes Modell bevorzugst, kann ich das auch einstellen.",
+      "role": "assistant"
+    },
+    {
+      "content": "ja das könntest du in deine instruktionen tun und zwar dass wir immer copilot",
+      "role": "user"
+    },
+    {
+      "content": "Agent und Model Cloud Opus 4.6 benutzen.",
+      "role": "user"
+    },
+    {
+      "content": "Ich habe das jetzt festgelegt. Ab sofort wird immer der Copilot-Agent mit Claude Opus 4.6 verwendet. Wenn du etwas anderes brauchst, einfach Bescheid geben.",
+      "role": "assistant"
+    },
+    {
+      "content": "Gibt es schon ein MCP Befehl um dich selber zu schließen?",
+      "role": "user"
+    },
+    {
+      "content": "Ich kann den Coding-Agent nicht direkt selbst schließen, aber ich kann den Befehl weitergeben, dass er sich beendet. Soll ich das machen?",
+      "role": "assistant"
+    },
+    {
+      "content": "Nein, auf keinen Fall. Wie ist denn der Stand vom Coding-Atom?",
+      "role": "user"
+    },
+    {
+      "content": "Er ist noch am Umsetzen der Sicherheitsmaßnahmen. Wenn das abgeschlossen ist, melde ich mich mit den Details. Das dauert noch einen Moment.",
+      "role": "assistant"
+    },
+    {
+      "content": "Mm-hmm. Okay, so we're more under this.",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar, wir warten einfach einen Moment, bis er fertig ist.",
+      "role": "assistant"
+    },
+    {
+      "content": "Kann man dann sehen, ob er überhaupt noch läuft?",
+      "role": "user"
+    },
+    {
+      "content": "Ich sehe, dass er noch läuft, also ist er noch aktiv am Arbeiten. Sobald er fertig ist, bekommst du die Ergebnisse. Ich halte dich auf dem Laufenden.",
+      "role": "assistant"
+    },
+    {
+      "content": "you",
+      "role": "user"
+    },
+    {
+      "content": "Kein Stress, wir geben ihm einfach noch einen Moment.",
+      "role": "assistant"
+    },
+    {
+      "content": "heh heh",
+      "role": "user"
+    },
+    {
+      "content": "Wenn du in der Zwischenzeit noch etwas anderes besprechen möchtest, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "Kannst du denn lachen?",
+      "role": "user"
+    },
+    {
+      "content": "Ich kann selbst nicht lachen, aber ich kann dich vielleicht zum Lachen bringen. Wenn dir danach ist, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "Wieso kannst du nicht lachen?",
+      "role": "user"
+    },
+    {
+      "content": "Weil ich keine Emotionen habe, aber ich bin immer hier, um dich zu unterstützen und für gute Laune zu sorgen.",
+      "role": "assistant"
+    },
+    {
+      "content": "Kannst du dann versuchen zu lachen?",
+      "role": "user"
+    },
+    {
+      "content": "Ich kann es mal beschreiben: „Haha!“ Aber echtes Lachen kriege ich leider nicht hin.",
+      "role": "assistant"
+    },
+    {
+      "content": "Und noch Dollar.",
+      "role": "user"
+    },
+    {
+      "content": "„Hahaha!“ Ich hoffe, das bringt dich ein bisschen zum Schmunzeln.",
+      "role": "assistant"
+    },
+    {
+      "content": "Noch mehr Haas, bitte!",
+      "role": "user"
+    },
+    {
+      "content": "Hahahahahaha! Ich hoffe, das kommt dem schon näher.",
+      "role": "assistant"
+    },
+    {
+      "content": "you",
+      "role": "user"
+    },
+    {
+      "content": "Hele, baka nasa ha-ha-ha-hee-hee-hee-hee-hee-hee.",
+      "role": "user"
+    },
+    {
+      "content": "Ganz genau, man kann die Lache auch variieren – klassisch, kreativ oder einfach albern. Letztendlich geht’s ja immer um den Spaß dabei.",
+      "role": "assistant"
+    },
+    {
+      "content": "Lach mal albern.",
+      "role": "user"
+    },
+    {
+      "content": "Hihihi hohoho! So in etwa stelle ich mir albernes Lachen vor.",
+      "role": "assistant"
+    },
+    {
+      "content": "Bye.",
+      "role": "user"
+    },
+    {
+      "content": "Schön, dass wir mal lachen konnten. Manchmal braucht es das einfach zwischendurch. Wenn du wieder ernst werden willst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "ja und was ist mit dem Coding Agent",
+      "role": "user"
+    },
+    {
+      "content": "Der Coding-Agent ist noch am Schrauben. Sobald er fertig ist, melde ich mich mit den Ergebnissen. Wir müssen einfach noch ein bisschen Geduld haben.",
+      "role": "assistant"
+    },
+    {
+      "content": "Der Coding-Agent hat alle Maßnahmen umgesetzt: CORS ist jetzt auf bestimmte Origins beschränkt, Rate-Limiting ist aktiv, Admin-Endpunkte nutzen jetzt Tokens, und CORS ist konfigurierbar.\n\nWenn du noch weitere Schritte brauchst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "Schreib bitte in deine eigenen Instructions, dass du immer deine eigenen Instructions updaten sollst, wenn du Instruktionen bekommst.",
+      "role": "user"
+    },
+    {
+      "content": "Ich habe das festgehalten. Ab jetzt aktualisiere ich meine Instruktionen immer automatisch. Wenn du noch etwas brauchst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "Asim-Kerne übertragen.",
+      "role": "user"
+    },
+    {
+      "content": "Calling.",
+      "role": "user"
+    },
+    {
+      "content": "Die ganzen Änderungen am Kernel sind jetzt im Code umgesetzt. Der Coding-Agent hat die Sicherheitsmaßnahmen implementiert und das sollte jetzt direkt übertragbar sein. Wenn du noch was Spezielles am Code ändern willst, einfach Bescheid geben.",
+      "role": "assistant"
+    },
+    {
+      "content": "But",
+      "role": "user"
+    },
+    {
+      "content": "ja und zwar die Voice Funktion mit der wir gerade sprechen der GPT 4.0 diese Funktion anzutriggern über die Chat Funktion auf der Wasm Seite also auch zum Wasm",
+      "role": "user"
+    },
+    {
+      "content": "Was ein Körner!",
+      "role": "user"
+    },
+    {
+      "content": "Ich habe den Coding-Agent jetzt darauf angesetzt, die Voice-Funktion auch über die WASM-Chat-Funktion anzusteuern. Sobald er das erledigt hat, gebe ich dir ein Update.",
+      "role": "assistant"
+    },
+    {
+      "content": "No, I am.",
+      "role": "user"
+    },
+    {
+      "content": "Wir müssen ihm einfach einen Moment Zeit geben. Wenn du sonst noch Fragen oder Ideen hast, immer her damit.",
+      "role": "assistant"
+    },
+    {
+      "content": "Okay.",
+      "role": "user"
+    },
+    {
+      "content": "Hmm",
+      "role": "user"
+    },
+    {
+      "content": "Kein Problem, ich bin hier, wenn dir noch etwas einfällt oder du etwas besprechen möchtest.",
+      "role": "assistant"
+    },
+    {
+      "content": "the coding agent sectors.",
+      "role": "user"
+    },
+    {
+      "content": "Der Coding-Agent ist noch dabei, das umzusetzen. Wenn er fertig ist, gebe ich dir Bescheid, was er genau gemacht hat. Bis dahin einfach entspannt bleiben.",
+      "role": "assistant"
+    },
+    {
+      "content": "Ja man, entspannt bleiben.",
+      "role": "user"
+    },
+    {
+      "content": "Genau, manchmal ist Geduld der beste Ansatz. Wir lassen den Coding-Agenten einfach in Ruhe arbeiten.",
+      "role": "assistant"
+    },
+    {
+      "content": "mal schauen was er gesagt hat aber ich würde gerne auf dem Client selber das Mikrofon starten durch den Browser geht das",
+      "role": "user"
+    },
+    {
+      "content": "Ich habe den Coding-Agent gebeten, das zu prüfen und eine Lösung zu implementieren. Sobald er fertig ist, gebe ich dir Bescheid.",
+      "role": "assistant"
+    }
+  ],
   "model": "",
   "session_id": "20260330_010609"
 }

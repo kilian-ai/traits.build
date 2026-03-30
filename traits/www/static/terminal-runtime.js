@@ -21,6 +21,7 @@
 const CLEAR_SENTINEL = '\x1b[CLEAR]';
 const REST_RE = /\x1b\[REST\]([\s\S]*?)\x1b\[\/REST\]/;
 const WEBLLM_RE = /\x1b\[WEBLLM\]([\s\S]*?)\x1b\[\/WEBLLM\]/;
+const VOICE_RE = /\x1b\[VOICE\]([\s\S]*?)\x1b\[\/VOICE\]/;
 // Source of truth: kernel/cli/cli.rs PROMPT constant. Must stay in sync.
 const PROMPT = '\x1b[32mtraits \x1b[0m';
 
@@ -408,6 +409,54 @@ async function createTerminal(mountEl, opts = {}) {
                     }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
                 } catch (e) {
                     term.write(`\x1b[31mWebLLM parse error: ${e.message}\x1b[0m\r\n`);
+                    term.write(PROMPT);
+                    restPending = false;
+                    requestAnimationFrame(saveState);
+                }
+                return;
+            }
+
+            // Check for Voice dispatch sentinel
+            const voiceMatch = output.match(VOICE_RE);
+            if (voiceMatch) {
+                const visible = output.replace(VOICE_RE, '');
+                if (visible) term.write(visible);
+                try {
+                    const { v: voiceName, m: model, a: agent, s: sessionId, rp: returnPrompt } = JSON.parse(voiceMatch[1]);
+                    restPending = true;
+
+                    // Check if helper is connected (required for voice - needs native sox)
+                    const helperConnected = activeSdk && (activeSdk.helperConnected || activeSdk.helperUrl);
+                    if (!helperConnected) {
+                        term.write(`\r\n\x1b[33mVoice requires a local helper to be running.\x1b[0m\r\n`);
+                        term.write(`\x1b[90mVoice needs access to your microphone and speaker via the native `);
+                        term.write(`sox tool, which is only available when a helper is connected.\x1b[0m\r\n`);
+                        term.write(`\x1b[90mStart the traits CLI on your machine to enable voice mode.\x1b[0m\r\n`);
+                        term.write(returnPrompt);
+                        restPending = false;
+                        requestAnimationFrame(saveState);
+                        return;
+                    }
+
+                    // Helper is connected - dispatch voice call
+                    term.write(`\x1b[90mStarting voice with ${voiceName}…\x1b[0m\r\n`);
+                    const args = [voiceName, model || 'gpt-4o-realtime-preview', agent || '', sessionId || ''];
+                    activeSdk.call('sys.voice', args).then(res => {
+                        term.write('\r\x1b[K');
+                        if (res.ok && res.result !== undefined) {
+                            const text = typeof res.result === 'string' ? res.result : JSON.stringify(res.result, null, 2);
+                            term.write(text.replace(/\n/g, '\r\n'));
+                            if (!text.endsWith('\n')) term.write('\r\n');
+                        } else if (res.error) {
+                            term.write(`\x1b[31mVoice error: ${res.error}\x1b[0m\r\n`);
+                        }
+                        term.write(returnPrompt);
+                    }).catch(e => {
+                        term.write(`\x1b[31mVoice dispatch error: ${e.message}\x1b[0m\r\n`);
+                        term.write(returnPrompt);
+                    }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
+                } catch (e) {
+                    term.write(`\x1b[31mVoice parse error: ${e.message}\x1b[0m\r\n`);
                     term.write(PROMPT);
                     restPending = false;
                     requestAnimationFrame(saveState);

@@ -1,12 +1,12 @@
 use serde_json::{json, Value};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::cell::RefCell;
 
 pub mod shell;
 pub mod vfs;
-pub use shell::{Shell, DefaultShell};
-pub use vfs::{Vfs, MemVfs, LayeredVfs};
+pub use shell::{DefaultShell, Shell};
+pub use vfs::{LayeredVfs, MemVfs, Vfs};
 
 mod generated_cli_formatters {
     include!(concat!(env!("OUT_DIR"), "/cli_formatters.rs"));
@@ -130,6 +130,11 @@ struct InteractiveState {
 /// stores the conversation, then writes the return prompt.
 pub const CHAT_SENTINEL_START: &str = "\x1b[CHAT]";
 pub const CHAT_SENTINEL_END: &str = "\x1b[/CHAT]";
+
+/// Voice sentinel — terminal.js intercepts this and initiates voice mode.
+/// The helper must be connected for voice to work (requires native sox for mic/speaker).
+pub const VOICE_SENTINEL_START: &str = "\x1b[VOICE]";
+pub const VOICE_SENTINEL_END: &str = "\x1b[/VOICE]";
 
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 
@@ -399,17 +404,11 @@ impl CliSession {
 
                 // Check for interactive mode flag
                 let parts = parse_command(&input);
-                let has_i =
-                    parts.iter().any(|p| p == "-i" || p == "--interactive");
+                let has_i = parts.iter().any(|p| p == "-i" || p == "--interactive");
                 if has_i {
                     let path = parts
                         .iter()
-                        .find(|p| {
-                            *p != "call"
-                                && *p != "c"
-                                && *p != "-i"
-                                && *p != "--interactive"
-                        })
+                        .find(|p| *p != "call" && *p != "c" && *p != "-i" && *p != "--interactive")
                         .cloned();
                     if let Some(path) = path {
                         let resolved = resolve_path(&path, backend);
@@ -533,22 +532,42 @@ impl CliSession {
             .iter()
             .enumerate()
             .map(|(i, p)| {
-                let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("?").to_string();
-                let ptype = p.get("type").and_then(|t| t.as_str()).unwrap_or("any").to_string();
-                let desc = p.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string();
+                let name = p
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("?")
+                    .to_string();
+                let ptype = p
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("any")
+                    .to_string();
+                let desc = p
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let required = p.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
                 let example_vals: Vec<String> = examples
                     .iter()
                     .filter_map(|ex| ex.get(i).cloned())
                     .filter(|v| !v.is_empty())
                     .collect();
-                let default_val = p.get("default")
+                let default_val = p
+                    .get("default")
                     .and_then(|d| d.as_str())
                     .map(|d| d.to_string())
                     .filter(|d| !d.is_empty())
                     .or_else(|| example_vals.first().cloned())
                     .unwrap_or_default();
-                ParamMeta { name, ptype, description: desc, required, default_val, example_vals }
+                ParamMeta {
+                    name,
+                    ptype,
+                    description: desc,
+                    required,
+                    default_val,
+                    example_vals,
+                }
             })
             .collect();
 
@@ -565,7 +584,10 @@ impl CliSession {
         );
         let tab_values = build_tab_completions(&first_default, &first_examples);
 
-        let desc = info.get("description").and_then(|d| d.as_str()).unwrap_or("");
+        let desc = info
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("");
         let header = format_param_header(&params, 0);
 
         self.interactive = Some(InteractiveState {
@@ -598,8 +620,14 @@ impl CliSession {
                 let (idx, param_count, path, p_name, required, default_val) = {
                     let i = self.interactive.as_ref().unwrap();
                     let p = &i.params[i.idx];
-                    (i.idx, i.params.len(), i.path.clone(), p.name.clone(),
-                     p.required, p.default_val.clone())
+                    (
+                        i.idx,
+                        i.params.len(),
+                        i.path.clone(),
+                        p.name.clone(),
+                        p.required,
+                        p.default_val.clone(),
+                    )
                 };
 
                 let mut out = String::from("\r\n");
@@ -609,7 +637,9 @@ impl CliSession {
                 } else if input.is_empty() && !required {
                     String::new()
                 } else if input.is_empty() && required {
-                    out.push_str(&format!("  {RED}  required — try again{RESET}\r\n{IPROMPT}"));
+                    out.push_str(&format!(
+                        "  {RED}  required — try again{RESET}\r\n{IPROMPT}"
+                    ));
                     return out;
                 } else {
                     input
@@ -621,7 +651,9 @@ impl CliSession {
                     let ph = th.entry(p_name).or_default();
                     ph.retain(|v| v != &value);
                     ph.push(value.clone());
-                    if ph.len() > 20 { ph.remove(0); }
+                    if ph.len() > 20 {
+                        ph.remove(0);
+                    }
                 }
 
                 // Advance state
@@ -637,12 +669,16 @@ impl CliSession {
                     let (next_name, next_default, next_examples, header) = {
                         let i = self.interactive.as_ref().unwrap();
                         let np = &i.params[new_idx];
-                        (np.name.clone(), np.default_val.clone(),
-                         np.example_vals.clone(),
-                         format_param_header(&i.params, new_idx))
+                        (
+                            np.name.clone(),
+                            np.default_val.clone(),
+                            np.example_vals.clone(),
+                            format_param_header(&i.params, new_idx),
+                        )
                     };
                     let history_values = build_history_completions(
-                        self.param_history.get(&path)
+                        self.param_history
+                            .get(&path)
                             .and_then(|h| h.get(&next_name))
                             .map(|v| v.as_slice())
                             .unwrap_or(&[]),
@@ -661,15 +697,25 @@ impl CliSession {
                     let i = self.interactive.take().unwrap();
                     out.push_str(&format!("  {GRAY}{}{RESET}\r\n", "─".repeat(50)));
 
-                    let args_str: Vec<String> = i.values.iter().map(|v| {
-                        if v.contains(' ') { format!("\"{}\"", v) } else { v.clone() }
-                    }).collect();
+                    let args_str: Vec<String> = i
+                        .values
+                        .iter()
+                        .map(|v| {
+                            if v.contains(' ') {
+                                format!("\"{}\"", v)
+                            } else {
+                                v.clone()
+                            }
+                        })
+                        .collect();
                     let cmd = format!("call {} {}", i.path, args_str.join(" "));
 
                     let result = exec_line(&cmd, backend, &*self.shell, &self.vfs);
                     backend.save_param_history(&self.param_history);
 
-                    if result.contains(REST_SENTINEL_START) || result.contains(WEBLLM_SENTINEL_START) {
+                    if result.contains(REST_SENTINEL_START)
+                        || result.contains(WEBLLM_SENTINEL_START)
+                    {
                         out.push_str(&result);
                         return out; // No prompt — JS handles async REST/WebLLM
                     }
@@ -687,7 +733,9 @@ impl CliSession {
             KeyEvent::Up => {
                 let new_val = {
                     let i = self.interactive.as_mut().unwrap();
-                    if i.history_values.is_empty() { return String::new(); }
+                    if i.history_values.is_empty() {
+                        return String::new();
+                    }
                     i.history_idx = Some(match i.history_idx {
                         None => 0,
                         Some(idx) => (idx + 1).min(i.history_values.len() - 1),
@@ -702,9 +750,14 @@ impl CliSession {
             KeyEvent::Down => {
                 let new_val = {
                     let i = self.interactive.as_mut().unwrap();
-                    if i.history_values.is_empty() { return String::new(); }
+                    if i.history_values.is_empty() {
+                        return String::new();
+                    }
                     match i.history_idx {
-                        Some(0) => { i.history_idx = None; String::new() }
+                        Some(0) => {
+                            i.history_idx = None;
+                            String::new()
+                        }
                         Some(idx) => {
                             i.history_idx = Some(idx - 1);
                             i.history_values[i.history_idx.unwrap()].clone()
@@ -720,7 +773,9 @@ impl CliSession {
             KeyEvent::Tab => {
                 let new_val = {
                     let i = self.interactive.as_mut().unwrap();
-                    if i.tab_values.is_empty() { return String::new(); }
+                    if i.tab_values.is_empty() {
+                        return String::new();
+                    }
                     i.tab_idx = Some(match i.tab_idx {
                         None => 0,
                         Some(idx) => (idx + 1) % i.tab_values.len(),
@@ -766,7 +821,9 @@ impl CliSession {
                 out.push_str(IPROMPT);
                 out.push_str(&self.line_buffer);
                 let tail = self.line_buffer.len() - self.cursor_pos;
-                if tail > 0 { out.push_str(&format!("\x1b[{}D", tail)); }
+                if tail > 0 {
+                    out.push_str(&format!("\x1b[{}D", tail));
+                }
                 out
             }
             _ => self.handle_editing_key(key),
@@ -785,20 +842,30 @@ impl CliSession {
         let (session_id, message_count, actual_agent, actual_model, resumed) =
             if let Some(rid) = resume_id {
                 // Try resuming: load session metadata from disk
-                if let Some(result) = kernel_logic::platform::dispatch(
-                    "sys.chat", &[json!("get"), json!(rid)],
-                ) {
+                if let Some(result) =
+                    kernel_logic::platform::dispatch("sys.chat", &[json!("get"), json!(rid)])
+                {
                     if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
                         if let Some(sess) = result.get("session") {
-                            let mc = sess.get("messages")
-                                .and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-                            let sa = sess.get("agent").and_then(|v| v.as_str())
-                                .unwrap_or(agent).to_string();
-                            let sm = sess.get("model").and_then(|v| v.as_str())
-                                .unwrap_or(model).to_string();
+                            let mc = sess
+                                .get("messages")
+                                .and_then(|v| v.as_array())
+                                .map(|a| a.len())
+                                .unwrap_or(0);
+                            let sa = sess
+                                .get("agent")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(agent)
+                                .to_string();
+                            let sm = sess
+                                .get("model")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(model)
+                                .to_string();
                             // Mark it as current
                             kernel_logic::platform::dispatch(
-                                "sys.chat", &[json!("switch"), json!(rid)],
+                                "sys.chat",
+                                &[json!("switch"), json!(rid)],
                             );
                             (rid.to_string(), mc, sa, sm, true)
                         } else {
@@ -840,10 +907,17 @@ impl CliSession {
     /// Create a new chat session via sys.chat and return (id, count, agent, model, resumed).
     fn create_chat_session(agent: &str, model: &str) -> (String, usize, String, String, bool) {
         if let Some(result) = kernel_logic::platform::dispatch(
-            "sys.chat", &[json!("new"), json!(agent), json!(model)],
+            "sys.chat",
+            &[json!("new"), json!(agent), json!(model)],
         ) {
             if let Some(sid) = result.get("session_id").and_then(|v| v.as_str()) {
-                return (sid.to_string(), 0, agent.to_string(), model.to_string(), false);
+                return (
+                    sid.to_string(),
+                    0,
+                    agent.to_string(),
+                    model.to_string(),
+                    false,
+                );
             }
         }
         // Fallback: generate ID locally if sys.chat not available
@@ -897,13 +971,19 @@ impl CliSession {
                         "/agent" => {
                             if arg.is_empty() {
                                 let agent = &self.chat.as_ref().unwrap().agent;
-                                out.push_str(&format!("{GRAY}Current agent: {CYAN}{agent}{RESET}\r\n"));
-                                out.push_str(&format!("{GRAY}Available: opencode, claude, codex, copilot{RESET}\r\n"));
+                                out.push_str(&format!(
+                                    "{GRAY}Current agent: {CYAN}{agent}{RESET}\r\n"
+                                ));
+                                out.push_str(&format!(
+                                    "{GRAY}Available: opencode, claude, codex, copilot{RESET}\r\n"
+                                ));
                             } else {
                                 let valid = ["opencode", "claude", "codex", "copilot"];
                                 if valid.contains(&arg) {
                                     self.chat.as_mut().unwrap().agent = arg.to_string();
-                                    out.push_str(&format!("{GREEN}Agent set to {CYAN}{arg}{RESET}\r\n"));
+                                    out.push_str(&format!(
+                                        "{GREEN}Agent set to {CYAN}{arg}{RESET}\r\n"
+                                    ));
                                 } else {
                                     out.push_str(&format!("{RED}Unknown agent: {arg}. Available: opencode, claude, codex, copilot{RESET}\r\n"));
                                 }
@@ -915,14 +995,18 @@ impl CliSession {
                             if arg.is_empty() {
                                 let model = &self.chat.as_ref().unwrap().model;
                                 if model.is_empty() {
-                                    out.push_str(&format!("{GRAY}Model: (agent default){RESET}\r\n"));
+                                    out.push_str(&format!(
+                                        "{GRAY}Model: (agent default){RESET}\r\n"
+                                    ));
                                 } else {
                                     out.push_str(&format!("{GRAY}Model: {CYAN}{model}{RESET}\r\n"));
                                 }
                                 out.push_str(&format!("{GRAY}Use /model <id> to change, /models to list available{RESET}\r\n"));
                             } else {
                                 self.chat.as_mut().unwrap().model = arg.to_string();
-                                out.push_str(&format!("{GREEN}Model set to {CYAN}{arg}{RESET}\r\n"));
+                                out.push_str(&format!(
+                                    "{GREEN}Model set to {CYAN}{arg}{RESET}\r\n"
+                                ));
                             }
                             out.push_str(CHAT_PROMPT);
                             return out;
@@ -937,16 +1021,26 @@ impl CliSession {
                                 "a": [&agent, &cwd],
                                 "rp": CHAT_PROMPT
                             });
-                            out.push_str(&format!("{REST_SENTINEL_START}{}{REST_SENTINEL_END}", sentinel));
+                            out.push_str(&format!(
+                                "{REST_SENTINEL_START}{}{REST_SENTINEL_END}",
+                                sentinel
+                            ));
                             return out;
                         }
                         "/status" => {
                             let chat = self.chat.as_ref().unwrap();
                             out.push_str(&format!("{GRAY}Agent: {CYAN}{}{RESET}\r\n", chat.agent));
-                            let m = if chat.model.is_empty() { "(agent default)" } else { &chat.model };
+                            let m = if chat.model.is_empty() {
+                                "(agent default)"
+                            } else {
+                                &chat.model
+                            };
                             out.push_str(&format!("{GRAY}Model: {CYAN}{m}{RESET}\r\n"));
                             out.push_str(&format!("{GRAY}Session: {}{RESET}\r\n", chat.session_id));
-                            out.push_str(&format!("{GRAY}Messages: {}{RESET}\r\n", chat.message_count));
+                            out.push_str(&format!(
+                                "{GRAY}Messages: {}{RESET}\r\n",
+                                chat.message_count
+                            ));
                             out.push_str(CHAT_PROMPT);
                             return out;
                         }
@@ -959,16 +1053,24 @@ impl CliSession {
                             let session_id = self.chat.as_ref().unwrap().session_id.clone();
                             // Read from disk via sys.chat (persistent)
                             if let Some(result) = kernel_logic::platform::dispatch(
-                                "sys.chat", &[json!("get"), json!(&session_id)],
+                                "sys.chat",
+                                &[json!("get"), json!(&session_id)],
                             ) {
                                 if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
-                                    if let Some(msgs) = result.get("session")
+                                    if let Some(msgs) = result
+                                        .get("session")
                                         .and_then(|s| s.get("messages"))
                                         .and_then(|m| m.as_array())
                                     {
                                         for msg in msgs {
-                                            let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("?");
-                                            let text = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                            let role = msg
+                                                .get("role")
+                                                .and_then(|r| r.as_str())
+                                                .unwrap_or("?");
+                                            let text = msg
+                                                .get("content")
+                                                .and_then(|c| c.as_str())
+                                                .unwrap_or("");
                                             let color = if role == "user" { GREEN } else { CYAN };
                                             let label = if role == "user" { "You" } else { "AI" };
                                             out.push_str(&format!("{color}{BOLD}{label}:{RESET} "));
@@ -978,7 +1080,9 @@ impl CliSession {
                                             }
                                         }
                                         if msgs.is_empty() {
-                                            out.push_str(&format!("{GRAY}No messages yet{RESET}\r\n"));
+                                            out.push_str(&format!(
+                                                "{GRAY}No messages yet{RESET}\r\n"
+                                            ));
                                         }
                                     } else {
                                         out.push_str(&format!("{GRAY}No messages yet{RESET}\r\n"));
@@ -993,27 +1097,48 @@ impl CliSession {
                             return out;
                         }
                         "/sessions" | "/ls" => {
-                            if let Some(result) = kernel_logic::platform::dispatch(
-                                "sys.chat", &[json!("list")],
-                            ) {
-                                if let Some(sessions) = result.get("sessions").and_then(|v| v.as_array()) {
+                            if let Some(result) =
+                                kernel_logic::platform::dispatch("sys.chat", &[json!("list")])
+                            {
+                                if let Some(sessions) =
+                                    result.get("sessions").and_then(|v| v.as_array())
+                                {
                                     if sessions.is_empty() {
-                                        out.push_str(&format!("{GRAY}No saved sessions{RESET}\r\n"));
+                                        out.push_str(&format!(
+                                            "{GRAY}No saved sessions{RESET}\r\n"
+                                        ));
                                     } else {
-                                        let current_sid = self.chat.as_ref().map(|c| c.session_id.as_str());
-                                        out.push_str(&format!("{BOLD}{BRIGHT_WHITE}Sessions:{RESET}\r\n"));
+                                        let current_sid =
+                                            self.chat.as_ref().map(|c| c.session_id.as_str());
+                                        out.push_str(&format!(
+                                            "{BOLD}{BRIGHT_WHITE}Sessions:{RESET}\r\n"
+                                        ));
                                         for s in sessions {
-                                            let sid = s.get("session_id").and_then(|v| v.as_str()).unwrap_or("?");
-                                            let agent = s.get("agent").and_then(|v| v.as_str()).unwrap_or("?");
-                                            let mc = s.get("messages").and_then(|v| v.as_u64()).unwrap_or(0);
-                                            let marker = if current_sid == Some(sid) { " ◀" } else { "" };
+                                            let sid = s
+                                                .get("session_id")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("?");
+                                            let agent = s
+                                                .get("agent")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("?");
+                                            let mc = s
+                                                .get("messages")
+                                                .and_then(|v| v.as_u64())
+                                                .unwrap_or(0);
+                                            let marker =
+                                                if current_sid == Some(sid) { " ◀" } else { "" };
                                             out.push_str(&format!("  {CYAN}{sid}{RESET} {GRAY}{agent} ({mc} msgs){marker}{RESET}\r\n"));
                                         }
-                                        out.push_str(&format!("{GRAY}Switch: /session <id>{RESET}\r\n"));
+                                        out.push_str(&format!(
+                                            "{GRAY}Switch: /session <id>{RESET}\r\n"
+                                        ));
                                     }
                                 }
                             } else {
-                                out.push_str(&format!("{GRAY}Session listing not available{RESET}\r\n"));
+                                out.push_str(&format!(
+                                    "{GRAY}Session listing not available{RESET}\r\n"
+                                ));
                             }
                             out.push_str(CHAT_PROMPT);
                             return out;
@@ -1021,28 +1146,49 @@ impl CliSession {
                         "/session" => {
                             if arg.is_empty() {
                                 let chat = self.chat.as_ref().unwrap();
-                                out.push_str(&format!("{GRAY}Current session: {CYAN}{}{RESET}\r\n", chat.session_id));
-                                out.push_str(&format!("{GRAY}Use /session <id> to switch{RESET}\r\n"));
+                                out.push_str(&format!(
+                                    "{GRAY}Current session: {CYAN}{}{RESET}\r\n",
+                                    chat.session_id
+                                ));
+                                out.push_str(&format!(
+                                    "{GRAY}Use /session <id> to switch{RESET}\r\n"
+                                ));
                             } else {
                                 // Switch to a different session
                                 if let Some(result) = kernel_logic::platform::dispatch(
-                                    "sys.chat", &[json!("switch"), json!(arg)],
+                                    "sys.chat",
+                                    &[json!("switch"), json!(arg)],
                                 ) {
                                     if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
-                                        let mc = result.get("messages").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                                        let agent = result.get("agent").and_then(|v| v.as_str())
-                                            .unwrap_or(&self.chat.as_ref().unwrap().agent).to_string();
-                                        let model = result.get("model").and_then(|v| v.as_str())
-                                            .unwrap_or(&self.chat.as_ref().unwrap().model).to_string();
+                                        let mc = result
+                                            .get("messages")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0)
+                                            as usize;
+                                        let agent = result
+                                            .get("agent")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or(&self.chat.as_ref().unwrap().agent)
+                                            .to_string();
+                                        let model = result
+                                            .get("model")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or(&self.chat.as_ref().unwrap().model)
+                                            .to_string();
                                         let chat = self.chat.as_mut().unwrap();
                                         chat.session_id = arg.to_string();
                                         chat.message_count = mc;
                                         chat.agent = agent;
                                         chat.model = model.clone();
-                                        out.push_str(&format!("{GREEN}Switched to session {CYAN}{arg}{RESET}"));
+                                        out.push_str(&format!(
+                                            "{GREEN}Switched to session {CYAN}{arg}{RESET}"
+                                        ));
                                         out.push_str(&format!(" {GRAY}({mc} msgs){RESET}\r\n"));
                                     } else {
-                                        let err = result.get("error").and_then(|v| v.as_str()).unwrap_or("not found");
+                                        let err = result
+                                            .get("error")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("not found");
                                         out.push_str(&format!("{RED}{err}{RESET}\r\n"));
                                     }
                                 }
@@ -1052,7 +1198,11 @@ impl CliSession {
                         }
                         "/new" => {
                             let chat = self.chat.as_ref().unwrap();
-                            let agent = if !arg.is_empty() { arg.to_string() } else { chat.agent.clone() };
+                            let agent = if !arg.is_empty() {
+                                arg.to_string()
+                            } else {
+                                chat.agent.clone()
+                            };
                             let model = chat.model.clone();
                             let (sid, _, _, _, _) = Self::create_chat_session(&agent, &model);
                             let chat = self.chat.as_mut().unwrap();
@@ -1066,18 +1216,28 @@ impl CliSession {
                         }
                         "/delete" => {
                             if arg.is_empty() {
-                                out.push_str(&format!("{GRAY}Usage: /delete <session_id>{RESET}\r\n"));
+                                out.push_str(&format!(
+                                    "{GRAY}Usage: /delete <session_id>{RESET}\r\n"
+                                ));
                             } else {
                                 let current_sid = self.chat.as_ref().map(|c| c.session_id.as_str());
                                 if current_sid == Some(arg) {
-                                    out.push_str(&format!("{RED}Cannot delete the active session{RESET}\r\n"));
+                                    out.push_str(&format!(
+                                        "{RED}Cannot delete the active session{RESET}\r\n"
+                                    ));
                                 } else if let Some(result) = kernel_logic::platform::dispatch(
-                                    "sys.chat", &[json!("delete"), json!(arg)],
+                                    "sys.chat",
+                                    &[json!("delete"), json!(arg)],
                                 ) {
                                     if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
-                                        out.push_str(&format!("{GREEN}Deleted session {arg}{RESET}\r\n"));
+                                        out.push_str(&format!(
+                                            "{GREEN}Deleted session {arg}{RESET}\r\n"
+                                        ));
                                     } else {
-                                        let err = result.get("error").and_then(|v| v.as_str()).unwrap_or("failed");
+                                        let err = result
+                                            .get("error")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("failed");
                                         out.push_str(&format!("{RED}{err}{RESET}\r\n"));
                                     }
                                 }
@@ -1087,40 +1247,62 @@ impl CliSession {
                         }
                         "/voice" => {
                             // Switch to voice mode — OpenAI Realtime API
+                            // Voice requires native helper (sox for mic/speaker)
                             let voice_name = if arg.is_empty() { "cedar" } else { arg };
                             let (agent, _model, session_id) = if let Some(ref c) = self.chat {
-                                (c.agent.as_str().to_string(), c.model.as_str().to_string(), c.session_id.clone())
+                                (
+                                    c.agent.as_str().to_string(),
+                                    c.model.as_str().to_string(),
+                                    c.session_id.clone(),
+                                )
                             } else {
                                 ("".to_string(), "".to_string(), "".to_string())
                             };
                             out.push_str(&format!("{GRAY}Switching to voice mode…{RESET}\r\n"));
                             let sentinel = serde_json::json!({
-                                "p": "sys.voice",
-                                "a": [voice_name, "gpt-4o-realtime-preview", agent, session_id],
+                                "v": voice_name,
+                                "m": "gpt-4o-realtime-preview",
+                                "a": agent,
+                                "s": session_id,
                                 "rp": CHAT_PROMPT,
                             });
-                            out.push_str(&format!("{REST_SENTINEL_START}{}{REST_SENTINEL_END}", sentinel));
+                            out.push_str(&format!(
+                                "{VOICE_SENTINEL_START}{}{VOICE_SENTINEL_END}",
+                                sentinel
+                            ));
                             return out;
                         }
                         "/help" | "/?" => {
                             out.push_str(&format!("{BOLD}{BRIGHT_WHITE}Chat commands{RESET}\r\n"));
-                            out.push_str(&format!("  {GREEN}/sessions{RESET}            List all saved sessions\r\n"));
+                            out.push_str(&format!(
+                                "  {GREEN}/sessions{RESET}            List all saved sessions\r\n"
+                            ));
                             out.push_str(&format!("  {GREEN}/session{RESET} {GRAY}[id]{RESET}      Show or switch session\r\n"));
                             out.push_str(&format!("  {GREEN}/new{RESET} {GRAY}[agent]{RESET}       Start a new session\r\n"));
                             out.push_str(&format!("  {GREEN}/delete{RESET} {GRAY}<id>{RESET}       Delete a session\r\n"));
                             out.push_str(&format!("  {GREEN}/agent{RESET} {GRAY}[name]{RESET}      Show or switch ACP agent\r\n"));
                             out.push_str(&format!("  {GREEN}/model{RESET} {GRAY}[id]{RESET}        Show or switch model\r\n"));
-                            out.push_str(&format!("  {GREEN}/models{RESET}              List available models\r\n"));
+                            out.push_str(&format!(
+                                "  {GREEN}/models{RESET}              List available models\r\n"
+                            ));
                             out.push_str(&format!("  {GREEN}/voice{RESET} {GRAY}[name]{RESET}      Switch to voice I/O (speak/listen)\r\n"));
-                            out.push_str(&format!("  {GREEN}/status{RESET}              Show session status\r\n"));
+                            out.push_str(&format!(
+                                "  {GREEN}/status{RESET}              Show session status\r\n"
+                            ));
                             out.push_str(&format!("  {GREEN}/history{RESET}             Show conversation history\r\n"));
-                            out.push_str(&format!("  {GREEN}/clear{RESET}               Clear terminal\r\n"));
-                            out.push_str(&format!("  {GREEN}/quit{RESET}                Exit chat mode\r\n"));
+                            out.push_str(&format!(
+                                "  {GREEN}/clear{RESET}               Clear terminal\r\n"
+                            ));
+                            out.push_str(&format!(
+                                "  {GREEN}/quit{RESET}                Exit chat mode\r\n"
+                            ));
                             out.push_str(CHAT_PROMPT);
                             return out;
                         }
                         _ => {
-                            out.push_str(&format!("{RED}Unknown command: {cmd}. Type /help for commands.{RESET}\r\n"));
+                            out.push_str(&format!(
+                                "{RED}Unknown command: {cmd}. Type /help for commands.{RESET}\r\n"
+                            ));
                             out.push_str(CHAT_PROMPT);
                             return out;
                         }
@@ -1134,13 +1316,23 @@ impl CliSession {
                 let (agent, model, cwd, session_id) = {
                     let c = self.chat.as_mut().unwrap();
                     c.message_count += 1;
-                    (c.agent.clone(), c.model.clone(), c.cwd.clone(), c.session_id.clone())
+                    (
+                        c.agent.clone(),
+                        c.model.clone(),
+                        c.cwd.clone(),
+                        c.session_id.clone(),
+                    )
                 };
 
                 // Save user message to disk via sys.chat
                 kernel_logic::platform::dispatch(
                     "sys.chat",
-                    &[json!("append"), json!(&session_id), json!("user"), json!(&input)],
+                    &[
+                        json!("append"),
+                        json!(&session_id),
+                        json!("user"),
+                        json!(&input),
+                    ],
                 );
 
                 // Build REST sentinel for llm.prompt.acp (streaming)
@@ -1155,15 +1347,20 @@ impl CliSession {
 
                 out.push_str(&format!("{GRAY}thinking…{RESET}\r\n"));
                 out.push_str(&format!(
-                    "{REST_SENTINEL_START}{}{REST_SENTINEL_END}", sentinel
+                    "{REST_SENTINEL_START}{}{REST_SENTINEL_END}",
+                    sentinel
                 ));
                 out
             }
 
             KeyEvent::Tab => String::new(), // No tab completion in chat mode
             KeyEvent::Up => {
-                if self.history.is_empty() { return String::new(); }
-                if self.hist_idx > 0 { self.hist_idx -= 1; }
+                if self.history.is_empty() {
+                    return String::new();
+                }
+                if self.hist_idx > 0 {
+                    self.hist_idx -= 1;
+                }
                 if self.hist_idx >= 0 {
                     self.line_buffer = self.history[self.hist_idx as usize].clone();
                     self.cursor_pos = self.line_buffer.len();
@@ -1171,7 +1368,9 @@ impl CliSession {
                 self.refresh_line()
             }
             KeyEvent::Down => {
-                if self.hist_idx < 0 { return String::new(); }
+                if self.hist_idx < 0 {
+                    return String::new();
+                }
                 if (self.hist_idx as usize) < self.history.len() - 1 {
                     self.hist_idx += 1;
                     self.line_buffer = self.history[self.hist_idx as usize].clone();
@@ -1200,7 +1399,9 @@ impl CliSession {
                 out.push_str(CHAT_PROMPT);
                 out.push_str(&self.line_buffer);
                 let tail = self.line_buffer.len() - self.cursor_pos;
-                if tail > 0 { out.push_str(&format!("\x1b[{}D", tail)); }
+                if tail > 0 {
+                    out.push_str(&format!("\x1b[{}D", tail));
+                }
                 out
             }
             _ => self.handle_editing_key(key),
@@ -1213,7 +1414,10 @@ impl CliSession {
         let parts: Vec<&str> = self.line_buffer.split_whitespace().collect();
         let prefix = if parts.len() <= 1 {
             parts.first().copied().unwrap_or("")
-        } else if matches!(parts[0].to_lowercase().as_str(), "call" | "info" | "c" | "i") {
+        } else if matches!(
+            parts[0].to_lowercase().as_str(),
+            "call" | "info" | "c" | "i"
+        ) {
             parts.last().copied().unwrap_or("")
         } else {
             return String::new();
@@ -1266,25 +1470,33 @@ impl CliSession {
                     self.cursor_pos -= 1;
                     self.line_buffer.remove(self.cursor_pos);
                     self.refresh_line()
-                } else { String::new() }
+                } else {
+                    String::new()
+                }
             }
             KeyEvent::Left => {
                 if self.cursor_pos > 0 {
                     self.cursor_pos -= 1;
                     "\x1b[D".to_string()
-                } else { String::new() }
+                } else {
+                    String::new()
+                }
             }
             KeyEvent::Right => {
                 if self.cursor_pos < self.line_buffer.len() {
                     self.cursor_pos += 1;
                     "\x1b[C".to_string()
-                } else { String::new() }
+                } else {
+                    String::new()
+                }
             }
             KeyEvent::Delete => {
                 if self.cursor_pos < self.line_buffer.len() {
                     self.line_buffer.remove(self.cursor_pos);
                     self.refresh_line()
-                } else { String::new() }
+                } else {
+                    String::new()
+                }
             }
             KeyEvent::Home | KeyEvent::CtrlA => {
                 self.cursor_pos = 0;
@@ -1319,9 +1531,13 @@ impl CliSession {
     // ── Line refresh ──
 
     fn refresh_line(&self) -> String {
-        let prompt = if self.interactive.is_some() { IPROMPT }
-                     else if self.chat.is_some() { CHAT_PROMPT }
-                     else { PROMPT };
+        let prompt = if self.interactive.is_some() {
+            IPROMPT
+        } else if self.chat.is_some() {
+            CHAT_PROMPT
+        } else {
+            PROMPT
+        };
         let mut out = format!("\x1b[2K\r{}{}", prompt, self.line_buffer);
         let tail = self.line_buffer.len() - self.cursor_pos;
         if tail > 0 {
@@ -1343,7 +1559,12 @@ impl CliSession {
 /// requiring `exec_line` to take `&mut`.
 ///
 /// Returns ANSI-formatted output ready to write to the terminal.
-pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &RefCell<Box<dyn Vfs>>) -> String {
+pub fn exec_line(
+    line: &str,
+    backend: &dyn CliBackend,
+    shell: &dyn Shell,
+    vfs: &RefCell<Box<dyn Vfs>>,
+) -> String {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return String::new();
@@ -1417,7 +1638,8 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &
         "ls" if args.len() == 1 => {
             let prefix = args[0].trim_end_matches('/');
             let files = vfs.borrow().list();
-            let filtered: Vec<String> = files.into_iter()
+            let filtered: Vec<String> = files
+                .into_iter()
                 .filter(|f| {
                     let k = f.trim_start_matches('/');
                     k.starts_with(prefix) && k.len() > prefix.len()
@@ -1437,7 +1659,8 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &
         "cd" if args.len() == 1 => {
             let prefix = args[0].trim_end_matches('/');
             let files = vfs.borrow().list();
-            let filtered: Vec<String> = files.into_iter()
+            let filtered: Vec<String> = files
+                .into_iter()
                 .filter(|f| {
                     let k = f.trim_start_matches('/');
                     k.starts_with(prefix) && k.len() > prefix.len()
@@ -1475,7 +1698,11 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &
             exec_call(backend, &clean[0], &clean[1..])
         }
         "search" | "s" => {
-            let q = args.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ");
+            let q = args
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
             if q.is_empty() {
                 return format!("{RED}Usage: search <query>{RESET}");
             }
@@ -1497,10 +1724,16 @@ pub fn exec_line(line: &str, backend: &dyn CliBackend, shell: &dyn Shell, vfs: &
                 let sys_path = format!("sys.{}", clean_cmd);
                 let kernel_path = format!("kernel.{}", clean_cmd);
                 if all.iter().any(|p| p == &sys_path) {
-                    let full = match target { Some(t) => format!("{}@{}", sys_path, t), None => sys_path };
+                    let full = match target {
+                        Some(t) => format!("{}@{}", sys_path, t),
+                        None => sys_path,
+                    };
                     exec_call(backend, &full, &args)
                 } else if all.iter().any(|p| p == &kernel_path) {
-                    let full = match target { Some(t) => format!("{}@{}", kernel_path, t), None => kernel_path };
+                    let full = match target {
+                        Some(t) => format!("{}@{}", kernel_path, t),
+                        None => kernel_path,
+                    };
                     exec_call(backend, &full, &args)
                 } else {
                     format!(
@@ -1561,12 +1794,18 @@ fn format_vfs_tree(files: &[String], prefix: &str) -> String {
         out.push_str(&format!("{CYAN}{dir}/{RESET}  {GRAY}({count}){RESET}\r\n"));
     }
     for f in &file_entries {
-        let color = if f.ends_with(".toml") { YELLOW }
-                    else if f.ends_with(".json") { GREEN }
-                    else { BRIGHT_WHITE };
+        let color = if f.ends_with(".toml") {
+            YELLOW
+        } else if f.ends_with(".json") {
+            GREEN
+        } else {
+            BRIGHT_WHITE
+        };
         out.push_str(&format!("{color}{f}{RESET}\r\n"));
     }
-    if out.ends_with("\r\n") { out.truncate(out.len() - 2); }
+    if out.ends_with("\r\n") {
+        out.truncate(out.len() - 2);
+    }
     out
 }
 
@@ -1580,7 +1819,9 @@ fn strip_ansi(s: &str) -> String {
                 chars.next();
                 // consume until a letter (final byte)
                 for c2 in chars.by_ref() {
-                    if c2.is_ascii_alphabetic() { break; }
+                    if c2.is_ascii_alphabetic() {
+                        break;
+                    }
                 }
             }
         } else {
@@ -1645,7 +1886,10 @@ fn exec_call(backend: &dyn CliCallBackend, path: &str, arg_strs: &[String]) -> S
                     out.push_str(line);
                     out.push_str("\r\n");
                 }
-                out.push_str(&format!("{GRAY}... ({} more lines){RESET}\r\n", lines.len() - 80));
+                out.push_str(&format!(
+                    "{GRAY}... ({} more lines){RESET}\r\n",
+                    lines.len() - 80
+                ));
             } else {
                 for line in &lines {
                     out.push_str(line);
@@ -1664,8 +1908,10 @@ fn exec_call(backend: &dyn CliCallBackend, path: &str, arg_strs: &[String]) -> S
         Err(e) if e.starts_with("REST:") => {
             if force_local {
                 // @wasm/@native: do NOT cascade to REST — show local dispatch failure
-                return format!("{RED}Error: {clean_path} not available locally ({t}){RESET}\r\n",
-                    t = target.unwrap_or("native"));
+                return format!(
+                    "{RED}Error: {clean_path} not available locally ({t}){RESET}\r\n",
+                    t = target.unwrap_or("native")
+                );
             }
             let rest_path = &e[5..];
             let args_json = serde_json::to_string(&args).unwrap_or_else(|_| "[]".to_string());
@@ -1688,46 +1934,100 @@ pub fn format_trait_result(trait_path: &str, result: &Value) -> Option<String> {
 fn format_help() -> String {
     let mut s = String::new();
     s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Commands{RESET}\r\n"));
-    s.push_str(&format!("  {GREEN}list{RESET} {GRAY}[namespace]{RESET}         List traits\r\n"));
-    s.push_str(&format!("  {GREEN}info{RESET}                       System status\r\n"));
+    s.push_str(&format!(
+        "  {GREEN}list{RESET} {GRAY}[namespace]{RESET}         List traits\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GREEN}info{RESET}                       System status\r\n"
+    ));
     s.push_str(&format!("  {GREEN}info{RESET} {GRAY}<path>{RESET}              Show trait details + dispatch location\r\n"));
-    s.push_str(&format!("  {GREEN}call{RESET} {GRAY}<path> [args...]{RESET}    Call a trait\r\n"));
+    s.push_str(&format!(
+        "  {GREEN}call{RESET} {GRAY}<path> [args...]{RESET}    Call a trait\r\n"
+    ));
     s.push_str(&format!("  {GREEN}call{RESET} {GRAY}<path>@rest [args]{RESET}  Force dispatch via rest, relay, helper, wasm, native\r\n"));
     s.push_str(&format!("  {GREEN}call -i{RESET} {GRAY}<path>{RESET}           Interactive mode (prompt each param)\r\n"));
-    s.push_str(&format!("  {GREEN}search{RESET} {GRAY}<query>{RESET}           Search by name or description\r\n"));
-    s.push_str(&format!("  {GRAY}<path> [args...]{RESET}           Shorthand — call trait directly\r\n"));
+    s.push_str(&format!(
+        "  {GREEN}search{RESET} {GRAY}<query>{RESET}           Search by name or description\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GRAY}<path> [args...]{RESET}           Shorthand — call trait directly\r\n"
+    ));
     s.push_str(&format!("  {GREEN}chat{RESET} {GRAY}[agent] [model]{RESET}     Enter interactive chat mode (ACP)\r\n"));
-    s.push_str(&format!("  {GREEN}version{RESET}                    Show kernel version\r\n"));
-    s.push_str(&format!("  {GREEN}clear{RESET}                      Clear terminal\r\n"));
-    s.push_str(&format!("  {GREEN}help{RESET}                       Show this help\r\n"));
+    s.push_str(&format!(
+        "  {GREEN}version{RESET}                    Show kernel version\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GREEN}clear{RESET}                      Clear terminal\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GREEN}help{RESET}                       Show this help\r\n"
+    ));
     s.push_str("\r\n");
-    s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Virtual filesystem{RESET}\r\n"));
-    s.push_str(&format!("  {GREEN}ls{RESET}                         List VFS root\r\n"));
+    s.push_str(&format!(
+        "{BOLD}{BRIGHT_WHITE}Virtual filesystem{RESET}\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GREEN}ls{RESET}                         List VFS root\r\n"
+    ));
     s.push_str(&format!("  {GREEN}ls{RESET} {GRAY}<path>{RESET}              List directory (e.g. ls traits/sys)\r\n"));
-    s.push_str(&format!("  {GREEN}cd{RESET} {GRAY}<path>{RESET}              Same as ls <path>\r\n"));
-    s.push_str(&format!("  {GREEN}cat{RESET} {GRAY}<file>{RESET}              Read a VFS file\r\n"));
-    s.push_str(&format!("  {GREEN}write{RESET} {GRAY}<file> <content>{RESET}  Write text to a VFS file\r\n"));
-    s.push_str(&format!("  {GREEN}rm{RESET} {GRAY}<file>{RESET}               Delete a VFS file\r\n"));
-    s.push_str(&format!("  {GRAY}cmd args > file{RESET}            Redirect output to a VFS file\r\n"));
-    s.push_str(&format!("  {GRAY}cmd args >> file{RESET}           Append output to a VFS file\r\n"));
-    s.push_str(&format!("  {GRAY}cmd @file{RESET}                  Pass VFS file contents as an argument\r\n"));
+    s.push_str(&format!(
+        "  {GREEN}cd{RESET} {GRAY}<path>{RESET}              Same as ls <path>\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GREEN}cat{RESET} {GRAY}<file>{RESET}              Read a VFS file\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GREEN}write{RESET} {GRAY}<file> <content>{RESET}  Write text to a VFS file\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GREEN}rm{RESET} {GRAY}<file>{RESET}               Delete a VFS file\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GRAY}cmd args > file{RESET}            Redirect output to a VFS file\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GRAY}cmd args >> file{RESET}           Append output to a VFS file\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GRAY}cmd @file{RESET}                  Pass VFS file contents as an argument\r\n"
+    ));
     s.push_str("\r\n");
     s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Shortcuts{RESET}\r\n"));
-    s.push_str(&format!("  {CYAN}Tab{RESET}          Auto-complete trait paths\r\n"));
-    s.push_str(&format!("  {CYAN}↑ / ↓{RESET}        Navigate command history\r\n"));
+    s.push_str(&format!(
+        "  {CYAN}Tab{RESET}          Auto-complete trait paths\r\n"
+    ));
+    s.push_str(&format!(
+        "  {CYAN}↑ / ↓{RESET}        Navigate command history\r\n"
+    ));
     s.push_str(&format!("  {CYAN}Ctrl+L{RESET}       Clear terminal\r\n"));
-    s.push_str(&format!("  {CYAN}Ctrl+C{RESET}       Cancel current line\r\n"));
-    s.push_str(&format!("  {CYAN}Ctrl+U{RESET}       Clear entire line\r\n"));
-    s.push_str(&format!("  {CYAN}Ctrl+W{RESET}       Delete word backward\r\n"));
-    s.push_str(&format!("  {CYAN}Ctrl+A/E{RESET}     Jump to start/end of line\r\n"));
+    s.push_str(&format!(
+        "  {CYAN}Ctrl+C{RESET}       Cancel current line\r\n"
+    ));
+    s.push_str(&format!(
+        "  {CYAN}Ctrl+U{RESET}       Clear entire line\r\n"
+    ));
+    s.push_str(&format!(
+        "  {CYAN}Ctrl+W{RESET}       Delete word backward\r\n"
+    ));
+    s.push_str(&format!(
+        "  {CYAN}Ctrl+A/E{RESET}     Jump to start/end of line\r\n"
+    ));
     s.push_str("\r\n");
     s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Interactive mode{RESET}\r\n"));
-    s.push_str(&format!("  {CYAN}↑ / ↓{RESET}        Cycle through parameter history\r\n"));
-    s.push_str(&format!("  {CYAN}Tab{RESET}          Cycle through completions\r\n"));
-    s.push_str(&format!("  {CYAN}Ctrl+C{RESET}       Abort interactive mode\r\n"));
+    s.push_str(&format!(
+        "  {CYAN}↑ / ↓{RESET}        Cycle through parameter history\r\n"
+    ));
+    s.push_str(&format!(
+        "  {CYAN}Tab{RESET}          Cycle through completions\r\n"
+    ));
+    s.push_str(&format!(
+        "  {CYAN}Ctrl+C{RESET}       Abort interactive mode\r\n"
+    ));
     s.push_str("\r\n");
     s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Examples{RESET}\r\n"));
-    s.push_str(&format!("  {GRAY}call sys.checksum hash \"hello world\"{RESET}\r\n"));
+    s.push_str(&format!(
+        "  {GRAY}call sys.checksum hash \"hello world\"{RESET}\r\n"
+    ));
     s.push_str(&format!("  {GRAY}call -i sys.checksum{RESET}\r\n"));
     s.push_str(&format!("  {GRAY}sys.version{RESET}\r\n"));
     s.push_str(&format!("  {GRAY}info sys.list{RESET}\r\n"));
@@ -1741,7 +2041,9 @@ fn format_list(backend: &dyn CliCallBackend, namespace: Option<&str>) -> String 
     let filtered: Vec<&Value> = if let Some(ns) = namespace {
         all.iter()
             .filter(|t| {
-                t.get("path").and_then(|p| p.as_str()).map_or(false, |p| p.starts_with(ns))
+                t.get("path")
+                    .and_then(|p| p.as_str())
+                    .map_or(false, |p| p.starts_with(ns))
             })
             .collect()
     } else {
@@ -1768,19 +2070,27 @@ fn format_list(backend: &dyn CliCallBackend, namespace: Option<&str>) -> String 
     let mut out = String::new();
     for (ns, traits) in &groups {
         out.push_str(&format!(
-            "{BOLD}{BRIGHT_WHITE}{}{RESET} {GRAY}({}){RESET}\r\n", ns, traits.len()
+            "{BOLD}{BRIGHT_WHITE}{}{RESET} {GRAY}({}){RESET}\r\n",
+            ns,
+            traits.len()
         ));
         for t in traits {
             let path = t.get("path").and_then(|p| p.as_str()).unwrap_or("");
             let name = path.rsplit('.').next().unwrap_or(path);
             let desc = t.get("description").and_then(|d| d.as_str()).unwrap_or("");
-            let wasm = t.get("wasm_callable").and_then(|w| w.as_bool()).unwrap_or(false);
+            let wasm = t
+                .get("wasm_callable")
+                .and_then(|w| w.as_bool())
+                .unwrap_or(false);
             let badge = if wasm {
                 format!("{GREEN}[WASM]{RESET}")
             } else {
                 format!("{YELLOW}[REST]{RESET}")
             };
-            out.push_str(&format!("  {} {BLUE}{}{RESET}  {GRAY}{}{RESET}\r\n", badge, name, desc));
+            out.push_str(&format!(
+                "  {} {BLUE}{}{RESET}  {GRAY}{}{RESET}\r\n",
+                badge, name, desc
+            ));
         }
     }
     out.push_str(&format!("{GRAY}{} traits{RESET}", filtered.len()));
@@ -1805,8 +2115,14 @@ fn format_system_status(backend: &dyn CliCallBackend) -> String {
             let mut out = String::new();
             out.push_str(&format!("{BOLD}{BRIGHT_WHITE}System Status{RESET}\r\n\r\n"));
             out.push_str(&format!("{BOLD}Traits{RESET}\r\n"));
-            out.push_str(&format!("  {GRAY}Total:{RESET}   {CYAN}{}{RESET}\r\n", paths.len()));
-            out.push_str(&format!("  {GRAY}Version:{RESET} {CYAN}{}{RESET}\r\n", backend.version()));
+            out.push_str(&format!(
+                "  {GRAY}Total:{RESET}   {CYAN}{}{RESET}\r\n",
+                paths.len()
+            ));
+            out.push_str(&format!(
+                "  {GRAY}Version:{RESET} {CYAN}{}{RESET}\r\n",
+                backend.version()
+            ));
             out
         }
     }
@@ -1818,7 +2134,14 @@ fn format_system_status(backend: &dyn CliCallBackend) -> String {
 pub fn format_rest_result(trait_path: &str, args: &[Value], result: &Value) -> Option<String> {
     if result.is_null() {
         match trait_path {
-            "sys.info" if args.is_empty() || args.first().and_then(|v| v.as_str()).unwrap_or("").is_empty() => {
+            "sys.info"
+                if args.is_empty()
+                    || args
+                        .first()
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .is_empty() =>
+            {
                 Some(format_basic_status())
             }
             _ => None,
@@ -1831,18 +2154,25 @@ pub fn format_rest_result(trait_path: &str, args: &[Value], result: &Value) -> O
 /// Basic system status from WASM-local data (no server needed).
 fn format_basic_status() -> String {
     let count = kernel_logic::platform::registry_count();
-    let version_info = kernel_logic::platform::dispatch("sys.version", &[
-        Value::String("system".into()),
-    ]).unwrap_or_default();
-    let version = version_info.get("version").and_then(|v| v.as_str()).unwrap_or("?");
+    let version_info =
+        kernel_logic::platform::dispatch("sys.version", &[Value::String("system".into())])
+            .unwrap_or_default();
+    let version = version_info
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
     let mut out = String::new();
     out.push_str(&format!("{BOLD}{BRIGHT_WHITE}System Status{RESET}\n\n"));
     out.push_str(&format!("{BOLD}System{RESET}\n"));
-    out.push_str(&format!("  {GRAY}Runtime:{RESET} {CYAN}WASM (browser){RESET}\n"));
+    out.push_str(&format!(
+        "  {GRAY}Runtime:{RESET} {CYAN}WASM (browser){RESET}\n"
+    ));
     out.push_str(&format!("  {GRAY}Build:{RESET}   {CYAN}{version}{RESET}\n"));
     out.push_str(&format!("\n{BOLD}Traits{RESET}\n"));
     out.push_str(&format!("  {GRAY}Total:{RESET}   {CYAN}{count}{RESET}\n"));
-    out.push_str(&format!("\n{GRAY}Connect a helper for full system status{RESET}\n"));
+    out.push_str(&format!(
+        "\n{GRAY}Connect a helper for full system status{RESET}\n"
+    ));
     out
 }
 
@@ -1868,13 +2198,19 @@ fn format_search(backend: &dyn CliCallBackend, query: &str) -> String {
     for t in &results {
         let path = t.get("path").and_then(|p| p.as_str()).unwrap_or("");
         let desc = t.get("description").and_then(|d| d.as_str()).unwrap_or("");
-        let wasm = t.get("wasm_callable").and_then(|w| w.as_bool()).unwrap_or(false);
+        let wasm = t
+            .get("wasm_callable")
+            .and_then(|w| w.as_bool())
+            .unwrap_or(false);
         let badge = if wasm {
             format!("{GREEN}[WASM]{RESET}")
         } else {
             format!("{YELLOW}[REST]{RESET}")
         };
-        out.push_str(&format!("{} {BLUE}{}{RESET}  {GRAY}{}{RESET}\r\n", badge, path, desc));
+        out.push_str(&format!(
+            "{} {BLUE}{}{RESET}  {GRAY}{}{RESET}\r\n",
+            badge, path, desc
+        ));
     }
     out.push_str(&format!("{GRAY}{} matches{RESET}", results.len()));
     out
@@ -1952,7 +2288,9 @@ pub fn tab_completions(prefix: &str, all_paths: &[String]) -> (Vec<String>, Stri
 
 /// Get interactive mode parameter info for a trait.
 pub fn interactive_params(path: &str, backend: &dyn CliCallBackend) -> Option<Value> {
-    backend.get_info(path).and_then(|info| info.get("params").cloned())
+    backend
+        .get_info(path)
+        .and_then(|info| info.get("params").cloned())
 }
 
 // ── Helpers ──
@@ -1975,7 +2313,11 @@ fn resolve_path(path: &str, backend: &dyn CliCallBackend) -> String {
 
 fn format_param_header(params: &[ParamMeta], idx: usize) -> String {
     let p = &params[idx];
-    let req = if p.required { format!("{RED}*{RESET}") } else { " ".to_string() };
+    let req = if p.required {
+        format!("{RED}*{RESET}")
+    } else {
+        " ".to_string()
+    };
     let mut out = format!(
         "  {} {BOLD}{}{RESET}  {GRAY}{}{RESET}  {GRAY}{}{RESET}",
         req, p.name, p.ptype, p.description

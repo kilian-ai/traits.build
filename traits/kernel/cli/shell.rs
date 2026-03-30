@@ -42,7 +42,11 @@ impl ShellCommand {
 
     /// Tokens after the command name.
     pub fn rest(&self) -> &[String] {
-        if self.args.is_empty() { &[] } else { &self.args[1..] }
+        if self.args.is_empty() {
+            &[]
+        } else {
+            &self.args[1..]
+        }
     }
 }
 
@@ -120,7 +124,10 @@ fn extract_redirect(args: &mut Vec<String>) -> Option<Redirect> {
         if args[i].starts_with('>') && args[i].len() > 1 {
             let file = args[i][1..].to_string();
             args.remove(i);
-            return Some(Redirect { file, append: false });
+            return Some(Redirect {
+                file,
+                append: false,
+            });
         }
         i += 1;
     }

@@ -5,4 +5,4 @@
 //! just re-exports everything so callers inside `kernel/cli` don't need to
 //! change their import paths.
 
-pub use kernel_logic::vfs::{Vfs, MemVfs, LayeredVfs};
+pub use kernel_logic::vfs::{LayeredVfs, MemVfs, Vfs};

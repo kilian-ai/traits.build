@@ -128,6 +128,43 @@ let _webllmProgressTime = 0;
 
 const WEBLLM_DEFAULT_MODEL = 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
 
+// ── Voice (browser microphone) state ──
+let _voiceStream = null;
+let _voiceWs = null;
+let _voiceAudioContext = null;
+let _voiceProcessor = null;
+let _voiceApiKey = null;
+
+function _dispatchVoiceEvent(type, data) {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('voice-event', { detail: { type, ...data } }));
+    }
+}
+
+async function _ensureVoiceApiKey(traits) {
+    if (_voiceApiKey) return _voiceApiKey;
+    // Try to get from WASM secrets
+    if (wasm && wasm.set_secret) {
+        try {
+            // Check if key exists in WASM
+            const result = JSON.parse(wasm.call('sys.secrets', JSON.stringify(['get', 'openai_api_key'])));
+            if (result.ok && result.result) {
+                _voiceApiKey = result.result;
+                return _voiceApiKey;
+            }
+        } catch(e) {}
+    }
+    // Try from localStorage (for development)
+    try {
+        const stored = localStorage.getItem('traits.voice.api_key');
+        if (stored) {
+            _voiceApiKey = stored;
+            return _voiceApiKey;
+        }
+    } catch(e) {}
+    return null;
+}
+
 function _webllmProgress(text) {
     if (text) {
         _lastWebLLMStep = text;
@@ -1033,6 +1070,197 @@ export class Traits {
             return { ok: true, ...info };
         }
         return { ok: false, error: 'Helper not reachable at ' + url };
+    }
+
+    // ── Voice (Browser Microphone) ──
+
+    /**
+     * Start voice conversation using browser microphone.
+     * Uses OpenAI Realtime API for speech-to-speech conversation.
+     * @param {Object} opts
+     * @param {string} [opts.apiKey] - OpenAI API key (or set via setVoiceApiKey)
+     * @param {string} [opts.voice='cedar'] - Voice: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
+     * @param {string} [opts.model='gpt-4o-realtime-preview'] - Realtime model
+     * @param {Function} [opts.onTranscript] - Callback for user transcript
+     * @param {Function} [opts.onResponse] - Callback for model response
+     * @param {Function} [opts.onAudio] - Callback for audio chunks (PCM16)
+     * @returns {Promise<{ok: boolean, error?: string}>}
+     */
+    async startVoice(opts = {}) {
+        // Stop any existing voice session
+        await this.stopVoice();
+
+        const apiKey = opts.apiKey || _voiceApiKey || await _ensureVoiceApiKey(this);
+        if (!apiKey) {
+            return { ok: false, error: 'OpenAI API key required. Use traits.setVoiceApiKey(key) or set localStorage traits.voice.api_key' };
+        }
+
+        const voice = opts.voice || 'cedar';
+        const model = opts.model || 'gpt-4o-realtime-preview';
+
+        try {
+            // Request microphone access
+            _voiceStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                }
+            });
+
+            // Create audio context and processor for capturing mic data
+            _voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = _voiceAudioContext.createMediaStreamSource(_voiceStream);
+            _voiceProcessor = _voiceAudioContext.createScriptProcessor(4096, 1, 1);
+
+            _dispatchVoiceEvent('started', { voice, model });
+
+            // Connect processor - we'll send data to WebSocket
+            source.connect(_voiceProcessor);
+            _voiceProcessor.connect(_voiceAudioContext.destination);
+
+            // Create WebSocket connection to OpenAI Realtime API
+            const url = `wss://api.openai.com/v1/realtime?model=${model}`;
+            _voiceWs = new WebSocket(url);
+
+            _voiceWs.binaryType = 'arraybuffer';
+
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000);
+                _voiceWs.onopen = () => {
+                    clearTimeout(timeout);
+                    // Send session update
+                    _voiceWs.send(JSON.stringify({
+                        type: 'session.update',
+                        session: {
+                            instructions: 'You are a helpful voice assistant. Keep responses concise for voice conversation.',
+                            modalities: ['text', 'audio'],
+                            voice: voice,
+                            input_audio_format: 'pcm16',
+                            output_audio_format: 'pcm16',
+                            input_audio_noise_reduction: { type: 'far_field' },
+                            turn_detection: {
+                                type: 'server_vad',
+                                threshold: 0.8,
+                                prefix_padding_ms: 300,
+                                silence_duration_ms: 800
+                            },
+                            input_audio_transcription: { model: 'whisper-1' }
+                        }
+                    }));
+                    resolve();
+                };
+                _voiceWs.onerror = (e) => {
+                    clearTimeout(timeout);
+                    reject(e);
+                };
+            });
+
+            // Handle incoming messages
+            _voiceWs.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    const type = data.type;
+
+                    if (type === 'response.audio.delta') {
+                        // Audio from model - decode base64 and emit
+                        if (opts.onAudio) {
+                            const pcm = atob(data.delta);
+                            const bytes = new Uint8Array(pcm.length);
+                            for (let i = 0; i < pcm.length; i++) bytes[i] = pcm.charCodeAt(i);
+                            opts.onAudio(bytes);
+                        }
+                    } else if (type === 'conversation.item.input_audio_transcription.completed') {
+                        // User finished speaking
+                        if (opts.onTranscript && data.transcript) {
+                            opts.onTranscript(data.transcript);
+                        }
+                    } else if (type === 'response.audio_transcript.done') {
+                        // Model finished speaking
+                        if (opts.onResponse && data.transcript) {
+                            opts.onResponse(data.transcript);
+                        }
+                    } else if (type === 'error') {
+                        _dispatchVoiceEvent('error', { message: data.error?.message || 'Unknown error' });
+                    }
+                } catch(e) {
+                    console.warn('[Voice] message parse error:', e);
+                }
+            };
+
+            // Send microphone data to OpenAI
+            _voiceProcessor.onaudioprocess = (e) => {
+                if (_voiceWs && _voiceWs.readyState === WebSocket.OPEN) {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    // Convert Float32 to Int16 PCM
+                    const pcm16 = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, inputData[i]));
+                        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    // Convert to base64
+                    let binary = '';
+                    const bytes = new Uint8Array(pcm16.buffer);
+                    for (let i = 0; i < bytes.length; i++) {
+                        binary += String.fromCharCode(bytes[i]);
+                    }
+                    const b64 = btoa(binary);
+                    _voiceWs.send(JSON.stringify({
+                        type: 'input_audio_buffer.append',
+                        audio: b64
+                    }));
+                }
+            };
+
+            return { ok: true };
+
+        } catch(e) {
+            await this.stopVoice();
+            return { ok: false, error: e.message || String(e) };
+        }
+    }
+
+    /**
+     * Stop the current voice session.
+     * @returns {Promise<void>}
+     */
+    async stopVoice() {
+        if (_voiceProcessor) {
+            _voiceProcessor.disconnect();
+            _voiceProcessor = null;
+        }
+        if (_voiceStream) {
+            _voiceStream.getTracks().forEach(track => track.stop());
+            _voiceStream = null;
+        }
+        if (_voiceAudioContext) {
+            await _voiceAudioContext.close();
+            _voiceAudioContext = null;
+        }
+        if (_voiceWs) {
+            _voiceWs.close();
+            _voiceWs = null;
+        }
+        _dispatchVoiceEvent('stopped', {});
+    }
+
+    /**
+     * Check if voice session is active.
+     * @returns {boolean}
+     */
+    isVoiceActive() {
+        return _voiceWs !== null && _voiceWs.readyState === WebSocket.OPEN;
+    }
+
+    /**
+     * Set the OpenAI API key for voice.
+     * @param {string} apiKey
+     */
+    setVoiceApiKey(apiKey) {
+        _voiceApiKey = apiKey;
+        try {
+            localStorage.setItem('traits.voice.api_key', apiKey);
+        } catch(e) {}
     }
 
     // ── Runtime Bindings ──
