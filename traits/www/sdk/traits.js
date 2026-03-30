@@ -1298,11 +1298,10 @@ You're running in the browser on the traits.build platform. The user is a develo
 You have access to function-calling tools that execute locally in the browser via WebAssembly.
 When the user asks you to do something and a matching tool exists, call it directly — don't say you can't.`;
 
+                // WebRTC data channel session.update only accepts a subset of fields —
+                // type, model, and modalities are set during token minting / SDP exchange
                 const sessionConfig = {
-                    type: 'realtime',
-                    model: model,
                     instructions: opts.instructions || defaultInstructions,
-                    modalities: ['text', 'audio'],
                     voice: voice,
                     input_audio_transcription: { model: 'whisper-1' },
                     turn_detection: {
