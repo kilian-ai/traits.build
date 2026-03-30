@@ -1233,12 +1233,15 @@ export class Traits {
                 if (result && result.token) {
                     wsAuthKey = result.token;
                     console.log('[Voice] Got ephemeral token via helper/server');
+                } else {
+                    console.log('[Voice] Dispatch token result:', JSON.stringify(tokenResult).slice(0, 200));
                 }
             } catch(e) {
                 console.log('[Voice] Ephemeral token via dispatch failed:', e.message || e);
             }
 
-            // Fallback: try minting token directly from browser (may fail due to CORS)
+            // Fallback: try minting token directly from browser via OpenAI REST API
+            // (OpenAI sets access-control-allow-origin: * so CORS is allowed)
             if (!wsAuthKey) {
                 try {
                     const resp = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
@@ -1252,16 +1255,20 @@ export class Traits {
                                        audio: { output: { voice } } }
                         })
                     });
+                    const data = await resp.json();
                     if (resp.ok) {
-                        const data = await resp.json();
                         const token = (data.client_secret && data.client_secret.value) || data.value;
                         if (token) {
                             wsAuthKey = token;
                             console.log('[Voice] Got ephemeral token via direct fetch');
+                        } else {
+                            console.warn('[Voice] Token response missing value:', JSON.stringify(data).slice(0, 200));
                         }
+                    } else {
+                        console.warn('[Voice] Token request failed:', resp.status, JSON.stringify(data).slice(0, 300));
                     }
                 } catch(e) {
-                    console.log('[Voice] Direct ephemeral token fetch failed (CORS):', e.message || e);
+                    console.log('[Voice] Direct ephemeral token fetch failed:', e.message || e);
                 }
             }
 
