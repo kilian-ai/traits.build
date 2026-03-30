@@ -253,14 +253,14 @@ async function _ensureVoiceApiKey(traits) {
             // Check if key exists in WASM
             const result = JSON.parse(wasm.call('sys.secrets', JSON.stringify(['get', 'openai_api_key'])));
             if (result.ok && result.result) {
-                _voiceApiKey = result.result;
+                _voiceApiKey = String(result.result).trim();
                 return _voiceApiKey;
             }
         } catch(e) {}
     }
     // Try from Settings page secrets (localStorage['traits.secret.OPENAI_API_KEY'])
     try {
-        const settingsKey = localStorage.getItem('traits.secret.OPENAI_API_KEY');
+        const settingsKey = (localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim();
         if (settingsKey) {
             _voiceApiKey = settingsKey;
             // Also inject into WASM kernel so sys.secrets can resolve it
@@ -272,7 +272,7 @@ async function _ensureVoiceApiKey(traits) {
     } catch(e) {}
     // Try from legacy localStorage key (for development)
     try {
-        const stored = localStorage.getItem('traits.voice.api_key');
+        const stored = (localStorage.getItem('traits.voice.api_key') || '').trim();
         if (stored) {
             _voiceApiKey = stored;
             return _voiceApiKey;
@@ -1213,9 +1213,10 @@ class Traits {
         // Stop any existing voice session
         await this.stopVoice();
 
-        const apiKey = opts.apiKey || _voiceApiKey || await _ensureVoiceApiKey(this);
+        const rawKey = opts.apiKey || _voiceApiKey || await _ensureVoiceApiKey(this);
+        const apiKey = rawKey ? rawKey.trim() : null;
         if (!apiKey) {
-            return { ok: false, error: 'OpenAI API key required. Use traits.setVoiceApiKey(key) or set localStorage traits.voice.api_key' };
+            return { ok: false, error: 'OpenAI API key required. Set OPENAI_API_KEY in Settings > Secrets' };
         }
 
         const voice = opts.voice || 'cedar';
@@ -1258,11 +1259,15 @@ class Traits {
 
             // Connect to OpenAI Realtime API via WebSocket subprotocols (browser auth)
             const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
-            console.log('[Voice] Connecting to', model, '— key:', apiKey.slice(0, 7) + '...' + apiKey.slice(-4));
-            _voiceWs = new WebSocket(url, [
-                'openai-insecure-api-key.' + apiKey,
-                'openai-beta.realtime-v1'
-            ]);
+            console.log('[Voice] Connecting to', model, '— key:', apiKey.slice(0, 7) + '...' + apiKey.slice(-4), '(' + apiKey.length + ' chars)');
+            try {
+                _voiceWs = new WebSocket(url, [
+                    'openai-insecure-api-key.' + apiKey,
+                    'openai-beta.realtime-v1'
+                ]);
+            } catch(wsErr) {
+                return { ok: false, error: 'WebSocket creation failed: ' + wsErr.message + ' — the API key may contain invalid characters' };
+            }
 
             await new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject(new Error('WebSocket connection timeout (10s)')), 10000);
