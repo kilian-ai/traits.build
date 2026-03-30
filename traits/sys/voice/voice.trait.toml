@@ -1,7 +1,7 @@
 [trait]
 description = "Real-time voice chat via OpenAI Realtime API — speech-to-speech over WebSocket"
-version = "v260330.001444"
-checksum = "13b3192e36d9ca46bc79d5baa3411ea7bbcf6bb7eb56a3761a4c5a308aad0bea"
+version = "v260330.002947"
+checksum = "ae288b3abf253dca1d7afdb5073bfb09fea02aa34b507dc9c1f230cd1246faab"
 author = "system"
 tags = ["sys", "voice", "chat", "realtime", "speech"]
 

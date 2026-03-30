@@ -359,8 +359,12 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
 
                         eprintln!("\x1b[93m⚡ {func_name}\x1b[0m");
 
-                        // Dispatch the tool call
-                        let result = dispatch_tool_call(func_name, arguments);
+                        // Dispatch the tool call — use streaming for ACP agents
+                        let result = if func_name == "llm_prompt_acp" {
+                            dispatch_tool_call_streaming(arguments)
+                        } else {
+                            dispatch_tool_call(func_name, arguments)
+                        };
 
                         // Truncate very long results for voice context
                         let output = if result.len() > 2000 {
@@ -830,5 +834,39 @@ fn dispatch_tool_call(tool_name: &str, arguments_json: &str) -> String {
         Some(Value::String(s)) => s,
         Some(other) => serde_json::to_string_pretty(&other).unwrap_or_default(),
         None => format!("Dispatch failed for {trait_path}"),
+    }
+}
+
+/// Streaming dispatch for ACP agent tool calls — prints chunks as they arrive.
+fn dispatch_tool_call_streaming(arguments_json: &str) -> String {
+    let arguments: Map<String, Value> = serde_json::from_str(arguments_json)
+        .unwrap_or_default();
+
+    // Build args array matching llm.prompt.acp signature: [prompt, agent?, cwd?, auto_approve?, model?, context?]
+    let prompt = arguments.get("prompt").cloned().unwrap_or(Value::Null);
+    let agent = arguments.get("agent").cloned().unwrap_or(Value::Null);
+    let cwd = arguments.get("cwd").cloned().unwrap_or(Value::Null);
+    let auto_approve = arguments.get("auto_approve").cloned().unwrap_or(Value::Null);
+    let model = arguments.get("model").cloned().unwrap_or(Value::Null);
+    let context = arguments.get("context").cloned().unwrap_or(Value::Null);
+    let args = vec![prompt, agent, cwd, auto_approve, model, context];
+
+    let mut full_response = String::new();
+    eprintln!("\x1b[90m--- ACP agent working ---\x1b[0m");
+    let result = crate::dispatcher::compiled::acp::acp_proxy_dispatch_streaming(
+        &args,
+        &mut |chunk: &str| {
+            full_response.push_str(chunk);
+            eprint!("{}", chunk);
+        },
+    );
+    eprintln!("\n\x1b[90m--- ACP agent done ---\x1b[0m");
+
+    if !full_response.is_empty() {
+        full_response
+    } else if let Some(text) = result.get("text").and_then(|v| v.as_str()) {
+        text.to_string()
+    } else {
+        serde_json::to_string_pretty(&result).unwrap_or_default()
     }
 }

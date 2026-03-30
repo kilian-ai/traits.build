@@ -626,6 +626,15 @@ fn process_session_output(output: &str, backend: &NativeCliBackend) -> bool {
                                     );
                                 }
                             }
+                        } else if path == "sys.voice" {
+                            // Voice takes over the terminal (mic/playback, eprintln output).
+                            // Disable raw mode so its \n output doesn't staircase,
+                            // then re-enable after it returns.
+                            print!("\x1b[A\x1b[2K\r");
+                            std::io::stdout().flush().ok();
+                            let _ = crossterm::terminal::disable_raw_mode();
+                            let _ = backend.call(path, &args);
+                            let _ = crossterm::terminal::enable_raw_mode();
                         } else {
                             // Default: non-streaming compiled dispatch
                             // Clear the progress line (e.g. "Fetching models…") above
