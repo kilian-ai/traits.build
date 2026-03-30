@@ -1,4 +1,4 @@
-use serde_json::{json, Value, Map};
+use serde_json::{json, Map, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Instant;
@@ -26,25 +26,30 @@ extern "C" fn sigint_handler(_: libc::c_int) {
 pub fn voice(args: &[Value]) -> Value {
     // Read persistent defaults from sys.config, then allow arg overrides
     let default_voice = read_voice_pref("voice").unwrap_or_else(|| "cedar".into());
-    let default_model = read_voice_pref("model").unwrap_or_else(|| "gpt-4o-mini-realtime-preview".into());
+    let default_model =
+        read_voice_pref("model").unwrap_or_else(|| "gpt-4o-mini-realtime-preview".into());
     let default_agent = read_voice_pref("agent").unwrap_or_default();
 
-    let voice_name = args.first()
+    let voice_name = args
+        .first()
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or(&default_voice);
 
-    let model = args.get(1)
+    let model = args
+        .get(1)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or(&default_model);
 
-    let agent = args.get(2)
+    let agent = args
+        .get(2)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or(&default_agent);
 
-    let session_id = args.get(3)
+    let session_id = args
+        .get(3)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
@@ -52,7 +57,9 @@ pub fn voice(args: &[Value]) -> Value {
     // Resolve API key
     let api_key = match resolve_api_key() {
         Some(k) => k,
-        None => return json!({"ok": false, "error": "OpenAI API key not found. Set via: traits call sys.secrets set openai_api_key <key>"}),
+        None => {
+            return json!({"ok": false, "error": "OpenAI API key not found. Set via: traits call sys.secrets set openai_api_key <key>"})
+        }
     };
 
     // Verify sox is available (provides `rec` and `play`)
@@ -63,7 +70,13 @@ pub fn voice(args: &[Value]) -> Value {
     // Build combined instructions: agent context + voice-specific tuning
     let instructions = build_instructions(agent, session_id.as_deref());
 
-    match realtime_session(&api_key, model, voice_name, &instructions, session_id.as_deref()) {
+    match realtime_session(
+        &api_key,
+        model,
+        voice_name,
+        &instructions,
+        session_id.as_deref(),
+    ) {
         Ok(turns) => json!({"ok": true, "turns": turns}),
         Err(e) => json!({"ok": false, "error": e}),
     }
@@ -84,15 +97,15 @@ fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
     }
 
     // 2. Persistent memory notes — things the model remembered from prior sessions
-    if let Some(result) = kernel_logic::platform::dispatch(
-        "sys.voice.memory", &[json!("list")],
-    ) {
+    if let Some(result) = kernel_logic::platform::dispatch("sys.voice.memory", &[json!("list")]) {
         if let Some(notes) = result.get("notes").and_then(|v| v.as_array()) {
-            let texts: Vec<&str> = notes.iter()
+            let texts: Vec<&str> = notes
+                .iter()
                 .filter_map(|n| n.get("text").and_then(|v| v.as_str()))
                 .collect();
             if !texts.is_empty() {
-                let mut mem = String::from("Your persistent memory (facts you chose to remember):\n");
+                let mut mem =
+                    String::from("Your persistent memory (facts you chose to remember):\n");
                 for t in &texts {
                     mem.push_str(&format!("- {}\n", t));
                 }
@@ -103,24 +116,39 @@ fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
 
     // 3. Conversation history — provide recent context from the chat session
     if let Some(sid) = session_id {
-        if let Some(result) = kernel_logic::platform::dispatch(
-            "sys.chat", &[json!("get"), json!(sid)],
-        ) {
+        if let Some(result) =
+            kernel_logic::platform::dispatch("sys.chat", &[json!("get"), json!(sid)])
+        {
             if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
-                if let Some(messages) = result.pointer("/session/messages").and_then(|v| v.as_array()) {
+                if let Some(messages) = result
+                    .pointer("/session/messages")
+                    .and_then(|v| v.as_array())
+                {
                     // Include last few messages as context (not too many — voice is concise)
-                    let recent: Vec<&Value> = messages.iter().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect();
+                    let recent: Vec<&Value> = messages
+                        .iter()
+                        .rev()
+                        .take(6)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
                     if !recent.is_empty() {
-                        let mut ctx = String::from("Recent conversation context (for continuity):\n");
+                        let mut ctx =
+                            String::from("Recent conversation context (for continuity):\n");
                         for msg in &recent {
                             let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("?");
                             let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
                             // Truncate long messages for voice context
                             let short = if content.len() > 200 {
                                 let mut end = 200;
-                                while !content.is_char_boundary(end) { end -= 1; }
+                                while !content.is_char_boundary(end) {
+                                    end -= 1;
+                                }
                                 &content[..end]
-                            } else { content };
+                            } else {
+                                content
+                            };
                             ctx.push_str(&format!("  {}: {}\n", role, short));
                         }
                         parts.push(ctx);
@@ -131,9 +159,7 @@ fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
     }
 
     // 4. Voice-specific tuning — custom instructions if set, else compiled-in default
-    if let Some(result) = kernel_logic::platform::dispatch(
-        "sys.voice.instruct", &[json!("get")],
-    ) {
+    if let Some(result) = kernel_logic::platform::dispatch("sys.voice.instruct", &[json!("get")]) {
         if let Some(instr) = result.get("instructions").and_then(|v| v.as_str()) {
             parts.push(instr.to_string());
         } else {
@@ -157,7 +183,11 @@ fn read_voice_pref(key: &str) -> Option<String> {
         "sys.config",
         &[json!("get"), json!("sys.voice"), json!(key)],
     )
-    .and_then(|r| r.get("value").and_then(|v| v.as_str()).map(|s| s.to_string()))
+    .and_then(|r| {
+        r.get("value")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    })
     .filter(|s| !s.is_empty())
 }
 
@@ -190,25 +220,37 @@ enum PlayCmd {
 // Main Realtime session
 // ═══════════════════════════════════════════════════════════════════════════
 
-fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: &str, session_id: Option<&str>) -> Result<u32, String> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-    use tungstenite::{connect, Message};
+fn realtime_session(
+    api_key: &str,
+    model: &str,
+    voice_name: &str,
+    instructions: &str,
+    session_id: Option<&str>,
+) -> Result<u32, String> {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use std::time::Duration;
     use tungstenite::client::IntoClientRequest;
     use tungstenite::stream::MaybeTlsStream;
-    use std::time::Duration;
+    use tungstenite::{connect, Message};
 
     // ── Connect ──
     let url = format!("wss://api.openai.com/v1/realtime?model={}", model);
     eprintln!("\x1b[90mConnecting to {model}…\x1b[0m");
 
-    let mut request = url.into_client_request().map_err(|e| format!("Build request: {e}"))?;
+    let mut request = url
+        .into_client_request()
+        .map_err(|e| format!("Build request: {e}"))?;
     request.headers_mut().insert(
         "Authorization",
-        format!("Bearer {}", api_key).parse().map_err(|e| format!("Auth header: {e}"))?
+        format!("Bearer {}", api_key)
+            .parse()
+            .map_err(|e| format!("Auth header: {e}"))?,
     );
     request.headers_mut().insert(
         "OpenAI-Beta",
-        "realtime=v1".parse().map_err(|e| format!("Beta header: {e}"))?
+        "realtime=v1"
+            .parse()
+            .map_err(|e| format!("Beta header: {e}"))?,
     );
 
     let (mut ws, _) = connect(request).map_err(|e| format!("WebSocket connect: {e}"))?;
@@ -267,7 +309,9 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
     // ── Set read timeout for non-blocking interleave ──
     match ws.get_ref() {
         MaybeTlsStream::NativeTls(tls) => {
-            tls.get_ref().set_read_timeout(Some(Duration::from_millis(20))).ok();
+            tls.get_ref()
+                .set_read_timeout(Some(Duration::from_millis(20)))
+                .ok();
         }
         MaybeTlsStream::Plain(tcp) => {
             tcp.set_read_timeout(Some(Duration::from_millis(20))).ok();
@@ -291,7 +335,10 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
     VOICE_RUNNING.store(true, Ordering::SeqCst);
     PLAYBACK_IDLE.store(true, Ordering::SeqCst);
     let prev_handler = unsafe {
-        libc::signal(libc::SIGINT, sigint_handler as *const () as libc::sighandler_t)
+        libc::signal(
+            libc::SIGINT,
+            sigint_handler as *const () as libc::sighandler_t,
+        )
     };
 
     // ── Background tool channel ──
@@ -353,7 +400,12 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                                 if let Some(sid) = session_id {
                                     kernel_logic::platform::dispatch(
                                         "sys.chat",
-                                        &[json!("append"), json!(sid), json!("user"), json!(trimmed)],
+                                        &[
+                                            json!("append"),
+                                            json!(sid),
+                                            json!("user"),
+                                            json!(trimmed),
+                                        ],
                                     );
                                 }
                             }
@@ -371,7 +423,12 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                                 if let Some(sid) = session_id {
                                     kernel_logic::platform::dispatch(
                                         "sys.chat",
-                                        &[json!("append"), json!(sid), json!("assistant"), json!(trimmed)],
+                                        &[
+                                            json!("append"),
+                                            json!(sid),
+                                            json!("assistant"),
+                                            json!(trimmed),
+                                        ],
                                     );
                                 }
                             }
@@ -387,7 +444,8 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                     "response.function_call_arguments.done" => {
                         let call_id = ev.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
                         let func_name = ev.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                        let arguments = ev.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+                        let arguments =
+                            ev.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
 
                         eprintln!("\x1b[93m⚡ {func_name}\x1b[0m");
 
@@ -405,12 +463,27 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                                     "output": "Coding agent started in background. The user can see streaming output in the terminal. I will inject the final result when it completes — you can continue the conversation."
                                 }
                             }).to_string())).ok();
-                            ws.send(Message::Text(json!({"type": "response.create"}).to_string())).ok();
+                            ws.send(Message::Text(
+                                json!({"type": "response.create"}).to_string(),
+                            ))
+                            .ok();
 
                             eprintln!("\x1b[90m--- ACP agent working in background ---\x1b[0m");
                             std::thread::spawn(move || {
                                 dispatch_acp_background(&args_owned, &bg_tx);
                             });
+                        } else if func_name == "sys_voice_quit" {
+                            // ── Voice quit — stop the session gracefully ──
+                            eprintln!("\x1b[90mVoice quit requested by model\x1b[0m");
+                            VOICE_RUNNING.store(false, Ordering::Relaxed);
+                            ws.send(Message::Text(json!({
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "function_call_output",
+                                    "call_id": call_id,
+                                    "output": r#"{"ok":true,"action":"quit","message":"Voice session ending."}"#
+                                }
+                            }).to_string())).ok();
                         } else {
                             // ── Synchronous dispatch for fast tools ──
                             let result = dispatch_tool_call(func_name, arguments);
@@ -418,7 +491,9 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                             // Truncate very long results for voice context
                             let output = if result.len() > 2000 {
                                 let mut end = 2000;
-                                while !result.is_char_boundary(end) { end -= 1; }
+                                while !result.is_char_boundary(end) {
+                                    end -= 1;
+                                }
                                 format!("{}…(truncated)", &result[..end])
                             } else {
                                 result
@@ -435,10 +510,14 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                                     &read_voice_pref("agent").unwrap_or_default(),
                                     session_id,
                                 );
-                                ws.send(Message::Text(json!({
-                                    "type": "session.update",
-                                    "session": { "instructions": new_instructions }
-                                }).to_string())).ok();
+                                ws.send(Message::Text(
+                                    json!({
+                                        "type": "session.update",
+                                        "session": { "instructions": new_instructions }
+                                    })
+                                    .to_string(),
+                                ))
+                                .ok();
                             }
 
                             // If the model added/removed a memory note, rebuild and update session
@@ -447,30 +526,42 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                                     &read_voice_pref("agent").unwrap_or_default(),
                                     session_id,
                                 );
-                                ws.send(Message::Text(json!({
-                                    "type": "session.update",
-                                    "session": { "instructions": new_instructions }
-                                }).to_string())).ok();
+                                ws.send(Message::Text(
+                                    json!({
+                                        "type": "session.update",
+                                        "session": { "instructions": new_instructions }
+                                    })
+                                    .to_string(),
+                                ))
+                                .ok();
                             }
 
                             // Send function call output back to the model
-                            ws.send(Message::Text(json!({
-                                "type": "conversation.item.create",
-                                "item": {
-                                    "type": "function_call_output",
-                                    "call_id": call_id,
-                                    "output": output
-                                }
-                            }).to_string())).ok();
+                            ws.send(Message::Text(
+                                json!({
+                                    "type": "conversation.item.create",
+                                    "item": {
+                                        "type": "function_call_output",
+                                        "call_id": call_id,
+                                        "output": output
+                                    }
+                                })
+                                .to_string(),
+                            ))
+                            .ok();
 
                             // Ask model to continue responding (with audio)
-                            ws.send(Message::Text(json!({"type": "response.create"}).to_string())).ok();
+                            ws.send(Message::Text(
+                                json!({"type": "response.create"}).to_string(),
+                            ))
+                            .ok();
                         }
                     }
 
                     // ── Error from server ──
                     "error" => {
-                        let msg = ev.pointer("/error/message")
+                        let msg = ev
+                            .pointer("/error/message")
                             .and_then(|m| m.as_str())
                             .unwrap_or("unknown error");
                         eprintln!("\x1b[31m✗ {msg}\x1b[0m");
@@ -480,13 +571,18 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                     }
 
                     // Lifecycle events we can ignore
-                    "response.created" | "response.done"
-                    | "response.output_item.added" | "response.output_item.done"
-                    | "response.content_part.added" | "response.content_part.done"
+                    "response.created"
+                    | "response.done"
+                    | "response.output_item.added"
+                    | "response.output_item.done"
+                    | "response.content_part.added"
+                    | "response.content_part.done"
                     | "response.audio_transcript.delta"
                     | "response.function_call_arguments.delta"
-                    | "input_audio_buffer.speech_stopped" | "input_audio_buffer.committed"
-                    | "conversation.item.created" | "rate_limits.updated" => {}
+                    | "input_audio_buffer.speech_stopped"
+                    | "input_audio_buffer.committed"
+                    | "conversation.item.created"
+                    | "rate_limits.updated" => {}
 
                     _ => {
                         // Uncomment to debug:
@@ -501,7 +597,7 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
             // Read timeout — no message, that's fine
             Err(tungstenite::Error::Io(ref e))
                 if e.kind() == std::io::ErrorKind::WouldBlock
-                || e.kind() == std::io::ErrorKind::TimedOut => {}
+                    || e.kind() == std::io::ErrorKind::TimedOut => {}
             Err(e) => {
                 // Connection reset or other fatal error
                 let msg = e.to_string();
@@ -573,7 +669,9 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                     eprintln!("\n\x1b[90m--- ACP agent done ---\x1b[0m");
                     let truncated = if result.len() > 2000 {
                         let mut end = 2000;
-                        while !result.is_char_boundary(end) { end -= 1; }
+                        while !result.is_char_boundary(end) {
+                            end -= 1;
+                        }
                         format!("{}…(truncated)", &result[..end])
                     } else {
                         result
@@ -591,7 +689,10 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                         }
                     }).to_string())).ok();
                     // Ask model to acknowledge/summarize the result with audio
-                    ws.send(Message::Text(json!({"type": "response.create"}).to_string())).ok();
+                    ws.send(Message::Text(
+                        json!({"type": "response.create"}).to_string(),
+                    ))
+                    .ok();
                 }
             }
         }
@@ -612,7 +713,9 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
                 break;
             }
             sent += 1;
-            if sent > 10 { break; } // Don't block too long on sends
+            if sent > 10 {
+                break;
+            } // Don't block too long on sends
         }
     }
 
@@ -620,7 +723,9 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
     VOICE_RUNNING.store(false, Ordering::Relaxed);
     MIC_MUTED.store(false, Ordering::Relaxed);
     PLAYBACK_IDLE.store(true, Ordering::Relaxed);
-    unsafe { libc::signal(libc::SIGINT, prev_handler); }
+    unsafe {
+        libc::signal(libc::SIGINT, prev_handler);
+    }
     let _ = ws.close(None);
     play_tx.send(PlayCmd::Shutdown).ok();
     drop(play_tx);
@@ -637,18 +742,18 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn mic_capture_loop(tx: mpsc::Sender<Vec<u8>>) {
-    use std::process::{Command, Stdio};
     use std::io::Read;
+    use std::process::{Command, Stdio};
 
     let mut child = match Command::new("rec")
         .args([
-            "-q",            // suppress progress
-            "-t", "raw",     // raw PCM output
-            "-r", "24000",   // 24 kHz (Realtime API requirement)
-            "-c", "1",       // mono
-            "-e", "signed",  // signed integer
-            "-b", "16",      // 16-bit
-            "-",             // output to stdout
+            "-q", // suppress progress
+            "-t", "raw", // raw PCM output
+            "-r", "24000", // 24 kHz (Realtime API requirement)
+            "-c", "1", // mono
+            "-e", "signed", // signed integer
+            "-b", "16", // 16-bit
+            "-",  // output to stdout
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -690,8 +795,8 @@ fn mic_capture_loop(tx: mpsc::Sender<Vec<u8>>) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn playback_loop(rx: mpsc::Receiver<PlayCmd>) {
-    use std::process::{Command, Stdio, Child, ChildStdin};
     use std::io::Write;
+    use std::process::{Child, ChildStdin, Command, Stdio};
 
     let mut player: Option<Child> = None;
     let mut stdin: Option<ChildStdin> = None;
@@ -699,13 +804,13 @@ fn playback_loop(rx: mpsc::Receiver<PlayCmd>) {
     fn start_player() -> Option<(Child, ChildStdin)> {
         let mut child = Command::new("play")
             .args([
-                "-q",            // suppress progress
-                "-t", "raw",     // raw PCM input
-                "-r", "24000",   // 24 kHz
-                "-c", "1",       // mono
-                "-e", "signed",  // signed integer
-                "-b", "16",      // 16-bit
-                "-",             // read from stdin
+                "-q", // suppress progress
+                "-t", "raw", // raw PCM input
+                "-r", "24000", // 24 kHz
+                "-c", "1", // mono
+                "-e", "signed", // signed integer
+                "-b", "16", // 16-bit
+                "-",  // read from stdin
             ])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -751,7 +856,9 @@ fn playback_loop(rx: mpsc::Receiver<PlayCmd>) {
                 PLAYBACK_IDLE.store(true, Ordering::SeqCst);
                 // Drain any queued audio commands
                 while let Ok(cmd) = rx.try_recv() {
-                    if matches!(cmd, PlayCmd::Shutdown) { return; }
+                    if matches!(cmd, PlayCmd::Shutdown) {
+                        return;
+                    }
                 }
             }
             PlayCmd::FinishResponse => {
@@ -832,12 +939,32 @@ fn apply_live_config_change(
 
 /// Traits to exclude from voice tool calling (internal/dangerous/interactive).
 pub const TOOL_EXCLUDE: &[&str] = &[
-    "sys.voice", "sys.mcp", "sys.serve", "sys.cli", "sys.cli.native", "sys.cli.wasm",
-    "sys.dylib_loader", "sys.reload", "sys.release", "sys.secrets",
-    "kernel.main", "kernel.dispatcher", "kernel.globals", "kernel.registry",
-    "kernel.config", "kernel.plugin_api", "kernel.cli",
-    "www.admin", "www.admin.deploy", "www.admin.fast_deploy",
-    "www.admin.scale", "www.admin.destroy", "www.admin.save_config",
+    "sys.voice.config",
+    "sys.voice.instruct",
+    "sys.voice.memory",
+    "sys.voice.status",
+    "sys.mcp",
+    "sys.serve",
+    "sys.cli",
+    "sys.cli.native",
+    "sys.cli.wasm",
+    "sys.dylib_loader",
+    "sys.reload",
+    "sys.release",
+    "sys.secrets",
+    "kernel.main",
+    "kernel.dispatcher",
+    "kernel.globals",
+    "kernel.registry",
+    "kernel.config",
+    "kernel.plugin_api",
+    "kernel.cli",
+    "www.admin",
+    "www.admin.deploy",
+    "www.admin.fast_deploy",
+    "www.admin.scale",
+    "www.admin.destroy",
+    "www.admin.save_config",
 ];
 
 /// Build OpenAI Realtime API tool definitions from the trait registry.
@@ -934,9 +1061,10 @@ fn build_args_from_call(
     sig: &crate::types::TraitSignature,
     arguments: &Map<String, Value>,
 ) -> Vec<Value> {
-    sig.params.iter().map(|param| {
-        arguments.get(&param.name).cloned().unwrap_or(Value::Null)
-    }).collect()
+    sig.params
+        .iter()
+        .map(|param| arguments.get(&param.name).cloned().unwrap_or(Value::Null))
+        .collect()
 }
 
 /// Dispatch a tool call: look up trait, build args, call, return result string.
@@ -953,8 +1081,7 @@ fn dispatch_tool_call(tool_name: &str, arguments_json: &str) -> String {
         None => return format!("Unknown tool: {tool_name} (trait: {trait_path})"),
     };
 
-    let arguments: Map<String, Value> = serde_json::from_str(arguments_json)
-        .unwrap_or_default();
+    let arguments: Map<String, Value> = serde_json::from_str(arguments_json).unwrap_or_default();
     let args = build_args_from_call(&entry.signature, &arguments);
 
     match crate::dispatcher::compiled::dispatch(&trait_path, &args) {
@@ -974,14 +1101,16 @@ enum BgToolMsg {
 
 /// Run ACP dispatch in background thread, streaming chunks via channel.
 fn dispatch_acp_background(arguments_json: &str, tx: &mpsc::Sender<BgToolMsg>) {
-    let arguments: Map<String, Value> = serde_json::from_str(arguments_json)
-        .unwrap_or_default();
+    let arguments: Map<String, Value> = serde_json::from_str(arguments_json).unwrap_or_default();
 
     // Build args array matching llm.prompt.acp signature: [prompt, agent?, cwd?, auto_approve?, model?, context?]
     let prompt = arguments.get("prompt").cloned().unwrap_or(Value::Null);
     let agent = arguments.get("agent").cloned().unwrap_or(Value::Null);
     let cwd = arguments.get("cwd").cloned().unwrap_or(Value::Null);
-    let auto_approve = arguments.get("auto_approve").cloned().unwrap_or(Value::Null);
+    let auto_approve = arguments
+        .get("auto_approve")
+        .cloned()
+        .unwrap_or(Value::Null);
     let model = arguments.get("model").cloned().unwrap_or(Value::Null);
     let context = arguments.get("context").cloned().unwrap_or(Value::Null);
     let args = vec![prompt, agent, cwd, auto_approve, model, context];
@@ -1003,5 +1132,8 @@ fn dispatch_acp_background(arguments_json: &str, tx: &mpsc::Sender<BgToolMsg>) {
         serde_json::to_string_pretty(&result).unwrap_or_default()
     };
 
-    tx.send(BgToolMsg::Done { result: final_result }).ok();
+    tx.send(BgToolMsg::Done {
+        result: final_result,
+    })
+    .ok();
 }

@@ -1282,7 +1282,7 @@ class Traits {
             });
 
             // Handle incoming messages
-            _voiceWs.onmessage = (event) => {
+            _voiceWs.onmessage = async (event) => {
                 try {
                     const msg = JSON.parse(typeof event.data === 'string' ? event.data : '');
                     const type = msg.type;

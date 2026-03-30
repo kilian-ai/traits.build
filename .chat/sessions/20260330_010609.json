@@ -841,6 +841,58 @@
     {
       "content": "Ein Klassiker! Das ist wirklich ein toller Witz. Danke, dass du ihn geteilt hast! Wenn du noch mehr lustige Geschichten oder Fragen",
       "role": "assistant"
+    },
+    {
+      "content": "Okay, könnt ihr euch beenden.",
+      "role": "user"
+    },
+    {
+      "content": "Natürlich. Mögen die Weisheit und der Friede mit dir sein. Bis zum nächsten Mal und denkt dran, ein guter Witz ist der kürzeste Weg zum Lächeln. Warum können Geister so schlecht lügen?",
+      "role": "user"
+    },
+    {
+      "content": "Das ist wirklich ein großartiger Witz! Danke, dass du ihn geteilt hast. Wenn du irgendwann wieder lachen oder plaudern möchtest, bin ich hier. Alles Gute und bis zum nächsten Mal!",
+      "role": "assistant"
+    },
+    {
+      "content": "Weil man durch sie hindurchsieht.",
+      "role": "user"
+    },
+    {
+      "content": "You",
+      "role": "user"
+    },
+    {
+      "content": "Mögen Deine Schritte leicht und Dein Geist kräftig sein.",
+      "role": "user"
+    },
+    {
+      "content": "klar bleiben.",
+      "role": "user"
+    },
+    {
+      "content": "Bis zum nächsten Mal!",
+      "role": "user"
+    },
+    {
+      "content": "Warum sind Bäume so gute Freunde? Sie lassen sich niemals hängen.",
+      "role": "user"
+    },
+    {
+      "content": "Das ist ein wunderbarer Witz! Danke, dass du ihn geteilt hast. Bäume haben definitiv eine entspannte Art, immer standhaft zu bleiben. Wenn du weitere Witze hast oder plaudern möchtest, ich bin hier. Bis zum nächsten Mal!",
+      "role": "assistant"
+    },
+    {
+      "content": "Ein fantastischer",
+      "role": "assistant"
+    },
+    {
+      "content": "Auf Wiedersehen! Möge dein Weg voller Frieden und Erleuchtung sein. Und hier noch ein kleiner Witz zum Abschied. Warum können Skelette so schlecht lügen? Weil sie keine Leichen im Keller haben.",
+      "role": "user"
+    },
+    {
+      "content": "Schönen.",
+      "role": "user"
     }
   ],
   "model": "",
