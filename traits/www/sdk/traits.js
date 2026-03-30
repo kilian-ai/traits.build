@@ -1264,6 +1264,8 @@ export class Traits {
             // Handle data channel open — send session config
             _voiceDc.addEventListener('open', () => {
                 const sessionConfig = {
+                    type: 'realtime',
+                    model: model,
                     instructions: opts.instructions || 'You are a helpful voice assistant. Keep responses concise for voice conversation.',
                     modalities: ['text', 'audio'],
                     voice: voice,
