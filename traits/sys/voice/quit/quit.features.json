@@ -1,0 +1,13 @@
+{
+  "features": [
+    {
+      "name": "quit returns ok",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok", "quit", "Voice session ending"] }
+        }
+      ]
+    }
+  ]
+}

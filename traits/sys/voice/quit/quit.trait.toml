@@ -1,0 +1,18 @@
+[trait]
+description = "Gracefully end the active voice session"
+version = "v260330.022427"
+checksum = "505904e12258d12a37e23039fa08686cd1c086cff6ac447afca27fc07dc5c77c"
+author = "system"
+tags = ["sys", "voice", "quit"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "map<string, any>"
+description = "Confirmation that the voice session is ending"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "voice_quit"

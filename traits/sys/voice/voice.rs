@@ -5,8 +5,8 @@ use std::time::Instant;
 
 const VOICE_INSTRUCTIONS: &str = include_str!("realtime_instructions.md");
 
-/// Global flag for SIGINT handling.
-static VOICE_RUNNING: AtomicBool = AtomicBool::new(false);
+/// Global flag for SIGINT handling. Pub so sys.voice.quit can stop the session.
+pub static VOICE_RUNNING: AtomicBool = AtomicBool::new(false);
 /// Mute mic while model is speaking to prevent feedback.
 static MIC_MUTED: AtomicBool = AtomicBool::new(false);
 /// Set by playback thread when `play` process finishes all buffered audio.
