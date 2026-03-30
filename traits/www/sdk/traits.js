@@ -1218,7 +1218,9 @@ export class Traits {
                         },
                         body: JSON.stringify({
                             session: { type: 'realtime', model,
-                                       audio: { output: { voice } } }
+                                       modalities: ['text', 'audio'],
+                                       voice: voice,
+                                       input_audio_transcription: { model: 'whisper-1' } }
                         })
                     });
                     const data = await resp.json();
@@ -1298,11 +1300,10 @@ You're running in the browser on the traits.build platform. The user is a develo
 You have access to function-calling tools that execute locally in the browser via WebAssembly.
 When the user asks you to do something and a matching tool exists, call it directly — don't say you can't.`;
 
-                // WebRTC data channel session.update requires type but rejects model/modalities
+                // WebRTC session.update: voice/model/modalities are locked at token creation.
+                // Only send mutable session fields here.
                 const sessionConfig = {
-                    type: 'realtime',
                     instructions: opts.instructions || defaultInstructions,
-                    voice: voice,
                     input_audio_transcription: { model: 'whisper-1' },
                     turn_detection: {
                         type: 'server_vad',
