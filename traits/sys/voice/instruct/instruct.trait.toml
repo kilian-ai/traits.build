@@ -1,0 +1,21 @@
+[trait]
+description = "Read, replace, or reset the voice agent's system instructions — the model can edit its own personality"
+version = "v260330"
+checksum = "65065a967d322f561ec802d8afac69224608c935d58c8e3ab1b9fc1ff9f59d80"
+author = "system"
+tags = ["sys", "voice", "instructions", "personality"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "get | set | reset | append", required = true, example = "get" },
+  { name = "text", type = "string", description = "New instructions (for set) or text to append (for append)", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "{ok: bool, instructions: string, source: 'custom'|'default'}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "voice_instruct"

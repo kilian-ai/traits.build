@@ -1,0 +1,67 @@
+{
+  "features": [
+    {
+      "name": "get default instructions",
+      "examples": [
+        {
+          "input": ["get"],
+          "output": { "contains": ["ok", "instructions", "source"] }
+        }
+      ]
+    },
+    {
+      "name": "set custom instructions",
+      "examples": [
+        {
+          "input": ["set", "Be extremely concise. One sentence max."],
+          "output": { "contains": ["ok", "set", "custom"] }
+        }
+      ]
+    },
+    {
+      "name": "get returns custom after set",
+      "examples": [
+        {
+          "input": ["get"],
+          "output": { "contains": ["custom", "concise"] }
+        }
+      ]
+    },
+    {
+      "name": "reset to default",
+      "examples": [
+        {
+          "input": ["reset"],
+          "output": { "contains": ["ok", "reset", "default"] }
+        }
+      ]
+    },
+    {
+      "name": "get returns default after reset",
+      "examples": [
+        {
+          "input": ["get"],
+          "output": { "contains": ["default", "Voice Agent"] }
+        }
+      ]
+    },
+    {
+      "name": "append to instructions",
+      "examples": [
+        {
+          "input": ["append", "Always end responses with a joke."],
+          "output": { "contains": ["ok", "append", "custom"] }
+        }
+      ]
+    },
+    {
+      "name": "reject empty set",
+      "examples": [
+        {
+          "input": ["set", ""],
+          "output": { "contains": ["error", "required"] }
+        }
+      ]
+    }
+  ]
+}

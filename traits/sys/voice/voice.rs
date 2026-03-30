@@ -69,7 +69,7 @@ pub fn voice(args: &[Value]) -> Value {
     }
 }
 
-/// Build combined instructions from agent context + voice-specific tuning.
+/// Build combined instructions from agent context + memory + voice-specific tuning.
 fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
     let mut parts: Vec<String> = Vec::new();
 
@@ -83,7 +83,25 @@ fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
         ));
     }
 
-    // 2. Conversation history — provide recent context from the chat session
+    // 2. Persistent memory notes — things the model remembered from prior sessions
+    if let Some(result) = kernel_logic::platform::dispatch(
+        "sys.voice.memory", &[json!("list")],
+    ) {
+        if let Some(notes) = result.get("notes").and_then(|v| v.as_array()) {
+            let texts: Vec<&str> = notes.iter()
+                .filter_map(|n| n.get("text").and_then(|v| v.as_str()))
+                .collect();
+            if !texts.is_empty() {
+                let mut mem = String::from("Your persistent memory (facts you chose to remember):\n");
+                for t in &texts {
+                    mem.push_str(&format!("- {}\n", t));
+                }
+                parts.push(mem);
+            }
+        }
+    }
+
+    // 3. Conversation history — provide recent context from the chat session
     if let Some(sid) = session_id {
         if let Some(result) = kernel_logic::platform::dispatch(
             "sys.chat", &[json!("get"), json!(sid)],
@@ -112,8 +130,18 @@ fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
         }
     }
 
-    // 3. Voice-specific tuning (always last — most specific)
-    parts.push(VOICE_INSTRUCTIONS.to_string());
+    // 4. Voice-specific tuning — custom instructions if set, else compiled-in default
+    if let Some(result) = kernel_logic::platform::dispatch(
+        "sys.voice.instruct", &[json!("get")],
+    ) {
+        if let Some(instr) = result.get("instructions").and_then(|v| v.as_str()) {
+            parts.push(instr.to_string());
+        } else {
+            parts.push(VOICE_INSTRUCTIONS.to_string());
+        }
+    } else {
+        parts.push(VOICE_INSTRUCTIONS.to_string());
+    }
 
     parts.join("\n\n")
 }
@@ -266,6 +294,9 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
         libc::signal(libc::SIGINT, sigint_handler as *const () as libc::sighandler_t)
     };
 
+    // ── Background tool channel ──
+    let (bg_tool_tx, bg_tool_rx) = mpsc::channel::<BgToolMsg>();
+
     // ── Print UI ──
     eprintln!("\x1b[96m\x1b[1mRealtime voice chat\x1b[0m \x1b[90m(model: {model}, voice: {voice_name}, {tool_count} tools)\x1b[0m");
     eprintln!("\x1b[90mSpeak naturally. Press Ctrl+C to stop.\x1b[0m\n");
@@ -359,43 +390,81 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
 
                         eprintln!("\x1b[93m⚡ {func_name}\x1b[0m");
 
-                        // Dispatch the tool call — use streaming for ACP agents
-                        let result = if func_name == "llm_prompt_acp" {
-                            dispatch_tool_call_streaming(arguments)
+                        if func_name == "llm_prompt_acp" {
+                            // ── Background ACP dispatch — keep voice interactive ──
+                            let bg_tx = bg_tool_tx.clone();
+                            let args_owned = arguments.to_string();
+
+                            // Immediately ack so the model can keep talking
+                            ws.send(Message::Text(json!({
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "function_call_output",
+                                    "call_id": call_id,
+                                    "output": "Coding agent started in background. The user can see streaming output in the terminal. I will inject the final result when it completes — you can continue the conversation."
+                                }
+                            }).to_string())).ok();
+                            ws.send(Message::Text(json!({"type": "response.create"}).to_string())).ok();
+
+                            eprintln!("\x1b[90m--- ACP agent working in background ---\x1b[0m");
+                            std::thread::spawn(move || {
+                                dispatch_acp_background(&args_owned, &bg_tx);
+                            });
                         } else {
-                            dispatch_tool_call(func_name, arguments)
-                        };
+                            // ── Synchronous dispatch for fast tools ──
+                            let result = dispatch_tool_call(func_name, arguments);
 
-                        // Truncate very long results for voice context
-                        let output = if result.len() > 2000 {
-                            let mut end = 2000;
-                            while !result.is_char_boundary(end) { end -= 1; }
-                            format!("{}…(truncated)", &result[..end])
-                        } else {
-                            result
-                        };
+                            // Truncate very long results for voice context
+                            let output = if result.len() > 2000 {
+                                let mut end = 2000;
+                                while !result.is_char_boundary(end) { end -= 1; }
+                                format!("{}…(truncated)", &result[..end])
+                            } else {
+                                result
+                            };
 
-                        // If the model changed voice preferences, apply live
-                        if func_name == "sys_voice_config" {
-                            apply_live_config_change(arguments, session_id, &mut ws);
-                        }
-
-                        // Send function call output back to the model
-                        let output_event = json!({
-                            "type": "conversation.item.create",
-                            "item": {
-                                "type": "function_call_output",
-                                "call_id": call_id,
-                                "output": output
+                            // If the model changed voice preferences, apply live
+                            if func_name == "sys_voice_config" {
+                                apply_live_config_change(arguments, session_id, &mut ws);
                             }
-                        });
-                        ws.send(Message::Text(output_event.to_string())).ok();
 
-                        // Ask model to continue responding (with audio)
-                        let continue_event = json!({
-                            "type": "response.create"
-                        });
-                        ws.send(Message::Text(continue_event.to_string())).ok();
+                            // If the model changed instructions, rebuild and update session
+                            if func_name == "sys_voice_instruct" {
+                                let new_instructions = build_instructions(
+                                    &read_voice_pref("agent").unwrap_or_default(),
+                                    session_id,
+                                );
+                                ws.send(Message::Text(json!({
+                                    "type": "session.update",
+                                    "session": { "instructions": new_instructions }
+                                }).to_string())).ok();
+                            }
+
+                            // If the model added/removed a memory note, rebuild and update session
+                            if func_name == "sys_voice_memory" {
+                                let new_instructions = build_instructions(
+                                    &read_voice_pref("agent").unwrap_or_default(),
+                                    session_id,
+                                );
+                                ws.send(Message::Text(json!({
+                                    "type": "session.update",
+                                    "session": { "instructions": new_instructions }
+                                }).to_string())).ok();
+                            }
+
+                            // Send function call output back to the model
+                            ws.send(Message::Text(json!({
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "function_call_output",
+                                    "call_id": call_id,
+                                    "output": output
+                                }
+                            }).to_string())).ok();
+
+                            // Ask model to continue responding (with audio)
+                            ws.send(Message::Text(json!({"type": "response.create"}).to_string())).ok();
+                        }
                     }
 
                     // ── Error from server ──
@@ -469,7 +538,40 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
             }
         }
 
-        // 3. Send queued mic audio to server (drop chunks while muted)
+        // 3. Check background tool results
+        while let Ok(msg) = bg_tool_rx.try_recv() {
+            match msg {
+                BgToolMsg::Chunk(text) => {
+                    eprint!("{}", text);
+                }
+                BgToolMsg::Done { result } => {
+                    eprintln!("\n\x1b[90m--- ACP agent done ---\x1b[0m");
+                    let truncated = if result.len() > 2000 {
+                        let mut end = 2000;
+                        while !result.is_char_boundary(end) { end -= 1; }
+                        format!("{}…(truncated)", &result[..end])
+                    } else {
+                        result
+                    };
+                    // Inject result into conversation so 4o sees the coding agent output
+                    ws.send(Message::Text(json!({
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [{
+                                "type": "input_text",
+                                "text": format!("[Background coding agent completed]\n{}", truncated)
+                            }]
+                        }
+                    }).to_string())).ok();
+                    // Ask model to acknowledge/summarize the result with audio
+                    ws.send(Message::Text(json!({"type": "response.create"}).to_string())).ok();
+                }
+            }
+        }
+
+        // 4. Send queued mic audio to server (drop chunks while muted)
         let mut sent = 0;
         while let Ok(chunk) = mic_rx.try_recv() {
             if MIC_MUTED.load(Ordering::Relaxed) {
@@ -704,7 +806,7 @@ fn apply_live_config_change(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Traits to exclude from voice tool calling (internal/dangerous/interactive).
-const TOOL_EXCLUDE: &[&str] = &[
+pub const TOOL_EXCLUDE: &[&str] = &[
     "sys.voice", "sys.mcp", "sys.serve", "sys.cli", "sys.cli.native", "sys.cli.wasm",
     "sys.dylib_loader", "sys.reload", "sys.release", "sys.secrets",
     "kernel.main", "kernel.dispatcher", "kernel.globals", "kernel.registry",
@@ -837,8 +939,16 @@ fn dispatch_tool_call(tool_name: &str, arguments_json: &str) -> String {
     }
 }
 
-/// Streaming dispatch for ACP agent tool calls — prints chunks as they arrive.
-fn dispatch_tool_call_streaming(arguments_json: &str) -> String {
+/// Messages from background ACP tool dispatch.
+enum BgToolMsg {
+    /// A streaming text chunk from the background tool.
+    Chunk(String),
+    /// The tool completed with full result.
+    Done { result: String },
+}
+
+/// Run ACP dispatch in background thread, streaming chunks via channel.
+fn dispatch_acp_background(arguments_json: &str, tx: &mpsc::Sender<BgToolMsg>) {
     let arguments: Map<String, Value> = serde_json::from_str(arguments_json)
         .unwrap_or_default();
 
@@ -852,21 +962,21 @@ fn dispatch_tool_call_streaming(arguments_json: &str) -> String {
     let args = vec![prompt, agent, cwd, auto_approve, model, context];
 
     let mut full_response = String::new();
-    eprintln!("\x1b[90m--- ACP agent working ---\x1b[0m");
     let result = crate::dispatcher::compiled::acp::acp_proxy_dispatch_streaming(
         &args,
         &mut |chunk: &str| {
             full_response.push_str(chunk);
-            eprint!("{}", chunk);
+            tx.send(BgToolMsg::Chunk(chunk.to_string())).ok();
         },
     );
-    eprintln!("\n\x1b[90m--- ACP agent done ---\x1b[0m");
 
-    if !full_response.is_empty() {
+    let final_result = if !full_response.is_empty() {
         full_response
     } else if let Some(text) = result.get("text").and_then(|v| v.as_str()) {
         text.to_string()
     } else {
         serde_json::to_string_pretty(&result).unwrap_or_default()
-    }
+    };
+
+    tx.send(BgToolMsg::Done { result: final_result }).ok();
 }

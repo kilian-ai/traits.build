@@ -1,0 +1,18 @@
+[trait]
+description = "Introspect current voice session state — model, voice, agent, tools, session ID"
+version = "v260330"
+checksum = "2dfc7abec0717d1679376c4588f2d98c80e50a746f13e81e63d4c2d8b54df021"
+author = "system"
+tags = ["sys", "voice", "status", "session", "introspection"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "map"
+description = "{ok, model, voice, agent, session_id, tool_count, memory_count, instructions_source}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "voice_status"

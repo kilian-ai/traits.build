@@ -1,0 +1,21 @@
+[trait]
+description = "Persistent cross-session memory notes the voice model writes for itself — loaded into every session as context"
+version = "v260330"
+checksum = "366972ad9a417850c414a6884d8f753a649ad956642ac9bf85116f611b48f253"
+author = "system"
+tags = ["sys", "voice", "memory", "notes", "context"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "add | list | remove | clear", required = true, example = "list" },
+  { name = "text", type = "string", description = "Note text (for add) or note ID/prefix (for remove)", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "{ok: bool, notes: [{id, text, created}], count: int}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "voice_memory"

@@ -2,6 +2,7 @@
 """
 ACP Lifecycle Traits - Start, stop, and check status of ACP proxy.
 """
+
 import os
 import signal
 import subprocess
@@ -47,11 +48,12 @@ def get_env_for_agent(agent: str) -> dict:
 def is_proxy_running() -> bool:
     """Check if the ACP proxy is already running."""
     import socket
-    for addr in [('127.0.0.1', socket.AF_INET), ('::1', socket.AF_INET6)]:
+
+    for addr in [("127.0.0.1", socket.AF_INET), ("::1", socket.AF_INET6)]:
         try:
             sock = socket.socket(addr[1], socket.SOCK_STREAM)
             sock.settimeout(1)
-            result = sock.connect_ex(('localhost', ACP_PROXY_PORT))
+            result = sock.connect_ex(("localhost", ACP_PROXY_PORT))
             sock.close()
             if result == 0:
                 return True
@@ -60,10 +62,25 @@ def is_proxy_running() -> bool:
     return False
 
 
+def stop_existing_proxy() -> bool:
+    """Stop any existing ACP proxy process."""
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE) as f:
+                pid = int(f.read().strip())
+            os.killpg(pid, signal.SIGTERM)
+            os.remove(PID_FILE)
+            time.sleep(0.5)
+            return True
+        except Exception:
+            if os.path.exists(PID_FILE):
+                os.remove(PID_FILE)
+    return False
+
+
 def start_proxy(agent: str) -> Optional[subprocess.Popen]:
     """Start the ACP proxy with the specified agent."""
-    if is_proxy_running():
-        return None
+    stop_existing_proxy()
 
     if agent not in AGENT_MAP:
         raise ValueError(f"Unknown agent: {agent}. Available: {list(AGENT_MAP.keys())}")
@@ -79,7 +96,7 @@ def start_proxy(agent: str) -> Optional[subprocess.Popen]:
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        preexec_fn=os.setsid
+        preexec_fn=os.setsid,
     )
 
     # Wait for proxy to start

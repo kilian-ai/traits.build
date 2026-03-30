@@ -3,6 +3,7 @@
 ACP Proxy Trait - Routes prompts to ACP agents via chrome-acp proxy.
 Supports: opencode, claude, codex, copilot
 """
+
 import asyncio
 import json
 import os
@@ -14,6 +15,7 @@ from typing import Any, Optional
 
 ACP_PROXY_URL = "ws://localhost:9315/ws"
 ACP_PROXY_PORT = 9315
+PID_FILE = "/tmp/acp_proxy.pid"
 
 AGENT_MAP = {
     "opencode": ("opencode", ["acp"]),
@@ -51,11 +53,12 @@ def get_env_for_agent(agent: str) -> dict:
 def is_proxy_running() -> bool:
     """Check if the ACP proxy is already running."""
     import socket
-    for addr in [('127.0.0.1', socket.AF_INET), ('::1', socket.AF_INET6)]:
+
+    for addr in [("127.0.0.1", socket.AF_INET), ("::1", socket.AF_INET6)]:
         try:
             sock = socket.socket(addr[1], socket.SOCK_STREAM)
             sock.settimeout(1)
-            result = sock.connect_ex(('localhost', ACP_PROXY_PORT))
+            result = sock.connect_ex(("localhost", ACP_PROXY_PORT))
             sock.close()
             if result == 0:
                 return True
@@ -64,10 +67,25 @@ def is_proxy_running() -> bool:
     return False
 
 
+def stop_existing_proxy() -> bool:
+    """Stop any existing ACP proxy process."""
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE) as f:
+                pid = int(f.read().strip())
+            os.killpg(pid, signal.SIGTERM)
+            os.remove(PID_FILE)
+            time.sleep(0.5)
+            return True
+        except Exception:
+            if os.path.exists(PID_FILE):
+                os.remove(PID_FILE)
+    return False
+
+
 def start_proxy(agent: str) -> Optional[subprocess.Popen]:
     """Start the ACP proxy with the specified agent."""
-    if is_proxy_running():
-        return None
+    stop_existing_proxy()
 
     if agent not in AGENT_MAP:
         raise ValueError(f"Unknown agent: {agent}. Available: {list(AGENT_MAP.keys())}")
@@ -83,13 +101,15 @@ def start_proxy(agent: str) -> Optional[subprocess.Popen]:
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        preexec_fn=os.setsid
+        preexec_fn=os.setsid,
     )
 
     # Wait for proxy to start
     for _ in range(30):
         time.sleep(0.5)
         if is_proxy_running():
+            with open(PID_FILE, "w") as f:
+                f.write(str(proc.pid))
             return proc
 
     proc.kill()
@@ -105,6 +125,7 @@ class AcpClient:
 
     async def connect(self):
         import websockets
+
         self.ws = await websockets.connect(ACP_PROXY_URL)
         await self.ws.send(json.dumps({"type": "connect"}))
 
@@ -115,7 +136,9 @@ class AcpClient:
                     raise Exception("Failed to connect to agent")
                 break
             elif msg.get("type") == "error":
-                raise Exception(f"Connection error: {msg.get('payload', {}).get('message')}")
+                raise Exception(
+                    f"Connection error: {msg.get('payload', {}).get('message')}"
+                )
 
     async def send(self, msg_type: str, payload: Any = None):
         msg = {"type": msg_type}
@@ -140,7 +163,9 @@ class AcpClient:
                 self.session_id = msg.get("payload", {}).get("sessionId")
                 return self.session_id
             elif msg.get("type") == "error":
-                raise Exception(f"Session error: {msg.get('payload', {}).get('message')}")
+                raise Exception(
+                    f"Session error: {msg.get('payload', {}).get('message')}"
+                )
 
     async def prompt(self, text: str):
         await self.send("prompt", {"content": [{"type": "text", "text": text}]})
@@ -166,7 +191,9 @@ class AcpClient:
                 return
 
             elif msg.get("type") == "error":
-                raise Exception(f"Prompt error: {msg.get('payload', {}).get('message')}")
+                raise Exception(
+                    f"Prompt error: {msg.get('payload', {}).get('message')}"
+                )
 
     async def close(self):
         if self.ws:
@@ -197,7 +224,9 @@ async def run_acp(prompt: str, cwd: str = None) -> str:
     return "".join(client.response_parts) or "[No response from agent]"
 
 
-def acp_proxy(prompt: str, agent: str = "opencode", cwd: str = ".", auto_approve: bool = False) -> str:
+def acp_proxy(
+    prompt: str, agent: str = "opencode", cwd: str = ".", auto_approve: bool = False
+) -> str:
     """
     Route a prompt to an ACP agent via chrome-acp proxy.
 
@@ -225,6 +254,7 @@ def acp_proxy(prompt: str, agent: str = "opencode", cwd: str = ".", auto_approve
 
 if __name__ == "__main__":
     import sys
+
     agent = sys.argv[1] if len(sys.argv) > 1 else "opencode"
     result = acp_proxy("Use shell tool to run pwd", agent)
     print(result)

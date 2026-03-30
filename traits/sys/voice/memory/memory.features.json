@@ -1,0 +1,58 @@
+{
+  "features": [
+    {
+      "name": "list empty memory",
+      "examples": [
+        {
+          "input": ["list"],
+          "output": { "contains": ["ok", "notes", "count"] }
+        }
+      ]
+    },
+    {
+      "name": "add a note",
+      "examples": [
+        {
+          "input": ["add", "User prefers short answers about architecture"],
+          "output": { "contains": ["ok", "add", "id"] }
+        }
+      ]
+    },
+    {
+      "name": "list shows the note",
+      "examples": [
+        {
+          "input": ["list"],
+          "output": { "contains": ["architecture", "count"] }
+        }
+      ]
+    },
+    {
+      "name": "remove a note",
+      "examples": [
+        {
+          "input": ["remove", "1"],
+          "output": { "contains": ["ok", "remove"] }
+        }
+      ]
+    },
+    {
+      "name": "clear all notes",
+      "examples": [
+        {
+          "input": ["clear"],
+          "output": { "contains": ["ok", "clear", "0"] }
+        }
+      ]
+    },
+    {
+      "name": "reject empty add",
+      "examples": [
+        {
+          "input": ["add", ""],
+          "output": { "contains": ["error", "required"] }
+        }
+      ]
+    }
+  ]
+}

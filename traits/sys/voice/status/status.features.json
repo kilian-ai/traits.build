@@ -1,0 +1,13 @@
+{
+  "features": [
+    {
+      "name": "get voice status",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok", "voice", "model", "tool_count"] }
+        }
+      ]
+    }
+  ]
+}
