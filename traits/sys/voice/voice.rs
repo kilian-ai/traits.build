@@ -1021,6 +1021,7 @@ fn apply_live_config_change(
 
 /// Traits to exclude from voice tool calling (internal/dangerous/interactive).
 pub const TOOL_EXCLUDE: &[&str] = &[
+    "sys.voice",
     "sys.voice.config",
     "sys.voice.instruct",
     "sys.voice.memory",
@@ -1083,6 +1084,14 @@ fn build_tools() -> Vec<Value> {
             "parameters": schema
         }));
     }
+
+    // Always include the synthetic quit tool so the model can end the session
+    tools.push(json!({
+        "type": "function",
+        "name": "sys_voice_quit",
+        "description": "End the voice conversation. Call this when the user says goodbye, wants to stop, or asks to quit.",
+        "parameters": { "type": "object", "properties": {} }
+    }));
 
     tools
 }

@@ -196,6 +196,14 @@ async function _buildVoiceTools(sdk) {
         if (required.length) parameters.required = required;
         tools.push({ type: 'function', name: toolName, description: t.description || '', parameters });
     }
+    // Always include the synthetic quit tool so the model can end the session
+    tools.push({
+        type: 'function',
+        name: 'sys_voice_quit',
+        description: 'End the voice conversation. Call this when the user says goodbye, wants to stop, or asks to quit.',
+        parameters: { type: 'object', properties: {} }
+    });
+
     return tools;
 }
 
