@@ -1080,7 +1080,7 @@ export class Traits {
      * @param {Object} opts
      * @param {string} [opts.apiKey] - OpenAI API key (or set via setVoiceApiKey)
      * @param {string} [opts.voice='cedar'] - Voice: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
-     * @param {string} [opts.model='gpt-4o-realtime-preview'] - Realtime model
+     * @param {string} [opts.model='gpt-4o-mini-realtime-preview'] - Realtime model
      * @param {Function} [opts.onTranscript] - Callback for user transcript
      * @param {Function} [opts.onResponse] - Callback for model response
      * @param {Function} [opts.onAudio] - Callback for audio chunks (PCM16)
@@ -1096,7 +1096,7 @@ export class Traits {
         }
 
         const voice = opts.voice || 'cedar';
-        const model = opts.model || 'gpt-4o-realtime-preview';
+        const model = opts.model || 'gpt-4o-mini-realtime-preview';
 
         try {
             // Request microphone access

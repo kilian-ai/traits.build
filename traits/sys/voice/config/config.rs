@@ -90,7 +90,7 @@ fn get_pref(key: &str) -> Value {
             let val = read_config(key);
             let default = match key {
                 "voice" => "cedar",
-                "model" => "gpt-4o-realtime-preview",
+                "model" => "gpt-4o-mini-realtime-preview",
                 "agent" => "",
                 _ => "",
             };
@@ -109,7 +109,7 @@ fn get_pref(key: &str) -> Value {
             json!({
                 "ok": true,
                 "voice": voice.as_deref().unwrap_or("cedar"),
-                "model": model.as_deref().unwrap_or("gpt-4o-realtime-preview"),
+                "model": model.as_deref().unwrap_or("gpt-4o-mini-realtime-preview"),
                 "agent": agent.as_deref().unwrap_or(""),
             })
         }

@@ -26,7 +26,7 @@ extern "C" fn sigint_handler(_: libc::c_int) {
 pub fn voice(args: &[Value]) -> Value {
     // Read persistent defaults from sys.config, then allow arg overrides
     let default_voice = read_voice_pref("voice").unwrap_or_else(|| "cedar".into());
-    let default_model = read_voice_pref("model").unwrap_or_else(|| "gpt-4o-realtime-preview".into());
+    let default_model = read_voice_pref("model").unwrap_or_else(|| "gpt-4o-mini-realtime-preview".into());
     let default_agent = read_voice_pref("agent").unwrap_or_default();
 
     let voice_name = args.first()

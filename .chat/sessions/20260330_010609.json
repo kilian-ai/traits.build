@@ -529,6 +529,54 @@
     {
       "content": "Ich habe den Coding-Agent gebeten, das zu prüfen und eine Lösung zu implementieren. Sobald er fertig ist, gebe ich dir Bescheid.",
       "role": "assistant"
+    },
+    {
+      "content": "Bist du wieder da?",
+      "role": "user"
+    },
+    {
+      "content": "Ja, ich bin wieder da. Der Coding-Agent hat jetzt alles umgesetzt: Du kannst im Browser direkt aufs Mikrofon zugreifen und die Voice-Funktion starten. Falls der lokale Helper nicht verbunden ist, wird jetzt automatisch eine Browser-Alternative genutzt. \n\nWenn du noch was genauer wissen willst, sag einfach Bescheid.",
+      "role": "assistant"
+    },
+    {
+      "content": "Shit",
+      "role": "user"
+    },
+    {
+      "content": "for this.",
+      "role": "user"
+    },
+    {
+      "content": "Uh, boys.",
+      "role": "user"
+    },
+    {
+      "content": "Du kannst einfach „/voice“ im Chat eingeben. Wenn kein lokaler Helper verbunden ist, wird dann automatisch die Browser-Voice-Funktion gestartet. Du solltest dann direkt mit dem Mikrofon sprechen können. Wenn es Probleme gibt, einfach Bescheid sagen.",
+      "role": "assistant"
+    },
+    {
+      "content": "Alles klar. Ich höre dich gut. Wenn irgendwas nicht klappt, einfach Bescheid sagen.",
+      "role": "user"
+    },
+    {
+      "content": "Toll, da war er schon.",
+      "role": "user"
+    },
+    {
+      "content": "Super, dann passt ja alles. Wenn du Fragen hast oder irgendwas brauchst, einfach melden.",
+      "role": "user"
+    },
+    {
+      "content": "Perfekt, dann sind wir jetzt voll ausgestattet. Wenn du noch was brauchst oder eine neue Idee hast, kannst du jederzeit Bescheid geben.",
+      "role": "assistant"
+    },
+    {
+      "content": "Alles klar, ich bin bereit. Sag einfach Bescheid, wenn wir loslegen sollen oder wenn du Unterstützung brauchst.",
+      "role": "user"
+    },
+    {
+      "content": "Alles klar. Wenn dir noch was einfällt oder wir loslegen sollen, einfach Bescheid geben. Bis dahin entspannt bleiben.",
+      "role": "assistant"
     }
   ],
   "model": "",

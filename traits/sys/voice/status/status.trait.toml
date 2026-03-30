@@ -1,7 +1,7 @@
 [trait]
 description = "Introspect current voice session state — model, voice, agent, tools, session ID"
-version = "v260330"
-checksum = "2dfc7abec0717d1679376c4588f2d98c80e50a746f13e81e63d4c2d8b54df021"
+version = "v260330.021809"
+checksum = "513af6c7861e9f76ec558d3930a49c0dae19068ccfa5fcd38f53faeacec4a222"
 author = "system"
 tags = ["sys", "voice", "status", "session", "introspection"]
 

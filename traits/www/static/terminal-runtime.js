@@ -440,7 +440,7 @@ async function createTerminal(mountEl, opts = {}) {
 
                     // Helper is connected - dispatch voice call
                     term.write(`\x1b[90mStarting voice with ${voiceName}…\x1b[0m\r\n`);
-                    const args = [voiceName, model || 'gpt-4o-realtime-preview', agent || '', sessionId || ''];
+                    const args = [voiceName, model || 'gpt-4o-mini-realtime-preview', agent || '', sessionId || ''];
                     activeSdk.call('sys.voice', args).then(res => {
                         term.write('\r\x1b[K');
                         if (res.ok && res.result !== undefined) {
