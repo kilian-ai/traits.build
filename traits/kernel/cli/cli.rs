@@ -1261,7 +1261,7 @@ impl CliSession {
                             out.push_str(&format!("{GRAY}Switching to voice mode…{RESET}\r\n"));
                             let sentinel = serde_json::json!({
                                 "v": voice_name,
-                                "m": "gpt-4o-mini-realtime-preview",
+                                "m": "gpt-realtime-mini-2025-12-15",
                                 "a": agent,
                                 "s": session_id,
                                 "rp": CHAT_PROMPT,

@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 pub fn voice_status(_args: &[Value]) -> Value {
     // Read persisted preferences (same source as sys.voice.config)
     let voice = read_pref("voice").unwrap_or_else(|| "cedar".into());
-    let model = read_pref("model").unwrap_or_else(|| "gpt-4o-mini-realtime-preview".into());
+    let model = read_pref("model").unwrap_or_else(|| "gpt-realtime-mini-2025-12-15".into());
     let agent = read_pref("agent").unwrap_or_default();
 
     // Check instruction source via dispatch

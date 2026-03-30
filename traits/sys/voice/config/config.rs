@@ -7,7 +7,7 @@ const VALID_VOICES: &[&str] = &[
 
 /// Valid realtime models.
 const VALID_MODELS: &[&str] = &[
-    "gpt-4o-realtime-preview", "gpt-4o-mini-realtime-preview",
+    "gpt-4o-realtime-preview", "gpt-realtime-mini-2025-12-15",
 ];
 
 /// Config trait path used for persistent storage.
@@ -90,7 +90,7 @@ fn get_pref(key: &str) -> Value {
             let val = read_config(key);
             let default = match key {
                 "voice" => "cedar",
-                "model" => "gpt-4o-mini-realtime-preview",
+                "model" => "gpt-realtime-mini-2025-12-15",
                 "agent" => "",
                 _ => "",
             };
@@ -109,7 +109,7 @@ fn get_pref(key: &str) -> Value {
             json!({
                 "ok": true,
                 "voice": voice.as_deref().unwrap_or("cedar"),
-                "model": model.as_deref().unwrap_or("gpt-4o-mini-realtime-preview"),
+                "model": model.as_deref().unwrap_or("gpt-realtime-mini-2025-12-15"),
                 "agent": agent.as_deref().unwrap_or(""),
             })
         }

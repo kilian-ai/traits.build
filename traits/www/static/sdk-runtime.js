@@ -1164,7 +1164,7 @@ class Traits {
      * @param {Object} opts
      * @param {string} [opts.apiKey] - OpenAI API key (or set via setVoiceApiKey)
      * @param {string} [opts.voice='cedar'] - Voice: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
-     * @param {string} [opts.model='gpt-4o-mini-realtime-preview'] - Realtime model
+     * @param {string} [opts.model='gpt-realtime-mini-2025-12-15'] - Realtime model
      * @param {string} [opts.instructions] - Custom system instructions
      * @param {boolean} [opts.tools=true] - Enable function calling with trait tools
      * @param {Function} [opts.onTranscript] - Callback for user transcript
@@ -1186,7 +1186,7 @@ class Traits {
         }
 
         const voice = opts.voice || 'cedar';
-        const model = opts.model || 'gpt-4o-mini-realtime-preview';
+        const model = opts.model || 'gpt-realtime-mini-2025-12-15';
         const enableTools = opts.tools !== false;
         _voiceSdk = this;
 

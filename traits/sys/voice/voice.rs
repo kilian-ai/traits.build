@@ -31,7 +31,7 @@ pub fn voice(args: &[Value]) -> Value {
             .get(1)
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .unwrap_or("gpt-4o-mini-realtime-preview");
+            .unwrap_or("gpt-realtime-mini-2025-12-15");
         let voice_name = args
             .get(2)
             .and_then(|v| v.as_str())
@@ -49,7 +49,7 @@ pub fn voice(args: &[Value]) -> Value {
     // Read persistent defaults from sys.config, then allow arg overrides
     let default_voice = read_voice_pref("voice").unwrap_or_else(|| "cedar".into());
     let default_model =
-        read_voice_pref("model").unwrap_or_else(|| "gpt-4o-mini-realtime-preview".into());
+        read_voice_pref("model").unwrap_or_else(|| "gpt-realtime-mini-2025-12-15".into());
     let default_agent = read_voice_pref("agent").unwrap_or_default();
 
     let voice_name = args

@@ -435,7 +435,7 @@ export async function createTerminal(mountEl, opts = {}) {
                         term.write(`\x1b[90mStarting browser voice with ${voiceName}…\x1b[0m\r\n`);
                         activeSdk.startVoice({
                             voice: voiceName,
-                            model: model || 'gpt-4o-mini-realtime-preview',
+                            model: model || 'gpt-realtime-mini-2025-12-15',
                             onTranscript: (text) => {
                                 term.write(`\r\n\x1b[92m🎤 ${text}\x1b[0m\r\n`);
                             },
@@ -490,7 +490,7 @@ export async function createTerminal(mountEl, opts = {}) {
 
                     // Helper is connected - dispatch native voice call
                     term.write(`\x1b[90mStarting voice with ${voiceName}…\x1b[0m\r\n`);
-                    const args = [voiceName, model || 'gpt-4o-mini-realtime-preview', agent || '', sessionId || ''];
+                    const args = [voiceName, model || 'gpt-realtime-mini-2025-12-15', agent || '', sessionId || ''];
                     activeSdk.call('sys.voice', args).then(res => {
                         term.write('\r\x1b[K');
                         if (res.ok && res.result !== undefined) {

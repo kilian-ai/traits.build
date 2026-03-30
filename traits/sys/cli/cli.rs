@@ -910,7 +910,7 @@ async fn chat_call(
             "sys.voice",
             &[
                 serde_json::json!("cedar"),
-                serde_json::json!("gpt-4o-mini-realtime-preview"),
+                serde_json::json!("gpt-realtime-mini-2025-12-15"),
                 serde_json::json!(voice_agent),
                 serde_json::json!(voice_session),
             ],
