@@ -1257,13 +1257,14 @@ export class Traits {
 
             // Connect to OpenAI Realtime API via WebSocket subprotocols (browser auth)
             const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+            console.log('[Voice] Connecting to', model, '— key:', apiKey.slice(0, 7) + '...' + apiKey.slice(-4));
             _voiceWs = new WebSocket(url, [
                 'openai-insecure-api-key.' + apiKey,
                 'openai-beta.realtime-v1'
             ]);
 
             await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000);
+                const timeout = setTimeout(() => reject(new Error('WebSocket connection timeout (10s)')), 10000);
                 _voiceWs.onopen = () => {
                     clearTimeout(timeout);
                     // Build session config
@@ -1286,9 +1287,16 @@ export class Traits {
                     _voiceWs.send(JSON.stringify({ type: 'session.update', session: sessionConfig }));
                     resolve();
                 };
-                _voiceWs.onerror = (e) => {
+                _voiceWs.onerror = () => {};
+                _voiceWs.onclose = (ev) => {
                     clearTimeout(timeout);
-                    reject(new Error('WebSocket connection failed'));
+                    const code = ev.code;
+                    const reason = ev.reason || '';
+                    // 1006 = abnormal closure (often auth failure), 4xx codes = server rejection
+                    let hint = `WebSocket closed (code ${code})`;
+                    if (code === 1006 && !reason) hint = 'WebSocket connection failed — check that your OPENAI_API_KEY is valid and has Realtime API access';
+                    else if (reason) hint += ': ' + reason;
+                    reject(new Error(hint));
                 };
             });
 
