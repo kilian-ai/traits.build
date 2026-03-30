@@ -1224,6 +1224,53 @@ export class Traits {
         _voiceSdk = this;
 
         try {
+            // ── Ephemeral token: browser WebSocket needs a short-lived token, not a standard API key ──
+            // Try dispatch cascade (helper → relay → server) to mint one server-side
+            let wsAuthKey = null;
+            try {
+                const tokenResult = await this.call('sys.voice', ['token', model, voice]);
+                const result = tokenResult.ok ? (tokenResult.result || tokenResult) : null;
+                if (result && result.token) {
+                    wsAuthKey = result.token;
+                    console.log('[Voice] Got ephemeral token via helper/server');
+                }
+            } catch(e) {
+                console.log('[Voice] Ephemeral token via dispatch failed:', e.message || e);
+            }
+
+            // Fallback: try minting token directly from browser (may fail due to CORS)
+            if (!wsAuthKey) {
+                try {
+                    const resp = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + apiKey,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            session: { type: 'realtime', model,
+                                       audio: { output: { voice } } }
+                        })
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        const token = (data.client_secret && data.client_secret.value) || data.value;
+                        if (token) {
+                            wsAuthKey = token;
+                            console.log('[Voice] Got ephemeral token via direct fetch');
+                        }
+                    }
+                } catch(e) {
+                    console.log('[Voice] Direct ephemeral token fetch failed (CORS):', e.message || e);
+                }
+            }
+
+            // Last resort: use direct API key (works server-to-server, may fail from browser)
+            if (!wsAuthKey) {
+                console.warn('[Voice] No ephemeral token available — using direct API key (may fail from browser)');
+                wsAuthKey = apiKey;
+            }
+
             // Request microphone access
             _voiceStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
@@ -1258,10 +1305,10 @@ export class Traits {
 
             // Connect to OpenAI Realtime API via WebSocket subprotocols (browser auth)
             const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
-            console.log('[Voice] Connecting to', model, '— key:', apiKey.slice(0, 7) + '...' + apiKey.slice(-4), '(' + apiKey.length + ' chars)');
+            console.log('[Voice] Connecting to', model, '— auth:', wsAuthKey === apiKey ? 'direct key' : 'ephemeral token', '(' + wsAuthKey.length + ' chars)');
             try {
                 _voiceWs = new WebSocket(url, [
-                    'openai-insecure-api-key.' + apiKey,
+                    'openai-insecure-api-key.' + wsAuthKey,
                     'openai-beta.realtime-v1'
                 ]);
             } catch(wsErr) {
