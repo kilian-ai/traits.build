@@ -134,11 +134,114 @@ let _voiceWs = null;
 let _voiceAudioContext = null;
 let _voiceProcessor = null;
 let _voiceApiKey = null;
+let _voicePlaybackQueue = [];    // PCM16 chunks waiting to play
+let _voicePlaybackPlaying = false;
+let _voiceSdk = null;            // Reference to Traits instance for tool dispatch
+
+// Traits excluded from voice function-calling tools (mirrors native TOOL_EXCLUDE)
+const VOICE_TOOL_EXCLUDE = new Set([
+    'sys.voice', 'sys.mcp', 'sys.serve', 'sys.cli', 'sys.cli.native', 'sys.cli.wasm',
+    'sys.dylib_loader', 'sys.reload', 'sys.release', 'sys.secrets',
+    'kernel.main', 'kernel.dispatcher', 'kernel.globals', 'kernel.registry',
+    'kernel.config', 'kernel.plugin_api', 'kernel.cli',
+    'www.admin', 'www.admin.deploy', 'www.admin.fast_deploy',
+    'www.admin.scale', 'www.admin.destroy', 'www.admin.save_config',
+]);
 
 function _dispatchVoiceEvent(type, data) {
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('voice-event', { detail: { type, ...data } }));
     }
+}
+
+/** Convert a trait param type string to JSON Schema */
+function _traitTypeToSchema(typeStr) {
+    if (!typeStr) return { type: 'string' };
+    const t = typeStr.toLowerCase().replace(/\s/g, '');
+    if (t === 'int' || t === 'integer') return { type: 'integer' };
+    if (t === 'float' || t === 'number') return { type: 'number' };
+    if (t === 'bool' || t === 'boolean') return { type: 'boolean' };
+    if (t === 'string') return { type: 'string' };
+    if (t.startsWith('list<') || t.startsWith('array<')) {
+        const inner = t.slice(t.indexOf('<') + 1, t.lastIndexOf('>'));
+        return { type: 'array', items: _traitTypeToSchema(inner) };
+    }
+    if (t.startsWith('map<')) return { type: 'object' };
+    return { type: 'string' };
+}
+
+/** Build OpenAI Realtime API tool definitions from the trait registry. */
+async function _buildVoiceTools(sdk) {
+    let traits = [];
+    try { traits = await sdk.list(); } catch(e) { return []; }
+    const tools = [];
+    for (const t of traits) {
+        if (!t.path) continue;
+        if (VOICE_TOOL_EXCLUDE.has(t.path)) continue;
+        if (t.path.startsWith('www.')) continue;
+        const kind = (t.source || t.kind || '').toLowerCase();
+        if (kind === 'library' || kind === 'interface') continue;
+
+        const toolName = t.path.replace(/\./g, '_');
+        const properties = {};
+        const required = [];
+        if (Array.isArray(t.params)) {
+            for (const p of t.params) {
+                const prop = _traitTypeToSchema(p.type || p.param_type);
+                if (p.description) prop.description = p.description;
+                properties[p.name] = prop;
+                if (p.required !== false && !p.optional) required.push(p.name);
+            }
+        }
+        const parameters = { type: 'object', properties };
+        if (required.length) parameters.required = required;
+        tools.push({ type: 'function', name: toolName, description: t.description || '', parameters });
+    }
+    return tools;
+}
+
+/** Enqueue PCM16 audio data and start draining if not already playing. */
+function _enqueueVoiceAudio(pcm16Bytes) {
+    _voicePlaybackQueue.push(pcm16Bytes);
+    if (!_voicePlaybackPlaying) _drainVoiceAudio();
+}
+
+/** Drain queued PCM16 chunks through AudioContext for playback. */
+function _drainVoiceAudio() {
+    if (!_voiceAudioContext || _voicePlaybackQueue.length === 0) {
+        _voicePlaybackPlaying = false;
+        return;
+    }
+    _voicePlaybackPlaying = true;
+
+    // Collect all pending chunks into a single buffer
+    let totalLen = 0;
+    for (const chunk of _voicePlaybackQueue) totalLen += chunk.length;
+    const merged = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const chunk of _voicePlaybackQueue) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+    }
+    _voicePlaybackQueue.length = 0;
+
+    // Convert PCM16 LE bytes to Float32 samples
+    const sampleCount = Math.floor(merged.length / 2);
+    const float32 = new Float32Array(sampleCount);
+    const view = new DataView(merged.buffer, merged.byteOffset, merged.byteLength);
+    for (let i = 0; i < sampleCount; i++) {
+        const s = view.getInt16(i * 2, true); // little-endian
+        float32[i] = s / 32768.0;
+    }
+
+    // Create and play AudioBuffer at 24kHz (OpenAI Realtime PCM rate)
+    const buf = _voiceAudioContext.createBuffer(1, sampleCount, 24000);
+    buf.getChannelData(0).set(float32);
+    const src = _voiceAudioContext.createBufferSource();
+    src.buffer = buf;
+    src.connect(_voiceAudioContext.destination);
+    src.onended = () => _drainVoiceAudio();
+    src.start();
 }
 
 async function _ensureVoiceApiKey(traits) {
@@ -1077,14 +1180,21 @@ export class Traits {
     /**
      * Start voice conversation using browser microphone.
      * Uses OpenAI Realtime API for speech-to-speech conversation.
+     * Connects directly from the browser — no relay or backend required.
+     * Includes audio playback and function calling (tool use).
      * @param {Object} opts
      * @param {string} [opts.apiKey] - OpenAI API key (or set via setVoiceApiKey)
      * @param {string} [opts.voice='cedar'] - Voice: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
      * @param {string} [opts.model='gpt-4o-mini-realtime-preview'] - Realtime model
+     * @param {string} [opts.instructions] - Custom system instructions
+     * @param {boolean} [opts.tools=true] - Enable function calling with trait tools
      * @param {Function} [opts.onTranscript] - Callback for user transcript
      * @param {Function} [opts.onResponse] - Callback for model response
-     * @param {Function} [opts.onAudio] - Callback for audio chunks (PCM16)
-     * @returns {Promise<{ok: boolean, error?: string}>}
+     * @param {Function} [opts.onToolCall] - Callback for tool calls: (name, args) => void
+     * @param {Function} [opts.onToolResult] - Callback for tool results: (name, result) => void
+     * @param {Function} [opts.onAudio] - Callback for raw audio chunks (PCM16 Uint8Array)
+     * @param {Function} [opts.onError] - Callback for errors
+     * @returns {Promise<{ok: boolean, tools?: number, error?: string}>}
      */
     async startVoice(opts = {}) {
         // Stop any existing voice session
@@ -1097,6 +1207,8 @@ export class Traits {
 
         const voice = opts.voice || 'cedar';
         const model = opts.model || 'gpt-4o-mini-realtime-preview';
+        const enableTools = opts.tools !== false;
+        _voiceSdk = this;
 
         try {
             // Request microphone access
@@ -1108,111 +1220,203 @@ export class Traits {
                 }
             });
 
-            // Create audio context and processor for capturing mic data
-            _voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const source = _voiceAudioContext.createMediaStreamSource(_voiceStream);
-            _voiceProcessor = _voiceAudioContext.createScriptProcessor(4096, 1, 1);
+            // Create audio context at 24kHz to match OpenAI Realtime PCM rate
+            _voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
 
-            _dispatchVoiceEvent('started', { voice, model });
-
-            // Connect processor - we'll send data to WebSocket
+            // Mic capture: resample from device rate to 24kHz PCM16
+            const micCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = micCtx.createMediaStreamSource(_voiceStream);
+            _voiceProcessor = micCtx.createScriptProcessor(4096, 1, 1);
             source.connect(_voiceProcessor);
-            _voiceProcessor.connect(_voiceAudioContext.destination);
+            _voiceProcessor.connect(micCtx.destination);
+            // Store micCtx for cleanup
+            _voiceProcessor._micCtx = micCtx;
 
-            // Create WebSocket connection to OpenAI Realtime API
-            const url = `wss://api.openai.com/v1/realtime?model=${model}`;
-            _voiceWs = new WebSocket(url);
+            _voicePlaybackQueue.length = 0;
+            _voicePlaybackPlaying = false;
 
-            _voiceWs.binaryType = 'arraybuffer';
+            // Build tool definitions from trait registry
+            let tools = [];
+            if (enableTools) {
+                tools = await _buildVoiceTools(this);
+            }
+
+            _dispatchVoiceEvent('started', { voice, model, tools: tools.length });
+
+            // Connect to OpenAI Realtime API via WebSocket subprotocols (browser auth)
+            const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+            _voiceWs = new WebSocket(url, [
+                'openai-insecure-api-key.' + apiKey,
+                'openai-beta.realtime-v1'
+            ]);
 
             await new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000);
                 _voiceWs.onopen = () => {
                     clearTimeout(timeout);
-                    // Send session update
-                    _voiceWs.send(JSON.stringify({
-                        type: 'session.update',
-                        session: {
-                            instructions: 'You are a helpful voice assistant. Keep responses concise for voice conversation.',
-                            modalities: ['text', 'audio'],
-                            voice: voice,
-                            input_audio_format: 'pcm16',
-                            output_audio_format: 'pcm16',
-                            input_audio_noise_reduction: { type: 'far_field' },
-                            turn_detection: {
-                                type: 'server_vad',
-                                threshold: 0.8,
-                                prefix_padding_ms: 300,
-                                silence_duration_ms: 800
-                            },
-                            input_audio_transcription: { model: 'whisper-1' }
-                        }
-                    }));
+                    // Build session config
+                    const sessionConfig = {
+                        instructions: opts.instructions || 'You are a helpful voice assistant. Keep responses concise for voice conversation.',
+                        modalities: ['text', 'audio'],
+                        voice: voice,
+                        input_audio_format: 'pcm16',
+                        output_audio_format: 'pcm16',
+                        input_audio_noise_reduction: { type: 'far_field' },
+                        turn_detection: {
+                            type: 'server_vad',
+                            threshold: 0.8,
+                            prefix_padding_ms: 300,
+                            silence_duration_ms: 800
+                        },
+                        input_audio_transcription: { model: 'whisper-1' }
+                    };
+                    if (tools.length > 0) sessionConfig.tools = tools;
+                    _voiceWs.send(JSON.stringify({ type: 'session.update', session: sessionConfig }));
                     resolve();
                 };
                 _voiceWs.onerror = (e) => {
                     clearTimeout(timeout);
-                    reject(e);
+                    reject(new Error('WebSocket connection failed'));
                 };
             });
 
             // Handle incoming messages
             _voiceWs.onmessage = (event) => {
                 try {
-                    const data = JSON.parse(event.data);
-                    const type = data.type;
+                    const msg = JSON.parse(typeof event.data === 'string' ? event.data : '');
+                    const type = msg.type;
 
-                    if (type === 'response.audio.delta') {
-                        // Audio from model - decode base64 and emit
-                        if (opts.onAudio) {
-                            const pcm = atob(data.delta);
-                            const bytes = new Uint8Array(pcm.length);
-                            for (let i = 0; i < pcm.length; i++) bytes[i] = pcm.charCodeAt(i);
-                            opts.onAudio(bytes);
+                    // ── Audio from model — decode and play ──
+                    if (type === 'response.audio.delta' && msg.delta) {
+                        const pcm = atob(msg.delta);
+                        const bytes = new Uint8Array(pcm.length);
+                        for (let i = 0; i < pcm.length; i++) bytes[i] = pcm.charCodeAt(i);
+                        // Play audio through speakers
+                        _enqueueVoiceAudio(bytes);
+                        // Also emit raw chunks if caller wants them
+                        if (opts.onAudio) opts.onAudio(bytes);
+                    }
+
+                    // ── User transcript ──
+                    else if (type === 'conversation.item.input_audio_transcription.completed') {
+                        if (opts.onTranscript && msg.transcript) {
+                            opts.onTranscript(msg.transcript.trim());
                         }
-                    } else if (type === 'conversation.item.input_audio_transcription.completed') {
-                        // User finished speaking
-                        if (opts.onTranscript && data.transcript) {
-                            opts.onTranscript(data.transcript);
+                    }
+
+                    // ── Model response transcript ──
+                    else if (type === 'response.audio_transcript.done') {
+                        if (opts.onResponse && msg.transcript) {
+                            opts.onResponse(msg.transcript.trim());
                         }
-                    } else if (type === 'response.audio_transcript.done') {
-                        // Model finished speaking
-                        if (opts.onResponse && data.transcript) {
-                            opts.onResponse(data.transcript);
+                    }
+
+                    // ── Function call — model wants to invoke a trait tool ──
+                    else if (type === 'response.function_call_arguments.done') {
+                        const callId = msg.call_id || '';
+                        const funcName = msg.name || '';
+                        const argsStr = msg.arguments || '{}';
+                        if (opts.onToolCall) opts.onToolCall(funcName, argsStr);
+                        _dispatchVoiceEvent('tool_call', { name: funcName, arguments: argsStr });
+
+                        // Handle sys_voice_quit — stop the session
+                        if (funcName === 'sys_voice_quit') {
+                            _voiceWs.send(JSON.stringify({
+                                type: 'conversation.item.create',
+                                item: { type: 'function_call_output', call_id: callId, output: '{"ok":true,"action":"quit"}' }
+                            }));
+                            this.stopVoice();
+                            return;
                         }
-                    } else if (type === 'error') {
-                        _dispatchVoiceEvent('error', { message: data.error?.message || 'Unknown error' });
+
+                        // Dispatch tool call via SDK cascade (WASM → helper → REST)
+                        const traitPath = funcName.replace(/_/g, '.');
+                        let callArgs = [];
+                        try {
+                            const parsed = JSON.parse(argsStr);
+                            // Build ordered args array from named params (like native voice.rs)
+                            // Find trait info to get param order
+                            const traitInfo = await this.info(traitPath);
+                            if (traitInfo && Array.isArray(traitInfo.params)) {
+                                callArgs = traitInfo.params.map(p => parsed[p.name] !== undefined ? parsed[p.name] : null);
+                            } else {
+                                callArgs = Object.values(parsed);
+                            }
+                        } catch(e) { callArgs = []; }
+
+                        this.call(traitPath, callArgs).then(result => {
+                            const output = JSON.stringify(result.ok ? (result.result !== undefined ? result.result : result) : { error: result.error });
+                            // Truncate long results for voice context
+                            const truncated = output.length > 2000 ? output.slice(0, 2000) + '…(truncated)' : output;
+                            if (_voiceWs && _voiceWs.readyState === WebSocket.OPEN) {
+                                _voiceWs.send(JSON.stringify({
+                                    type: 'conversation.item.create',
+                                    item: { type: 'function_call_output', call_id: callId, output: truncated }
+                                }));
+                                _voiceWs.send(JSON.stringify({ type: 'response.create' }));
+                            }
+                            if (opts.onToolResult) opts.onToolResult(funcName, truncated);
+                            _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
+                        }).catch(e => {
+                            if (_voiceWs && _voiceWs.readyState === WebSocket.OPEN) {
+                                _voiceWs.send(JSON.stringify({
+                                    type: 'conversation.item.create',
+                                    item: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ error: e.message }) }
+                                }));
+                                _voiceWs.send(JSON.stringify({ type: 'response.create' }));
+                            }
+                        });
+                    }
+
+                    // ── Error ──
+                    else if (type === 'error') {
+                        const errMsg = msg.error?.message || 'Unknown error';
+                        _dispatchVoiceEvent('error', { message: errMsg });
+                        if (opts.onError) opts.onError(errMsg);
                     }
                 } catch(e) {
                     console.warn('[Voice] message parse error:', e);
                 }
             };
 
-            // Send microphone data to OpenAI
-            _voiceProcessor.onaudioprocess = (e) => {
-                if (_voiceWs && _voiceWs.readyState === WebSocket.OPEN) {
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    // Convert Float32 to Int16 PCM
-                    const pcm16 = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        const s = Math.max(-1, Math.min(1, inputData[i]));
-                        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                    }
-                    // Convert to base64
-                    let binary = '';
-                    const bytes = new Uint8Array(pcm16.buffer);
-                    for (let i = 0; i < bytes.length; i++) {
-                        binary += String.fromCharCode(bytes[i]);
-                    }
-                    const b64 = btoa(binary);
-                    _voiceWs.send(JSON.stringify({
-                        type: 'input_audio_buffer.append',
-                        audio: b64
-                    }));
-                }
+            // WebSocket close handler
+            _voiceWs.onclose = () => {
+                _dispatchVoiceEvent('disconnected', {});
             };
 
-            return { ok: true };
+            // Send microphone data to OpenAI — resample to 24kHz PCM16
+            const deviceRate = micCtx.sampleRate;
+            _voiceProcessor.onaudioprocess = (e) => {
+                if (!_voiceWs || _voiceWs.readyState !== WebSocket.OPEN) return;
+                const inputData = e.inputBuffer.getChannelData(0);
+
+                // Resample from device rate to 24kHz
+                const ratio = 24000 / deviceRate;
+                const outLen = Math.round(inputData.length * ratio);
+                const pcm16 = new Int16Array(outLen);
+                for (let i = 0; i < outLen; i++) {
+                    const srcIdx = i / ratio;
+                    const idx0 = Math.floor(srcIdx);
+                    const idx1 = Math.min(idx0 + 1, inputData.length - 1);
+                    const frac = srcIdx - idx0;
+                    const sample = inputData[idx0] * (1 - frac) + inputData[idx1] * frac;
+                    const s = Math.max(-1, Math.min(1, sample));
+                    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+
+                // Convert to base64
+                let binary = '';
+                const bytes = new Uint8Array(pcm16.buffer);
+                for (let i = 0; i < bytes.length; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                _voiceWs.send(JSON.stringify({
+                    type: 'input_audio_buffer.append',
+                    audio: btoa(binary)
+                }));
+            };
+
+            return { ok: true, tools: tools.length };
 
         } catch(e) {
             await this.stopVoice();
@@ -1227,6 +1431,10 @@ export class Traits {
     async stopVoice() {
         if (_voiceProcessor) {
             _voiceProcessor.disconnect();
+            // Close the mic AudioContext (separate from playback context)
+            if (_voiceProcessor._micCtx) {
+                try { await _voiceProcessor._micCtx.close(); } catch(e) {}
+            }
             _voiceProcessor = null;
         }
         if (_voiceStream) {
@@ -1234,13 +1442,16 @@ export class Traits {
             _voiceStream = null;
         }
         if (_voiceAudioContext) {
-            await _voiceAudioContext.close();
+            try { await _voiceAudioContext.close(); } catch(e) {}
             _voiceAudioContext = null;
         }
         if (_voiceWs) {
             _voiceWs.close();
             _voiceWs = null;
         }
+        _voicePlaybackQueue.length = 0;
+        _voicePlaybackPlaying = false;
+        _voiceSdk = null;
         _dispatchVoiceEvent('stopped', {});
     }
 

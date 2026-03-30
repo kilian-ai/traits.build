@@ -433,30 +433,51 @@ export async function createTerminal(mountEl, opts = {}) {
                     // Browser voice mode (no helper required)
                     if (!helperConnected && browserVoiceSupported) {
                         term.write(`\x1b[90mStarting browser voice with ${voiceName}…\x1b[0m\r\n`);
-                        const onTranscript = (text) => {
-                            term.write(`\r\n\x1b[92m🎤 ${text}\x1b[0m\r\n`);
-                        };
-                        const onResponse = (text) => {
-                            term.write(`\x1b[96m💬 ${text}\x1b[0m\r\n`);
-                        };
                         activeSdk.startVoice({
                             voice: voiceName,
                             model: model || 'gpt-4o-mini-realtime-preview',
-                            onTranscript,
-                            onResponse,
+                            onTranscript: (text) => {
+                                term.write(`\r\n\x1b[92m🎤 ${text}\x1b[0m\r\n`);
+                            },
+                            onResponse: (text) => {
+                                term.write(`\x1b[96m💬 ${text}\x1b[0m\r\n`);
+                            },
+                            onToolCall: (name, args) => {
+                                term.write(`\x1b[93m⚡ ${name.replace(/_/g, '.')}\x1b[0m\r\n`);
+                            },
+                            onError: (msg) => {
+                                term.write(`\x1b[31mVoice error: ${msg}\x1b[0m\r\n`);
+                            },
                         }).then(result => {
                             if (result.ok) {
-                                term.write(`\x1b[90mVoice active! Speak to start conversation. Press any key to stop.\x1b[0m\r\n`);
-                                // Setup one-time key handler to stop voice
-                                const stopVoiceHandler = () => {
-                                    activeSdk.stopVoice().then(() => {
-                                        term.write(`\x1b[90mVoice stopped.\x1b[0m\r\n`);
+                                const toolMsg = result.tools ? `, ${result.tools} tools` : '';
+                                term.write(`\x1b[90mVoice active! Speak to start conversation${toolMsg}. Press Esc to stop.\x1b[0m\r\n`);
+                                // Listen for voice-event 'stopped' (model quit or disconnect)
+                                const onVoiceStopped = (e) => {
+                                    if (e.detail && e.detail.type === 'stopped') {
+                                        window.removeEventListener('voice-event', onVoiceStopped);
+                                        term.write(`\r\n\x1b[90mVoice session ended.\x1b[0m\r\n`);
                                         term.write(returnPrompt);
-                                    });
-                                    term.offData(stopVoiceHandler);
+                                        restPending = false;
+                                        requestAnimationFrame(saveState);
+                                    }
+                                };
+                                window.addEventListener('voice-event', onVoiceStopped);
+                                // Setup Esc key handler to stop voice
+                                const stopVoiceHandler = (data) => {
+                                    // Esc = \x1b (alone, not followed by [ which is an arrow key)
+                                    if (data === '\x1b' || data === '\x03') {
+                                        activeSdk.stopVoice().then(() => {
+                                            window.removeEventListener('voice-event', onVoiceStopped);
+                                            term.write(`\r\n\x1b[90mVoice stopped.\x1b[0m\r\n`);
+                                            term.write(returnPrompt);
+                                            restPending = false;
+                                            requestAnimationFrame(saveState);
+                                        });
+                                        term.offData(stopVoiceHandler);
+                                    }
                                 };
                                 term.onData(stopVoiceHandler);
-                                restPending = false;
                             } else {
                                 term.write(`\x1b[31mVoice error: ${result.error}\x1b[0m\r\n`);
                                 term.write(returnPrompt);

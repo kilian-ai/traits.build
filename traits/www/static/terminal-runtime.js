@@ -425,20 +425,82 @@ async function createTerminal(mountEl, opts = {}) {
                     const { v: voiceName, m: model, a: agent, s: sessionId, rp: returnPrompt } = JSON.parse(voiceMatch[1]);
                     restPending = true;
 
-                    // Check if helper is connected (required for voice - needs native sox)
+                    // Check if helper is connected (required for native voice with sox)
                     const helperConnected = activeSdk && (activeSdk.helperConnected || activeSdk.helperUrl);
-                    if (!helperConnected) {
-                        term.write(`\r\n\x1b[33mVoice requires a local helper to be running.\x1b[0m\r\n`);
-                        term.write(`\x1b[90mVoice needs access to your microphone and speaker via the native `);
-                        term.write(`sox tool, which is only available when a helper is connected.\x1b[0m\r\n`);
-                        term.write(`\x1b[90mStart the traits CLI on your machine to enable voice mode.\x1b[0m\r\n`);
+                    
+                    // Check for browser voice support (WebAudio + getUserMedia)
+                    const browserVoiceSupported = typeof navigator !== 'undefined' && 
+                        navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+
+                    if (!helperConnected && !browserVoiceSupported) {
+                        term.write(`\r\n\x1b[33mVoice requires either:\x1b[0m\r\n`);
+                        term.write(`  1. A local helper (native sox) — run traits CLI\r\n`);
+                        term.write(`  2. Browser voice support — use Chrome/Edge/Safari\r\n`);
                         term.write(returnPrompt);
                         restPending = false;
                         requestAnimationFrame(saveState);
                         return;
                     }
 
-                    // Helper is connected - dispatch voice call
+                    // Browser voice mode (no helper required)
+                    if (!helperConnected && browserVoiceSupported) {
+                        term.write(`\x1b[90mStarting browser voice with ${voiceName}…\x1b[0m\r\n`);
+                        activeSdk.startVoice({
+                            voice: voiceName,
+                            model: model || 'gpt-4o-mini-realtime-preview',
+                            onTranscript: (text) => {
+                                term.write(`\r\n\x1b[92m🎤 ${text}\x1b[0m\r\n`);
+                            },
+                            onResponse: (text) => {
+                                term.write(`\x1b[96m💬 ${text}\x1b[0m\r\n`);
+                            },
+                            onToolCall: (name, args) => {
+                                term.write(`\x1b[93m⚡ ${name.replace(/_/g, '.')}\x1b[0m\r\n`);
+                            },
+                            onError: (msg) => {
+                                term.write(`\x1b[31mVoice error: ${msg}\x1b[0m\r\n`);
+                            },
+                        }).then(result => {
+                            if (result.ok) {
+                                const toolMsg = result.tools ? `, ${result.tools} tools` : '';
+                                term.write(`\x1b[90mVoice active! Speak to start conversation${toolMsg}. Press Esc to stop.\x1b[0m\r\n`);
+                                // Listen for voice-event 'stopped' (model quit or disconnect)
+                                const onVoiceStopped = (e) => {
+                                    if (e.detail && e.detail.type === 'stopped') {
+                                        window.removeEventListener('voice-event', onVoiceStopped);
+                                        term.write(`\r\n\x1b[90mVoice session ended.\x1b[0m\r\n`);
+                                        term.write(returnPrompt);
+                                        restPending = false;
+                                        requestAnimationFrame(saveState);
+                                    }
+                                };
+                                window.addEventListener('voice-event', onVoiceStopped);
+                                // Setup Esc key handler to stop voice
+                                const stopVoiceHandler = (data) => {
+                                    // Esc = \x1b (alone, not followed by [ which is an arrow key)
+                                    if (data === '\x1b' || data === '\x03') {
+                                        activeSdk.stopVoice().then(() => {
+                                            window.removeEventListener('voice-event', onVoiceStopped);
+                                            term.write(`\r\n\x1b[90mVoice stopped.\x1b[0m\r\n`);
+                                            term.write(returnPrompt);
+                                            restPending = false;
+                                            requestAnimationFrame(saveState);
+                                        });
+                                        term.offData(stopVoiceHandler);
+                                    }
+                                };
+                                term.onData(stopVoiceHandler);
+                            } else {
+                                term.write(`\x1b[31mVoice error: ${result.error}\x1b[0m\r\n`);
+                                term.write(returnPrompt);
+                                restPending = false;
+                                requestAnimationFrame(saveState);
+                            }
+                        });
+                        return;
+                    }
+
+                    // Helper is connected - dispatch native voice call
                     term.write(`\x1b[90mStarting voice with ${voiceName}…\x1b[0m\r\n`);
                     const args = [voiceName, model || 'gpt-4o-mini-realtime-preview', agent || '', sessionId || ''];
                     activeSdk.call('sys.voice', args).then(res => {
