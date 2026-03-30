@@ -1304,6 +1304,7 @@ When the user asks you to do something and a matching tool exists, call it direc
                 // WebRTC session.update: voice/model/modalities are locked at token creation.
                 // Only send mutable session fields here.
                 const sessionConfig = {
+                    type: 'realtime',
                     instructions: opts.instructions || defaultInstructions,
                     input_audio_transcription: { model: 'whisper-1' },
                     turn_detection: {
