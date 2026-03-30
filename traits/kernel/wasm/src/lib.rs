@@ -487,3 +487,169 @@ pub fn vfs_read(path: &str) -> String {
 pub fn vfs_write(path: &str, content: &str) {
     with_session(|session| session.vfs_write(path, content))
 }
+
+// ────────────────── MCP JSON-RPC handler (browser-only) ──────────────────
+
+/// Process a single MCP JSON-RPC message and return a JSON response string.
+/// Returns empty string for notifications (no "id" field).
+///
+/// This enables full MCP server functionality in the browser without any
+/// server or relay — the WASM kernel handles tool listing and dispatch locally.
+///
+/// Usage from JS:
+///   const response = wasm.mcp_message('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}');
+#[wasm_bindgen]
+pub fn mcp_message(json_message: &str) -> String {
+    let request: Value = match serde_json::from_str(json_message) {
+        Ok(v) => v,
+        Err(e) => {
+            return serde_json::to_string(&mcp_error(Value::Null, -32700, &format!("Parse error: {}", e)))
+                .unwrap_or_default();
+        }
+    };
+
+    // Notifications (no "id") — acknowledge silently
+    if request.get("id").is_none() {
+        return String::new();
+    }
+
+    let id = request["id"].clone();
+    let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
+
+    let response = match method {
+        "initialize" => mcp_initialize(id),
+        "tools/list" => mcp_tools_list(id),
+        "tools/call" => mcp_tools_call(id, &request),
+        "ping" => mcp_result(id, serde_json::json!({})),
+        _ => mcp_error(id, -32601, &format!("Method not found: {}", method)),
+    };
+
+    serde_json::to_string(&response).unwrap_or_default()
+}
+
+fn mcp_initialize(id: Value) -> Value {
+    let reg = get_registry();
+    mcp_result(id, serde_json::json!({
+        "protocolVersion": "2024-11-05",
+        "capabilities": {
+            "tools": { "listChanged": false }
+        },
+        "serverInfo": {
+            "name": "traits-wasm-mcp",
+            "version": env!("CARGO_PKG_VERSION")
+        },
+        "info": {
+            "runtime": "wasm",
+            "traits_registered": reg.len(),
+            "wasm_callable": wasm_traits::WASM_CALLABLE.len()
+        }
+    }))
+}
+
+fn mcp_tools_list(id: Value) -> Value {
+    let reg = get_registry();
+    let mut tools: Vec<Value> = Vec::new();
+    let mut entries = reg.all();
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+
+    for entry in &entries {
+        if entry.path == "sys.mcp" || entry.path == "kernel.main" {
+            continue;
+        }
+
+        let tool_name = entry.path.replace('.', "_");
+
+        // Build inputSchema from params (Vec<Value> of {name, type, description, required})
+        let mut properties = serde_json::Map::new();
+        let mut required: Vec<Value> = Vec::new();
+        for p in &entry.params {
+            let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("arg");
+            let desc = p.get("description").and_then(|d| d.as_str()).unwrap_or("");
+            let ptype = p.get("type").and_then(|t| t.as_str()).unwrap_or("string");
+            let is_required = p.get("required").and_then(|r| r.as_bool()).unwrap_or(true);
+
+            let schema_type = match ptype {
+                "int" | "integer" => "integer",
+                "float" | "number" => "number",
+                "bool" | "boolean" => "boolean",
+                _ => "string",
+            };
+            let mut prop = serde_json::Map::new();
+            prop.insert("type".to_string(), serde_json::json!(schema_type));
+            if !desc.is_empty() {
+                prop.insert("description".to_string(), serde_json::json!(desc));
+            }
+            properties.insert(name.to_string(), Value::Object(prop));
+            if is_required {
+                required.push(serde_json::json!(name));
+            }
+        }
+
+        let mut schema = serde_json::Map::new();
+        schema.insert("type".to_string(), serde_json::json!("object"));
+        schema.insert("properties".to_string(), Value::Object(properties));
+        if !required.is_empty() {
+            schema.insert("required".to_string(), Value::Array(required));
+        }
+
+        tools.push(serde_json::json!({
+            "name": tool_name,
+            "description": entry.description,
+            "inputSchema": Value::Object(schema)
+        }));
+    }
+
+    mcp_result(id, serde_json::json!({ "tools": tools }))
+}
+
+fn mcp_tools_call(id: Value, request: &Value) -> Value {
+    let params = match request.get("params") {
+        Some(p) => p,
+        None => return mcp_error(id, -32602, "Missing params"),
+    };
+
+    let tool_name = match params.get("name").and_then(|n| n.as_str()) {
+        Some(n) => n,
+        None => return mcp_error(id, -32602, "Missing tool name"),
+    };
+
+    let trait_path = tool_name.replace('_', ".");
+    let reg = get_registry();
+    let entry = match reg.get(&trait_path) {
+        Some(e) => e,
+        None => return mcp_error(id, -32602, &format!("Unknown tool: {}", tool_name)),
+    };
+
+    // Build ordered arg array from arguments object
+    let arguments = params.get("arguments").and_then(|a| a.as_object());
+    let args: Vec<Value> = entry.params.iter().map(|p| {
+        let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        arguments.and_then(|a| a.get(name)).cloned().unwrap_or(Value::Null)
+    }).collect();
+
+    // Try WASM dispatch first, then platform dispatch (which covers WASM too,
+    // but wasm_traits::dispatch is the canonical WASM path)
+    let result = wasm_traits::dispatch(&trait_path, &args)
+        .or_else(|| kernel_logic::platform::dispatch(&trait_path, &args));
+
+    match result {
+        Some(value) => {
+            let text = match &value {
+                Value::String(s) => s.clone(),
+                other => serde_json::to_string_pretty(other).unwrap_or_default(),
+            };
+            mcp_result(id, serde_json::json!({
+                "content": [{ "type": "text", "text": text }]
+            }))
+        }
+        None => mcp_error(id, -32602, &format!("Dispatch failed for: {}", trait_path)),
+    }
+}
+
+fn mcp_result(id: Value, result: Value) -> Value {
+    serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": result })
+}
+
+fn mcp_error(id: Value, code: i32, message: &str) -> Value {
+    serde_json::json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
+}

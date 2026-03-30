@@ -36,6 +36,7 @@ pub async fn start(args: &[crate::types::TraitValue]) -> Result<crate::types::Tr
 
 use actix_web::{web, App, HttpServer, HttpResponse, HttpRequest};
 use actix_cors::Cors;
+use actix_ws;
 use crate::dispatcher::{CallConfig, Dispatcher};
 use crate::types::{CallRequest, CallResponse, TraitValue};
 use tracing::info;
@@ -1193,6 +1194,43 @@ fn spawn_relay_cleanup(relay: Arc<RelayState>) {
     });
 }
 
+// ── MCP over WebSocket ──
+
+/// WebSocket endpoint for MCP (Model Context Protocol) over JSON-RPC 2.0.
+/// Clients connect at ws://host:port/mcp and send/receive JSON-RPC messages as text frames.
+/// Each message is processed by the shared mcp::handle_message() handler.
+async fn mcp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<HttpResponse> {
+    let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
+
+    actix_rt::spawn(async move {
+        while let Some(Ok(msg)) = msg_stream.recv().await {
+            match msg {
+                actix_ws::Message::Text(text) => {
+                    let text_str = text.to_string();
+                    // Spawn blocking because MCP dispatch calls compiled traits synchronously
+                    let result = tokio::task::spawn_blocking(move || {
+                        crate::dispatcher::compiled::mcp::handle_message(&text_str)
+                    }).await;
+
+                    if let Ok(Some(response)) = result {
+                        let json_bytes = serde_json::to_vec(&response).unwrap_or_default();
+                        let _ = session.text(
+                            String::from_utf8(json_bytes).unwrap_or_default()
+                        ).await;
+                    }
+                }
+                actix_ws::Message::Ping(bytes) => {
+                    let _ = session.pong(&bytes).await;
+                }
+                actix_ws::Message::Close(_) => break,
+                _ => {}
+            }
+        }
+    });
+
+    Ok(response)
+}
+
 /// Start the HTTP server — called by the runtime when sys.serve is dispatched.
 /// Uses the already-initialized globals (registry, config) instead of re-bootstrapping.
 /// Resolves the www/website interface from sys.serve's [bindings] section.
@@ -1282,6 +1320,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
             .app_data(relay_data.clone())
             .route("/health", web::get().to(health_check))
             .route("/metrics", web::get().to(metrics))
+            .route("/mcp", web::get().to(mcp_ws))
             .route("/relay/register", web::post().to(relay_register))
             .route("/relay/poll", web::get().to(relay_poll))
             .route("/relay/call", web::post().to(relay_call_handler))

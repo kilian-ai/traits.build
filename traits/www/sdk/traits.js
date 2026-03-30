@@ -1989,6 +1989,81 @@ export class Traits {
     }
 }
 
+// ────────────────── MCP Server (browser-only, WASM-powered) ──────────────────
+
+/**
+ * Browser-only MCP server backed by the WASM kernel.
+ * No server or relay needed — all tool dispatch happens locally in the browser.
+ *
+ * Supports three transports:
+ *   1. Direct: call mcpServer.message(jsonRpcString) → jsonRpcResponse
+ *   2. BroadcastChannel: cross-tab MCP over a named channel
+ *   3. MessagePort: iframe/worker/extension MCP over a MessagePort
+ *
+ * Usage:
+ *   const mcp = new McpServer();                    // direct mode
+ *   const resp = mcp.message('{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}');
+ *
+ *   const mcp = new McpServer({ channel: 'traits-mcp' });  // cross-tab
+ *   // Other tabs: new BroadcastChannel('traits-mcp').postMessage({jsonrpc:'2.0',...})
+ *
+ *   const mcp = new McpServer({ port: messagePort });       // worker/iframe
+ */
+class McpServer {
+    constructor(opts = {}) {
+        this._listeners = [];
+
+        if (opts.channel && typeof BroadcastChannel !== 'undefined') {
+            this._bc = new BroadcastChannel(opts.channel);
+            this._bc.onmessage = (e) => this._handleTransportMessage(e.data, (resp) => this._bc.postMessage(resp));
+        }
+
+        if (opts.port) {
+            this._port = opts.port;
+            this._port.onmessage = (e) => this._handleTransportMessage(e.data, (resp) => this._port.postMessage(resp));
+            if (this._port.start) this._port.start();
+        }
+    }
+
+    /** Process a single JSON-RPC message string. Returns JSON-RPC response string (empty for notifications). */
+    message(jsonRpcString) {
+        if (!wasm || typeof wasm.mcp_message !== 'function') {
+            return JSON.stringify({
+                jsonrpc: '2.0', id: null,
+                error: { code: -32603, message: 'WASM kernel not loaded — call Traits.init() first' }
+            });
+        }
+        return wasm.mcp_message(jsonRpcString);
+    }
+
+    /** Process a parsed JSON-RPC object. Returns parsed response (or null for notifications). */
+    handle(jsonRpcObj) {
+        const resp = this.message(JSON.stringify(jsonRpcObj));
+        if (!resp) return null;
+        try { return JSON.parse(resp); } catch { return null; }
+    }
+
+    /** Listen for MCP events (for logging/debugging). */
+    onMessage(fn) { this._listeners.push(fn); }
+
+    _handleTransportMessage(data, reply) {
+        const msg = typeof data === 'string' ? data : JSON.stringify(data);
+        for (const fn of this._listeners) try { fn('request', msg); } catch {}
+        const resp = this.message(msg);
+        if (resp) {
+            for (const fn of this._listeners) try { fn('response', resp); } catch {}
+            try { reply(JSON.parse(resp)); } catch { reply(resp); }
+        }
+    }
+
+    /** Stop listening on BroadcastChannel / MessagePort. */
+    close() {
+        if (this._bc) { this._bc.close(); this._bc = null; }
+        if (this._port) { this._port.onmessage = null; this._port = null; }
+        this._listeners.length = 0;
+    }
+}
+
 // ── Default singleton ──
 let _default = null;
 
@@ -2001,6 +2076,8 @@ export function getTraits(opts) {
     if (!_default) _default = new Traits(opts);
     return _default;
 }
+
+export { McpServer };
 
 // Convenience re-exports for quick use
 export default Traits;

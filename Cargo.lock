@@ -202,6 +202,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "actix-ws"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12d4f2fbee3ef7a22fa6cb0e416b962237a167ed0419f22d4e451da2d7f082f8"
+dependencies = [
+ "actix-codec",
+ "actix-http",
+ "actix-web",
+ "bytestring",
+ "futures-core",
+ "tokio",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1196,7 +1210,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-logic"
-version = "0.260330.200919"
+version = "0.260330.222709"
 dependencies = [
  "js-sys",
  "serde",
@@ -2301,7 +2315,7 @@ dependencies = [
 
 [[package]]
 name = "trait-sys-checksum"
-version = "0.260330.200919"
+version = "0.260330.222709"
 dependencies = [
  "regex",
  "serde_json",
@@ -2311,11 +2325,12 @@ dependencies = [
 
 [[package]]
 name = "traits"
-version = "0.260330.200919"
+version = "0.260330.222709"
 dependencies = [
  "actix-cors",
  "actix-rt",
  "actix-web",
+ "actix-ws",
  "aes-gcm",
  "assert_cmd",
  "base64",
@@ -2349,14 +2364,14 @@ dependencies = [
 
 [[package]]
 name = "traits-plugin-api"
-version = "0.260330.200919"
+version = "0.260330.222709"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "traits-wasm"
-version = "0.260330.200919"
+version = "0.260330.222709"
 dependencies = [
  "js-sys",
  "kernel-logic",

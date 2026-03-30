@@ -35,34 +35,38 @@ pub fn run_stdio() {
             continue;
         }
 
-        let request: Value = match serde_json::from_str(trimmed) {
-            Ok(v) => v,
-            Err(e) => {
-                let err = json_rpc_error(Value::Null, -32700, &format!("Parse error: {}", e));
-                write_response(&mut out, &err);
-                continue;
-            }
-        };
-
-        // Notifications (no "id") — acknowledge silently
-        if request.get("id").is_none() {
-            // e.g. notifications/initialized, notifications/cancelled
-            continue;
+        if let Some(response) = handle_message(trimmed) {
+            write_response(&mut out, &response);
         }
-
-        let id = request["id"].clone();
-        let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
-
-        let response = match method {
-            "initialize" => handle_initialize(id, &request),
-            "tools/list" => handle_tools_list(id),
-            "tools/call" => handle_tools_call(id, &request),
-            "ping" => json_rpc_result(id, json!({})),
-            _ => json_rpc_error(id, -32601, &format!("Method not found: {}", method)),
-        };
-
-        write_response(&mut out, &response);
     }
+}
+
+/// Process a single JSON-RPC message and return an optional response.
+/// Returns None for notifications (no "id" field) and empty lines.
+/// This is the shared handler used by both stdio and WebSocket transports.
+pub fn handle_message(message: &str) -> Option<Value> {
+    let request: Value = match serde_json::from_str(message) {
+        Ok(v) => v,
+        Err(e) => {
+            return Some(json_rpc_error(Value::Null, -32700, &format!("Parse error: {}", e)));
+        }
+    };
+
+    // Notifications (no "id") — acknowledge silently
+    if request.get("id").is_none() {
+        return None;
+    }
+
+    let id = request["id"].clone();
+    let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
+
+    Some(match method {
+        "initialize" => handle_initialize(id, &request),
+        "tools/list" => handle_tools_list(id),
+        "tools/call" => handle_tools_call(id, &request),
+        "ping" => json_rpc_result(id, json!({})),
+        _ => json_rpc_error(id, -32601, &format!("Method not found: {}", method)),
+    })
 }
 
 // ────────────────── MCP method handlers ──────────────────
