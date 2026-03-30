@@ -130,12 +130,10 @@ const WEBLLM_DEFAULT_MODEL = 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
 
 // ── Voice (browser microphone) state ──
 let _voiceStream = null;
-let _voiceWs = null;
-let _voiceAudioContext = null;
-let _voiceProcessor = null;
+let _voicePc = null;             // RTCPeerConnection for WebRTC voice
+let _voiceDc = null;             // DataChannel for sending/receiving events
+let _voiceAudioEl = null;        // <audio> element for model playback
 let _voiceApiKey = null;
-let _voicePlaybackQueue = [];    // PCM16 chunks waiting to play
-let _voicePlaybackPlaying = false;
 let _voiceSdk = null;            // Reference to Traits instance for tool dispatch
 
 // Traits excluded from voice function-calling tools (mirrors native TOOL_EXCLUDE)
@@ -198,50 +196,6 @@ async function _buildVoiceTools(sdk) {
         tools.push({ type: 'function', name: toolName, description: t.description || '', parameters });
     }
     return tools;
-}
-
-/** Enqueue PCM16 audio data and start draining if not already playing. */
-function _enqueueVoiceAudio(pcm16Bytes) {
-    _voicePlaybackQueue.push(pcm16Bytes);
-    if (!_voicePlaybackPlaying) _drainVoiceAudio();
-}
-
-/** Drain queued PCM16 chunks through AudioContext for playback. */
-function _drainVoiceAudio() {
-    if (!_voiceAudioContext || _voicePlaybackQueue.length === 0) {
-        _voicePlaybackPlaying = false;
-        return;
-    }
-    _voicePlaybackPlaying = true;
-
-    // Collect all pending chunks into a single buffer
-    let totalLen = 0;
-    for (const chunk of _voicePlaybackQueue) totalLen += chunk.length;
-    const merged = new Uint8Array(totalLen);
-    let offset = 0;
-    for (const chunk of _voicePlaybackQueue) {
-        merged.set(chunk, offset);
-        offset += chunk.length;
-    }
-    _voicePlaybackQueue.length = 0;
-
-    // Convert PCM16 LE bytes to Float32 samples
-    const sampleCount = Math.floor(merged.length / 2);
-    const float32 = new Float32Array(sampleCount);
-    const view = new DataView(merged.buffer, merged.byteOffset, merged.byteLength);
-    for (let i = 0; i < sampleCount; i++) {
-        const s = view.getInt16(i * 2, true); // little-endian
-        float32[i] = s / 32768.0;
-    }
-
-    // Create and play AudioBuffer at 24kHz (OpenAI Realtime PCM rate)
-    const buf = _voiceAudioContext.createBuffer(1, sampleCount, 24000);
-    buf.getChannelData(0).set(float32);
-    const src = _voiceAudioContext.createBufferSource();
-    src.buffer = buf;
-    src.connect(_voiceAudioContext.destination);
-    src.onended = () => _drainVoiceAudio();
-    src.start();
 }
 
 async function _ensureVoiceApiKey(traits) {
@@ -1224,14 +1178,15 @@ export class Traits {
         _voiceSdk = this;
 
         try {
-            // ── Ephemeral token: browser WebSocket needs a short-lived token, not a standard API key ──
+            // ── Ephemeral token: browser WebRTC needs a short-lived token ──
+            let ephemeralKey = null;
+
             // Try dispatch cascade (helper → relay → server) to mint one server-side
-            let wsAuthKey = null;
             try {
                 const tokenResult = await this.call('sys.voice', ['token', model, voice]);
                 const result = tokenResult.ok ? (tokenResult.result || tokenResult) : null;
                 if (result && result.token) {
-                    wsAuthKey = result.token;
+                    ephemeralKey = result.token;
                     console.log('[Voice] Got ephemeral token via helper/server');
                 } else {
                     console.log('[Voice] Dispatch token result:', JSON.stringify(tokenResult).slice(0, 200));
@@ -1240,9 +1195,8 @@ export class Traits {
                 console.log('[Voice] Ephemeral token via dispatch failed:', e.message || e);
             }
 
-            // Fallback: try minting token directly from browser via OpenAI REST API
-            // (OpenAI sets access-control-allow-origin: * so CORS is allowed)
-            if (!wsAuthKey) {
+            // Fallback: mint token directly from browser (OpenAI sets CORS: *)
+            if (!ephemeralKey) {
                 try {
                     const resp = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
                         method: 'POST',
@@ -1259,7 +1213,7 @@ export class Traits {
                     if (resp.ok) {
                         const token = (data.client_secret && data.client_secret.value) || data.value;
                         if (token) {
-                            wsAuthKey = token;
+                            ephemeralKey = token;
                             console.log('[Voice] Got ephemeral token via direct fetch');
                         } else {
                             console.warn('[Voice] Token response missing value:', JSON.stringify(data).slice(0, 200));
@@ -1272,13 +1226,11 @@ export class Traits {
                 }
             }
 
-            // Last resort: use direct API key (works server-to-server, may fail from browser)
-            if (!wsAuthKey) {
-                console.warn('[Voice] No ephemeral token available — using direct API key (may fail from browser)');
-                wsAuthKey = apiKey;
+            if (!ephemeralKey) {
+                return { ok: false, error: 'Could not obtain ephemeral token. Check that your OPENAI_API_KEY is valid and has Realtime API access.' };
             }
 
-            // Request microphone access
+            // ── Request microphone access ──
             _voiceStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
@@ -1287,22 +1239,7 @@ export class Traits {
                 }
             });
 
-            // Create audio context at 24kHz to match OpenAI Realtime PCM rate
-            _voiceAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-
-            // Mic capture: resample from device rate to 24kHz PCM16
-            const micCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const source = micCtx.createMediaStreamSource(_voiceStream);
-            _voiceProcessor = micCtx.createScriptProcessor(4096, 1, 1);
-            source.connect(_voiceProcessor);
-            _voiceProcessor.connect(micCtx.destination);
-            // Store micCtx for cleanup
-            _voiceProcessor._micCtx = micCtx;
-
-            _voicePlaybackQueue.length = 0;
-            _voicePlaybackPlaying = false;
-
-            // Build tool definitions from trait registry
+            // ── Build tool definitions ──
             let tools = [];
             if (enableTools) {
                 tools = await _buildVoiceTools(this);
@@ -1310,74 +1247,46 @@ export class Traits {
 
             _dispatchVoiceEvent('started', { voice, model, tools: tools.length });
 
-            // Connect to OpenAI Realtime API via WebSocket subprotocols (browser auth)
-            const url = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
-            console.log('[Voice] Connecting to', model, '— auth:', wsAuthKey === apiKey ? 'direct key' : 'ephemeral token', '(' + wsAuthKey.length + ' chars)');
-            try {
-                _voiceWs = new WebSocket(url, [
-                    'openai-insecure-api-key.' + wsAuthKey,
-                    'openai-beta.realtime-v1'
-                ]);
-            } catch(wsErr) {
-                return { ok: false, error: 'WebSocket creation failed: ' + wsErr.message + ' — the API key may contain invalid characters' };
-            }
+            // ── WebRTC peer connection ──
+            _voicePc = new RTCPeerConnection();
 
-            await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => reject(new Error('WebSocket connection timeout (10s)')), 10000);
-                _voiceWs.onopen = () => {
-                    clearTimeout(timeout);
-                    // Build session config
-                    const sessionConfig = {
-                        instructions: opts.instructions || 'You are a helpful voice assistant. Keep responses concise for voice conversation.',
-                        modalities: ['text', 'audio'],
-                        voice: voice,
-                        input_audio_format: 'pcm16',
-                        output_audio_format: 'pcm16',
-                        input_audio_noise_reduction: { type: 'far_field' },
-                        turn_detection: {
-                            type: 'server_vad',
-                            threshold: 0.8,
-                            prefix_padding_ms: 300,
-                            silence_duration_ms: 800
-                        },
-                        input_audio_transcription: { model: 'whisper-1' }
-                    };
-                    if (tools.length > 0) sessionConfig.tools = tools;
-                    _voiceWs.send(JSON.stringify({ type: 'session.update', session: sessionConfig }));
-                    resolve();
+            // Play remote audio from the model
+            _voiceAudioEl = document.createElement('audio');
+            _voiceAudioEl.autoplay = true;
+            _voicePc.ontrack = (e) => { _voiceAudioEl.srcObject = e.streams[0]; };
+
+            // Add local microphone track
+            _voiceStream.getTracks().forEach(track => _voicePc.addTrack(track, _voiceStream));
+
+            // Data channel for sending/receiving Realtime API events
+            _voiceDc = _voicePc.createDataChannel('oai-events');
+
+            // Handle data channel open — send session config
+            _voiceDc.addEventListener('open', () => {
+                const sessionConfig = {
+                    instructions: opts.instructions || 'You are a helpful voice assistant. Keep responses concise for voice conversation.',
+                    modalities: ['text', 'audio'],
+                    voice: voice,
+                    input_audio_transcription: { model: 'whisper-1' },
+                    turn_detection: {
+                        type: 'server_vad',
+                        threshold: 0.8,
+                        prefix_padding_ms: 300,
+                        silence_duration_ms: 800
+                    }
                 };
-                _voiceWs.onerror = () => {};
-                _voiceWs.onclose = (ev) => {
-                    clearTimeout(timeout);
-                    const code = ev.code;
-                    const reason = ev.reason || '';
-                    // 1006 = abnormal closure (often auth failure), 4xx codes = server rejection
-                    let hint = `WebSocket closed (code ${code})`;
-                    if (code === 1006 && !reason) hint = 'WebSocket connection failed — check that your OPENAI_API_KEY is valid and has Realtime API access';
-                    else if (reason) hint += ': ' + reason;
-                    reject(new Error(hint));
-                };
+                if (tools.length > 0) sessionConfig.tools = tools;
+                _voiceDc.send(JSON.stringify({ type: 'session.update', session: sessionConfig }));
             });
 
-            // Handle incoming messages
-            _voiceWs.onmessage = async (event) => {
+            // Handle incoming events (same JSON format as WebSocket messages)
+            _voiceDc.addEventListener('message', async (event) => {
                 try {
-                    const msg = JSON.parse(typeof event.data === 'string' ? event.data : '');
+                    const msg = JSON.parse(event.data);
                     const type = msg.type;
 
-                    // ── Audio from model — decode and play ──
-                    if (type === 'response.audio.delta' && msg.delta) {
-                        const pcm = atob(msg.delta);
-                        const bytes = new Uint8Array(pcm.length);
-                        for (let i = 0; i < pcm.length; i++) bytes[i] = pcm.charCodeAt(i);
-                        // Play audio through speakers
-                        _enqueueVoiceAudio(bytes);
-                        // Also emit raw chunks if caller wants them
-                        if (opts.onAudio) opts.onAudio(bytes);
-                    }
-
                     // ── User transcript ──
-                    else if (type === 'conversation.item.input_audio_transcription.completed') {
+                    if (type === 'conversation.item.input_audio_transcription.completed') {
                         if (opts.onTranscript && msg.transcript) {
                             opts.onTranscript(msg.transcript.trim());
                         }
@@ -1400,10 +1309,12 @@ export class Traits {
 
                         // Handle sys_voice_quit — stop the session
                         if (funcName === 'sys_voice_quit') {
-                            _voiceWs.send(JSON.stringify({
-                                type: 'conversation.item.create',
-                                item: { type: 'function_call_output', call_id: callId, output: '{"ok":true,"action":"quit"}' }
-                            }));
+                            if (_voiceDc && _voiceDc.readyState === 'open') {
+                                _voiceDc.send(JSON.stringify({
+                                    type: 'conversation.item.create',
+                                    item: { type: 'function_call_output', call_id: callId, output: '{"ok":true,"action":"quit"}' }
+                                }));
+                            }
                             this.stopVoice();
                             return;
                         }
@@ -1413,8 +1324,6 @@ export class Traits {
                         let callArgs = [];
                         try {
                             const parsed = JSON.parse(argsStr);
-                            // Build ordered args array from named params (like native voice.rs)
-                            // Find trait info to get param order
                             const traitInfo = await this.info(traitPath);
                             if (traitInfo && Array.isArray(traitInfo.params)) {
                                 callArgs = traitInfo.params.map(p => parsed[p.name] !== undefined ? parsed[p.name] : null);
@@ -1425,24 +1334,23 @@ export class Traits {
 
                         this.call(traitPath, callArgs).then(result => {
                             const output = JSON.stringify(result.ok ? (result.result !== undefined ? result.result : result) : { error: result.error });
-                            // Truncate long results for voice context
                             const truncated = output.length > 2000 ? output.slice(0, 2000) + '…(truncated)' : output;
-                            if (_voiceWs && _voiceWs.readyState === WebSocket.OPEN) {
-                                _voiceWs.send(JSON.stringify({
+                            if (_voiceDc && _voiceDc.readyState === 'open') {
+                                _voiceDc.send(JSON.stringify({
                                     type: 'conversation.item.create',
                                     item: { type: 'function_call_output', call_id: callId, output: truncated }
                                 }));
-                                _voiceWs.send(JSON.stringify({ type: 'response.create' }));
+                                _voiceDc.send(JSON.stringify({ type: 'response.create' }));
                             }
                             if (opts.onToolResult) opts.onToolResult(funcName, truncated);
                             _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
                         }).catch(e => {
-                            if (_voiceWs && _voiceWs.readyState === WebSocket.OPEN) {
-                                _voiceWs.send(JSON.stringify({
+                            if (_voiceDc && _voiceDc.readyState === 'open') {
+                                _voiceDc.send(JSON.stringify({
                                     type: 'conversation.item.create',
                                     item: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ error: e.message }) }
                                 }));
-                                _voiceWs.send(JSON.stringify({ type: 'response.create' }));
+                                _voiceDc.send(JSON.stringify({ type: 'response.create' }));
                             }
                         });
                     }
@@ -1456,44 +1364,36 @@ export class Traits {
                 } catch(e) {
                     console.warn('[Voice] message parse error:', e);
                 }
-            };
+            });
 
-            // WebSocket close handler
-            _voiceWs.onclose = () => {
-                _dispatchVoiceEvent('disconnected', {});
-            };
-
-            // Send microphone data to OpenAI — resample to 24kHz PCM16
-            const deviceRate = micCtx.sampleRate;
-            _voiceProcessor.onaudioprocess = (e) => {
-                if (!_voiceWs || _voiceWs.readyState !== WebSocket.OPEN) return;
-                const inputData = e.inputBuffer.getChannelData(0);
-
-                // Resample from device rate to 24kHz
-                const ratio = 24000 / deviceRate;
-                const outLen = Math.round(inputData.length * ratio);
-                const pcm16 = new Int16Array(outLen);
-                for (let i = 0; i < outLen; i++) {
-                    const srcIdx = i / ratio;
-                    const idx0 = Math.floor(srcIdx);
-                    const idx1 = Math.min(idx0 + 1, inputData.length - 1);
-                    const frac = srcIdx - idx0;
-                    const sample = inputData[idx0] * (1 - frac) + inputData[idx1] * frac;
-                    const s = Math.max(-1, Math.min(1, sample));
-                    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            // Handle connection state changes
+            _voicePc.onconnectionstatechange = () => {
+                if (_voicePc && (_voicePc.connectionState === 'disconnected' || _voicePc.connectionState === 'failed')) {
+                    _dispatchVoiceEvent('disconnected', {});
                 }
-
-                // Convert to base64
-                let binary = '';
-                const bytes = new Uint8Array(pcm16.buffer);
-                for (let i = 0; i < bytes.length; i++) {
-                    binary += String.fromCharCode(bytes[i]);
-                }
-                _voiceWs.send(JSON.stringify({
-                    type: 'input_audio_buffer.append',
-                    audio: btoa(binary)
-                }));
             };
+
+            // ── SDP negotiation via OpenAI Realtime API ──
+            const offer = await _voicePc.createOffer();
+            await _voicePc.setLocalDescription(offer);
+
+            console.log('[Voice] Connecting via WebRTC to', model, '— ephemeral token (' + ephemeralKey.length + ' chars)');
+            const sdpResponse = await fetch('https://api.openai.com/v1/realtime/calls', {
+                method: 'POST',
+                body: offer.sdp,
+                headers: {
+                    'Authorization': 'Bearer ' + ephemeralKey,
+                    'Content-Type': 'application/sdp',
+                },
+            });
+
+            if (!sdpResponse.ok) {
+                const errText = await sdpResponse.text();
+                throw new Error(`WebRTC SDP exchange failed (${sdpResponse.status}): ${errText.slice(0, 200)}`);
+            }
+
+            const answerSdp = await sdpResponse.text();
+            await _voicePc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 
             return { ok: true, tools: tools.length };
 
@@ -1508,28 +1408,22 @@ export class Traits {
      * @returns {Promise<void>}
      */
     async stopVoice() {
-        if (_voiceProcessor) {
-            _voiceProcessor.disconnect();
-            // Close the mic AudioContext (separate from playback context)
-            if (_voiceProcessor._micCtx) {
-                try { await _voiceProcessor._micCtx.close(); } catch(e) {}
-            }
-            _voiceProcessor = null;
+        if (_voiceDc) {
+            try { _voiceDc.close(); } catch(e) {}
+            _voiceDc = null;
+        }
+        if (_voicePc) {
+            _voicePc.close();
+            _voicePc = null;
         }
         if (_voiceStream) {
             _voiceStream.getTracks().forEach(track => track.stop());
             _voiceStream = null;
         }
-        if (_voiceAudioContext) {
-            try { await _voiceAudioContext.close(); } catch(e) {}
-            _voiceAudioContext = null;
+        if (_voiceAudioEl) {
+            _voiceAudioEl.srcObject = null;
+            _voiceAudioEl = null;
         }
-        if (_voiceWs) {
-            _voiceWs.close();
-            _voiceWs = null;
-        }
-        _voicePlaybackQueue.length = 0;
-        _voicePlaybackPlaying = false;
         _voiceSdk = null;
         _dispatchVoiceEvent('stopped', {});
     }
@@ -1539,7 +1433,7 @@ export class Traits {
      * @returns {boolean}
      */
     isVoiceActive() {
-        return _voiceWs !== null && _voiceWs.readyState === WebSocket.OPEN;
+        return _voiceDc !== null && _voiceDc.readyState === 'open';
     }
 
     /**
