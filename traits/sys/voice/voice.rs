@@ -98,7 +98,11 @@ fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
                             let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("?");
                             let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
                             // Truncate long messages for voice context
-                            let short = if content.len() > 200 { &content[..200] } else { content };
+                            let short = if content.len() > 200 {
+                                let mut end = 200;
+                                while !content.is_char_boundary(end) { end -= 1; }
+                                &content[..end]
+                            } else { content };
                             ctx.push_str(&format!("  {}: {}\n", role, short));
                         }
                         parts.push(ctx);
@@ -360,7 +364,9 @@ fn realtime_session(api_key: &str, model: &str, voice_name: &str, instructions: 
 
                         // Truncate very long results for voice context
                         let output = if result.len() > 2000 {
-                            format!("{}…(truncated)", &result[..2000])
+                            let mut end = 2000;
+                            while !result.is_char_boundary(end) { end -= 1; }
+                            format!("{}…(truncated)", &result[..end])
                         } else {
                             result
                         };

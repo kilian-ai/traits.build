@@ -501,6 +501,30 @@
     {
       "content": "soll. Hast du eine bestimmte Struktur oder ein Interface im Kopf?",
       "role": "user"
+    },
+    {
+      "content": "Wir könnten es so machen, dass du den Befehl oder die Aufgabe einfach beschreibst. Das Coding-Modell übersetzt das dann in Shell-Kommandos oder Skripte. Diese könnten wir dann prüfen und anschließend ausführen. Das Interface wäre also einfach eine Eingabe deiner Beschreibung. Würde sowas für dich passen?",
+      "role": "assistant"
+    },
+    {
+      "content": "Bye.",
+      "role": "user"
+    },
+    {
+      "content": "Yeah, I can know.",
+      "role": "user"
+    },
+    {
+      "content": "Aber kannst du schon",
+      "role": "user"
+    },
+    {
+      "content": "Dateien schreiben.",
+      "role": "user"
+    },
+    {
+      "content": "Ich kann dir dabei helfen, den grundlegenden Ablauf zu entwerfen. Wir würden erstmal ein Grundgerüst erstellen, das deine Eingaben annimmt, sie an ein Coding-Modell weitergibt und dann die generierten Shell-Befehle ausführt. Das Ganze packen wir dann in eine übersichtliche Struktur, so dass du es leicht erweitern kannst. Wenn du magst, können wir das Schritt für Schritt machen. Weißt du schon, welche Art von Befehlen du hauptsächlich brauchst?",
+      "role": "assistant"
     }
   ],
   "model": "",
