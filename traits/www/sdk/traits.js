@@ -257,7 +257,19 @@ async function _ensureVoiceApiKey(traits) {
             }
         } catch(e) {}
     }
-    // Try from localStorage (for development)
+    // Try from Settings page secrets (localStorage['traits.secret.OPENAI_API_KEY'])
+    try {
+        const settingsKey = localStorage.getItem('traits.secret.OPENAI_API_KEY');
+        if (settingsKey) {
+            _voiceApiKey = settingsKey;
+            // Also inject into WASM kernel so sys.secrets can resolve it
+            if (wasm && wasm.set_secret) {
+                try { wasm.set_secret('openai_api_key', settingsKey); } catch(e) {}
+            }
+            return _voiceApiKey;
+        }
+    } catch(e) {}
+    // Try from legacy localStorage key (for development)
     try {
         const stored = localStorage.getItem('traits.voice.api_key');
         if (stored) {
