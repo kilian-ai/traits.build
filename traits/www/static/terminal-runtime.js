@@ -663,6 +663,20 @@ async function createTerminal(mountEl, opts = {}) {
         });
     });
 
+    // ── External terminal input (sys.spa "terminal" action) ──
+    window.addEventListener('traits-terminal-input', (e) => {
+        const text = e.detail?.data;
+        if (!text || !backgroundCall || restPending) return;
+        ioChain = ioChain.then(async () => {
+            const inputRes = await backgroundCall('cli_input', { data: text });
+            if (!inputRes?.ok) return;
+            const output = inputRes.result || '';
+            if (output) term.write(output);
+        }).catch(e => {
+            console.error('[terminal] external input error:', e);
+        });
+    });
+
     // ── Restore history + VFS into WASM session ──
     const savedHistory = localStorage.getItem(LS_HISTORY);
     if (savedHistory && backgroundCall) {

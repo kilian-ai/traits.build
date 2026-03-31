@@ -1,0 +1,23 @@
+[trait]
+description = "SPA session control — navigate pages, click elements, type into fields/terminal, query DOM, evaluate JS"
+version = "v260331"
+checksum = "3f8c94b2227546aeab52da8462953fbe7bbb8e194064abb9e2616f8a7000603d"
+author = "system"
+tags = ["sys", "spa", "browser", "navigation", "ui"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "Action: navigate, click, type, terminal, query, eval, route", required = true },
+  { name = "target", type = "string", description = "Route path (navigate), CSS selector (click/type/query), text (terminal), or JS code (eval)", required = false },
+  { name = "value", type = "string", description = "Text to type (for type action)", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "Action result with ok status and spa_action descriptor"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "spa"
+wasm = true

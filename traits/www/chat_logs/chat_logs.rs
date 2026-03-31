@@ -315,7 +315,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
+  opacity: 0.28;
   transition: opacity 0.15s, background 0.15s;
   z-index: 1;
 }
@@ -740,12 +740,14 @@ async function runLearningExtraction(backgroundRun = false) {
   const model = document.getElementById('modelInput').value.trim() || 'gpt-4o-mini';
   const method = document.getElementById('methodSelect').value;
   const resultBox = document.getElementById('learningResult');
+  const runBtn = document.getElementById('runLearningBtn');
   if (!workspaceId || !instruction) {
     resultBox.textContent = 'Workspace and instruction are required.';
     return;
   }
   if (!backgroundRun) {
     resultBox.textContent = 'Running extraction...';
+    if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Running...'; }
   }
   try {
     const args = [workspaceId, instruction, outputPath];
@@ -754,10 +756,27 @@ async function runLearningExtraction(backgroundRun = false) {
     else args.push(null);
     args.push(method, model);
     const result = await traitsCall('sys/chat_learnings', args);
-    resultBox.textContent = JSON.stringify(result, null, 2);
+    renderExtractionResult(resultBox, result);
   } catch (error) {
-    resultBox.textContent = error.message;
+    resultBox.textContent = `Error: ${error.message}`;
+  } finally {
+    if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Run extraction'; }
   }
+}
+
+function renderExtractionResult(box, result) {
+  if (!result.ok) {
+    box.textContent = `Failed: ${result.error || JSON.stringify(result)}`;
+    return;
+  }
+  if (result.new_comment_count === 0) {
+    box.textContent = `No new sessions to scan — already up to date.\n\nOutput: ${result.output_path}`;
+    return;
+  }
+  const lines = [];
+  lines.push(`Scanned ${result.new_comment_count} new comment(s) → ${result.learning_count} learning(s)\nAppended to: ${result.output_path}\n`);
+  if (result.response) lines.push(result.response);
+  box.textContent = lines.join('\n');
 }
 
 function toggleAutoScan() {

@@ -1,0 +1,25 @@
+{
+  "trait": "www.homepage",
+  "features": [
+    {
+      "name": "Returns HTML with interactive homepage",
+      "tests": [
+        {
+          "type": "contains",
+          "command": "traits call www.homepage",
+          "expected": "hp-logo"
+        },
+        {
+          "type": "contains",
+          "command": "traits call www.homepage",
+          "expected": "traits.build"
+        },
+        {
+          "type": "contains",
+          "command": "traits call www.homepage",
+          "expected": "hero-btn"
+        }
+      ]
+    }
+  ]
+}

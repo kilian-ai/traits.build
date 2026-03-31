@@ -1588,6 +1588,14 @@ class Traits {
                                     }).catch(() => {});
                                 }
                             }
+
+                            // After sys.spa actions: fire event for SPA bridge to execute
+                            if (funcName === 'sys_spa' && result.ok) {
+                                const r = result.result || result;
+                                if (r.spa_action) {
+                                    window.dispatchEvent(new CustomEvent('traits-spa-action', { detail: r }));
+                                }
+                            }
                         }).catch(e => {
                             if (_voiceDc && _voiceDc.readyState === 'open') {
                                 _voiceDc.send(JSON.stringify({
@@ -1908,6 +1916,14 @@ class Traits {
 
                             if (opts.onToolResult) opts.onToolResult(funcName, truncated);
                             _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
+
+                            // After sys.spa actions: fire event for SPA bridge to execute
+                            if (funcName === 'sys_spa' && toolResult.ok) {
+                                const r = toolResult.result || toolResult;
+                                if (r.spa_action) {
+                                    window.dispatchEvent(new CustomEvent('traits-spa-action', { detail: r }));
+                                }
+                            }
 
                             // Add tool response to history
                             history.push({ role: 'tool', tool_call_id: toolCallId, content: truncated });

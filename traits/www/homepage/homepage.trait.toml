@@ -1,0 +1,19 @@
+[trait]
+description = "Interactive voice-driven homepage for traits.build"
+version = "v260331.193553"
+checksum = "55249163b1e33a470044591f64e0e33232b22e7006d9eff0395102ff2b67bce5"
+author = "system"
+tags = ["www", "webpage", "homepage"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "Interactive HTML homepage with voice onboarding"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "homepage"
+wasm = true

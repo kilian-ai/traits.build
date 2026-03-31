@@ -461,6 +461,62 @@ document.addEventListener('click', e => {
   }
 });
 
+// ── SPA control bridge — executes actions from sys.spa trait via CustomEvent ──
+window.addEventListener('traits-spa-action', async (e) => {
+  const d = e.detail || {};
+  const action = d.spa_action;
+  let result = { ok: true };
+  try {
+    if (action === 'navigate') {
+      await navigate(d.route || '/');
+      result.navigated = d.route;
+    } else if (action === 'click') {
+      const el = document.querySelector(d.selector);
+      if (el) { el.click(); result.clicked = d.selector; }
+      else { result = { ok: false, error: `Element not found: ${d.selector}` }; }
+    } else if (action === 'type') {
+      const el = document.querySelector(d.selector);
+      if (el) {
+        el.focus();
+        el.value = d.text || '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        result.typed = { selector: d.selector, text: d.text };
+      } else { result = { ok: false, error: `Element not found: ${d.selector}` }; }
+    } else if (action === 'terminal') {
+      // Navigate to terminal if not there, then send keystrokes
+      if (currentRoute !== '/terminal') await navigate('/terminal');
+      // Small delay to let terminal initialize, then dispatch input
+      setTimeout(() => {
+        const text = (d.text || '') + '\r';
+        window.dispatchEvent(new CustomEvent('traits-terminal-input', { detail: { data: text } }));
+      }, currentRoute !== '/terminal' ? 500 : 50);
+      result.terminal = d.text;
+    } else if (action === 'query') {
+      const el = document.querySelector(d.selector);
+      if (el) {
+        result.found = true;
+        result.tag = el.tagName.toLowerCase();
+        result.text = (el.textContent || '').slice(0, 500);
+        result.value = el.value !== undefined ? el.value : null;
+        result.visible = el.offsetParent !== null;
+        result.id = el.id || null;
+        result.classes = el.className || null;
+      } else { result.found = false; }
+    } else if (action === 'eval') {
+      result.value = (new Function(d.script))();
+      if (result.value instanceof Promise) result.value = await result.value;
+    } else if (action === 'route') {
+      result.route = currentRoute;
+      result.routes = Object.keys(ROUTES);
+    }
+  } catch (err) {
+    result = { ok: false, error: err.message };
+  }
+  // Store result for SDK to pick up
+  window._spaActionResult = result;
+});
+
 // ── Browser back/forward ──
 window.addEventListener('popstate', e => {
   const route = e.state?.route || currentRouteFromLocation();

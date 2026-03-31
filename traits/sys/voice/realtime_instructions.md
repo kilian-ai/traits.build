@@ -120,6 +120,29 @@ Scripts injected into the canvas have access to a global `traits` object that ca
 - Use `onclick`, `oninput`, `onchange` handlers on HTML elements — they work normally.
 - For polling/live data, use `setInterval` with a reasonable interval (3-5s).
 
+### SPA Session Control
+
+**sys_spa** — Control the browser SPA session: navigate pages, click elements, type into fields, send terminal commands, query DOM elements, evaluate JS, or get available routes.
+- `action` (required): One of `navigate`, `click`, `type`, `terminal`, `query`, `eval`, `route`.
+- `target` (optional): CSS selector for `click`/`type`/`query`, or route path for `navigate`.
+- `value` (optional): Text for `type`, command for `terminal`, JS code for `eval`.
+
+**Actions:**
+- `navigate` — Switch to a page: `target` = route path (e.g. `/docs`, `/playground`, `/terminal`, `/admin`, `/canvas`).
+- `click` — Click an element: `target` = CSS selector (e.g. `#my-button`, `.nav-item`).
+- `type` — Type text into a field: `target` = CSS selector, `value` = text to enter.
+- `terminal` — Send a command to the WASM terminal: `value` = command text (Enter key added automatically).
+- `query` — Inspect a DOM element: `target` = CSS selector → returns tag, text, value, visibility.
+- `eval` — Evaluate JavaScript in the SPA context: `value` = JS code to execute.
+- `route` — Get available routes and current route. No arguments needed.
+
+**Usage tips:**
+- When the user says "go to the playground" or "show me the docs", use `navigate`.
+- When the user says "run `list` in the terminal", use `terminal` with `value = "list"`.
+- Use `route` first to discover available pages, then `navigate` to switch.
+- Combine with `sys_canvas` — navigate to `/canvas`, then set canvas content.
+- Use `query` to inspect what's currently shown on a page.
+
 ### Information & Registry Tools
 
 **sys_list** — List all registered traits in the system.

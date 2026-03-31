@@ -1,0 +1,49 @@
+{
+  "features": [
+    {
+      "name": "navigate to a page",
+      "examples": [
+        {
+          "input": { "args": ["navigate", "/canvas"] },
+          "output": { "contains": "\"spa_action\":\"navigate\"" }
+        }
+      ]
+    },
+    {
+      "name": "get current route",
+      "examples": [
+        {
+          "input": { "args": ["route"] },
+          "output": { "contains": "\"spa_action\":\"route\"" }
+        }
+      ]
+    },
+    {
+      "name": "type into terminal",
+      "examples": [
+        {
+          "input": { "args": ["terminal", "traits list"] },
+          "output": { "contains": "\"spa_action\":\"terminal\"" }
+        }
+      ]
+    },
+    {
+      "name": "click an element",
+      "examples": [
+        {
+          "input": { "args": ["click", "#myButton"] },
+          "output": { "contains": "\"spa_action\":\"click\"" }
+        }
+      ]
+    },
+    {
+      "name": "query DOM element",
+      "examples": [
+        {
+          "input": { "args": ["query", "h1"] },
+          "output": { "contains": "\"spa_action\":\"query\"" }
+        }
+      ]
+    }
+  ]
+}
