@@ -455,6 +455,14 @@ export async function createTerminal(mountEl, opts = {}) {
                                         if (text) term.write(`\x1b[97m📋 ${text}\x1b[0m\r\n`);
                                     } catch(_) {}
                                 }
+                                // sys.canvas: show brief confirmation in terminal
+                                if (name === 'sys_canvas') {
+                                    try {
+                                        const r = JSON.parse(resultStr);
+                                        const act = r.action || r.result?.action || '';
+                                        if (act) term.write(`\x1b[96m🎨 canvas ${act} (${r.length || r.result?.length || 0} bytes)\x1b[0m\r\n`);
+                                    } catch(_) {}
+                                }
                             },
                             onError: (msg) => {
                                 term.write(`\x1b[31mVoice error: ${msg}\x1b[0m\r\n`);

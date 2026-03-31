@@ -261,6 +261,218 @@
     {
       "content": "It looks like there aren't direct tools specifically for Spotify control listed right now. You might want to check other ways, like using external APIs or commands. Would you like help with something else?",
       "role": "assistant"
+    },
+    {
+      "content": "Can you see the Spotify tools?",
+      "role": "user"
+    },
+    {
+      "content": "Yes, I can interact with Spotify tools—like playing a song, pausing, skipping tracks, and adjusting volume. What would you like to do?",
+      "role": "assistant"
+    },
+    {
+      "content": "play a nice morning tune",
+      "role": "user"
+    },
+    {
+      "content": "All right, I'll start playing a nice morning tune now. Let me know if you'd like to adjust anything.",
+      "role": "assistant"
+    },
+    {
+      "content": "Play that morning coffee list.",
+      "role": "user"
+    },
+    {
+      "content": "Playing the morning coffee playlist now. Let me know if you need anything else.",
+      "role": "assistant"
+    },
+    {
+      "content": "you",
+      "role": "user"
+    },
+    {
+      "content": "You're welcome! I'll pause here if you need anything else—just let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "We went from coffee to dinner, to breakfast in bed, to midnight snacks, to morning sex, now it's Sunday.",
+      "role": "user"
+    },
+    {
+      "content": "It sounds like you're describing some strong emotions. If you're feeling overwhelmed or need support, it might help to talk to someone you trust or a professional. I'm here to help if you'd like to explore that further.",
+      "role": "assistant"
+    },
+    {
+      "content": "BAM BAM It hurts so bad, oh it's Monday morning And I don't wanna be alone",
+      "role": "user"
+    },
+    {
+      "content": "I'm sorry you're feeling this way. It can be tough to start the week. If you want to talk more about it or need some resources, I’m here to help.",
+      "role": "assistant"
+    },
+    {
+      "content": "It's the song.",
+      "role": "user"
+    },
+    {
+      "content": "Got it. That sounds like it could be a song you're looking for. I can help find it or play a similar track—just let me know the artist or any more details.",
+      "role": "assistant"
+    },
+    {
+      "content": "Just to have music real quick.",
+      "role": "user"
+    },
+    {
+      "content": "The track currently playing is \"Morning Coffee\" by Ziggy Jones. It's about 54 seconds in.",
+      "role": "assistant"
+    },
+    {
+      "content": "Pause it.",
+      "role": "user"
+    },
+    {
+      "content": "Playback is now paused. Let me know if you'd like to resume or need anything else.",
+      "role": "assistant"
+    },
+    {
+      "content": "quit",
+      "role": "user"
+    },
+    {
+      "content": "Alright, I'll start playing some reggae music now. Let me know if you have a specific song or artist in mind.",
+      "role": "assistant"
+    },
+    {
+      "content": "Play some Reggae",
+      "role": "user"
+    },
+    {
+      "content": "I like it.",
+      "role": "user"
+    },
+    {
+      "content": "Great! If you'd like to adjust anything—like volume or switch tracks—just let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "Volume up!",
+      "role": "user"
+    },
+    {
+      "content": "Volume is now turned up to 70. Let me know if that’s good or if you’d like to adjust it further.",
+      "role": "assistant"
+    },
+    {
+      "content": "Sure, I'll keep it at that level for now. If you need anything else, just let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "out. Speaker 1 And we have just one more question and then we have a roll call. ... ... ... ... ... ... ... ...",
+      "role": "user"
+    },
+    {
+      "content": "Got it, I'll keep it steady. If you want to adjust anything else, let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "Bye-bye. Bye.",
+      "role": "user"
+    },
+    {
+      "content": "We turn it up to 100.",
+      "role": "user"
+    },
+    {
+      "content": "Volume is now turned up to 100. Let me know if you need anything else.",
+      "role": "assistant"
+    },
+    {
+      "content": "So",
+      "role": "user"
+    },
+    {
+      "content": "Sure, I’ll lower it a bit. How about around 70?",
+      "role": "assistant"
+    },
+    {
+      "content": "Volume is back to 70. Let me know if it sounds better now.",
+      "role": "assistant"
+    },
+    {
+      "content": "Bye.",
+      "role": "user"
+    },
+    {
+      "content": "Can you like the song?",
+      "role": "user"
+    },
+    {
+      "content": "I can't actually listen to the music, but I’m glad it’s playing. If you have any feedback or need help with anything else, let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "get added to the library.",
+      "role": "user"
+    },
+    {
+      "content": "It sounds like you're asking to add the song to your library. I can guide you on how to do that. Are you using Spotify?",
+      "role": "assistant"
+    },
+    {
+      "content": "Yes. Okay. Thank you.",
+      "role": "user"
+    },
+    {
+      "content": "Got it. If you're on Spotify, you can usually tap the \"heart\" icon or select \"Save to Library\" to add the song. Let me know if you need more details.",
+      "role": "assistant"
+    },
+    {
+      "content": "You're right, it's often a plus button now. Just click that to save it to your library. If you need help finding it, let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "DTG is a plus button these days.",
+      "role": "user"
+    },
+    {
+      "content": "No problem! Take your time, and if you need anything else, just let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "Bye.",
+      "role": "user"
+    },
+    {
+      "content": "What's the song singing about?",
+      "role": "user"
+    },
+    {
+      "content": "“Welcome to Jamrock” by Damian Marley talks about social issues, inequality, and the realities of life in Jamaica, blended with strong beats and powerful lyrics. If you'd like more details, I can help.",
+      "role": "assistant"
+    },
+    {
+      "content": "or did you listen to that?",
+      "role": "user"
+    },
+    {
+      "content": "I don't actually listen to the music myself, but I can help by providing information about the lyrics or the song. If you have any specific questions, feel free to ask.",
+      "role": "assistant"
+    },
+    {
+      "content": "Jamaica, Jamaica.",
+      "role": "user"
+    },
+    {
+      "content": "It does have a powerful message about life in Jamaica, blending social commentary with strong rhythms. If you want to dive deeper into the lyrics, just let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "You should quit now.",
+      "role": "user"
+    },
+    {
+      "content": "I'm here to help whenever you need. If you’d like to end the chat, just let me know, and I'll wrap up.",
+      "role": "assistant"
     }
   ],
   "model": "test-model",

@@ -1,0 +1,22 @@
+[trait]
+description = "Dynamic HTML/JS canvas — set, append, get, or clear content for live rendering on the SPA canvas page"
+version = "v260331"
+checksum = "1ce3632b5ba3a8a379f53a9919c5a82b1b008df4d2730eee82dc168b28100397"
+author = "system"
+tags = ["sys", "canvas", "display", "html"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "Action: set, append, get, clear", required = true },
+  { name = "content", type = "string", description = "HTML/JS content (for set/append)", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "Result with ok, action, content (for get), and length"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "canvas"
+wasm = true

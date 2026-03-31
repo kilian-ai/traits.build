@@ -1,0 +1,19 @@
+[trait]
+description = "Live-rendering canvas page — displays dynamic HTML/JS content from sys.canvas"
+version = "v260331"
+checksum = "7c4b3c4340379b3ff73c2130ec695c9a95be4c030e59a3332b5ef1fd5c003650"
+author = "system"
+tags = ["www", "canvas", "display"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML canvas page"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "canvas"
+wasm = true

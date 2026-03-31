@@ -1,0 +1,13 @@
+{
+  "features": [
+    {
+      "name": "renders canvas page",
+      "examples": [
+        {
+          "input": { "args": [] },
+          "output": { "contains": "canvas-container" }
+        }
+      ]
+    }
+  ]
+}

@@ -60,6 +60,21 @@ You have MCP function-calling tools that map to traits in the traits.build platf
 - `text` (required): The text to display (links, code, file paths, commands, etc.).
 - **Use this proactively** whenever you mention a URL, file path, code snippet, command, or anything visual. Say the gist aloud, then call sys_echo to show the exact text. Example: say "here's the link" and call sys_echo with the URL.
 
+**sys_canvas** — Dynamic visual canvas. Inject HTML/CSS/JS to render live content on the Canvas page.
+- `action` (required): `set` | `append` | `get` | `clear`
+- `content` (optional): HTML/CSS/JS content string (for `set` and `append`).
+- **Use `set` to replace the entire canvas** with new HTML/JS. The content is rendered live on the /#/canvas page.
+- **Use `append` to add content** to the existing canvas without replacing it.
+- Use `get` to read the current canvas content. Use `clear` to reset it.
+- **When the user asks you to draw, visualize, create a UI, or show something graphical**, use this tool. Generate complete HTML+CSS+inline JS. Examples:
+  - "Draw a red circle" → `set` with an SVG or canvas element
+  - "Make it draggable" → `set` with updated HTML that includes drag event handlers
+  - "Add a title" → `set` with the previous content plus a heading
+  - "Show a chart" → `set` with a canvas/SVG chart rendered via inline JS
+- **Always use `set` (not `append`) for interactive content** — this ensures the full page state is coherent.
+- The content supports full HTML, `<style>` tags, `<script>` tags, SVG, and Canvas API.
+- Tell the user to navigate to the Canvas page (/#/canvas) if they aren't already there.
+
 ### Information & Registry Tools
 
 **sys_list** — List all registered traits in the system.

@@ -1,0 +1,147 @@
+use serde_json::Value;
+use maud::{html, DOCTYPE, PreEscaped};
+
+pub fn canvas(_args: &[Value]) -> Value {
+    let markup = html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="UTF-8";
+                meta name="viewport" content="width=device-width, initial-scale=1.0";
+                title { "traits.build — Canvas" }
+                style {
+                    (PreEscaped(r#"
+                        :root { --bg: #0a0a0a; --fg: #e0e0e0; --accent: #00e0ff; --border: #222; }
+                        * { box-sizing: border-box; margin: 0; padding: 0; }
+                        body { background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; }
+                        .canvas-header {
+                            display: flex; align-items: center; justify-content: space-between;
+                            padding: 12px 20px; border-bottom: 1px solid var(--border);
+                            background: #111;
+                        }
+                        .canvas-header h1 { font-size: 16px; font-weight: 500; }
+                        .canvas-header h1 .accent { color: var(--accent); }
+                        .canvas-header .actions { display: flex; gap: 8px; }
+                        .canvas-header button {
+                            background: transparent; border: 1px solid var(--border);
+                            color: var(--fg); padding: 4px 12px; border-radius: 4px;
+                            cursor: pointer; font-size: 12px;
+                        }
+                        .canvas-header button:hover { border-color: var(--accent); color: var(--accent); }
+                        #canvas-container {
+                            width: 100%; min-height: calc(100vh - 100px);
+                            padding: 20px; position: relative;
+                        }
+                        .canvas-empty {
+                            display: flex; flex-direction: column; align-items: center;
+                            justify-content: center; height: 60vh; color: #555;
+                        }
+                        .canvas-empty .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+                        .canvas-empty p { font-size: 14px; }
+                        .canvas-empty code { color: var(--accent); font-size: 13px; }
+                    "#))
+                }
+            }
+            body {
+                div .canvas-header {
+                    h1 { "traits.build " span .accent { "canvas" } }
+                    div .actions {
+                        button #btnClear { "Clear" }
+                        button #btnSource { "View Source" }
+                    }
+                }
+                div #canvas-container {
+                    div .canvas-empty #canvas-empty {
+                        div .icon { "🎨" }
+                        p { "Canvas is empty — use " code { "sys.canvas set \"<html>\"" } " or voice to draw." }
+                    }
+                }
+                script { (PreEscaped(r#"
+                    (function() {
+                        const container = document.getElementById('canvas-container');
+                        const empty = document.getElementById('canvas-empty');
+                        let sourceMode = false;
+
+                        function renderCanvas(content) {
+                            if (!content) {
+                                container.innerHTML = '';
+                                container.appendChild(empty);
+                                empty.style.display = 'flex';
+                                return;
+                            }
+                            empty.style.display = 'none';
+                            // Parse HTML
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(content, 'text/html');
+                            // Inject styles
+                            document.querySelectorAll('style[data-canvas]').forEach(s => s.remove());
+                            doc.querySelectorAll('style').forEach(style => {
+                                const s = document.createElement('style');
+                                s.dataset.canvas = '1';
+                                s.textContent = style.textContent;
+                                document.head.appendChild(s);
+                            });
+                            // Set body content
+                            container.innerHTML = doc.body.innerHTML;
+                            // Execute scripts
+                            container.querySelectorAll('script').forEach(old => {
+                                const s = document.createElement('script');
+                                Array.from(old.attributes).forEach(a => s.setAttribute(a.name, a.value));
+                                s.textContent = old.textContent;
+                                old.parentNode.replaceChild(s, old);
+                            });
+                        }
+
+                        async function loadCanvas() {
+                            try {
+                                const sdk = window._traitsSDK;
+                                if (!sdk) return;
+                                const res = await sdk.call('sys.canvas', ['get']);
+                                const content = res?.result?.content || res?.content || '';
+                                renderCanvas(content);
+                            } catch(e) { console.warn('canvas load:', e); }
+                        }
+
+                        // Listen for live updates from voice/SDK
+                        window.addEventListener('traits-canvas-update', (e) => {
+                            const content = e.detail?.content;
+                            if (content !== undefined) {
+                                renderCanvas(content);
+                            } else {
+                                loadCanvas();
+                            }
+                        });
+
+                        // Clear button
+                        document.getElementById('btnClear').addEventListener('click', async () => {
+                            const sdk = window._traitsSDK;
+                            if (sdk) await sdk.call('sys.canvas', ['clear']);
+                            renderCanvas('');
+                        });
+
+                        // View Source toggle
+                        document.getElementById('btnSource').addEventListener('click', async () => {
+                            sourceMode = !sourceMode;
+                            const btn = document.getElementById('btnSource');
+                            if (sourceMode) {
+                                const sdk = window._traitsSDK;
+                                const res = sdk ? await sdk.call('sys.canvas', ['get']) : null;
+                                const content = res?.result?.content || res?.content || '';
+                                container.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;color:#888;font-size:13px;padding:20px;"></pre>';
+                                container.querySelector('pre').textContent = content || '(empty)';
+                                btn.textContent = 'Live View';
+                            } else {
+                                btn.textContent = 'View Source';
+                                loadCanvas();
+                            }
+                        });
+
+                        // Initial load
+                        loadCanvas();
+                    })();
+                "#)) }
+            }
+        }
+    };
+    Value::String(markup.into_string())
+}

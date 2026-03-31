@@ -1,0 +1,31 @@
+{
+  "features": [
+    {
+      "name": "set canvas content",
+      "examples": [
+        {
+          "input": { "args": ["set", "<h1>Hello</h1>"] },
+          "output": { "contains": "\"ok\":true" }
+        }
+      ]
+    },
+    {
+      "name": "get canvas content",
+      "examples": [
+        {
+          "input": { "args": ["get"] },
+          "output": { "contains": "\"ok\":true" }
+        }
+      ]
+    },
+    {
+      "name": "clear canvas",
+      "examples": [
+        {
+          "input": { "args": ["clear"] },
+          "output": { "contains": "\"ok\":true" }
+        }
+      ]
+    }
+  ]
+}

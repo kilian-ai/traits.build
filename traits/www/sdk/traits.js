@@ -1390,6 +1390,19 @@ export class Traits {
                             if (opts.onToolResult) opts.onToolResult(funcName, truncated);
                             _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
 
+                            // After sys.canvas changes: fire live update event for canvas page
+                            if (funcName === 'sys_canvas' && result.ok) {
+                                const r = result.result || result;
+                                if (r.action === 'set' || r.action === 'append' || r.action === 'clear') {
+                                    this.call('sys.canvas', ['get']).then(getRes => {
+                                        const content = getRes?.result?.content ?? getRes?.content ?? '';
+                                        window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
+                                    }).catch(() => {
+                                        window.dispatchEvent(new CustomEvent('traits-canvas-update', {}));
+                                    });
+                                }
+                            }
+
                             // After sys.voice.instruct changes: persist to localStorage + live session.update
                             if (funcName === 'sys_voice_instruct' && result.ok) {
                                 const r = result.result || result;
