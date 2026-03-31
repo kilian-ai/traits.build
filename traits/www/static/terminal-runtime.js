@@ -463,7 +463,7 @@ async function createTerminal(mountEl, opts = {}) {
 
                     // ── Local voice mode (WebGPU: Whisper STT → LLM → Kokoro TTS) ──
                     if (useLocalVoice && browserVoiceSupported && webgpuAvailable) {
-                        term.write(`\x1b[90mStarting local voice (WebGPU)…\x1b[0m\r\n`);
+                        term.write(`\x1b[90mStarting local voice…\x1b[0m\r\n`);
                         term.write(`\x1b[90mFirst run downloads ~250 MB of AI models.\x1b[0m\r\n`);
 
                         activeSdk.startLocalVoice({

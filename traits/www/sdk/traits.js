@@ -186,7 +186,7 @@ async function _ensureSTT() {
             const { pipeline } = await _ensureTransformers();
             _localVoiceProgress('Loading Whisper STT model (first run downloads ~150 MB)…');
             _sttPipeline = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', {
-                device: 'webgpu',
+                device: 'wasm',
                 dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
                 progress_callback: (p) => {
                     const status = p.status || '';

@@ -34,14 +34,28 @@ pub fn interact(args: &[Value]) -> Value {
     }
 
     // Write the Playwright script to a temp file
-    let script = build_playwright_script(&url, &actions, headless);
-    let script_path = std::env::temp_dir().join(format!(
-        "traits-pw-{}.mjs",
+      let node_path = match find_node() {
+        Some(p) => p,
+        None => return json!({
+          "ok": false,
+          "error": "Node.js not found. Install Node.js (https://nodejs.org/) to use browser.interact."
+        }),
+      };
+      let node_modules_path = match find_playwright_node_modules(&node_path) {
+        Some(p) => p,
+        None => return json!({
+          "ok": false,
+          "error": "Playwright not found. Install with:\n  npm install playwright\n  npx playwright install chromium"
+        }),
+      };
+      let script = build_playwright_script(&url, &actions, headless);
+      let script_path = std::env::temp_dir().join(format!(
+        "traits-pw-{}.cjs",
         std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_micros()
-    ));
+          .duration_since(std::time::UNIX_EPOCH)
+          .unwrap_or_default()
+          .as_micros()
+      ));
 
     {
         let mut f = match std::fs::File::create(&script_path) {
@@ -55,6 +69,7 @@ pub fn interact(args: &[Value]) -> Value {
 
     let out = Command::new(&node_path)
         .arg(&script_path)
+        .env("NODE_PATH", &node_modules_path)
         .output();
 
     let _ = std::fs::remove_file(&script_path);
@@ -137,6 +152,41 @@ try {
     }
 }
 
+    fn find_playwright_node_modules(node_path: &str) -> Option<String> {
+      let check = Command::new(node_path)
+        .args(["-e", "try { process.stdout.write(require.resolve('playwright/package.json')); } catch(e) { process.exit(1); }"])
+        .output()
+        .ok()?;
+      if check.status.success() {
+        let pkg_path = String::from_utf8_lossy(&check.stdout).into_owned();
+        if let Some(pos) = pkg_path.rfind("/playwright/package.json") {
+          return Some(pkg_path[..pos].to_string());
+        }
+      }
+      let mut probe: Vec<String> = vec![
+        "/opt/homebrew/lib/node_modules".into(),
+        "/usr/local/lib/node_modules".into(),
+        "/usr/lib/node_modules".into(),
+      ];
+      if let Ok(home) = std::env::var("HOME") {
+        probe.push(format!("{}/node_modules", home));
+      }
+      if let Ok(cwd) = std::env::current_dir() {
+        let mut dir = cwd.as_path();
+        for _ in 0..6 {
+          probe.push(format!("{}/node_modules", dir.display()));
+          if let Some(p) = dir.parent() { dir = p; } else { break; }
+        }
+      }
+      for path in &probe {
+        if std::path::Path::new(&format!("{}/playwright/package.json", path)).exists()
+          || std::path::Path::new(&format!("{}/@playwright/test/package.json", path)).exists()
+        {
+          return Some(path.clone());
+        }
+      }
+      None
+    }
 fn build_playwright_script(url: &str, actions: &Value, headless: bool) -> String {
     let actions_json = actions.to_string();
     let headless_str = if headless { "true" } else { "false" };
