@@ -126,7 +126,7 @@ fn main() {
     bt.push_str("];\n");
 
     // ── Generate BUILTIN_DOCS ──
-    // Embeds docs/*.md files so the browser VFS can serve them for context injection.
+    // Embeds docs/*.md files + trait-specific .md files for browser VFS.
     // Tuple: (vfs_rel_path, content)
     bt.push_str("\npub const BUILTIN_DOCS: &[(&str, &str)] = &[\n");
     let docs_dir = root_dir.join("docs");
@@ -140,6 +140,22 @@ fn main() {
                 bt.push_str(&format!(
                     "    ({:?}, include_str!({:?})),\n",
                     rel_str, doc_path.to_string_lossy()
+                ));
+            }
+        }
+    }
+    // Also bundle .md files from traits/ directories (e.g. voice instructions)
+    let traits_dir = root_dir.join("traits");
+    if traits_dir.is_dir() {
+        let mut trait_md_paths: Vec<PathBuf> = Vec::new();
+        collect_md_files(&traits_dir, &mut trait_md_paths);
+        trait_md_paths.sort();
+        for md_path in &trait_md_paths {
+            if let Ok(rel) = md_path.strip_prefix(root_dir) {
+                let rel_str = rel.to_string_lossy().to_string();
+                bt.push_str(&format!(
+                    "    ({:?}, include_str!({:?})),\n",
+                    rel_str, md_path.to_string_lossy()
                 ));
             }
         }

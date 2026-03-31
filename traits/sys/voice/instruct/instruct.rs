@@ -1,11 +1,16 @@
 use serde_json::{json, Value};
+use std::sync::Mutex;
 
 /// The compiled-in default instructions.
 const DEFAULT_INSTRUCTIONS: &str = include_str!("../realtime_instructions.md");
 
-/// Config namespace for storing custom instructions.
+/// Config namespace for storing custom instructions (native only — uses sys.config).
 const CONFIG_NS: &str = "sys.voice";
 const CONFIG_KEY: &str = "custom_instructions";
+
+/// In-memory custom instructions (works on both native and WASM).
+/// On WASM this is the only store; on native it mirrors sys.config for fast reads.
+static CUSTOM_INSTRUCTIONS: Mutex<Option<String>> = Mutex::new(None);
 
 /// sys.voice.instruct — read, replace, or reset the voice agent instructions.
 ///
@@ -55,6 +60,13 @@ pub fn voice_instruct(args: &[Value]) -> Value {
 
 /// Read current instructions. Returns (text, "custom"|"default").
 pub fn read_instructions() -> (String, &'static str) {
+    // 1. Check in-memory override first (always available, including WASM)
+    if let Ok(guard) = CUSTOM_INSTRUCTIONS.lock() {
+        if let Some(ref custom) = *guard {
+            return (custom.clone(), "custom");
+        }
+    }
+    // 2. Try sys.config (native only — returns None on WASM)
     if let Some(custom) = kernel_logic::platform::dispatch(
         "sys.config",
         &[json!("get"), json!(CONFIG_NS), json!(CONFIG_KEY)],
@@ -69,6 +81,11 @@ pub fn read_instructions() -> (String, &'static str) {
 }
 
 fn write_instructions(text: &str) {
+    // Store in memory (works on both native and WASM)
+    if let Ok(mut guard) = CUSTOM_INSTRUCTIONS.lock() {
+        *guard = Some(text.to_string());
+    }
+    // Also persist to sys.config (native only — silently no-ops on WASM)
     kernel_logic::platform::dispatch(
         "sys.config",
         &[json!("set"), json!(CONFIG_NS), json!(CONFIG_KEY), json!(text)],
@@ -76,6 +93,11 @@ fn write_instructions(text: &str) {
 }
 
 fn clear_instructions() {
+    // Clear in-memory override
+    if let Ok(mut guard) = CUSTOM_INSTRUCTIONS.lock() {
+        *guard = None;
+    }
+    // Also clear from sys.config (native only)
     kernel_logic::platform::dispatch(
         "sys.config",
         &[json!("delete"), json!(CONFIG_NS), json!(CONFIG_KEY)],

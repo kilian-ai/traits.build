@@ -1262,6 +1262,25 @@ class Traits {
                 tools = await _buildVoiceTools(this);
             }
 
+            // ── Load custom voice instructions ──
+            // Priority: opts.instructions > localStorage custom > VFS bundled default
+            const LS_VOICE_INSTRUCTIONS = 'traits.voice.instructions';
+            let voiceInstructions = opts.instructions || '';
+            if (!voiceInstructions) {
+                try { voiceInstructions = (localStorage.getItem(LS_VOICE_INSTRUCTIONS) || '').trim(); } catch(_) {}
+            }
+            if (!voiceInstructions) {
+                // Try reading from WASM VFS (bundled realtime_instructions.md)
+                try {
+                    const vfsResult = await this.backgroundCall('vfs_read', { path: 'traits/sys/voice/realtime_instructions.md' });
+                    if (vfsResult?.ok && vfsResult.result) voiceInstructions = vfsResult.result;
+                } catch(_) {}
+            }
+            // Inject into WASM instruct trait so get/set work during the session
+            if (voiceInstructions) {
+                try { await this.call('sys.voice.instruct', ['set', voiceInstructions]); } catch(_) {}
+            }
+
             _dispatchVoiceEvent('started', { voice, model, tools: tools.length });
 
             // ── WebRTC peer connection ──
@@ -1280,34 +1299,13 @@ class Traits {
 
             // Handle data channel open — send session config
             _voiceDc.addEventListener('open', () => {
-                const defaultInstructions = `You are a concise, helpful voice assistant powered by the traits.build platform.
-
-Keep responses short and conversational — aim for 1–3 sentences unless the user asks for detail.
-Use natural spoken language. Avoid bullet points, markdown, code blocks, or structured formatting — the user is listening, not reading.
-When the user asks a technical question, give the answer directly. Don't over-explain unless asked to elaborate.
-If you don't know something, say so briefly. Don't hedge excessively.
-
-Be warm but not effusive. No filler greetings like "Great question!" or "Absolutely!".
-Mirror the user's energy — if they're terse, be terse. If they're chatty, match it.
-Use contractions naturally (I'm, you'll, that's, etc.).
-Avoid repeating the user's question back to them.
-
-Never output code blocks, URLs, file paths, or anything hard to speak aloud. If the user needs code, say "I can help with that — you'll want to check the docs or switch to text mode."
-For numbers, spell them out when short (e.g. "three" not "3"), use digits for long ones.
-Don't say "as an AI" or "as a language model." Just answer.
-
-Don't monologue. Pause after answering to let the user respond.
-If interrupted, stop immediately and listen to the new input.
-
-You're running in the browser on the traits.build platform. The user is a developer.
-You have access to function-calling tools that execute locally in the browser via WebAssembly.
-When the user asks you to do something and a matching tool exists, call it directly — don't say you can't.`;
+                const fallbackInstructions = 'You are a concise, helpful voice assistant. Keep responses short and conversational. You have access to function-calling tools that execute locally via WebAssembly.';
 
                 // WebRTC session.update: most session fields are immutable (locked at
                 // token creation). Only instructions and tools are mutable here.
                 const sessionConfig = {
                     type: 'realtime',
-                    instructions: opts.instructions || defaultInstructions,
+                    instructions: voiceInstructions || fallbackInstructions,
                 };
                 if (tools.length > 0) sessionConfig.tools = tools;
                 _voiceDc.send(JSON.stringify({ type: 'session.update', session: sessionConfig }));
@@ -1378,6 +1376,28 @@ When the user asks you to do something and a matching tool exists, call it direc
                             }
                             if (opts.onToolResult) opts.onToolResult(funcName, truncated);
                             _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
+
+                            // After sys.voice.instruct changes: persist to localStorage + live session.update
+                            if (funcName === 'sys_voice_instruct' && result.ok) {
+                                const r = result.result || result;
+                                if (r.action === 'set' || r.action === 'append' || r.action === 'reset') {
+                                    this.call('sys.voice.instruct', ['get']).then(getRes => {
+                                        const updated = getRes?.result?.instructions || getRes?.instructions || '';
+                                        if (updated) {
+                                            try { localStorage.setItem(LS_VOICE_INSTRUCTIONS, updated); } catch(_) {}
+                                            // Live-update the running voice session
+                                            if (_voiceDc && _voiceDc.readyState === 'open') {
+                                                _voiceDc.send(JSON.stringify({
+                                                    type: 'session.update',
+                                                    session: { type: 'realtime', instructions: updated }
+                                                }));
+                                            }
+                                        } else if (r.action === 'reset') {
+                                            try { localStorage.removeItem(LS_VOICE_INSTRUCTIONS); } catch(_) {}
+                                        }
+                                    }).catch(() => {});
+                                }
+                            }
                         }).catch(e => {
                             if (_voiceDc && _voiceDc.readyState === 'open') {
                                 _voiceDc.send(JSON.stringify({

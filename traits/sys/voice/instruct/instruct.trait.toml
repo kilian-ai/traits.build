@@ -1,7 +1,7 @@
 [trait]
 description = "Read, replace, or reset the voice agent's system instructions — the model can edit its own personality"
-version = "v260330"
-checksum = "65065a967d322f561ec802d8afac69224608c935d58c8e3ab1b9fc1ff9f59d80"
+version = "v260331"
+checksum = "c30c74c129cf36ad7b61dd50b9ba03fcf15aff24e741ce53c29d2b0f46524c31"
 author = "system"
 tags = ["sys", "voice", "instructions", "personality"]
 
@@ -19,3 +19,4 @@ description = "{ok: bool, instructions: string, source: 'custom'|'default'}"
 language = "rust"
 source = "builtin"
 entry = "voice_instruct"
+wasm = true
