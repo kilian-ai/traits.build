@@ -1,0 +1,49 @@
+{
+  "features": [
+    {
+      "name": "get current voice mode",
+      "examples": [
+        {
+          "input": { "args": ["get"] },
+          "output": { "contains": "\"voice_mode_action\":\"get\"" }
+        }
+      ]
+    },
+    {
+      "name": "set voice mode to realtime",
+      "examples": [
+        {
+          "input": { "args": ["set", "realtime"] },
+          "output": { "contains": "\"mode\":\"realtime\"" }
+        }
+      ]
+    },
+    {
+      "name": "set voice mode to local",
+      "examples": [
+        {
+          "input": { "args": ["set", "local"] },
+          "output": { "contains": "\"mode\":\"local\"" }
+        }
+      ]
+    },
+    {
+      "name": "check API key availability",
+      "examples": [
+        {
+          "input": { "args": ["has_key"] },
+          "output": { "contains": "\"voice_mode_action\":\"has_key\"" }
+        }
+      ]
+    },
+    {
+      "name": "invalid mode rejected",
+      "examples": [
+        {
+          "input": { "args": ["set", "invalid"] },
+          "output": { "contains": "\"ok\":false" }
+        }
+      ]
+    }
+  ]
+}

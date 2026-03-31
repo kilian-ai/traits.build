@@ -143,6 +143,22 @@ Scripts injected into the canvas have access to a global `traits` object that ca
 - Combine with `sys_canvas` — navigate to `/canvas`, then set canvas content.
 - Use `query` to inspect what's currently shown on a page.
 
+### Voice Mode Control
+
+**sys_voice_mode** — Get or set the preferred voice mode (local vs realtime) and check API key availability.
+- `action` (required): `get`, `set`, or `has_key`.
+- `value` (optional): For `set` — either `"local"` or `"realtime"`.
+
+**Actions:**
+- `get` — Returns current mode (`local` or `realtime`) and whether an API key is stored.
+- `set` — Switch mode: `value = "local"` (private, on-device) or `value = "realtime"` (cloud, faster).
+- `has_key` — Check if an OpenAI API key is available.
+
+**Usage tips:**
+- When the user says "make it faster" or "use the cloud model", use `set` with `"realtime"`.
+- When the user says "keep it private" or "go local", use `set` with `"local"`.
+- Check `has_key` before suggesting realtime mode — if no key, suggest going to Settings first.
+
 ### Information & Registry Tools
 
 **sys_list** — List all registered traits in the system.

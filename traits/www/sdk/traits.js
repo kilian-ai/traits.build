@@ -1595,6 +1595,14 @@ export class Traits {
                                     window.dispatchEvent(new CustomEvent('traits-spa-action', { detail: r }));
                                 }
                             }
+
+                            // After sys.voice.mode actions: fire event for voice mode bridge
+                            if (funcName === 'sys_voice_mode' && result.ok) {
+                                const r = result.result || result;
+                                if (r.voice_mode_action) {
+                                    window.dispatchEvent(new CustomEvent('traits-voice-mode', { detail: r }));
+                                }
+                            }
                         }).catch(e => {
                             if (_voiceDc && _voiceDc.readyState === 'open') {
                                 _voiceDc.send(JSON.stringify({
@@ -1921,6 +1929,14 @@ export class Traits {
                                 const r = toolResult.result || toolResult;
                                 if (r.spa_action) {
                                     window.dispatchEvent(new CustomEvent('traits-spa-action', { detail: r }));
+                                }
+                            }
+
+                            // After sys.voice.mode actions: fire event for voice mode bridge
+                            if (funcName === 'sys_voice_mode' && toolResult.ok) {
+                                const r = toolResult.result || toolResult;
+                                if (r.voice_mode_action) {
+                                    window.dispatchEvent(new CustomEvent('traits-voice-mode', { detail: r }));
                                 }
                             }
 

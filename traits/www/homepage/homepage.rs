@@ -251,7 +251,21 @@ body{background:#000;color:#fff}
     if(/\b(ai|developer|experience|code|coding|develop|first)\b/.test(t)) return 1;
     if(/\b(mobile|phone|device|run|running|tablet|android|ios|iphone)\b/.test(t)) return 2;
     if(/\b(private|open.?source|local|secure|privacy|extensible|free)\b/.test(t)) return 3;
+    if(/\b(fast|faster|quick|quicker|speed|realtime|real.?time|cloud|api|openai|gpt)\b/.test(t)) return 4;
     return 0;
+  }
+
+  /* ── check if OpenAI API key is stored ── */
+  function hasApiKey(){
+    try{
+      return !!((localStorage.getItem('traits.secret.OPENAI_API_KEY')||'').trim()
+             || (localStorage.getItem('traits.voice.api_key')||'').trim());
+    }catch(_){ return false; }
+  }
+
+  /* ── set voice mode ── */
+  function setVoiceMode(m){
+    try{ localStorage.setItem('traits.voice.mode', m); }catch(_){}
   }
 
   /* ════════════════════════════════════════
@@ -396,6 +410,40 @@ body{background:#000;color:#fff}
         $('hp-sub').textContent = 'Try another, or click to explore.';
         await wait(2500);
         if(dead) return;
+      } else if(sel===4){
+        /* "faster" intent — check for API key */
+        sparkle();
+        if(hasApiKey()){
+          $('hp-sub').textContent = 'API key found! Switching to realtime mode…';
+          await say('I see you already have an API key. Would you like me to switch to the faster realtime voice model? Just say yes.');
+          if(dead) return;
+
+          /* listen for confirmation */
+          $('hp-mic').classList.add('on');
+          $('hp-sub').textContent = 'Say yes to switch, or no to stay local.';
+          const confirm = await hear();
+          $('hp-mic').classList.remove('on');
+          if(dead) return;
+
+          if(confirm && /\b(yes|yeah|yep|sure|ok|okay|do it|switch|absolutely|please)\b/i.test(confirm)){
+            setVoiceMode('realtime');
+            $('hp-sub').textContent = 'Switched to realtime voice!';
+            await say('Done! Voice is now set to realtime mode. You will get faster, more natural responses using the cloud model.');
+          } else {
+            $('hp-sub').textContent = 'Staying in local mode.';
+            await say('No problem, keeping the local voice mode. Everything stays private on your device.');
+          }
+          if(dead) return;
+          await wait(2500);
+          if(dead) return;
+        } else {
+          $('hp-sub').textContent = '';
+          await say('For faster real time responses, you can add your OpenAI API key. Go to settings to store it securely in your browser. It never leaves your device.');
+          if(dead) return;
+          $('hp-sub').innerHTML = 'Visit <a href="#/settings" style="color:#7c5cfc;text-decoration:underline">Settings</a> to add your API key.';
+          await wait(3000);
+          if(dead) return;
+        }
       } else {
         $('hp-sub').textContent = '';
         await say('To have real time conversations on the platform, you can register, or add your personal OpenAI API key under settings, where it stays securely stored only in your browser.');

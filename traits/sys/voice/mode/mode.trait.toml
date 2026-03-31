@@ -1,0 +1,22 @@
+[trait]
+description = "Voice mode management — get/set preferred voice mode (local vs realtime) and check API key availability"
+version = "v260331.204338"
+checksum = "bda9162e9d1a381852e20676d4b13ae5ff1a09a76639a1eeab0bac1954aa9376"
+author = "system"
+tags = ["sys", "voice", "mode", "config"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "Action: get, set, has_key", required = true },
+  { name = "value", type = "string", description = "Mode value for set action: 'local' or 'realtime'", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "Mode status with ok, mode, has_key fields"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "mode"
+wasm = true
