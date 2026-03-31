@@ -1712,7 +1712,7 @@ export class Traits {
             const source = _localVoiceAudioCtx.createMediaStreamSource(_localVoiceStream);
 
             // ScriptProcessorNode for continuous audio capture + silence detection
-            _localVoiceProcessor = _localVoiceAudioCtx.createScriptProcessorNode(4096, 1, 1);
+            _localVoiceProcessor = _localVoiceAudioCtx.createScriptProcessor(4096, 1, 1);
             source.connect(_localVoiceProcessor);
             _localVoiceProcessor.connect(_localVoiceAudioCtx.destination);
 
