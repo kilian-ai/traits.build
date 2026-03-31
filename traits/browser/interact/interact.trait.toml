@@ -1,6 +1,7 @@
 [trait]
 description = "Interact with a web page using Playwright (click, type, evaluate JS, screenshot, wait). Requires Node.js and @playwright/browser-chromium installed."
-version = "v260401"
+version = "v260331"
+checksum = "3e3b29d9f8a78ae08433527ec9164284616ad2fcc8fd1481039609ac2e9345d1"
 author = "system"
 tags = ["browser", "interact", "playwright", "automation", "web", "click", "type"]
 

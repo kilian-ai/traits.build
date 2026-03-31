@@ -1,0 +1,46 @@
+{
+  "trait": "browser.interact",
+  "examples": [
+    {
+      "description": "Navigate and take a screenshot",
+      "args": [
+        "https://example.com",
+        [{"type": "screenshot"}]
+      ],
+      "checks": [
+        { "field": "ok", "eq": true },
+        { "field": "screenshot", "starts_with": "data:image/png;base64," }
+      ]
+    },
+    {
+      "description": "Click a link and get page state",
+      "args": [
+        "https://example.com",
+        [
+          {"type": "click", "selector": "a"},
+          {"type": "screenshot"}
+        ]
+      ],
+      "checks": [
+        { "field": "ok", "eq": true }
+      ]
+    },
+    {
+      "description": "Evaluate JavaScript",
+      "args": [
+        "https://example.com",
+        [{"type": "evaluate", "script": "document.title"}]
+      ],
+      "checks": [
+        { "field": "ok", "eq": true }
+      ]
+    },
+    {
+      "description": "Invalid URL returns error",
+      "args": ["not-a-url"],
+      "checks": [
+        { "field": "ok", "eq": false }
+      ]
+    }
+  ]
+}
