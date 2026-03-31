@@ -1647,11 +1647,14 @@ export class Traits {
      * @param {string} [opts.voice='af_heart'] - Kokoro TTS voice ID
      * @param {string} [opts.language='en'] - STT language code
      * @param {string} [opts.instructions] - System prompt for the LLM
+     * @param {boolean} [opts.tools=true] - Enable function calling with trait tools
      * @param {Function} [opts.onTranscript] - Called with user speech transcription
      * @param {Function} [opts.onResponse] - Called with LLM response text
+     * @param {Function} [opts.onToolCall] - Called when model invokes a tool: (name, args) => void
+     * @param {Function} [opts.onToolResult] - Called with tool result: (name, result) => void
      * @param {Function} [opts.onProgress] - Called with model loading progress
      * @param {Function} [opts.onError] - Called on error
-     * @returns {Promise<{ok: boolean, error?: string, mode?: string, voice?: string}>}
+     * @returns {Promise<{ok: boolean, error?: string, mode?: string, voice?: string, tools?: number}>}
      */
     async startLocalVoice(opts = {}) {
         await this.stopLocalVoice();
@@ -1669,6 +1672,7 @@ export class Traits {
         }
 
         _localVoiceActive = true;
+        const enableTools = opts.tools !== false;
         _dispatchVoiceEvent('started', { voice, mode: 'local' });
 
         // Forward progress events to callback
@@ -1678,6 +1682,31 @@ export class Traits {
         window.addEventListener('local-voice-progress', progressHandler);
 
         try {
+            // ── Load voice instructions (same sources as cloud voice) ──
+            let voiceInstructions = opts.instructions || '';
+            if (!voiceInstructions) {
+                try { voiceInstructions = (localStorage.getItem('traits.voice.instructions') || '').trim(); } catch(_) {}
+            }
+            if (!voiceInstructions) {
+                try {
+                    if (wasm && wasm.vfs_read) {
+                        const content = wasm.vfs_read('traits/sys/voice/realtime_instructions.md');
+                        if (content) voiceInstructions = content;
+                    }
+                } catch(_) {}
+            }
+            if (!voiceInstructions) {
+                voiceInstructions = 'You are a concise, helpful voice assistant. Keep responses short and conversational. You have access to function-calling tools that execute locally.';
+            }
+
+            // ── Build tool definitions ──
+            let tools = [];
+            if (enableTools) {
+                _localVoiceProgress('Loading tools…');
+                tools = await _buildVoiceTools(this);
+                console.log('[LocalVoice] Loaded', tools.length, 'tools');
+            }
+
             // Load STT and TTS models in parallel (first run downloads weights)
             _localVoiceProgress('Initializing local voice models…');
             if (opts.onProgress) opts.onProgress('Initializing local voice models…');
@@ -1756,19 +1785,72 @@ export class Traits {
                     _localVoiceProgress('Thinking…');
                     history.push({ role: 'user', content: transcript });
 
-                    const systemPrompt = opts.instructions ||
-                        'You are a concise, helpful voice assistant. ' +
-                        'Keep responses short — 1-3 sentences. Be conversational and natural. ' +
-                        'Do not use markdown formatting, bullet points, or special characters. ' +
-                        'Do not offer to perform actions you cannot do.';
-
                     // Build proper chat messages array for WebLLM
                     const messages = [
-                        { role: 'system', content: systemPrompt },
+                        { role: 'system', content: voiceInstructions },
                         ...history,
                     ];
 
-                    const llmResult = await sdk._callWebLLM(messages);
+                    const llmOpts = tools.length > 0 ? { tools } : undefined;
+                    let llmResult = await sdk._callWebLLM(messages, null, llmOpts);
+
+                    // ── Tool call loop — execute tools until model gives a text response ──
+                    let toolRounds = 0;
+                    const MAX_TOOL_ROUNDS = 5;
+                    while (llmResult.ok && llmResult.tool_calls && llmResult.tool_calls.length > 0 && toolRounds < MAX_TOOL_ROUNDS) {
+                        toolRounds++;
+                        // Add assistant message with tool_calls to history
+                        history.push({ role: 'assistant', content: llmResult.result || null, tool_calls: llmResult.tool_calls });
+
+                        for (const tc of llmResult.tool_calls) {
+                            const funcName = tc.function?.name || '';
+                            const argsStr = tc.function?.arguments || '{}';
+                            const toolCallId = tc.id || `call_${Date.now()}`;
+
+                            if (opts.onToolCall) opts.onToolCall(funcName, argsStr);
+                            _dispatchVoiceEvent('tool_call', { name: funcName, arguments: argsStr });
+
+                            // Handle quit tool
+                            if (funcName === 'sys_voice_quit') {
+                                history.push({ role: 'tool', tool_call_id: toolCallId, content: '{"ok":true,"action":"quit"}' });
+                                sdk.stopLocalVoice();
+                                return;
+                            }
+
+                            // Dispatch tool via SDK cascade
+                            _localVoiceProgress(`Running ${funcName.replace(/_/g, '.')}…`);
+                            const traitPath = funcName.replace(/_/g, '.');
+                            let callArgs = [];
+                            try {
+                                const parsed = JSON.parse(argsStr);
+                                const traitInfo = await sdk.info(traitPath);
+                                if (traitInfo && Array.isArray(traitInfo.params)) {
+                                    callArgs = traitInfo.params.map(p => parsed[p.name] !== undefined ? parsed[p.name] : null);
+                                } else {
+                                    callArgs = Object.values(parsed);
+                                }
+                            } catch(_) {}
+
+                            const toolResult = await sdk.call(traitPath, callArgs);
+                            const output = JSON.stringify(toolResult.ok ? (toolResult.result !== undefined ? toolResult.result : toolResult) : { error: toolResult.error });
+                            const truncated = output.length > 2000 ? output.slice(0, 2000) + '…(truncated)' : output;
+
+                            if (opts.onToolResult) opts.onToolResult(funcName, truncated);
+                            _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
+
+                            // Add tool response to history
+                            history.push({ role: 'tool', tool_call_id: toolCallId, content: truncated });
+                        }
+
+                        // Re-call LLM with updated history (tool results)
+                        _localVoiceProgress('Thinking…');
+                        const followUpMessages = [
+                            { role: 'system', content: voiceInstructions },
+                            ...history,
+                        ];
+                        llmResult = await sdk._callWebLLM(followUpMessages, null, llmOpts);
+                    }
+
                     let responseText = '';
                     if (llmResult.ok) {
                         responseText = typeof llmResult.result === 'string'
@@ -1864,7 +1946,7 @@ export class Traits {
             if (opts.onProgress) opts.onProgress('Listening…');
             _dispatchVoiceEvent('listening', { active: true });
 
-            return { ok: true, mode: 'local', voice };
+            return { ok: true, mode: 'local', voice, tools: tools.length };
 
         } catch(e) {
             await this.stopLocalVoice();
@@ -2296,12 +2378,15 @@ export class Traits {
         }
     }
 
-    async _callWebLLM(promptOrMessages, model, onToken) {
+    async _callWebLLM(promptOrMessages, model, onTokenOrOpts) {
         // 5 minutes for first-time model download (~1.7 GB), subsequent calls are fast
         const TIMEOUT_MS = 300_000;
         const t0 = performance.now();
         _lastWebLLMStep = '';
         let aborted = false;
+        // Accept either onToken function or opts object with {onToken, tools}
+        const onToken = typeof onTokenOrOpts === 'function' ? onTokenOrOpts : onTokenOrOpts?.onToken;
+        const tools = (typeof onTokenOrOpts === 'object' && onTokenOrOpts?.tools) || undefined;
         try {
             const result = await Promise.race([
                 (async () => {
@@ -2311,17 +2396,16 @@ export class Traits {
                     const messages = Array.isArray(promptOrMessages)
                         ? promptOrMessages
                         : [{ role: 'user', content: promptOrMessages }];
-                    console.log('[WebLLM] Starting inference, messages:', messages.length);
+                    console.log('[WebLLM] Starting inference, messages:', messages.length, tools ? `tools: ${tools.length}` : '');
                     let content = '';
+                    let toolCalls = null;
+                    const createOpts = { messages, temperature: 0.7, max_tokens: 1024 };
+                    if (tools && tools.length > 0) createOpts.tools = tools;
                     if (typeof onToken === 'function') {
                         // Streaming mode: tokens arrive one at a time
-                        const stream = await engine.chat.completions.create({
-                            messages,
-                            temperature: 0.7,
-                            max_tokens: 1024,
-                            stream: true,
-                            stream_options: { include_usage: true },
-                        });
+                        createOpts.stream = true;
+                        createOpts.stream_options = { include_usage: true };
+                        const stream = await engine.chat.completions.create(createOpts);
                         let firstToken = true;
                         for await (const chunk of stream) {
                             if (aborted) break;
@@ -2337,24 +2421,27 @@ export class Traits {
                         }
                     } else {
                         // Non-streaming fallback
-                        const reply = await engine.chat.completions.create({
-                            messages,
-                            temperature: 0.7,
-                            max_tokens: 1024,
-                        });
-                        content = reply.choices?.[0]?.message?.content || '';
+                        const reply = await engine.chat.completions.create(createOpts);
+                        const choice = reply.choices?.[0];
+                        content = choice?.message?.content || '';
+                        // Check for tool calls in the response
+                        if (choice?.message?.tool_calls && choice.message.tool_calls.length > 0) {
+                            toolCalls = choice.message.tool_calls;
+                        }
                     }
                     if (aborted) return { ok: true, result: content, dispatch: 'webllm', model: _webllmModel, ms: Math.round((performance.now() - t0) * 10) / 10 };
                     const dt = performance.now() - t0;
                     console.log('[WebLLM] Inference done in', Math.round(dt), 'ms, chars:', content.length);
                     _webllmProgress('');
-                    return {
+                    const out = {
                         ok: true,
                         result: content,
                         dispatch: 'webllm',
                         model: _webllmModel,
                         ms: Math.round(dt * 10) / 10,
                     };
+                    if (toolCalls) out.tool_calls = toolCalls;
+                    return out;
                 })(),
                 new Promise((_, reject) =>
                     setTimeout(() => {

@@ -466,6 +466,27 @@ export async function createTerminal(mountEl, opts = {}) {
                             onResponse: (text) => {
                                 term.write(`\x1b[96m💬 ${text}\x1b[0m\r\n`);
                             },
+                            onToolCall: (name, args) => {
+                                term.write(`\x1b[93m⚡ ${name.replace(/_/g, '.')}\x1b[0m\r\n`);
+                            },
+                            onToolResult: (name, resultStr) => {
+                                // sys.echo: display the echoed text prominently
+                                if (name === 'sys_echo') {
+                                    try {
+                                        const r = JSON.parse(resultStr);
+                                        const text = r.text || r.result?.text || '';
+                                        if (text) term.write(`\x1b[97m📋 ${text}\x1b[0m\r\n`);
+                                    } catch(_) {}
+                                }
+                                // sys.canvas: show brief confirmation in terminal
+                                if (name === 'sys_canvas') {
+                                    try {
+                                        const r = JSON.parse(resultStr);
+                                        const act = r.action || r.result?.action || '';
+                                        if (act) term.write(`\x1b[96m🎨 canvas ${act} (${r.length || r.result?.length || 0} bytes)\x1b[0m\r\n`);
+                                    } catch(_) {}
+                                }
+                            },
                             onProgress: (text) => {
                                 if (text) term.write(`\r\x1b[K\x1b[90m⏳ ${text}\x1b[0m`);
                             },
@@ -474,7 +495,8 @@ export async function createTerminal(mountEl, opts = {}) {
                             },
                         }).then(result => {
                             if (result.ok) {
-                                term.write(`\r\x1b[K\x1b[90mLocal voice active! Speak to start. Press Esc to stop.\x1b[0m\r\n`);
+                                const toolMsg = result.tools ? `, ${result.tools} tools` : '';
+                                term.write(`\r\x1b[K\x1b[90mLocal voice active! Speak to start${toolMsg}. Press Esc to stop.\x1b[0m\r\n`);
                                 // Listen for voice-event 'stopped'
                                 const onVoiceStopped = (e) => {
                                     if (e.detail && e.detail.type === 'stopped') {
