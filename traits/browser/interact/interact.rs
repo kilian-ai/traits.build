@@ -12,50 +12,34 @@ pub fn interact(args: &[Value]) -> Value {
     let actions = args.get(1).cloned().unwrap_or_else(|| json!([]));
     let headless = args.get(2).and_then(|v| v.as_bool()).unwrap_or(true);
 
-    // Check for Node.js
-    let node_path = find_node();
-    if node_path.is_none() {
-        return json!({
-            "ok": false,
-            "error": "Node.js not found. Install Node.js (https://nodejs.org/) to use browser.interact."
-        });
-    }
-    let node_path = node_path.unwrap();
-
-    // Check for Playwright
-    if let Err(e) = check_playwright(&node_path) {
-        return json!({
-            "ok": false,
-            "error": format!(
-                "Playwright not found: {}. Install with: npm install -g playwright && npx playwright install chromium",
-                e
-            )
-        });
-    }
-
-    // Write the Playwright script to a temp file
-      let node_path = match find_node() {
+    let node_path = match find_node() {
         Some(p) => p,
-        None => return json!({
-          "ok": false,
-          "error": "Node.js not found. Install Node.js (https://nodejs.org/) to use browser.interact."
-        }),
-      };
-      let node_modules_path = match find_playwright_node_modules(&node_path) {
+        None => {
+            return json!({
+                "ok": false,
+                "error": "Node.js not found. Install Node.js (https://nodejs.org/) to use browser.interact."
+            })
+        }
+    };
+
+    let node_modules_path = match find_playwright_node_modules(&node_path) {
         Some(p) => p,
-        None => return json!({
-          "ok": false,
-          "error": "Playwright not found. Install with:\n  npm install playwright\n  npx playwright install chromium"
-        }),
-      };
-      let script = build_playwright_script(&url, &actions, headless);
-      let script_path = std::env::temp_dir().join(format!(
+        None => {
+            return json!({
+                "ok": false,
+                "error": "Playwright not found. Install with:\n  npm install playwright\n  npx playwright install chromium"
+            })
+        }
+    };
+
+    let script = build_playwright_script(&url, &actions, headless);
+    let script_path = std::env::temp_dir().join(format!(
         "traits-pw-{}.cjs",
         std::time::SystemTime::now()
-          .duration_since(std::time::UNIX_EPOCH)
-          .unwrap_or_default()
-          .as_micros()
-      ));
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros()
+    ));
 
     {
         let mut f = match std::fs::File::create(&script_path) {
@@ -126,33 +110,7 @@ fn find_node() -> Option<String> {
     None
 }
 
-fn check_playwright(node_path: &str) -> Result<(), String> {
-    // Try to resolve playwright in global node_modules or via npx
-    let check_script = r#"
-try {
-  require('@playwright/test');
-  process.exit(0);
-} catch(e1) {
-  try {
-    require('playwright');
-    process.exit(0);
-  } catch(e2) {
-    process.exit(1);
-  }
-}
-"#;
-    let out = Command::new(node_path)
-        .args(["-e", check_script])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err("playwright not installed".to_string())
-    }
-}
-
-    fn find_playwright_node_modules(node_path: &str) -> Option<String> {
+fn find_playwright_node_modules(node_path: &str) -> Option<String> {
       let check = Command::new(node_path)
         .args(["-e", "try { process.stdout.write(require.resolve('playwright/package.json')); } catch(e) { process.exit(1); }"])
         .output()
@@ -170,6 +128,7 @@ try {
       ];
       if let Ok(home) = std::env::var("HOME") {
         probe.push(format!("{}/node_modules", home));
+        probe.push(format!("{}/.ai/traits/node_modules", home));
       }
       if let Ok(cwd) = std::env::current_dir() {
         let mut dir = cwd.as_path();
@@ -186,16 +145,15 @@ try {
         }
       }
       None
-    }
+}
 fn build_playwright_script(url: &str, actions: &Value, headless: bool) -> String {
     let actions_json = actions.to_string();
     let headless_str = if headless { "true" } else { "false" };
     let url_escaped = url.replace('\\', "\\\\").replace('`', "\\`");
 
     format!(
-        r#"
-import {{ chromium }} from 'playwright';
-import fs from 'fs';
+        r#"'use strict';
+const {{ chromium }} = require('playwright');
 
 const url = `{url}`;
 const headless = {headless};
@@ -204,21 +162,17 @@ const actions = {actions_json};
 (async () => {{
   let browser;
   const results = [];
-  let screenshotB64 = null;
 
   try {{
     browser = await chromium.launch({{ headless }});
     const context = await browser.newContext({{
       viewport: {{ width: 1280, height: 800 }},
-      userAgent: 'Mozilla/5.0 (compatible; traits-browser/1.0)'
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }});
     const page = await context.newPage();
-
-    // Navigate to starting URL
     await page.goto(url, {{ waitUntil: 'domcontentloaded', timeout: 20000 }});
     await page.waitForLoadState('networkidle', {{ timeout: 5000 }}).catch(() => {{}});
 
-    // Execute each action
     for (const action of actions) {{
       const result = {{ action: action.type, ok: false }};
       const timeout = action.timeout || 10000;
@@ -228,45 +182,39 @@ const actions = {actions_json};
             await page.click(action.selector, {{ timeout }});
             result.ok = true;
             break;
-
           case 'hover':
             await page.hover(action.selector, {{ timeout }});
             result.ok = true;
             break;
-
           case 'type':
           case 'fill':
             await page.fill(action.selector, action.value || '', {{ timeout }});
             result.ok = true;
             break;
-
+          case 'press':
+            await page.press(action.selector || 'body', action.value || 'Enter', {{ timeout }});
+            result.ok = true;
+            break;
           case 'select':
             await page.selectOption(action.selector, action.value || '', {{ timeout }});
             result.ok = true;
             break;
-
           case 'check':
             await page.check(action.selector, {{ timeout }});
             result.ok = true;
             break;
-
-          case 'evaluate':
-            const evalResult = await page.evaluate(action.script || 'null');
+          case 'evaluate': {{
+            const v = await page.evaluate(action.script || 'null');
             result.ok = true;
-            result.value = evalResult;
-            break;
-
-          case 'screenshot': {{
-            const buf = await page.screenshot({{
-              fullPage: action.full_page || false,
-              type: 'png'
-            }});
-            const b64 = buf.toString('base64');
-            result.ok = true;
-            result.value = `data:image/png;base64,${{b64}}`;
+            result.value = v;
             break;
           }}
-
+          case 'screenshot': {{
+            const buf = await page.screenshot({{ fullPage: action.full_page || false, type: 'png' }});
+            result.ok = true;
+            result.value = 'data:image/png;base64,' + buf.toString('base64');
+            break;
+          }}
           case 'wait':
             if (action.selector) {{
               await page.waitForSelector(action.selector, {{ timeout }});
@@ -275,36 +223,34 @@ const actions = {actions_json};
             }}
             result.ok = true;
             break;
-
           case 'navigate':
             await page.goto(action.value || url, {{ waitUntil: 'domcontentloaded', timeout: 20000 }});
             await page.waitForLoadState('networkidle', {{ timeout: 5000 }}).catch(() => {{}});
             result.ok = true;
             break;
-
           case 'scroll':
-            await page.evaluate(`window.scrollBy(0, ${{parseInt(action.value) || 500}})`);
+            await page.evaluate('window.scrollBy(0,' + (parseInt(action.value) || 500) + ')');
             result.ok = true;
             break;
-
           case 'get_text':
             result.value = await page.textContent(action.selector, {{ timeout }});
             result.ok = true;
             break;
-
           case 'get_attr':
             result.value = await page.getAttribute(action.selector, action.value || 'href', {{ timeout }});
             result.ok = true;
             break;
-
           case 'get_html':
             result.value = await page.innerHTML(action.selector || 'body', {{ timeout }});
             result.ok = true;
             break;
-
+          case 'get_url':
+            result.value = page.url();
+            result.ok = true;
+            break;
           default:
             result.ok = false;
-            result.error = `unknown action type: ${{action.type}}`;
+            result.error = 'unknown action: ' + action.type;
         }}
       }} catch (e) {{
         result.ok = false;
@@ -313,28 +259,14 @@ const actions = {actions_json};
       results.push(result);
     }}
 
-    // Always take a final screenshot of the page state
     const finalBuf = await page.screenshot({{ fullPage: false, type: 'png' }});
-    screenshotB64 = `data:image/png;base64,${{finalBuf.toString('base64')}}`;
-
-    // Get current URL (may have navigated)
+    const screenshot = 'data:image/png;base64,' + finalBuf.toString('base64');
     const finalUrl = page.url();
-
     await browser.close();
-
-    console.log(JSON.stringify({{
-      ok: true,
-      url: finalUrl,
-      results,
-      screenshot: screenshotB64
-    }}));
+    process.stdout.write(JSON.stringify({{ ok: true, url: finalUrl, results, screenshot }}));
   }} catch (e) {{
     if (browser) await browser.close().catch(() => {{}});
-    console.log(JSON.stringify({{
-      ok: false,
-      error: e.message,
-      results
-    }}));
+    process.stdout.write(JSON.stringify({{ ok: false, error: e.message, results }}));
   }}
 }})();
 "#,
