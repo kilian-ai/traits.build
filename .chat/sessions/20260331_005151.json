@@ -137,6 +137,110 @@
     {
       "content": "Yeah, it’s a central spot for tech innovators. Anything else you're curious about?",
       "role": "assistant"
+    },
+    {
+      "content": "No, thank you",
+      "role": "user"
+    },
+    {
+      "content": "Sure, no problem. If anything comes up, just let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "Can you see the session?",
+      "role": "user"
+    },
+    {
+      "content": "Bye.",
+      "role": "user"
+    },
+    {
+      "content": "I can’t see the session directly, but I can help by listening and guiding you through anything you describe. Just let me know what you need.",
+      "role": "assistant"
+    },
+    {
+      "content": "I’m here to help.",
+      "role": "assistant"
+    },
+    {
+      "content": "you",
+      "role": "user"
+    },
+    {
+      "content": "Could you clarify what specific context or instructions you're referring to? That way, I can assist more effectively.",
+      "role": "assistant"
+    },
+    {
+      "content": "the context, the instructions.",
+      "role": "user"
+    },
+    {
+      "content": "you have the trades built platform and uh i don't know all the details instruction to the to you as a real-time model",
+      "role": "user"
+    },
+    {
+      "content": "Got it. I can provide the details about how the traits.build platform works and the current instructions I'm following. Let me elaborate: I'm here to assist with coding, architecture, and technical topics based on your needs. If you'd like more specifics or examples, just let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "you",
+      "role": "user"
+    },
+    {
+      "content": "No problem, take your time. When you're ready, just let me know what you'd like to dive into or clarify.",
+      "role": "assistant"
+    },
+    {
+      "content": "Oh.",
+      "role": "user"
+    },
+    {
+      "content": "I'm here whenever you're ready. Just let me know how you'd like to proceed.",
+      "role": "assistant"
+    },
+    {
+      "content": "Bye.",
+      "role": "user"
+    },
+    {
+      "content": "Take your time. If you have any details to share or need help with something specific, just let me know.",
+      "role": "assistant"
+    },
+    {
+      "content": "Fill in the silence.",
+      "role": "user"
+    },
+    {
+      "content": "Sure, I’ll wait here quietly until you're ready. Take your time.",
+      "role": "assistant"
+    },
+    {
+      "content": "Say that.",
+      "role": "user"
+    },
+    {
+      "content": "Alright, I’ll stay here and fill in any silence, so you can take your time.",
+      "role": "assistant"
+    },
+    {
+      "content": "You",
+      "role": "user"
+    },
+    {
+      "content": "Instructions say that.",
+      "role": "user"
+    },
+    {
+      "content": "Got it. If you’re referring to the instructions for how I should respond or assist, I’m here to follow your lead and help with whatever details you need. Let me know what you’d like to adjust.",
+      "role": "assistant"
+    },
+    {
+      "content": "What does it say currently?",
+      "role": "user"
+    },
+    {
+      "content": "It currently says that I should provide concise, helpful answers, follow your lead, and assist with technical topics. If you'd like to adjust anything, let me know.",
+      "role": "assistant"
     }
   ],
   "model": "test-model",

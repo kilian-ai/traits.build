@@ -1316,9 +1316,9 @@ class Traits {
                 const fallbackInstructions = 'You are a concise, helpful voice assistant powered by traits.build. Keep responses short and conversational. You have access to function-calling tools that execute locally via WebAssembly.';
 
                 // WebRTC session.update: instructions and tools are mutable after
-                // session creation. Do NOT include type:'realtime' — that field is
-                // only valid in the /client_secrets create request.
+                // session creation. type:'realtime' is required by the API.
                 const sessionConfig = {
+                    type: 'realtime',
                     instructions: fullInstructions || fallbackInstructions,
                 };
                 if (tools.length > 0) sessionConfig.tools = tools;
@@ -1403,7 +1403,7 @@ class Traits {
                                             if (_voiceDc && _voiceDc.readyState === 'open') {
                                                 _voiceDc.send(JSON.stringify({
                                                     type: 'session.update',
-                                                    session: { instructions: updated }
+                                                    session: { type: 'realtime', instructions: updated }
                                                 }));
                                             }
                                         } else if (r.action === 'reset') {
