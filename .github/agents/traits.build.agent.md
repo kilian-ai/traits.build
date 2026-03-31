@@ -618,6 +618,7 @@ The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel
 | `sys.reload` | Registry hot-reload from disk | builtin |
 | `sys.release` | Configurable release pipeline | builtin |
 | `sys.voice` | Voice I/O chat service (listen→transcribe→send→speak loop) | builtin |
+| `sys.voice.mode` | Voice mode management — get/set preferred mode (local vs realtime), check API key (WASM) | builtin |
 | `sys.spa` | SPA session control — navigate, click, type, terminal, query, eval, route (WASM) | builtin |
 | `sys.chat` | Chat session management — persistent CRUD, MCP-callable | builtin |
 | `sys.chat_workspaces` | VS Code workspace scanner | builtin |
