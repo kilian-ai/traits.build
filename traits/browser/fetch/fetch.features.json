@@ -1,0 +1,35 @@
+{
+  "trait": "browser.fetch",
+  "examples": [
+    {
+      "description": "Fetch example.com and return markdown",
+      "args": ["https://example.com"],
+      "checks": [
+        { "field": "ok", "eq": true },
+        { "field": "title", "contains": "Example" },
+        { "field": "content", "contains": "example" }
+      ]
+    },
+    {
+      "description": "Fetch with CSS selector targeting",
+      "args": ["https://example.com", "h1"],
+      "checks": [
+        { "field": "ok", "eq": true }
+      ]
+    },
+    {
+      "description": "Invalid URL returns error",
+      "args": ["not-a-url"],
+      "checks": [
+        { "field": "ok", "eq": false }
+      ]
+    },
+    {
+      "description": "Missing URL returns error",
+      "args": [],
+      "checks": [
+        { "field": "ok", "eq": false }
+      ]
+    }
+  ]
+}

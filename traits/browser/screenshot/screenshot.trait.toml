@@ -1,0 +1,24 @@
+[trait]
+description = "Screenshot a URL using Chrome headless. Returns a base64-encoded PNG data URI."
+version = "v260331"
+checksum = "574a258e7e512e92319912f529fdd0a8d8ff520e8dc8235c8be4ea2cd00e3961"
+author = "system"
+tags = ["browser", "screenshot", "web", "visual", "image"]
+
+[signature]
+params = [
+  { name = "url", type = "string", description = "URL to screenshot", required = true, example = "https://example.com" },
+  { name = "width", type = "int", description = "Viewport width in pixels (default 1280)", required = false, example = "1280" },
+  { name = "height", type = "int", description = "Viewport height in pixels (default 800)", required = false, example = "800" },
+  { name = "full_page", type = "bool", description = "Capture full scrollable page height (default false)", required = false, example = "true" },
+]
+
+[signature.returns]
+type = "map"
+description = "{ ok, url, image (data:image/png;base64,...), width, height, bytes }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "screenshot"
+wasm = false

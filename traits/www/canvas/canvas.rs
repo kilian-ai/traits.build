@@ -12,8 +12,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                 style {
                     (PreEscaped(r#"
                         :root { --bg: #0a0a0a; --fg: #e0e0e0; --accent: #00e0ff; --border: #222; }
-                        * { box-sizing: border-box; margin: 0; padding: 0; }
-                        body { background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; }
+                        body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; }
                         .canvas-header {
                             display: flex; align-items: center; justify-content: space-between;
                             padding: 12px 20px; border-bottom: 1px solid var(--border);
@@ -70,17 +69,34 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 return;
                             }
                             empty.style.display = 'none';
+                            // Remove previous canvas styles
+                            document.querySelectorAll('style[data-canvas]').forEach(s => s.remove());
+                            // Base style for injected content: ensure visibility on dark bg
+                            const base = document.createElement('style');
+                            base.dataset.canvas = '1';
+                            base.textContent = `
+                                #canvas-container { color: #e0e0e0; }
+                                #canvas-container svg { fill: #e0e0e0; stroke: #e0e0e0; }
+                                #canvas-container svg text { fill: #e0e0e0; }
+                                #canvas-container canvas { display: block; }
+                                #canvas-container h1, #canvas-container h2, #canvas-container h3,
+                                #canvas-container p, #canvas-container span, #canvas-container div {
+                                    color: inherit;
+                                }
+                            `;
+                            document.head.appendChild(base);
                             // Parse HTML
                             const parser = new DOMParser();
                             const doc = parser.parseFromString(content, 'text/html');
-                            // Inject styles
-                            document.querySelectorAll('style[data-canvas]').forEach(s => s.remove());
+                            // Inject ALL style tags (head + body) — voice agents may put them anywhere
                             doc.querySelectorAll('style').forEach(style => {
                                 const s = document.createElement('style');
                                 s.dataset.canvas = '1';
                                 s.textContent = style.textContent;
                                 document.head.appendChild(s);
                             });
+                            // Remove style tags from body before injecting (already moved to head)
+                            doc.querySelectorAll('body style').forEach(s => s.remove());
                             // Set body content
                             container.innerHTML = doc.body.innerHTML;
                             // Execute scripts

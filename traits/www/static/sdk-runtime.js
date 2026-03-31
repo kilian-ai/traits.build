@@ -137,6 +137,17 @@ let _voiceAudioEl = null;        // <audio> element for model playback
 let _voiceApiKey = null;
 let _voiceSdk = null;            // Reference to Traits instance for tool dispatch
 
+// ── Local voice state (WebGPU STT + LLM + TTS) ──
+let _localVoiceActive = false;
+let _localVoiceStream = null;
+let _localVoiceAudioCtx = null;
+let _localVoiceProcessor = null;
+let _sttPipeline = null;
+let _sttLoading = null;
+let _ttsModel = null;
+let _ttsLoading = null;
+let _transformersLib = null;
+
 // Traits excluded from voice function-calling tools (mirrors native TOOL_EXCLUDE)
 const VOICE_TOOL_EXCLUDE = new Set([
     'sys.voice', 'sys.mcp', 'sys.serve', 'sys.cli', 'sys.cli.native', 'sys.cli.wasm',
@@ -151,6 +162,101 @@ function _dispatchVoiceEvent(type, data) {
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('voice-event', { detail: { type, ...data } }));
     }
+}
+
+// ── Local voice helpers (WebGPU STT + TTS) ──
+
+function _localVoiceProgress(text) {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('local-voice-progress', { detail: text }));
+    }
+}
+
+async function _ensureTransformers() {
+    if (_transformersLib) return _transformersLib;
+    _localVoiceProgress('Loading Transformers.js…');
+    _transformersLib = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers');
+    return _transformersLib;
+}
+
+async function _ensureSTT() {
+    if (_sttPipeline) return _sttPipeline;
+    if (_sttLoading) return _sttLoading;
+    _sttLoading = (async () => {
+        try {
+            const { pipeline } = await _ensureTransformers();
+            _localVoiceProgress('Loading Whisper STT model (first run downloads ~150 MB)…');
+            _sttPipeline = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', {
+                device: 'webgpu',
+                dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
+                progress_callback: (p) => {
+                    const status = p.status || '';
+                    if (p.progress != null) {
+                        _localVoiceProgress(`STT: ${status} ${Math.round(p.progress)}%`);
+                    }
+                }
+            });
+            _localVoiceProgress('STT model ready.');
+            return _sttPipeline;
+        } catch (e) {
+            _sttPipeline = null;
+            throw e;
+        }
+    })();
+    try { return await _sttLoading; } finally { _sttLoading = null; }
+}
+
+async function _ensureTTS() {
+    if (_ttsModel) return _ttsModel;
+    if (_ttsLoading) return _ttsLoading;
+    _ttsLoading = (async () => {
+        try {
+            _localVoiceProgress('Loading Kokoro TTS model (first run downloads ~92 MB)…');
+            const kokoro = await import('https://cdn.jsdelivr.net/npm/kokoro-js');
+            _ttsModel = await kokoro.KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+                dtype: 'q8',
+                device: 'webgpu',
+                progress_callback: (p) => {
+                    const status = p.status || '';
+                    if (p.progress != null) {
+                        _localVoiceProgress(`TTS: ${status} ${Math.round(p.progress)}%`);
+                    }
+                }
+            });
+            _localVoiceProgress('TTS model ready.');
+            return _ttsModel;
+        } catch (e) {
+            _ttsModel = null;
+            throw e;
+        }
+    })();
+    try { return await _ttsLoading; } finally { _ttsLoading = null; }
+}
+
+function _resampleTo16kHz(audioData, sampleRate) {
+    if (sampleRate === 16000) return audioData;
+    const ratio = sampleRate / 16000;
+    const newLen = Math.round(audioData.length / ratio);
+    const result = new Float32Array(newLen);
+    for (let i = 0; i < newLen; i++) {
+        const srcIdx = i * ratio;
+        const lo = Math.floor(srcIdx);
+        const hi = Math.min(lo + 1, audioData.length - 1);
+        const frac = srcIdx - lo;
+        result[i] = audioData[lo] * (1 - frac) + audioData[hi] * frac;
+    }
+    return result;
+}
+
+function _mergeFloat32Arrays(arrays) {
+    const totalLen = arrays.reduce((s, a) => s + a.length, 0);
+    const result = new Float32Array(totalLen);
+    let offset = 0;
+    for (const arr of arrays) {
+        result.set(arr, offset);
+        offset += arr.length;
+    }
+    return result;
 }
 
 /** Convert a trait param type string to JSON Schema */
@@ -1526,6 +1632,279 @@ class Traits {
         try {
             localStorage.setItem('traits.voice.api_key', apiKey);
         } catch(e) {}
+    }
+
+    // ── Local Voice (WebGPU STT + LLM + TTS) ──
+
+    /**
+     * Start a fully local voice session using WebGPU-accelerated models:
+     *   Mic → Whisper STT → llm/prompt interface → Kokoro TTS → Speaker
+     *
+     * The LLM step dispatches through this.call('llm.prompt', ...) so it
+     * uses whatever implementation is currently bound to the llm/prompt
+     * interface (e.g. llm.prompt.webllm for fully-local WebGPU inference).
+     *
+     * @param {Object} opts
+     * @param {string} [opts.voice='af_heart'] - Kokoro TTS voice ID
+     * @param {string} [opts.language='en'] - STT language code
+     * @param {string} [opts.instructions] - System prompt for the LLM
+     * @param {Function} [opts.onTranscript] - Called with user speech transcription
+     * @param {Function} [opts.onResponse] - Called with LLM response text
+     * @param {Function} [opts.onProgress] - Called with model loading progress
+     * @param {Function} [opts.onError] - Called on error
+     * @returns {Promise<{ok: boolean, error?: string, mode?: string, voice?: string}>}
+     */
+    async startLocalVoice(opts = {}) {
+        await this.stopLocalVoice();
+
+        const voice = opts.voice || 'af_heart';
+        const language = opts.language || 'en';
+
+        // Check WebGPU
+        if (typeof navigator === 'undefined' || !navigator.gpu) {
+            return { ok: false, error: 'WebGPU not supported. Local voice requires Chrome 113+ or Edge 113+.' };
+        }
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+            return { ok: false, error: 'No WebGPU adapter found. Check GPU drivers.' };
+        }
+
+        _localVoiceActive = true;
+        _dispatchVoiceEvent('started', { voice, mode: 'local' });
+
+        // Forward progress events to callback
+        const progressHandler = (e) => {
+            if (opts.onProgress) opts.onProgress(e.detail);
+        };
+        window.addEventListener('local-voice-progress', progressHandler);
+
+        try {
+            // Load STT and TTS models in parallel (first run downloads weights)
+            _localVoiceProgress('Initializing local voice models…');
+            if (opts.onProgress) opts.onProgress('Initializing local voice models…');
+
+            const [stt, tts] = await Promise.all([_ensureSTT(), _ensureTTS()]);
+            if (!_localVoiceActive) return { ok: false, error: 'Cancelled' };
+
+            // Auto-bind llm/prompt to WebLLM if no binding exists
+            if (!this._bindings.has('llm/prompt')) {
+                this.bind('llm/prompt', 'llm.prompt.webllm');
+                console.log('[LocalVoice] Auto-bound llm/prompt → llm.prompt.webllm');
+            }
+
+            // Preload WebLLM engine so first LLM call is fast
+            const llmBinding = this._bindings.get('llm/prompt') || '';
+            if (llmBinding === 'llm.prompt.webllm') {
+                _localVoiceProgress('Pre-loading LLM model…');
+                if (opts.onProgress) opts.onProgress('Pre-loading LLM model…');
+                try { await _ensureWebLLM(); } catch(e) {
+                    console.warn('[LocalVoice] WebLLM preload failed:', e.message);
+                }
+            }
+
+            if (!_localVoiceActive) return { ok: false, error: 'Cancelled' };
+
+            // Get microphone
+            _localVoiceStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            });
+
+            _localVoiceAudioCtx = new AudioContext();
+            const source = _localVoiceAudioCtx.createMediaStreamSource(_localVoiceStream);
+
+            // ScriptProcessorNode for continuous audio capture + silence detection
+            _localVoiceProcessor = _localVoiceAudioCtx.createScriptProcessorNode(4096, 1, 1);
+            source.connect(_localVoiceProcessor);
+            _localVoiceProcessor.connect(_localVoiceAudioCtx.destination);
+
+            const history = [];    // conversation history: [{role, content}]
+            let audioBuffer = [];  // accumulated Float32 audio chunks
+            let speechStart = 0;   // timestamp when speech began
+            let silenceStart = 0;  // timestamp when silence began
+            let processing = false; // true during STT→LLM→TTS pipeline
+            const SILENCE_THRESHOLD = 0.015;
+            const SILENCE_TIMEOUT = 1200; // ms of silence to trigger end-of-speech
+            const MIN_SPEECH = 500;       // ms minimum speech duration
+            const sdk = this;
+
+            const processTurn = async (pcm) => {
+                processing = true;
+                try {
+                    // 1. STT — Whisper transcription
+                    _localVoiceProgress('Transcribing…');
+                    _dispatchVoiceEvent('listening', { active: false });
+                    const resampled = _resampleTo16kHz(pcm, _localVoiceAudioCtx.sampleRate);
+
+                    // Skip very short audio (< 0.5s at 16kHz)
+                    if (resampled.length < 8000) { processing = false; return; }
+
+                    const sttResult = await stt(resampled, { language });
+                    const transcript = (sttResult.text || '').trim();
+
+                    if (!transcript || !_localVoiceActive) { processing = false; return; }
+                    // Filter hallucinated silence transcripts from Whisper
+                    const lower = transcript.toLowerCase();
+                    if (lower === 'you' || lower === 'thank you.' || lower === 'thanks for watching!' || lower.length < 3) {
+                        processing = false;
+                        _dispatchVoiceEvent('listening', { active: true });
+                        return;
+                    }
+
+                    if (opts.onTranscript) opts.onTranscript(transcript);
+                    _dispatchVoiceEvent('transcript', { text: transcript });
+
+                    // 2. LLM — generate response via llm/prompt interface
+                    _localVoiceProgress('Thinking…');
+                    history.push({ role: 'user', content: transcript });
+
+                    const systemPrompt = opts.instructions ||
+                        'You are a concise, helpful voice assistant powered by traits.build. ' +
+                        'Keep responses short — 1-3 sentences. Be conversational and natural. ' +
+                        'Do not use markdown formatting, bullet points, or special characters.';
+
+                    const promptParts = [`<system>\n${systemPrompt}\n</system>\n`];
+                    for (const turn of history) {
+                        promptParts.push(`${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.content}`);
+                    }
+                    promptParts.push('Assistant:');
+                    const fullPrompt = promptParts.join('\n');
+
+                    const llmResult = await sdk.call('llm.prompt', [fullPrompt]);
+                    let responseText = '';
+                    if (llmResult.ok) {
+                        responseText = typeof llmResult.result === 'string'
+                            ? llmResult.result
+                            : (llmResult.result?.content || JSON.stringify(llmResult.result));
+                    } else {
+                        responseText = 'Sorry, I could not generate a response.';
+                    }
+                    // Clean up LLM output for voice
+                    responseText = responseText.replace(/^Assistant:\s*/i, '').trim();
+                    // Strip markdown artifacts
+                    responseText = responseText.replace(/[*_`#]/g, '').replace(/\n+/g, ' ').trim();
+
+                    if (!responseText || !_localVoiceActive) { processing = false; return; }
+
+                    history.push({ role: 'assistant', content: responseText });
+                    // Keep conversation window manageable
+                    while (history.length > 20) history.shift();
+
+                    if (opts.onResponse) opts.onResponse(responseText);
+                    _dispatchVoiceEvent('response', { text: responseText });
+
+                    // 3. TTS — synthesize speech with Kokoro
+                    _localVoiceProgress('Speaking…');
+                    _dispatchVoiceEvent('speaking', { text: responseText });
+
+                    // Mute mic during TTS playback to prevent echo feedback
+                    if (_localVoiceStream) {
+                        _localVoiceStream.getAudioTracks().forEach(t => t.enabled = false);
+                    }
+
+                    try {
+                        const audio = await tts.generate(responseText, { voice });
+                        if (!_localVoiceActive) { processing = false; return; }
+
+                        // Play synthesized audio
+                        const blob = await audio.toBlob();
+                        const audioUrl = URL.createObjectURL(blob);
+                        const audioEl = new Audio(audioUrl);
+
+                        await new Promise((resolve) => {
+                            audioEl.onended = () => { URL.revokeObjectURL(audioUrl); resolve(); };
+                            audioEl.onerror = () => { URL.revokeObjectURL(audioUrl); resolve(); };
+                            audioEl.play().catch(resolve);
+                        });
+                    } finally {
+                        // Unmute mic after playback
+                        if (_localVoiceStream) {
+                            _localVoiceStream.getAudioTracks().forEach(t => t.enabled = true);
+                        }
+                    }
+
+                    _localVoiceProgress('');
+                    _dispatchVoiceEvent('listening', { active: true });
+
+                } catch(e) {
+                    console.error('[LocalVoice] Turn error:', e);
+                    if (opts.onError) opts.onError(e.message || String(e));
+                    _dispatchVoiceEvent('error', { message: e.message || String(e) });
+                }
+                processing = false;
+            };
+
+            // Audio processing loop — captures PCM and detects silence
+            _localVoiceProcessor.onaudioprocess = (e) => {
+                if (!_localVoiceActive || processing) return;
+
+                const input = e.inputBuffer.getChannelData(0);
+                const rms = Math.sqrt(input.reduce((s, v) => s + v * v, 0) / input.length);
+
+                if (rms > SILENCE_THRESHOLD) {
+                    if (!speechStart) {
+                        speechStart = Date.now();
+                        _dispatchVoiceEvent('listening', { active: true, speaking: true });
+                    }
+                    silenceStart = 0;
+                    audioBuffer.push(new Float32Array(input));
+                } else if (speechStart) {
+                    audioBuffer.push(new Float32Array(input)); // include trailing silence
+                    if (!silenceStart) {
+                        silenceStart = Date.now();
+                    } else if (Date.now() - silenceStart > SILENCE_TIMEOUT
+                               && Date.now() - speechStart > MIN_SPEECH) {
+                        // Speech ended — capture and process
+                        const pcm = _mergeFloat32Arrays(audioBuffer);
+                        audioBuffer = [];
+                        speechStart = 0;
+                        silenceStart = 0;
+                        processTurn(pcm);
+                    }
+                }
+            };
+
+            _localVoiceProgress('Listening…');
+            if (opts.onProgress) opts.onProgress('Listening…');
+            _dispatchVoiceEvent('listening', { active: true });
+
+            return { ok: true, mode: 'local', voice };
+
+        } catch(e) {
+            await this.stopLocalVoice();
+            return { ok: false, error: e.message || String(e) };
+        } finally {
+            window.removeEventListener('local-voice-progress', progressHandler);
+        }
+    }
+
+    /**
+     * Stop the local voice session.
+     * @returns {Promise<void>}
+     */
+    async stopLocalVoice() {
+        _localVoiceActive = false;
+        if (_localVoiceProcessor) {
+            try { _localVoiceProcessor.disconnect(); } catch(e) {}
+            _localVoiceProcessor = null;
+        }
+        if (_localVoiceAudioCtx) {
+            try { await _localVoiceAudioCtx.close(); } catch(e) {}
+            _localVoiceAudioCtx = null;
+        }
+        if (_localVoiceStream) {
+            _localVoiceStream.getTracks().forEach(t => t.stop());
+            _localVoiceStream = null;
+        }
+        _localVoiceProgress('');
+        _dispatchVoiceEvent('stopped', { mode: 'local' });
+    }
+
+    /**
+     * Check if local voice session is active.
+     * @returns {boolean}
+     */
+    isLocalVoiceActive() {
+        return _localVoiceActive;
     }
 
     // ── Runtime Bindings ──

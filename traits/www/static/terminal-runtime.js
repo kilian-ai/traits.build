@@ -422,7 +422,7 @@ async function createTerminal(mountEl, opts = {}) {
                 const visible = output.replace(VOICE_RE, '');
                 if (visible) term.write(visible);
                 try {
-                    const { v: voiceName, m: model, a: agent, s: sessionId, rp: returnPrompt } = JSON.parse(voiceMatch[1]);
+                    const { v: voiceName, m: model, a: agent, s: sessionId, rp: returnPrompt, local: localFlag } = JSON.parse(voiceMatch[1]);
                     restPending = true;
 
                     // Check if helper is connected (required for native voice with sox)
@@ -431,6 +431,9 @@ async function createTerminal(mountEl, opts = {}) {
                     // Check for browser voice support (WebAudio + getUserMedia)
                     const browserVoiceSupported = typeof navigator !== 'undefined' && 
                         navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+
+                    // Check WebGPU support for local voice
+                    const webgpuAvailable = typeof navigator !== 'undefined' && !!navigator.gpu;
 
                     if (!helperConnected && !browserVoiceSupported) {
                         term.write(`\r\n\x1b[33mVoice requires either:\x1b[0m\r\n`);
@@ -442,7 +445,84 @@ async function createTerminal(mountEl, opts = {}) {
                         return;
                     }
 
-                    // Browser voice mode (no helper required)
+                    // Detect whether to use local voice (WebGPU STT+LLM+TTS) or cloud voice (OpenAI Realtime)
+                    // Local voice is used when:
+                    //   1. Explicitly requested via local:true flag in sentinel
+                    //   2. No OpenAI API key and WebGPU is available (auto-fallback)
+                    let useLocalVoice = !!localFlag;
+                    if (!useLocalVoice && !helperConnected && browserVoiceSupported && webgpuAvailable) {
+                        // Check if OpenAI API key is available
+                        let hasApiKey = false;
+                        try {
+                            const settingsKey = (localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim();
+                            const legacyKey = (localStorage.getItem('traits.voice.api_key') || '').trim();
+                            hasApiKey = !!(settingsKey || legacyKey);
+                        } catch(_) {}
+                        if (!hasApiKey) useLocalVoice = true;
+                    }
+
+                    // ── Local voice mode (WebGPU: Whisper STT → LLM → Kokoro TTS) ──
+                    if (useLocalVoice && browserVoiceSupported && webgpuAvailable) {
+                        term.write(`\x1b[90mStarting local voice (WebGPU)…\x1b[0m\r\n`);
+                        term.write(`\x1b[90mFirst run downloads ~250 MB of AI models.\x1b[0m\r\n`);
+
+                        activeSdk.startLocalVoice({
+                            voice: voiceName || 'af_heart',
+                            language: 'en',
+                            instructions: agent
+                                ? `You are the "${agent}" agent on traits.build. Keep responses very short (1-2 sentences). Be conversational.`
+                                : undefined,
+                            onTranscript: (text) => {
+                                term.write(`\r\n\x1b[92m🎤 ${text}\x1b[0m\r\n`);
+                            },
+                            onResponse: (text) => {
+                                term.write(`\x1b[96m💬 ${text}\x1b[0m\r\n`);
+                            },
+                            onProgress: (text) => {
+                                if (text) term.write(`\r\x1b[K\x1b[90m⏳ ${text}\x1b[0m`);
+                            },
+                            onError: (msg) => {
+                                term.write(`\r\n\x1b[31mLocal voice error: ${msg}\x1b[0m\r\n`);
+                            },
+                        }).then(result => {
+                            if (result.ok) {
+                                term.write(`\r\x1b[K\x1b[90mLocal voice active! Speak to start. Press Esc to stop.\x1b[0m\r\n`);
+                                // Listen for voice-event 'stopped'
+                                const onVoiceStopped = (e) => {
+                                    if (e.detail && e.detail.type === 'stopped') {
+                                        window.removeEventListener('voice-event', onVoiceStopped);
+                                        term.write(`\r\n\x1b[90mLocal voice session ended.\x1b[0m\r\n`);
+                                        term.write(returnPrompt);
+                                        restPending = false;
+                                        requestAnimationFrame(saveState);
+                                    }
+                                };
+                                window.addEventListener('voice-event', onVoiceStopped);
+                                // Esc key handler
+                                const stopHandler = (data) => {
+                                    if (data === '\x1b' || data === '\x03') {
+                                        activeSdk.stopLocalVoice().then(() => {
+                                            window.removeEventListener('voice-event', onVoiceStopped);
+                                            term.write(`\r\n\x1b[90mLocal voice stopped.\x1b[0m\r\n`);
+                                            term.write(returnPrompt);
+                                            restPending = false;
+                                            requestAnimationFrame(saveState);
+                                        });
+                                        term.offData(stopHandler);
+                                    }
+                                };
+                                term.onData(stopHandler);
+                            } else {
+                                term.write(`\r\n\x1b[31mLocal voice error: ${result.error}\x1b[0m\r\n`);
+                                term.write(returnPrompt);
+                                restPending = false;
+                                requestAnimationFrame(saveState);
+                            }
+                        });
+                        return;
+                    }
+
+                    // ── Cloud voice mode (OpenAI Realtime via WebRTC) ──
                     if (!helperConnected && browserVoiceSupported) {
                         term.write(`\x1b[90mStarting browser voice with ${voiceName}…\x1b[0m\r\n`);
                         activeSdk.startVoice({

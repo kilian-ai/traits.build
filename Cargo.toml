@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260331.123052"
+version = "0.260331.124813"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -39,7 +39,7 @@ name = "traits"
 path = "src/main.rs"
 
 [dependencies]
-kernel-logic = { path = "traits/kernel/logic", version = "0.260331.123052" }
+kernel-logic = { path = "traits/kernel/logic", version = "0.260331.124813" }
 actix-web = "4"
 actix-rt = "2"
 actix-ws = "0.3"
@@ -70,6 +70,7 @@ libc = "0.2"
 pulldown-cmark = "0.12"
 maud = "0.26"
 rusqlite = { version = "0.32", features = ["bundled"] }
+scraper = "0.19"
 
 [build-dependencies]
 sha2 = "0.10"

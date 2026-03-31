@@ -1,0 +1,29 @@
+{
+  "trait": "browser.screenshot",
+  "examples": [
+    {
+      "description": "Screenshot example.com at default size",
+      "args": ["https://example.com"],
+      "checks": [
+        { "field": "ok", "eq": true },
+        { "field": "url", "eq": "https://example.com" },
+        { "field": "image", "starts_with": "data:image/png;base64," }
+      ]
+    },
+    {
+      "description": "Screenshot with custom dimensions",
+      "args": ["https://example.com", 1920, 1080],
+      "checks": [
+        { "field": "ok", "eq": true },
+        { "field": "width", "eq": 1920 }
+      ]
+    },
+    {
+      "description": "Invalid URL returns error",
+      "args": ["not-a-url"],
+      "checks": [
+        { "field": "ok", "eq": false }
+      ]
+    }
+  ]
+}

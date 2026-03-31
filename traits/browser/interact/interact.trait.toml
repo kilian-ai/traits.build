@@ -1,0 +1,22 @@
+[trait]
+description = "Interact with a web page using Playwright (click, type, evaluate JS, screenshot, wait). Requires Node.js and @playwright/browser-chromium installed."
+version = "v260401"
+author = "system"
+tags = ["browser", "interact", "playwright", "automation", "web", "click", "type"]
+
+[signature]
+params = [
+  { name = "url", type = "string", description = "Starting URL to navigate to", required = true, example = "https://example.com" },
+  { name = "actions", type = "list<map>", description = "Ordered list of actions to perform. Each action: { type, selector, value, script, timeout }. Types: click, type, fill, evaluate, screenshot, wait, navigate, select, check, hover, scroll", required = false, example = "[{\"type\":\"click\",\"selector\":\"button\"},{\"type\":\"screenshot\"}]" },
+  { name = "headless", type = "bool", description = "Run in headless mode (default true)", required = false, example = "true" },
+]
+
+[signature.returns]
+type = "map"
+description = "{ ok, url, results: [{ action, ok, value, error }], screenshot (base64 data URI of final state) }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "interact"
+wasm = false

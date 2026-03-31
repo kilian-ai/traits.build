@@ -1,0 +1,22 @@
+[trait]
+description = "Fetch a URL and return readable Markdown content. Uses Chrome headless for JS-rendered pages (with curl fallback). Supports CSS selector targeting."
+version = "v260331"
+checksum = "ffa3234ef5c236f9390273131dee3aa03a57e7164a0f5e73460aaa2d7471b949"
+author = "system"
+tags = ["browser", "web", "fetch", "scrape", "html", "markdown"]
+
+[signature]
+params = [
+  { name = "url", type = "string", description = "URL to fetch (must start with http:// or https://)", required = true, example = "https://example.com" },
+  { name = "selector", type = "string", description = "CSS selector to extract specific element (e.g. 'main', 'article', '#content')", required = false, example = "article" },
+]
+
+[signature.returns]
+type = "map"
+description = "{ ok, url, title, content (markdown text), links: [{text, href}] }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "fetch"
+wasm = false
