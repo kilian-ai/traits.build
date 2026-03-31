@@ -1,0 +1,14 @@
+{
+  "trait": "skills.spotify.stop",
+  "features": [
+    {
+      "name": "Stop Spotify",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok"] }
+        }
+      ]
+    }
+  ]
+}

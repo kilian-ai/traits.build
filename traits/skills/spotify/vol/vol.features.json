@@ -1,0 +1,14 @@
+{
+  "trait": "skills.spotify.vol",
+  "features": [
+    {
+      "name": "Set Spotify volume",
+      "examples": [
+        {
+          "input": [50],
+          "output": { "contains": ["ok"] }
+        }
+      ]
+    }
+  ]
+}

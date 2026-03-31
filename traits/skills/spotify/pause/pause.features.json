@@ -1,0 +1,14 @@
+{
+  "trait": "skills.spotify.pause",
+  "features": [
+    {
+      "name": "Pause Spotify",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok"] }
+        }
+      ]
+    }
+  ]
+}

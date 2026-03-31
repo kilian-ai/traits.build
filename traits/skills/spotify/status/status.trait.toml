@@ -1,0 +1,18 @@
+[trait]
+description = "Get current Spotify playback status (track, artist, album, state, volume)"
+version = "v260331.121011"
+checksum = "2e7ded7c3d68a6d0c5134fcce09515dc7042205624c212fbedf6142777f751f5"
+author = "system"
+tags = ["skills", "spotify", "music"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "map"
+description = "Playback status with track, artist, album, state, volume"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "status"

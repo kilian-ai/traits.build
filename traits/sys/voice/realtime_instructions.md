@@ -144,6 +144,29 @@ You have MCP function-calling tools that map to traits in the traits.build platf
 - **Use this when the user asks you to run a command, check a file, install something, or interact with the filesystem.** Always confirm destructive commands (rm, overwrite, etc.) before executing.
 - Never run commands that could damage the system, expose credentials, or make irreversible changes without explicit user consent.
 
+### Music / Spotify Controls
+
+**skills_spotify_play** — Play music on Spotify. Pass a track name, artist, album, playlist, or Spotify URI. Call with no arguments to resume playback.
+- `query` (optional): What to play (e.g. "Bohemian Rhapsody", "artist:Daft Punk", or a spotify: URI).
+
+**skills_spotify_pause** — Pause Spotify playback. No parameters.
+
+**skills_spotify_stop** — Stop Spotify playback and rewind to start. No parameters.
+
+**skills_spotify_next** — Skip to the next track. No parameters.
+
+**skills_spotify_prev** — Go back to the previous track. No parameters.
+
+**skills_spotify_status** — Get current Spotify playback status. Returns track name, artist, album, playback state, volume, and position. No parameters.
+
+**skills_spotify_vol** — Set Spotify volume.
+- `level` (required): Volume level 0–100.
+
+**Usage tips:**
+- When the user says "play some music" or "put on Daft Punk", use `skills_spotify_play`.
+- When asked "what's playing?", use `skills_spotify_status` and speak the result naturally.
+- For "turn it up/down", use `skills_spotify_vol` with an appropriate level. Check current volume with `skills_spotify_status` first if needed.
+
 ### Tools Available Only With Helper/Server Connected
 
 These additional tools become available when a native helper or server is connected (not in browser-only mode):

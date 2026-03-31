@@ -1,0 +1,14 @@
+{
+  "trait": "skills.spotify.status",
+  "features": [
+    {
+      "name": "Get Spotify status",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok"] }
+        }
+      ]
+    }
+  ]
+}

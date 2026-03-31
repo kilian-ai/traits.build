@@ -1,0 +1,18 @@
+[trait]
+description = "Skip to the next track on Spotify"
+version = "v260331.121011"
+checksum = "bea7bd44f9156acb0e7c325d1f957b0461ed36003ee4864fd8d2a97b0be4fe45"
+author = "system"
+tags = ["skills", "spotify", "music"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "map"
+description = "Result with ok status"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "next"

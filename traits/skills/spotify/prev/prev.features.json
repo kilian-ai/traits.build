@@ -1,0 +1,14 @@
+{
+  "trait": "skills.spotify.prev",
+  "features": [
+    {
+      "name": "Go to previous track",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok"] }
+        }
+      ]
+    }
+  ]
+}

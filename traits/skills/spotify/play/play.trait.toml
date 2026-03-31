@@ -1,0 +1,20 @@
+[trait]
+description = "Play a track, album, artist, or playlist on Spotify. Resume if no query given."
+version = "v260331.121011"
+checksum = "3d2dcbb9cd048b882f791336a720521c9ac1be8aaa8b73286e641bcfb1005d0a"
+author = "system"
+tags = ["skills", "spotify", "music"]
+
+[signature]
+params = [
+  { name = "query", type = "string", description = "Track name, artist, album, playlist, or Spotify URI. Empty to resume.", optional = true },
+]
+
+[signature.returns]
+type = "map"
+description = "Result with ok status"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "play"

@@ -1,0 +1,14 @@
+{
+  "trait": "skills.spotify.next",
+  "features": [
+    {
+      "name": "Skip to next track",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok"] }
+        }
+      ]
+    }
+  ]
+}

@@ -241,6 +241,26 @@
     {
       "content": "It currently says that I should provide concise, helpful answers, follow your lead, and assist with technical topics. If you'd like to adjust anything, let me know.",
       "role": "assistant"
+    },
+    {
+      "content": "Do you see tools to control Spotify?",
+      "role": "user"
+    },
+    {
+      "content": "I don’t have a direct tool for controlling Spotify built in right now. But you could integrate with Spotify’s API or use third-party services. Let me know if you need help with that.",
+      "role": "assistant"
+    },
+    {
+      "content": "Um",
+      "role": "user"
+    },
+    {
+      "content": "Can you check under like music Spotify?",
+      "role": "user"
+    },
+    {
+      "content": "It looks like there aren't direct tools specifically for Spotify control listed right now. You might want to check other ways, like using external APIs or commands. Would you like help with something else?",
+      "role": "assistant"
     }
   ],
   "model": "test-model",

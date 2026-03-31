@@ -1,0 +1,14 @@
+{
+  "trait": "skills.spotify.play",
+  "features": [
+    {
+      "name": "Play and resume Spotify",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok"] }
+        }
+      ]
+    }
+  ]
+}
