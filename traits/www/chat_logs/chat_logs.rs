@@ -541,9 +541,11 @@ function normalizeSessions(result) {
     const jsonSession = jsonBySessionId[sessionId];
     const transcript = extractTranscript(jsonSession?.data?.requests, 'json');
     const isEmpty = meta?.isEmpty === true;
+    const requestCount = jsonSession?.request_count || transcript.length || 0;
 
-    // Skip truly empty sessions with no persisted JSON
-    if (isEmpty && !jsonSession) continue;
+    // Skip empty sessions and stub "New Chat" sessions with no real content
+    if (isEmpty) continue;
+    if (requestCount === 0 && (!meta?.title || meta.title === 'New Chat')) continue;
 
     const title = meta?.title || jsonSession?.title || sessionId;
     const ts = meta?.lastMessageDate || meta?.timing?.startTime || 0;
