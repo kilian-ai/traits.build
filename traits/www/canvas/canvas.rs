@@ -119,14 +119,13 @@ pub fn canvas(_args: &[Value]) -> Value {
                             // Inject non-script HTML first
                             container.innerHTML = tmp.innerHTML;
 
-                            // Now execute scripts — elements are in DOM so getElementById etc. work
+                            // Execute scripts via new Function() — reliable execution + proper error catching
+                            // Wrapped in IIFE scope so const/let declarations don't clash across renders
                             for (const src of scriptSources) {
-                                try {
-                                    const s = document.createElement('script');
-                                    src.attrs.forEach(([n, v]) => s.setAttribute(n, v));
-                                    s.textContent = src.text;
-                                    container.appendChild(s);
-                                } catch (e) { console.error('canvas script error:', e); }
+                                if (src.text) {
+                                    try { (new Function(src.text))(); }
+                                    catch (e) { console.error('canvas script error:', e); }
+                                }
                             }
                         }
 
