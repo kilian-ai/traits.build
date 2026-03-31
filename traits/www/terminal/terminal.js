@@ -436,6 +436,7 @@ export async function createTerminal(mountEl, opts = {}) {
                         activeSdk.startVoice({
                             voice: voiceName,
                             model: model || 'gpt-realtime-mini-2025-12-15',
+                            agent: agent || '',
                             onTranscript: (text) => {
                                 term.write(`\r\n\x1b[92m🎤 ${text}\x1b[0m\r\n`);
                             },

@@ -1190,6 +1190,49 @@ export class Traits {
         _voiceSdk = this;
 
         try {
+            // ── Load custom voice instructions FIRST ──
+            // Priority: opts.instructions > localStorage custom > VFS bundled default
+            const LS_VOICE_INSTRUCTIONS = 'traits.voice.instructions';
+            let voiceInstructions = opts.instructions || '';
+            if (!voiceInstructions) {
+                try { voiceInstructions = (localStorage.getItem(LS_VOICE_INSTRUCTIONS) || '').trim(); } catch(_) {}
+            }
+            if (!voiceInstructions) {
+                // Try reading from WASM VFS (bundled realtime_instructions.md)
+                try {
+                    if (wasm && wasm.vfs_read) {
+                        const content = wasm.vfs_read('traits/sys/voice/realtime_instructions.md');
+                        if (content) voiceInstructions = content;
+                    }
+                } catch(_) {}
+            }
+            if (!voiceInstructions) {
+                voiceInstructions = 'You are a concise, helpful voice assistant powered by traits.build. Keep responses short and conversational. You have access to function-calling tools that execute locally via WebAssembly.';
+            }
+            // Inject into WASM instruct trait so get/set work during the session
+            try { await this.call('sys.voice.instruct', ['set', voiceInstructions]); } catch(_) {}
+
+            // ── Build full instructions (mirrors native build_instructions) ──
+            const instructionParts = [];
+            // 1. Agent context
+            if (opts.agent) {
+                instructionParts.push(
+                    `You are operating as the "${opts.agent}" coding agent on the traits.build platform. ` +
+                    `The user is a developer who may ask about code, architecture, or technical topics. ` +
+                    `Maintain awareness of this agent context in your responses.`
+                );
+            }
+            // 2. Voice-specific instructions (custom or default)
+            instructionParts.push(voiceInstructions);
+            const fullInstructions = instructionParts.join('\n\n');
+            console.log('[Voice] Instructions loaded (' + fullInstructions.length + ' chars, source: ' + (opts.instructions ? 'opts' : 'vfs/localStorage') + ')');
+
+            // ── Build tool definitions ──
+            let tools = [];
+            if (enableTools) {
+                tools = await _buildVoiceTools(this);
+            }
+
             // ── Ephemeral token: browser WebRTC needs a short-lived token ──
             let ephemeralKey = null;
 
@@ -1218,8 +1261,10 @@ export class Traits {
                         },
                         body: JSON.stringify({
                             session: { type: 'realtime', model,
+                                       instructions: fullInstructions,
                                        modalities: ['text', 'audio'],
                                        voice: voice,
+                                       tools: tools.length > 0 ? tools : undefined,
                                        input_audio_transcription: { model: 'whisper-1' },
                                        turn_detection: { type: 'server_vad', threshold: 0.8,
                                                          prefix_padding_ms: 300, silence_duration_ms: 800 } }
@@ -1255,34 +1300,6 @@ export class Traits {
                 }
             });
 
-            // ── Build tool definitions ──
-            let tools = [];
-            if (enableTools) {
-                tools = await _buildVoiceTools(this);
-            }
-
-            // ── Load custom voice instructions ──
-            // Priority: opts.instructions > localStorage custom > VFS bundled default
-            const LS_VOICE_INSTRUCTIONS = 'traits.voice.instructions';
-            let voiceInstructions = opts.instructions || '';
-            if (!voiceInstructions) {
-                try { voiceInstructions = (localStorage.getItem(LS_VOICE_INSTRUCTIONS) || '').trim(); } catch(_) {}
-            }
-            if (!voiceInstructions) {
-                // Try reading from WASM VFS (bundled realtime_instructions.md)
-                // Use wasm.vfs_read directly — backgroundCall defaults to WORKER adapter which doesn't handle VFS
-                try {
-                    if (wasm && wasm.vfs_read) {
-                        const content = wasm.vfs_read('traits/sys/voice/realtime_instructions.md');
-                        if (content) voiceInstructions = content;
-                    }
-                } catch(_) {}
-            }
-            // Inject into WASM instruct trait so get/set work during the session
-            if (voiceInstructions) {
-                try { await this.call('sys.voice.instruct', ['set', voiceInstructions]); } catch(_) {}
-            }
-
             _dispatchVoiceEvent('started', { voice, model, tools: tools.length });
 
             // ── WebRTC peer connection ──
@@ -1301,13 +1318,13 @@ export class Traits {
 
             // Handle data channel open — send session config
             _voiceDc.addEventListener('open', () => {
-                const fallbackInstructions = 'You are a concise, helpful voice assistant. Keep responses short and conversational. You have access to function-calling tools that execute locally via WebAssembly.';
+                const fallbackInstructions = 'You are a concise, helpful voice assistant powered by traits.build. Keep responses short and conversational. You have access to function-calling tools that execute locally via WebAssembly.';
 
-                // WebRTC session.update: most session fields are immutable (locked at
-                // token creation). Only instructions and tools are mutable here.
+                // WebRTC session.update: instructions and tools are mutable after
+                // session creation. Do NOT include type:'realtime' — that field is
+                // only valid in the /client_secrets create request.
                 const sessionConfig = {
-                    type: 'realtime',
-                    instructions: voiceInstructions || fallbackInstructions,
+                    instructions: fullInstructions || fallbackInstructions,
                 };
                 if (tools.length > 0) sessionConfig.tools = tools;
                 _voiceDc.send(JSON.stringify({ type: 'session.update', session: sessionConfig }));
@@ -1391,7 +1408,7 @@ export class Traits {
                                             if (_voiceDc && _voiceDc.readyState === 'open') {
                                                 _voiceDc.send(JSON.stringify({
                                                     type: 'session.update',
-                                                    session: { type: 'realtime', instructions: updated }
+                                                    session: { instructions: updated }
                                                 }));
                                             }
                                         } else if (r.action === 'reset') {
