@@ -212,10 +212,10 @@ async function _ensureTTS() {
     _ttsLoading = (async () => {
         try {
             _localVoiceProgress('Loading Kokoro TTS model (first run downloads ~92 MB)…');
-            const kokoro = await import('https://cdn.jsdelivr.net/npm/kokoro-js');
+            const kokoro = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1');
             _ttsModel = await kokoro.KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
                 dtype: 'q8',
-                device: 'webgpu',
+                device: 'wasm',
                 progress_callback: (p) => {
                     const status = p.status || '';
                     if (p.progress != null) {
