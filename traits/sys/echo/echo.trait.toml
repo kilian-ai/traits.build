@@ -1,0 +1,21 @@
+[trait]
+description = "Display text on screen — used by voice agent to show links, code, or anything hard to speak aloud"
+version = "v260331.011807"
+checksum = "d9f82a9df5ed1d60d69c3e8efdc01335131a036072a8a8520a2e4c933e3336ba"
+author = "system"
+tags = ["sys", "echo", "voice", "display"]
+
+[signature]
+params = [
+  { name = "text", type = "string", description = "Text to display (links, code, file paths, etc.)", required = true, example = "https://www.traits.build" },
+]
+
+[signature.returns]
+type = "map"
+description = "{ok: bool, text: string}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "echo"
+wasm = true

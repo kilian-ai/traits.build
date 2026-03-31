@@ -1,0 +1,23 @@
+[trait]
+description = "Execute a shell command and return stdout, stderr, and exit code"
+version = "v260331.011807"
+checksum = "ab470232728da57333c2bc1718b9efe18541dce8d1ea837cefc34cab436acd78"
+author = "system"
+tags = ["sys", "shell", "exec", "command"]
+
+[signature]
+params = [
+  { name = "command", type = "string", description = "Shell command to execute (passed to sh -c)", required = true, example = "ls -la" },
+  { name = "cwd", type = "string", description = "Working directory (optional, defaults to current dir)", required = false },
+  { name = "timeout", type = "int", description = "Timeout in seconds (default 60, max 300)", required = false, default = "60" },
+]
+
+[signature.returns]
+type = "map"
+description = "{ok: bool, exit_code: int, stdout: string, stderr: string}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "shell"
+wasm = false

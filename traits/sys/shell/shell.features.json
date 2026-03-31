@@ -1,0 +1,23 @@
+{
+  "trait": "sys.shell",
+  "features": [
+    {
+      "name": "Execute shell commands",
+      "description": "Run shell commands via sh -c and return stdout, stderr, exit code",
+      "examples": [
+        {
+          "input": ["echo hello"],
+          "output": { "contains": ["ok", "hello"] }
+        },
+        {
+          "input": ["pwd", "/tmp"],
+          "output": { "contains": ["ok", "tmp"] }
+        },
+        {
+          "input": ["false"],
+          "output": { "contains": ["exit_code", "1"] }
+        }
+      ]
+    }
+  ]
+}

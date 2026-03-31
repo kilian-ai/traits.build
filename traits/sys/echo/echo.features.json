@@ -1,0 +1,22 @@
+{
+  "trait": "sys.echo",
+  "features": [
+    {
+      "name": "Echo text to screen",
+      "examples": [
+        {
+          "input": ["hello world"],
+          "output": { "contains": ["ok", "hello world"] }
+        },
+        {
+          "input": ["https://www.traits.build"],
+          "output": { "contains": ["ok", "traits.build"] }
+        },
+        {
+          "input": [""],
+          "output": { "contains": ["ok"] }
+        }
+      ]
+    }
+  ]
+}
