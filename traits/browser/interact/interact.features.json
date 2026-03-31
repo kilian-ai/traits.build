@@ -41,6 +41,17 @@
       "checks": [
         { "field": "ok", "eq": false }
       ]
+    },
+    {
+      "description": "Localhost is blocked by default for safety",
+      "args": [
+        "http://127.0.0.1:8090",
+        []
+      ],
+      "checks": [
+        { "field": "ok", "eq": false },
+        { "field": "error", "contains": "Refusing local/private URL by default" }
+      ]
     }
   ]
 }

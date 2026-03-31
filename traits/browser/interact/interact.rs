@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
-use std::process::Command;
 use std::io::Write;
+use std::process::Command;
 
 pub fn interact(args: &[Value]) -> Value {
     let url = match args.first().and_then(|v| v.as_str()) {
@@ -11,6 +11,16 @@ pub fn interact(args: &[Value]) -> Value {
 
     let actions = args.get(1).cloned().unwrap_or_else(|| json!([]));
     let headless = args.get(2).and_then(|v| v.as_bool()).unwrap_or(true);
+    let allow_local = args.get(3).and_then(|v| v.as_bool()).unwrap_or(false);
+
+    if !allow_local && is_local_or_private_url(&url) {
+      return json!({
+        "ok": false,
+        "error": "Refusing local/private URL by default for safety. Pass allow_local=true as 4th argument to opt in.",
+        "url": url,
+        "hint": "browser.interact(url, actions, headless, true)"
+      });
+    }
 
     let node_path = match find_node() {
         Some(p) => p,
@@ -146,6 +156,54 @@ fn find_playwright_node_modules(node_path: &str) -> Option<String> {
       }
       None
 }
+
+    fn is_local_or_private_url(url: &str) -> bool {
+      let host = extract_host(url);
+      match host {
+        Some(h) => is_local_or_private_host(&h),
+        None => false,
+      }
+    }
+
+    fn extract_host(url: &str) -> Option<String> {
+      let after_scheme = url.split_once("://")?.1;
+      let authority = after_scheme.split('/').next().unwrap_or(after_scheme);
+      let no_auth = authority.rsplit('@').next().unwrap_or(authority);
+
+      if no_auth.starts_with('[') {
+        let end = no_auth.find(']')?;
+        return Some(no_auth[1..end].to_string());
+      }
+
+      Some(no_auth.split(':').next().unwrap_or(no_auth).to_string())
+    }
+
+    fn is_local_or_private_host(host: &str) -> bool {
+      let h = host.trim().to_ascii_lowercase();
+      if h.is_empty() {
+        return false;
+      }
+
+      if matches!(h.as_str(), "localhost" | "127.0.0.1" | "::1" | "0.0.0.0" | "host.docker.internal") {
+        return true;
+      }
+
+      if let Ok(v4) = h.parse::<std::net::Ipv4Addr>() {
+        let o = v4.octets();
+        return o[0] == 10
+          || (o[0] == 172 && (16..=31).contains(&o[1]))
+          || (o[0] == 192 && o[1] == 168)
+          || o[0] == 127
+          || (o[0] == 169 && o[1] == 254);
+      }
+
+      if let Ok(v6) = h.parse::<std::net::Ipv6Addr>() {
+        return v6.is_loopback() || v6.is_unique_local() || v6.is_unicast_link_local();
+      }
+
+      h.ends_with(".local")
+    }
+
 fn build_playwright_script(url: &str, actions: &Value, headless: bool) -> String {
     let actions_json = actions.to_string();
     let headless_str = if headless { "true" } else { "false" };

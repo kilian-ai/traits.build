@@ -1,7 +1,7 @@
 [trait]
 description = "Interact with a web page using Playwright (click, type, evaluate JS, screenshot, wait). Requires Node.js and @playwright/browser-chromium installed."
-version = "v260331.133730"
-checksum = "fcf3ca3ba48205585dc08959526582fbf4b3db7a676747b2b2b2f0488eca18dc"
+version = "v260331.190313"
+checksum = "cd30a700bde35208e4eaadf4823c23dde6d47e3455cf4931bff5fe1a02698452"
 author = "system"
 tags = ["browser", "interact", "playwright", "automation", "web", "click", "type"]
 
@@ -10,6 +10,7 @@ params = [
   { name = "url", type = "string", description = "Starting URL to navigate to", required = true, example = "https://example.com" },
   { name = "actions", type = "list<map>", description = "Ordered list of actions to perform. Each action: { type, selector, value, script, timeout }. Types: click, type, fill, evaluate, screenshot, wait, navigate, select, check, hover, scroll", required = false, example = "[{\"type\":\"click\",\"selector\":\"button\"},{\"type\":\"screenshot\"}]" },
   { name = "headless", type = "bool", description = "Run in headless mode (default true)", required = false, example = "true" },
+  { name = "allow_local", type = "bool", description = "Allow localhost/private-network targets (default false for safety)", required = false, example = "false" },
 ]
 
 [signature.returns]

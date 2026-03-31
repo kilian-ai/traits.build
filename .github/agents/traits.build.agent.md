@@ -927,6 +927,10 @@ Layer 0: kernel/logic — Shared Rust library
 - `terminal.js` — WASM CLI terminal using xterm.js, uses SDK for REST-delegated calls
 - Hash routing — `ROUTES` map in `index.html` maps paths to trait calls
 
+**Browser automation safety:**
+- `browser.interact` blocks localhost/private-network URLs by default to reduce accidental host-side impact during tests.
+- To opt in intentionally, pass `allow_local=true` as the 4th argument: `browser.interact(url, actions, headless, true)`.
+
 **SPA Route Table:**
 ```javascript
 '/':           'www.traits.build'    // Homepage (dylib)

@@ -1161,10 +1161,23 @@ class Traits {
             return this._callRest(cleanPath, args, opts);
         }
 
-        // 2. Default route: prefer connected native backends first,
-        // then fall back to local WASM for resilience/offline use.
+        // 2. Default route: WASM-callable traits go local first (fast, offline-safe, works on
+        // static hosting). Non-WASM-callable traits (browser.*, spotify.*, etc.) go to native
+        // backends first so helper/relay/server can serve them from the browser.
 
-        // 2a. Local helper (native)
+        if (wasmReady && wasmCallableSet.has(cleanPath)) {
+            wasmResult = this._callWasm(cleanPath, args);
+            if (wasmResult.ok) {
+                // Intercept WebLLM dispatch sentinel — route to JS-side WebLLM engine
+                if (wasmResult.result && wasmResult.result.dispatch === 'webllm') {
+                    return this._callWebLLM(wasmResult.result.prompt, wasmResult.result.model);
+                }
+                return wasmResult;
+            }
+            // WASM failed — fall through to native backends
+        }
+
+        // 2a. Local helper (native) — primary path for non-WASM traits, fallback for WASM
         if (helperReady) {
             const t0 = performance.now();
             const result = await callHelper(cleanPath, args, opts);
@@ -1199,19 +1212,7 @@ class Traits {
             remoteFailure = result;
         }
 
-        // 3. WASM local fallback
-        if (wasmReady && wasmCallableSet.has(cleanPath)) {
-            wasmResult = this._callWasm(cleanPath, args);
-            if (wasmResult.ok) {
-                // Intercept WebLLM dispatch sentinel — route to JS-side WebLLM engine
-                if (wasmResult.result && wasmResult.result.dispatch === 'webllm') {
-                    return this._callWebLLM(wasmResult.result.prompt, wasmResult.result.model);
-                }
-                return wasmResult;
-            }
-        }
-
-        // 4. Nothing succeeded
+        // 3. Nothing succeeded
         if (wasmResult) return wasmResult;
         if (remoteFailure) return remoteFailure;
         return { ok: false, error: `No dispatch path for '${cleanPath}'`, dispatch: 'none' };
@@ -1235,10 +1236,11 @@ class Traits {
         const parsed = parseDispatchTarget(path);
         const forced = parsed.target;
         if (forced) return forced === 'native' ? 'helper' : forced;
+        // Mirror call() logic: WASM-callable traits go local first
+        if (wasmReady && wasmCallableSet.has(parsed.cleanPath)) return 'wasm';
         if (helperReady) return 'helper';
         if (_relayCode()) return 'relay';
         if (this.server) return 'rest';
-        if (wasmReady && wasmCallableSet.has(parsed.cleanPath)) return 'wasm';
         return 'none';
     }
 
