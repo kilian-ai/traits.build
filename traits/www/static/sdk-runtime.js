@@ -1753,23 +1753,23 @@ class Traits {
                     if (opts.onTranscript) opts.onTranscript(transcript);
                     _dispatchVoiceEvent('transcript', { text: transcript });
 
-                    // 2. LLM — generate response via llm/prompt interface
+                    // 2. LLM — generate response via WebLLM with proper chat messages
                     _localVoiceProgress('Thinking…');
                     history.push({ role: 'user', content: transcript });
 
                     const systemPrompt = opts.instructions ||
-                        'You are a concise, helpful voice assistant powered by traits.build. ' +
+                        'You are a concise, helpful voice assistant. ' +
                         'Keep responses short — 1-3 sentences. Be conversational and natural. ' +
-                        'Do not use markdown formatting, bullet points, or special characters.';
+                        'Do not use markdown formatting, bullet points, or special characters. ' +
+                        'Do not offer to perform actions you cannot do.';
 
-                    const promptParts = [`<system>\n${systemPrompt}\n</system>\n`];
-                    for (const turn of history) {
-                        promptParts.push(`${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.content}`);
-                    }
-                    promptParts.push('Assistant:');
-                    const fullPrompt = promptParts.join('\n');
+                    // Build proper chat messages array for WebLLM
+                    const messages = [
+                        { role: 'system', content: systemPrompt },
+                        ...history,
+                    ];
 
-                    const llmResult = await sdk.call('llm.prompt', [fullPrompt]);
+                    const llmResult = await sdk._callWebLLM(messages);
                     let responseText = '';
                     if (llmResult.ok) {
                         responseText = typeof llmResult.result === 'string'
@@ -1778,8 +1778,6 @@ class Traits {
                     } else {
                         responseText = 'Sorry, I could not generate a response.';
                     }
-                    // Clean up LLM output for voice
-                    responseText = responseText.replace(/^Assistant:\s*/i, '').trim();
                     // Strip markdown artifacts
                     responseText = responseText.replace(/[*_`#]/g, '').replace(/\n+/g, ' ').trim();
 
@@ -2299,7 +2297,7 @@ class Traits {
         }
     }
 
-    async _callWebLLM(prompt, model, onToken) {
+    async _callWebLLM(promptOrMessages, model, onToken) {
         // 5 minutes for first-time model download (~1.7 GB), subsequent calls are fast
         const TIMEOUT_MS = 300_000;
         const t0 = performance.now();
@@ -2310,12 +2308,16 @@ class Traits {
                 (async () => {
                     const engine = await _ensureWebLLM(model);
                     _webllmProgress('Running inference…');
-                    console.log('[WebLLM] Starting inference, prompt length:', prompt.length);
+                    // Accept either a string prompt or a messages array
+                    const messages = Array.isArray(promptOrMessages)
+                        ? promptOrMessages
+                        : [{ role: 'user', content: promptOrMessages }];
+                    console.log('[WebLLM] Starting inference, messages:', messages.length);
                     let content = '';
                     if (typeof onToken === 'function') {
                         // Streaming mode: tokens arrive one at a time
                         const stream = await engine.chat.completions.create({
-                            messages: [{ role: 'user', content: prompt }],
+                            messages,
                             temperature: 0.7,
                             max_tokens: 1024,
                             stream: true,
@@ -2337,7 +2339,7 @@ class Traits {
                     } else {
                         // Non-streaming fallback
                         const reply = await engine.chat.completions.create({
-                            messages: [{ role: 'user', content: prompt }],
+                            messages,
                             temperature: 0.7,
                             max_tokens: 1024,
                         });
