@@ -145,9 +145,9 @@ const ROUTES = {
   '/admin':      'www.admin.spa',
   '/settings':   'www.admin.spa',
   '/seo':        'www.seo',
-  '/playground': 'www.docs.api',
+  '/playground': 'www.playground',
   '/canvas':     'www.canvas',
-    '/terminal':   'www.docs.api',
+  '/terminal':   'www.docs.api',
   '/wasm':       'www.wasm',
 };
 
@@ -408,9 +408,12 @@ function currentRouteFromLocation() {
 
 // ── Router ──
 let currentRoute = null;
+let navId = 0;
 
 async function navigate(route, pushState = true) {
+  if (!sdk) return; // Not booted yet
   if (route === currentRoute) return;
+  const thisNav = ++navId;
   currentRoute = route;
 
   const traitPath = ROUTES[route];
@@ -424,6 +427,9 @@ async function navigate(route, pushState = true) {
 
   const result = await sdk.call(traitPath, []);
 
+  // Another navigation started while we were waiting — abandon this stale one
+  if (thisNav !== navId) return;
+
   frame.style.opacity = '1';
 
   if (result.ok && typeof result.result === 'string') {
@@ -433,6 +439,9 @@ async function navigate(route, pushState = true) {
       (result.error || 'Unknown error') + '</p><p style="color:var(--muted);margin-top:0.5rem">Trait: ' + traitPath +
       ' · Dispatch: ' + (result.dispatch || '?') + '</p></div>';
   }
+
+  // Check again after injectPage (which may have awaits for external scripts)
+  if (thisNav !== navId) return;
 
   if (pushState) {
     if (isLocal) {
