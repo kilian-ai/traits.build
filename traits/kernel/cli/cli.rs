@@ -1248,7 +1248,7 @@ impl CliSession {
                         "/voice" => {
                             // Switch to voice mode — OpenAI Realtime API
                             // Voice requires native helper (sox for mic/speaker)
-                            let voice_name = if arg.is_empty() { "cedar" } else { arg };
+                            let voice_name = if arg.is_empty() { "shimmer" } else { arg };
                             let (agent, _model, session_id) = if let Some(ref c) = self.chat {
                                 (
                                     c.agent.as_str().to_string(),
