@@ -1,7 +1,6 @@
 use serde_json::{json, Value};
 use std::process::Command;
 use std::io::Write;
-use base64::Engine;
 
 pub fn interact(args: &[Value]) -> Value {
     let url = match args.first().and_then(|v| v.as_str()) {
@@ -38,6 +37,7 @@ pub fn interact(args: &[Value]) -> Value {
     let script = build_playwright_script(&url, &actions, headless);
     let script_path = std::env::temp_dir().join(format!(
         "traits-pw-{}.mjs",
+        "traits-pw-{}.cjs",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -56,6 +56,11 @@ pub fn interact(args: &[Value]) -> Value {
 
     let out = Command::new(&node_path)
         .arg(&script_path)
+        .output();
+
+      let out = Command::new(&node_path)
+        .arg(&script_path)
+        .env("NODE_PATH", &node_modules_path)
         .output();
 
     let _ = std::fs::remove_file(&script_path);

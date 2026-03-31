@@ -85,27 +85,49 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 }
                             `;
                             document.head.appendChild(base);
-                            // Parse HTML
-                            const parser = new DOMParser();
-                            const doc = parser.parseFromString(content, 'text/html');
-                            // Inject ALL style tags (head + body) — voice agents may put them anywhere
-                            doc.querySelectorAll('style').forEach(style => {
+
+                            // Extract HTML body from full documents, use as-is for fragments
+                            let html = content;
+                            if (/<body[\s>]/i.test(content)) {
+                                const doc = new DOMParser().parseFromString(content, 'text/html');
+                                doc.querySelectorAll('head style').forEach(style => {
+                                    const s = document.createElement('style');
+                                    s.dataset.canvas = '1';
+                                    s.textContent = style.textContent;
+                                    document.head.appendChild(s);
+                                });
+                                html = doc.body.innerHTML;
+                            }
+
+                            // Separate scripts from HTML before injecting
+                            const tmp = document.createElement('div');
+                            tmp.innerHTML = html;
+                            const scriptSources = [];
+                            tmp.querySelectorAll('script').forEach(s => {
+                                scriptSources.push({ text: s.textContent, attrs: Array.from(s.attributes).map(a => [a.name, a.value]) });
+                                s.remove();
+                            });
+                            // Move inline style tags to head
+                            tmp.querySelectorAll('style').forEach(style => {
                                 const s = document.createElement('style');
                                 s.dataset.canvas = '1';
                                 s.textContent = style.textContent;
                                 document.head.appendChild(s);
+                                style.remove();
                             });
-                            // Remove style tags from body before injecting (already moved to head)
-                            doc.querySelectorAll('body style').forEach(s => s.remove());
-                            // Set body content
-                            container.innerHTML = doc.body.innerHTML;
-                            // Execute scripts
-                            container.querySelectorAll('script').forEach(old => {
-                                const s = document.createElement('script');
-                                Array.from(old.attributes).forEach(a => s.setAttribute(a.name, a.value));
-                                s.textContent = old.textContent;
-                                old.parentNode.replaceChild(s, old);
-                            });
+
+                            // Inject non-script HTML first
+                            container.innerHTML = tmp.innerHTML;
+
+                            // Now execute scripts — elements are in DOM so getElementById etc. work
+                            for (const src of scriptSources) {
+                                try {
+                                    const s = document.createElement('script');
+                                    src.attrs.forEach(([n, v]) => s.setAttribute(n, v));
+                                    s.textContent = src.text;
+                                    container.appendChild(s);
+                                } catch (e) { console.error('canvas script error:', e); }
+                            }
                         }
 
                         async function loadCanvas() {
