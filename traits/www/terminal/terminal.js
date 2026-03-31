@@ -446,6 +446,16 @@ export async function createTerminal(mountEl, opts = {}) {
                             onToolCall: (name, args) => {
                                 term.write(`\x1b[93m⚡ ${name.replace(/_/g, '.')}\x1b[0m\r\n`);
                             },
+                            onToolResult: (name, resultStr) => {
+                                // sys.echo: display the echoed text prominently
+                                if (name === 'sys_echo') {
+                                    try {
+                                        const r = JSON.parse(resultStr);
+                                        const text = r.text || r.result?.text || '';
+                                        if (text) term.write(`\x1b[97m📋 ${text}\x1b[0m\r\n`);
+                                    } catch(_) {}
+                                }
+                            },
                             onError: (msg) => {
                                 term.write(`\x1b[31mVoice error: ${msg}\x1b[0m\r\n`);
                             },
