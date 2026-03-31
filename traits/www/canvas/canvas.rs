@@ -194,6 +194,9 @@ pub fn canvas(_args: &[Value]) -> Value {
 
                         // Initial load
                         loadCanvas();
+
+                        // Register cleanup: remove window.traits when navigating away
+                        window._pageCleanup = () => { try { delete window.traits; } catch(_) {} };
                     })();
                 "#)) }
             }
