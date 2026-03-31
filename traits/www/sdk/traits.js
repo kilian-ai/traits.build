@@ -1162,7 +1162,7 @@ export class Traits {
      * Includes audio playback and function calling (tool use).
      * @param {Object} opts
      * @param {string} [opts.apiKey] - OpenAI API key (or set via setVoiceApiKey)
-     * @param {string} [opts.voice='cedar'] - Voice: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
+     * @param {string} [opts.voice='shimmer'] - Voice: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
      * @param {string} [opts.model='gpt-realtime-mini-2025-12-15'] - Realtime model
      * @param {string} [opts.instructions] - Custom system instructions
      * @param {boolean} [opts.tools=true] - Enable function calling with trait tools
@@ -1184,7 +1184,7 @@ export class Traits {
             return { ok: false, error: 'OpenAI API key required. Set OPENAI_API_KEY in Settings > Secrets' };
         }
 
-        const voice = opts.voice || 'cedar';
+        const voice = opts.voice || 'shimmer';
         const model = opts.model || 'gpt-realtime-mini-2025-12-15';
         const enableTools = opts.tools !== false;
         _voiceSdk = this;
@@ -1270,9 +1270,12 @@ export class Traits {
             }
             if (!voiceInstructions) {
                 // Try reading from WASM VFS (bundled realtime_instructions.md)
+                // Use wasm.vfs_read directly — backgroundCall defaults to WORKER adapter which doesn't handle VFS
                 try {
-                    const vfsResult = await this.backgroundCall('vfs_read', { path: 'traits/sys/voice/realtime_instructions.md' });
-                    if (vfsResult?.ok && vfsResult.result) voiceInstructions = vfsResult.result;
+                    if (wasm && wasm.vfs_read) {
+                        const content = wasm.vfs_read('traits/sys/voice/realtime_instructions.md');
+                        if (content) voiceInstructions = content;
+                    }
                 } catch(_) {}
             }
             // Inject into WASM instruct trait so get/set work during the session

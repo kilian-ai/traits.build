@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 /// Useful for the model to check its own state.
 pub fn voice_status(_args: &[Value]) -> Value {
     // Read persisted preferences (same source as sys.voice.config)
-    let voice = read_pref("voice").unwrap_or_else(|| "cedar".into());
+    let voice = read_pref("voice").unwrap_or_else(|| "shimmer".into());
     let model = read_pref("model").unwrap_or_else(|| "gpt-realtime-mini-2025-12-15".into());
     let agent = read_pref("agent").unwrap_or_default();
 

@@ -9,7 +9,7 @@
       "tests": [],
       "examples": [
         {
-          "input": ["cedar"],
+          "input": ["shimmer"],
           "output": {
             "type": "object",
             "description": "{ok: true, turns: int} or {ok: false, error: string}"

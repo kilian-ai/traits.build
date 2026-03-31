@@ -36,7 +36,7 @@ pub fn voice(args: &[Value]) -> Value {
             .get(2)
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .unwrap_or("cedar");
+            .unwrap_or("shimmer");
         let api_key = match resolve_api_key() {
             Some(k) => k,
             None => {
@@ -47,7 +47,7 @@ pub fn voice(args: &[Value]) -> Value {
     }
 
     // Read persistent defaults from sys.config, then allow arg overrides
-    let default_voice = read_voice_pref("voice").unwrap_or_else(|| "cedar".into());
+    let default_voice = read_voice_pref("voice").unwrap_or_else(|| "shimmer".into());
     let default_model =
         read_voice_pref("model").unwrap_or_else(|| "gpt-realtime-mini-2025-12-15".into());
     let default_agent = read_voice_pref("agent").unwrap_or_default();

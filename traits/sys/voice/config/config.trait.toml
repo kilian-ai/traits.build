@@ -1,7 +1,7 @@
 [trait]
 description = "Get or set persistent voice chat preferences (voice, model, agent) — changes apply immediately and become defaults"
-version = "v260330.235250"
-checksum = "60d019e2043acbf048fc5ca272f0e8ac624c0ccc62af9c57a756a2f2cb16c5c9"
+version = "v260331"
+checksum = "b61a18fb25d4f6caff13ab83895a757737dc7b6292eab5b545212272ac85b050"
 author = "system"
 tags = ["sys", "voice", "config", "preferences"]
 
