@@ -137,6 +137,18 @@ let _voiceAudioEl = null;        // <audio> element for model playback
 let _voiceApiKey = null;
 let _voiceSdk = null;            // Reference to Traits instance for tool dispatch
 
+function parseDispatchTarget(path) {
+    if (typeof path !== 'string') return { cleanPath: path, target: null };
+    const at = path.lastIndexOf('@');
+    if (at < 0) return { cleanPath: path, target: null };
+    const suffix = path.slice(at + 1).toLowerCase();
+    const target = new Set(['wasm', 'native', 'helper', 'relay', 'rest']).has(suffix)
+        ? suffix
+        : null;
+    if (!target) return { cleanPath: path, target: null };
+    return { cleanPath: path.slice(0, at), target };
+}
+
 // ── Local voice state (WebGPU STT + LLM + TTS) ──
 let _localVoiceActive = false;
 let _localVoiceStream = null;
@@ -1113,18 +1125,83 @@ class Traits {
         // Ensure initialized
         if (!this._initPromise) await this.init();
 
+        // Path-level target hint (e.g. "sys.ps@wasm")
+        const parsed = parseDispatchTarget(path);
+        const cleanPath = parsed.cleanPath;
+        const inlineTarget = parsed.target;
+
+        const forced = (opts.force || inlineTarget || '').toLowerCase();
+        const forceMode = forced === 'native' ? 'helper' : (forced || null);
+
         // 0. Binding resolution: redirect interface paths to bound implementations
-        const bound = this._bindings.get(path);
-        if (bound && bound !== path) {
+        const bound = this._bindings.get(cleanPath);
+        if (bound && bound !== cleanPath) {
             return this.call(bound, args, opts);
         }
 
-        const forceMode = opts.force === 'native' ? 'helper' : opts.force;
+        let remoteFailure = null;
         let wasmResult = null;
 
-        // 1. WASM (instant, local)
-        if (forceMode === 'wasm' || (!forceMode && wasmReady && wasmCallableSet.has(path))) {
-            wasmResult = this._callWasm(path, args);
+        // 1. Explicitly forced routes
+        if (forceMode === 'wasm') {
+            return this._callWasm(cleanPath, args);
+        }
+
+        if (forceMode === 'helper') {
+            const r = await callHelper(cleanPath, args, opts);
+            return r || { ok: false, error: 'Helper not connected', dispatch: 'helper' };
+        }
+
+        if (forceMode === 'relay') {
+            const r = await callRelay(cleanPath, args);
+            return r || { ok: false, error: 'Relay not connected', dispatch: 'relay' };
+        }
+
+        if (forceMode === 'rest') {
+            return this._callRest(cleanPath, args, opts);
+        }
+
+        // 2. Default route: prefer connected native backends first,
+        // then fall back to local WASM for resilience/offline use.
+
+        // 2a. Local helper (native)
+        if (helperReady) {
+            const t0 = performance.now();
+            const result = await callHelper(cleanPath, args, opts);
+            if (result && result.ok) {
+                result.ms = Math.round((performance.now() - t0) * 10) / 10;
+                return result;
+            }
+            if (result) {
+                result.ms = Math.round((performance.now() - t0) * 10) / 10;
+                remoteFailure = result;
+            }
+        }
+
+        // 2b. Relay (remote native helper)
+        if (_relayCode()) {
+            const t0 = performance.now();
+            const result = await callRelay(cleanPath, args);
+            if (result && result.ok) {
+                result.ms = Math.round((performance.now() - t0) * 10) / 10;
+                return result;
+            }
+            if (result) {
+                result.ms = Math.round((performance.now() - t0) * 10) / 10;
+                remoteFailure = result;
+            }
+        }
+
+        // 2c. Server REST
+        if (this.server) {
+            const result = await this._callRest(cleanPath, args, opts);
+            if (result.ok) return result;
+            remoteFailure = result;
+        }
+
+        // 3. WASM local fallback
+        if (wasmReady && wasmCallableSet.has(cleanPath)) {
+            wasmResult = this._callWasm(cleanPath, args);
             if (wasmResult.ok) {
                 // Intercept WebLLM dispatch sentinel — route to JS-side WebLLM engine
                 if (wasmResult.result && wasmResult.result.dispatch === 'webllm') {
@@ -1132,38 +1209,12 @@ class Traits {
                 }
                 return wasmResult;
             }
-            if (forceMode === 'wasm') return wasmResult; // Forced WASM — don't cascade
-            // WASM failed — cascade to helper/REST
         }
 
-        // 2. Local helper (privileged traits on localhost)
-        if (forceMode === 'helper' || (!forceMode && helperReady)) {
-            const t0 = performance.now();
-            const result = await callHelper(path, args, opts);
-            if (result) {
-                result.ms = Math.round((performance.now() - t0) * 10) / 10;
-                return result;
-            }
-        }
-
-        // 3. Relay (remote helper via pairing code)
-        if (forceMode === 'relay' || (!forceMode && !helperReady && _relayCode())) {
-            const t0 = performance.now();
-            const result = await callRelay(path, args);
-            if (result) {
-                result.ms = Math.round((performance.now() - t0) * 10) / 10;
-                return result;
-            }
-        }
-
-        // 4. Server REST (if server URL is configured)
-        if (this.server) {
-            return this._callRest(path, args, opts);
-        }
-
-        // 5. No dispatch path available
+        // 4. Nothing succeeded
         if (wasmResult) return wasmResult;
-        return { ok: false, error: `No dispatch path for '${path}'`, dispatch: 'none' };
+        if (remoteFailure) return remoteFailure;
+        return { ok: false, error: `No dispatch path for '${cleanPath}'`, dispatch: 'none' };
     }
 
     /**
@@ -1181,9 +1232,13 @@ class Traits {
      * @returns {'wasm'|'helper'|'rest'|'none'}
      */
     dispatchMode(path) {
-        if (wasmReady && wasmCallableSet.has(path)) return 'wasm';
+        const parsed = parseDispatchTarget(path);
+        const forced = parsed.target;
+        if (forced) return forced === 'native' ? 'helper' : forced;
         if (helperReady) return 'helper';
+        if (_relayCode()) return 'relay';
         if (this.server) return 'rest';
+        if (wasmReady && wasmCallableSet.has(parsed.cleanPath)) return 'wasm';
         return 'none';
     }
 
@@ -2545,17 +2600,18 @@ class Traits {
 // ────────────────── MCP Server (browser-only, WASM-powered) ──────────────────
 
 /**
- * Browser-only MCP server backed by the WASM kernel.
- * No server or relay needed — all tool dispatch happens locally in the browser.
+ * Browser MCP server backed by the Traits SDK call cascade.
+ * Tool calls use `Traits.call()` so they can reach helper/relay/server native
+ * traits when connected, while still supporting local WASM fallback.
  *
  * Supports three transports:
- *   1. Direct: call mcpServer.message(jsonRpcString) → jsonRpcResponse
+ *   1. Direct: call await mcpServer.message(jsonRpcString) → jsonRpcResponse
  *   2. BroadcastChannel: cross-tab MCP over a named channel
  *   3. MessagePort: iframe/worker/extension MCP over a MessagePort
  *
  * Usage:
  *   const mcp = new McpServer();                    // direct mode
- *   const resp = mcp.message('{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}');
+ *   const resp = await mcp.message('{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}');
  *
  *   const mcp = new McpServer({ channel: 'traits-mcp' });  // cross-tab
  *   // Other tabs: new BroadcastChannel('traits-mcp').postMessage({jsonrpc:'2.0',...})
@@ -2565,6 +2621,7 @@ class Traits {
 class McpServer {
     constructor(opts = {}) {
         this._listeners = [];
+        this._sdk = opts.sdk || getTraits();
 
         if (opts.channel && typeof BroadcastChannel !== 'undefined') {
             this._bc = new BroadcastChannel(opts.channel);
@@ -2579,19 +2636,147 @@ class McpServer {
     }
 
     /** Process a single JSON-RPC message string. Returns JSON-RPC response string (empty for notifications). */
-    message(jsonRpcString) {
-        if (!wasm || typeof wasm.mcp_message !== 'function') {
+    async message(jsonRpcString) {
+        await this._sdk.init();
+
+        let request;
+        try {
+            request = JSON.parse(jsonRpcString);
+        } catch (e) {
+            return JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: `Parse error: ${e.message}` } });
+        }
+
+        if (request.id === undefined || request.id === null) return '';
+        const id = request.id;
+        const method = request.method || '';
+
+        if (method === 'initialize') {
+            const status = this._sdk.status || {};
             return JSON.stringify({
-                jsonrpc: '2.0', id: null,
-                error: { code: -32603, message: 'WASM kernel not loaded — call Traits.init() first' }
+                jsonrpc: '2.0',
+                id,
+                result: {
+                    protocolVersion: '2024-11-05',
+                    capabilities: { tools: { listChanged: false } },
+                    serverInfo: { name: 'traits-browser-mcp', version: status.version || null },
+                    info: {
+                        runtime: 'browser',
+                        helper_connected: !!status.helper,
+                        relay_connected: !!status.relay,
+                        wasm_loaded: !!status.wasm,
+                    },
+                },
             });
         }
-        return wasm.mcp_message(jsonRpcString);
+
+        if (method === 'ping') {
+            return JSON.stringify({ jsonrpc: '2.0', id, result: {} });
+        }
+
+        if (method === 'tools/list') {
+            const entries = await this._sdk.list();
+            const tools = [];
+            const sorted = [...entries].sort((a, b) => (a.path || '').localeCompare(b.path || ''));
+
+            for (const entry of sorted) {
+                const path = entry?.path || '';
+                if (!path || path === 'sys.mcp' || path === 'kernel.main') continue;
+
+                const properties = {};
+                const required = [];
+                for (const p of (entry.params || [])) {
+                    const name = p?.name || 'arg';
+                    const type = String(p?.type || 'string').toLowerCase();
+                    const schemaType = (type === 'int' || type === 'integer')
+                        ? 'integer'
+                        : (type === 'float' || type === 'number')
+                            ? 'number'
+                            : (type === 'bool' || type === 'boolean')
+                                ? 'boolean'
+                                : 'string';
+                    properties[name] = { type: schemaType };
+                    if (p?.description) properties[name].description = p.description;
+                    if (p?.required !== false) required.push(name);
+                }
+
+                tools.push({
+                    name: path.replace(/\./g, '_'),
+                    description: entry.description || '',
+                    inputSchema: {
+                        type: 'object',
+                        properties,
+                        ...(required.length ? { required } : {}),
+                    },
+                });
+            }
+
+            return JSON.stringify({ jsonrpc: '2.0', id, result: { tools } });
+        }
+
+        if (method === 'tools/call') {
+            const params = request.params || {};
+            const toolName = params.name;
+            if (!toolName || typeof toolName !== 'string') {
+                return JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Missing tool name' } });
+            }
+
+            const argumentsObj = (params.arguments && typeof params.arguments === 'object') ? { ...params.arguments } : {};
+            const forceRaw = (argumentsObj.__dispatch || '').toString().toLowerCase();
+            if ('__dispatch' in argumentsObj) delete argumentsObj.__dispatch;
+            const force = forceRaw && ['wasm', 'native', 'helper', 'relay', 'rest'].includes(forceRaw)
+                ? forceRaw
+                : undefined;
+
+            const traitPathRaw = toolName.replace(/_/g, '.');
+            const parsed = parseDispatchTarget(traitPathRaw);
+            const traitPath = parsed.cleanPath;
+
+            const info = await this._sdk.info(traitPath);
+            let args = [];
+            if (info && Array.isArray(info.params) && info.params.length) {
+                args = info.params.map((p) => Object.prototype.hasOwnProperty.call(argumentsObj, p.name) ? argumentsObj[p.name] : null);
+            } else {
+                args = Object.values(argumentsObj);
+            }
+
+            const callRes = await this._sdk.call(
+                parsed.target ? `${traitPath}@${parsed.target}` : traitPath,
+                args,
+                force ? { force } : {}
+            );
+
+            if (!callRes.ok) {
+                return JSON.stringify({
+                    jsonrpc: '2.0',
+                    id,
+                    error: { code: -32602, message: callRes.error || `Dispatch failed for: ${traitPath}` },
+                });
+            }
+
+            const text = typeof callRes.result === 'string'
+                ? callRes.result
+                : JSON.stringify(callRes.result, null, 2);
+
+            return JSON.stringify({
+                jsonrpc: '2.0',
+                id,
+                result: {
+                    content: [{ type: 'text', text }],
+                    dispatch: callRes.dispatch,
+                },
+            });
+        }
+
+        return JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            error: { code: -32601, message: `Method not found: ${method}` },
+        });
     }
 
     /** Process a parsed JSON-RPC object. Returns parsed response (or null for notifications). */
-    handle(jsonRpcObj) {
-        const resp = this.message(JSON.stringify(jsonRpcObj));
+    async handle(jsonRpcObj) {
+        const resp = await this.message(JSON.stringify(jsonRpcObj));
         if (!resp) return null;
         try { return JSON.parse(resp); } catch { return null; }
     }
@@ -2599,10 +2784,10 @@ class McpServer {
     /** Listen for MCP events (for logging/debugging). */
     onMessage(fn) { this._listeners.push(fn); }
 
-    _handleTransportMessage(data, reply) {
+    async _handleTransportMessage(data, reply) {
         const msg = typeof data === 'string' ? data : JSON.stringify(data);
         for (const fn of this._listeners) try { fn('request', msg); } catch {}
-        const resp = this.message(msg);
+        const resp = await this.message(msg);
         if (resp) {
             for (const fn of this._listeners) try { fn('response', resp); } catch {}
             try { reply(JSON.parse(resp)); } catch { reply(resp); }

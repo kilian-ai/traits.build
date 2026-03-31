@@ -895,11 +895,13 @@ Layer 3: Shells (thin, unique per surface)
   - terminal.js (xterm.js display + WASM CLI)
 
 Layer 2: traits.js — Single JS SDK (ONE source of truth)
-  - Dispatch cascade (WASM → helper → relay → REST)
+  - Dispatch cascade defaults to native backends first when connected (helper → relay → REST), then falls back to WASM
+  - `@wasm` path suffix forces local WASM dispatch even when helper/relay/server are connected
   - Helper discovery + probing
   - Relay connect/disconnect/status
   - WebLLM engine management
   - WASM kernel loader + attachWasm()
+  - Browser MCP server uses `Traits.call()` routing (not WASM-only dispatch)
 
 Layer 1: Kernels (Rust, compiled per target)
   - Browser Kernel (WASM) — 26 pure traits, registry browse, CLI session
