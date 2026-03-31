@@ -1301,12 +1301,11 @@ You're running in the browser on the traits.build platform. The user is a develo
 You have access to function-calling tools that execute locally in the browser via WebAssembly.
 When the user asks you to do something and a matching tool exists, call it directly — don't say you can't.`;
 
-                // WebRTC session.update: voice/model/modalities are locked at token creation.
-                // Only send mutable session fields here.
+                // WebRTC session.update: voice/model/modalities/input_audio_transcription
+                // are locked at token creation. Only send mutable session fields here.
                 const sessionConfig = {
                     type: 'realtime',
                     instructions: opts.instructions || defaultInstructions,
-                    input_audio_transcription: { model: 'whisper-1' },
                     turn_detection: {
                         type: 'server_vad',
                         threshold: 0.8,
