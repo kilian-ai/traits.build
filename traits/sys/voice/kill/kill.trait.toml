@@ -1,0 +1,18 @@
+[trait]
+description = "Kill orphaned voice agent processes (sox rec/play)"
+version = "v260331"
+checksum = "97e9dde1525a36ab3fb715d944c885b570f6768bbd3cf07f270b34d763e4a5b0"
+author = "system"
+tags = ["sys", "voice", "cleanup"]
+
+[signature]
+params = []
+
+[signature.returns]
+type = "map<string, any>"
+description = "Report of killed processes"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "voice_kill"

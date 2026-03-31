@@ -1,0 +1,13 @@
+{
+  "features": [
+    {
+      "name": "kill returns ok with count",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok", "killed", "processes"] }
+        }
+      ]
+    }
+  ]
+}
