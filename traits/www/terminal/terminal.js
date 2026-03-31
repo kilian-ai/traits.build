@@ -434,19 +434,29 @@ export async function createTerminal(mountEl, opts = {}) {
                     }
 
                     // Detect whether to use local voice (WebGPU STT+LLM+TTS) or cloud voice (OpenAI Realtime)
-                    // Local voice is used when:
-                    //   1. Explicitly requested via local:true flag in sentinel
-                    //   2. No OpenAI API key and WebGPU is available (auto-fallback)
+                    // Priority:
+                    //   1. Explicit local:true flag in sentinel → always local
+                    //   2. User preference localStorage['traits.voice.mode'] = 'realtime' + API key → cloud
+                    //   3. User preference localStorage['traits.voice.mode'] = 'local' → local
+                    //   4. Auto-fallback: no API key + WebGPU available → local
                     let useLocalVoice = !!localFlag;
-                    if (!useLocalVoice && !helperConnected && browserVoiceSupported && webgpuAvailable) {
-                        // Check if OpenAI API key is available
-                        let hasApiKey = false;
-                        try {
-                            const settingsKey = (localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim();
-                            const legacyKey = (localStorage.getItem('traits.voice.api_key') || '').trim();
-                            hasApiKey = !!(settingsKey || legacyKey);
-                        } catch(_) {}
-                        if (!hasApiKey) useLocalVoice = true;
+                    let hasApiKey = false;
+                    try {
+                        const settingsKey = (localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim();
+                        const legacyKey = (localStorage.getItem('traits.voice.api_key') || '').trim();
+                        hasApiKey = !!(settingsKey || legacyKey);
+                    } catch(_) {}
+
+                    if (!useLocalVoice) {
+                        // Check stored voice mode preference
+                        const storedMode = (localStorage.getItem('traits.voice.mode') || '').trim();
+                        if (storedMode === 'realtime' && hasApiKey) {
+                            useLocalVoice = false; // explicitly cloud
+                        } else if (storedMode === 'local') {
+                            useLocalVoice = true;
+                        } else if (!helperConnected && browserVoiceSupported && webgpuAvailable && !hasApiKey) {
+                            useLocalVoice = true; // auto-fallback
+                        }
                     }
 
                     // ── Local voice mode (WebGPU: Whisper STT → LLM → Kokoro TTS) ──
