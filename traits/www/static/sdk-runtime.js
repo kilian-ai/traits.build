@@ -1792,8 +1792,21 @@ class Traits {
                         ...history,
                     ];
 
-                    const llmOpts = tools.length > 0 ? { tools } : undefined;
+                    // Convert Realtime API tool format to Chat Completions format for WebLLM
+                    // Realtime: { type:'function', name, description, parameters }
+                    // Chat:     { type:'function', function: { name, description, parameters } }
+                    const chatTools = tools.length > 0 ? tools.map(t => ({
+                        type: 'function',
+                        function: { name: t.name, description: t.description || '', parameters: t.parameters || {} },
+                    })) : [];
+                    const llmOpts = chatTools.length > 0 ? { tools: chatTools } : undefined;
                     let llmResult = await sdk._callWebLLM(messages, null, llmOpts);
+
+                    // If tool-enabled call failed, retry without tools (model may not support them)
+                    if (!llmResult.ok && llmOpts) {
+                        console.warn('[LocalVoice] Retrying without tools:', llmResult.error);
+                        llmResult = await sdk._callWebLLM(messages);
+                    }
 
                     // ── Tool call loop — execute tools until model gives a text response ──
                     let toolRounds = 0;
@@ -1858,6 +1871,7 @@ class Traits {
                             ? llmResult.result
                             : (llmResult.result?.content || JSON.stringify(llmResult.result));
                     } else {
+                        console.error('[LocalVoice] LLM error:', llmResult.error);
                         responseText = 'Sorry, I could not generate a response.';
                     }
                     // Strip markdown artifacts
