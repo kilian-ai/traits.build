@@ -350,50 +350,61 @@ body{background:#000;color:#fff}
       return;
     }
 
-    /* 12 ── Listen ── */
-    $('hp-mic').classList.add('on');
-    $('hp-sub').textContent = 'Speak your interest…';
+    /* 12 ── Listen loop ── */
+    const confirms = [
+      '',
+      'Great choice! The AI first developer experience is at the heart of everything we build.',
+      'Absolutely! traits dot build runs natively in your browser via WebAssembly, even on mobile.',
+      'That is right! Everything runs locally in your browser. No data leaves your device.'
+    ];
 
-    /* also allow clicking as alternative */
-    let clickRes = null;
-    const clickP = new Promise(r=>{ clickRes=r; });
-    btns.forEach(b=>{
-      b.addEventListener('click',()=>clickRes(parseInt(b.dataset.topic)),{once:true});
-    });
+    while(!dead){
+      /* reset button states */
+      btns.forEach(b=>{ b.classList.remove('selected','dim'); b.onclick=null; });
+      $('hp-ts').textContent = ''; $('hp-ts').classList.remove('on');
 
-    const speechP = hear().then(text=>{
-      $('hp-ts').textContent = text ? '\u201C'+text+'\u201D' : '';
-      $('hp-ts').classList.add('on');
-      return match(text) || -1;
-    });
+      $('hp-mic').classList.add('on');
+      $('hp-sub').textContent = 'Speak your interest…';
 
-    const sel = await Promise.race([speechP, clickP]);
-    if(dead) return;
-    $('hp-mic').classList.remove('on');
-
-    /* 13 ── Handle selection ── */
-    if(sel>0 && sel<=3){
-      btns.forEach((b,i)=>{
-        if(i===sel-1) b.classList.add('selected');
-        else b.classList.add('dim');
+      /* race: voice vs click */
+      let clickRes = null;
+      const clickP = new Promise(r=>{ clickRes=r; });
+      btns.forEach(b=>{
+        b.addEventListener('click',()=>clickRes(parseInt(b.dataset.topic)),{once:true});
       });
-      sparkle();
 
-      const confirms = [
-        '',
-        'Great choice! The AI first developer experience is at the heart of everything we build.',
-        'Absolutely! traits dot build runs natively in your browser via WebAssembly, even on mobile.',
-        'That is right! Everything runs locally in your browser. No data leaves your device.'
-      ];
-      await say(confirms[sel]);
+      const speechP = hear().then(text=>{
+        $('hp-ts').textContent = text ? '\u201C'+text+'\u201D' : '';
+        $('hp-ts').classList.add('on');
+        return match(text) || -1;
+      });
 
-      $('hp-sub').textContent = 'Click to explore.';
-      linkBtns();
-    } else {
-      $('hp-sub').textContent = '';
-      await say('To have real time conversations on the platform, you can register, or add your personal OpenAI API key under settings, where it stays securely stored only in your browser.');
-      $('hp-sub').textContent = 'Visit Settings to configure your experience.';
-      linkBtns();
+      const sel = await Promise.race([speechP, clickP]);
+      if(dead) return;
+      $('hp-mic').classList.remove('on');
+
+      /* handle selection */
+      if(sel>0 && sel<=3){
+        btns.forEach((b,i)=>{
+          if(i===sel-1) b.classList.add('selected');
+          else b.classList.add('dim');
+        });
+        sparkle();
+        await say(confirms[sel]);
+        if(dead) return;
+
+        $('hp-sub').textContent = 'Try another, or click to explore.';
+        await wait(2500);
+        if(dead) return;
+      } else {
+        $('hp-sub').textContent = '';
+        await say('To have real time conversations on the platform, you can register, or add your personal OpenAI API key under settings, where it stays securely stored only in your browser.');
+        if(dead) return;
+
+        $('hp-sub').textContent = 'Visit Settings to add your key, or try again.';
+        await wait(2500);
+        if(dead) return;
+      }
     }
 
     $('hp-skip').style.display='none';
