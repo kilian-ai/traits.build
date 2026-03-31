@@ -1220,7 +1220,9 @@ export class Traits {
                             session: { type: 'realtime', model,
                                        modalities: ['text', 'audio'],
                                        voice: voice,
-                                       input_audio_transcription: { model: 'whisper-1' } }
+                                       input_audio_transcription: { model: 'whisper-1' },
+                                       turn_detection: { type: 'server_vad', threshold: 0.8,
+                                                         prefix_padding_ms: 300, silence_duration_ms: 800 } }
                         })
                     });
                     const data = await resp.json();
@@ -1300,17 +1302,11 @@ You're running in the browser on the traits.build platform. The user is a develo
 You have access to function-calling tools that execute locally in the browser via WebAssembly.
 When the user asks you to do something and a matching tool exists, call it directly — don't say you can't.`;
 
-                // WebRTC session.update: voice/model/modalities/input_audio_transcription
-                // are locked at token creation. Only send mutable session fields here.
+                // WebRTC session.update: most session fields are immutable (locked at
+                // token creation). Only instructions and tools are mutable here.
                 const sessionConfig = {
                     type: 'realtime',
                     instructions: opts.instructions || defaultInstructions,
-                    turn_detection: {
-                        type: 'server_vad',
-                        threshold: 0.8,
-                        prefix_padding_ms: 300,
-                        silence_duration_ms: 800
-                    }
                 };
                 if (tools.length > 0) sessionConfig.tools = tools;
                 _voiceDc.send(JSON.stringify({ type: 'session.update', session: sessionConfig }));
