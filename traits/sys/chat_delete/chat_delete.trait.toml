@@ -1,0 +1,33 @@
+[trait]
+description = "Delete a VS Code Copilot chat session from workspace storage (removes from state.vscdb index and chatSessions JSON file)"
+version = "v260331.182702"
+checksum = "250daf8a7ff8d1e30eb65de350bd0839a1abc23826c626ba505db94a6604c2d7"
+author = "system"
+tags = ["sys", "chat", "vscode", "delete"]
+
+[[signature.params]]
+name = "workspace_id"
+type = "string"
+description = "VS Code workspaceStorage hash"
+example = "c1d008f1cc5c2b413e09715a6b6588dc"
+
+[[signature.params]]
+name = "session_id"
+type = "string"
+description = "Session UUID to delete"
+example = "5c9fdb74-1234-5678-abcd-ef0123456789"
+
+[[signature.params]]
+name = "base_dir"
+type = "string"
+description = "Optional workspaceStorage root override"
+optional = true
+
+[signature.returns]
+type = "object"
+description = "{ ok, session_id, removed_from_db, removed_json }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "chat_delete"

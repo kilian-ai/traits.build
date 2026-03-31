@@ -290,11 +290,37 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+.session-item {
+  position: relative;
+}
 .session-item h3 {
   margin: 0 0 4px;
   font-size: 15px;
+  padding-right: 28px;
 }
 .session-item p, .session-item small { margin: 0; color: var(--muted); }
+.session-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.7);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  z-index: 1;
+}
+.session-item:hover .session-delete { opacity: 1; }
+.session-delete:hover { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
 .transcript {
   display: grid;
   gap: 12px;
@@ -616,7 +642,9 @@ function renderSessionList() {
     button.type = 'button';
     button.className = 'session-item' + (session.id === selectedSessionId ? ' active' : '');
     button.onclick = () => selectSession(session.id);
-    button.innerHTML = `<h3>${escapeHtml(session.title)}</h3><p>${escapeHtml(session.summary)}</p><small>${escapeHtml(session.source)}</small>`;
+    button.innerHTML = `<h3>${escapeHtml(session.title)}</h3><p>${escapeHtml(session.summary)}</p><small>${escapeHtml(session.source)}</small><span class="session-delete" title="Delete session">✕</span>`;
+    const del = button.querySelector('.session-delete');
+    del.onclick = (e) => { e.stopPropagation(); deleteSession(session.id); };
     list.appendChild(button);
   }
 }
@@ -649,6 +677,33 @@ function selectSession(sessionId) {
     transcriptView.innerHTML = '<p class="empty">This session has no normalized transcript entries yet.</p>';
   }
   rawPayload.textContent = JSON.stringify(session.raw, null, 2);
+}
+
+async function deleteSession(sessionId) {
+  const workspaceId = document.getElementById('workspaceSelect').value;
+  if (!workspaceId) return;
+  const session = normalizedSessions.find(s => s.id === sessionId);
+  if (!confirm(`Delete "${session?.title || sessionId}"?`)) return;
+
+  try {
+    const args = [workspaceId, sessionId];
+    const baseDir = workspaceBaseDir();
+    if (baseDir) args.push(baseDir);
+    const result = await traitsCall('sys/chat_delete', args);
+    if (!result.ok) {
+      setWorkspaceMeta(`Delete failed: ${result.error}`);
+      return;
+    }
+    normalizedSessions = normalizedSessions.filter(s => s.id !== sessionId);
+    if (selectedSessionId === sessionId) {
+      selectedSessionId = normalizedSessions[0]?.id || null;
+      selectSession(selectedSessionId);
+    }
+    renderSessionList();
+    setWorkspaceMeta(`Deleted session. ${normalizedSessions.length} session(s) remaining.`);
+  } catch (error) {
+    setWorkspaceMeta(`Delete error: ${error.message}`);
+  }
 }
 
 async function loadChats() {

@@ -1,0 +1,32 @@
+[
+  {
+    "trait": "sys.chat_delete",
+    "description": "Delete a VS Code chat session by workspace ID and session ID",
+    "tests": [
+      {
+        "name": "Missing workspace_id returns error",
+        "args": [],
+        "expect": {
+          "json_path": "$.ok",
+          "value": false
+        }
+      },
+      {
+        "name": "Missing session_id returns error",
+        "args": ["someworkspaceid"],
+        "expect": {
+          "json_path": "$.ok",
+          "value": false
+        }
+      },
+      {
+        "name": "Non-existent workspace returns error",
+        "args": ["nonexistentworkspaceid", "nonexistentsessionid"],
+        "expect": {
+          "json_path": "$.ok",
+          "value": false
+        }
+      }
+    ]
+  }
+]
