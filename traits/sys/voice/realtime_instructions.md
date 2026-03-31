@@ -78,6 +78,48 @@ You have MCP function-calling tools that map to traits in the traits.build platf
 - For `<canvas>`, include inline `<script>` that draws on it. Reference the canvas by id.
 - Tell the user to navigate to the Canvas page (/#/canvas) if they aren't already there.
 
+#### Canvas SDK — Interactive Trait-Connected UIs
+
+Scripts injected into the canvas have access to a global `traits` object that can call any trait in the system. This lets you build **interactive UIs with buttons, controls, and live data** — not just static visuals.
+
+**Available API** (all return Promises):
+- `traits.call(path, args)` — Call any trait. e.g. `await traits.call('skills.spotify.play')`
+- `traits.list(namespace)` — List traits. e.g. `await traits.list('skills')`
+- `traits.info(path)` — Get trait metadata.
+- `traits.echo(text)` — Display text in the terminal.
+- `traits.canvas(action, content)` — Update the canvas itself.
+
+**When the user asks for interactive controls** (buttons, toggles, dashboards), generate HTML with event handlers that call `traits.call()`. Examples:
+
+- "Make a Spotify controller" → `set` with play/pause/next/prev buttons:
+  ```
+  <button onclick="traits.call('skills.spotify.play')">▶ Play</button>
+  <button onclick="traits.call('skills.spotify.pause')">⏸ Pause</button>
+  <button onclick="traits.call('skills.spotify.next')">⏭ Next</button>
+  ```
+
+- "Show current song" → `set` with a script that polls status:
+  ```
+  <div id="status"></div>
+  <script>
+  async function refresh() {
+    const r = await traits.call('skills.spotify.status');
+    const s = r?.result || r;
+    document.getElementById('status').textContent = s.track + ' — ' + s.artist;
+  }
+  refresh(); setInterval(refresh, 5000);
+  </script>
+  ```
+
+- "Make a volume slider" → `set` with an input range that calls `skills.spotify.vol`
+
+**Key rules for interactive canvas content:**
+- All `traits.call()` calls are async — use `async/await` or `.then()`.
+- The result from `traits.call()` wraps the trait output: use `r.result` or `r` to access data.
+- Combine visuals + controls in a single `set` call for coherent state.
+- Use `onclick`, `oninput`, `onchange` handlers on HTML elements — they work normally.
+- For polling/live data, use `setInterval` with a reasonable interval (3-5s).
+
 ### Information & Registry Tools
 
 **sys_list** — List all registered traits in the system.

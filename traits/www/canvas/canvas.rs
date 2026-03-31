@@ -57,6 +57,25 @@ pub fn canvas(_args: &[Value]) -> Value {
                 }
                 script { (PreEscaped(r#"
                     (function() {
+                        // ── Canvas SDK: thin global API for scripts injected into the canvas ──
+                        // Available as `traits.call(...)`, `traits.list()`, etc. in canvas scripts
+                        const _sdk = () => window._traitsSDK;
+                        window.traits = {
+                            /** Call any trait: traits.call('skills.spotify.play', ['spotify:track:...']) */
+                            call: (path, args) => _sdk()?.call(path, args || []),
+                            /** List traits, optional namespace filter: traits.list('skills') */
+                            list: (ns) => _sdk()?.call('sys.list', ns ? [ns] : []),
+                            /** Get trait info: traits.info('skills.spotify.play') */
+                            info: (path) => _sdk()?.call('sys.info', [path]),
+                            /** Update the canvas itself: traits.canvas('set', html) */
+                            canvas: (action, content) => {
+                                const args = content !== undefined ? [action, content] : [action];
+                                return _sdk()?.call('sys.canvas', args);
+                            },
+                            /** Echo text to the terminal: traits.echo('hello') */
+                            echo: (text) => _sdk()?.call('sys.echo', [text]),
+                        };
+
                         const container = document.getElementById('canvas-container');
                         const empty = document.getElementById('canvas-empty');
                         let sourceMode = false;
