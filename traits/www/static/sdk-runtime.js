@@ -1266,11 +1266,37 @@ class Traits {
         callable.forEach(p => wasmCallableSet.add(p));
         syncHelperToWasm();
         this._syncHelperToWorkers();
+        // Inject localStorage secrets into WASM in-memory store so sys.call can resolve them
+        if (mod.set_secret) {
+            try {
+                const PREFIX = 'traits.secret.';
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.startsWith(PREFIX)) {
+                        const secretName = k.slice(PREFIX.length).toLowerCase();
+                        const val = (localStorage.getItem(k) || '').trim();
+                        if (val) mod.set_secret(secretName, val);
+                    }
+                }
+            } catch(e) {}
+        }
         // Register WASM kernel as a service for sys.ps
         if (mod.register_task) {
             try { mod.register_task('wasm-kernel', 'WASM Kernel', 'service', Date.now(), `${callable.length} callable traits`); } catch(e) {}
         }
         this._trackTask('wasm-kernel', 'WASM Kernel', 'service', `${callable.length} callable traits`);
+    }
+
+    /**
+     * Inject a secret into the WASM kernel's in-memory store so sys.call can resolve it.
+     * Secrets are stored by key name (e.g. "openai_api_key").
+     * @param {string} key   - Secret name (lowercase)
+     * @param {string} value - Secret value
+     */
+    setSecret(key, value) {
+        if (wasm && wasm.set_secret) {
+            try { wasm.set_secret(key, value); } catch(e) {}
+        }
     }
 
     /**

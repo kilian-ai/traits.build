@@ -492,6 +492,11 @@ _jsProviders['sys.secrets'] = async function(args) {
   if (action === 'set') {
     if (!args[1] || !args[2]) return { ok: false, error: 'ID and value required' };
     localStorage.setItem(_SECRET_PFX + args[1], String(args[2]));
+    // Also inject into live WASM kernel so sys.call can resolve it immediately
+    try {
+      var sdk = window._traitsSDK;
+      if (sdk && sdk.setSecret) sdk.setSecret(String(args[1]), String(args[2]));
+    } catch(_) {}
     return { ok: true };
   }
   if (action === 'delete') {
