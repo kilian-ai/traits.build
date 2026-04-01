@@ -54,6 +54,7 @@ pub fn chat_learnings(args: &[Value]) -> Value {
             .collect();
 
         if new_comments.is_empty() {
+            let current_content = fs::read_to_string(&output_path).ok();
             return json!({
                 "ok": true,
                 "workspace_id": workspace_id,
@@ -61,7 +62,8 @@ pub fn chat_learnings(args: &[Value]) -> Value {
                 "state_path": state_path.display().to_string(),
                 "new_comment_count": 0,
                 "learning_count": 0,
-                "message": "No new user comments matched the incremental scan"
+                "message": "No new user comments matched the incremental scan",
+                "current_content": current_content
             });
         }
 
@@ -101,6 +103,8 @@ pub fn chat_learnings(args: &[Value]) -> Value {
             });
         }
 
+        let current_content = fs::read_to_string(&output_path).ok();
+
         json!({
             "ok": true,
             "workspace_id": workspace_id,
@@ -108,6 +112,7 @@ pub fn chat_learnings(args: &[Value]) -> Value {
             "state_path": state_path.display().to_string(),
             "new_comment_count": new_comments.len(),
             "learning_count": count_markdown_bullets(&response),
+            "current_content": current_content,
             "used_mock_response": mock_response.is_some(),
             "model": model,
             "response": response,

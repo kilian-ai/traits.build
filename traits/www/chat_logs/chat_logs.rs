@@ -366,6 +366,27 @@ pre {
   margin-top: 10px;
   min-height: 120px;
   color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.result-status {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+.result-ok { background: var(--accent-soft); color: var(--accent); }
+.result-error { background: #fee2e2; color: #dc2626; }
+.result-muted { font-size: 13px; color: var(--muted); }
+.learnings-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13.5px;
+  line-height: 1.65;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 2px;
 }
 .toggle {
   display: inline-flex;
@@ -766,17 +787,21 @@ async function runLearningExtraction(backgroundRun = false) {
 
 function renderExtractionResult(box, result) {
   if (!result.ok) {
-    box.textContent = `Failed: ${result.error || JSON.stringify(result)}`;
+    box.innerHTML = `<span class="result-status result-error">Failed: ${escapeHtml(result.error || JSON.stringify(result))}</span>`;
     return;
   }
+  let header;
   if (result.new_comment_count === 0) {
-    box.textContent = `No new sessions to scan — already up to date.\n\nOutput: ${result.output_path}`;
-    return;
+    header = `<span class="result-status result-ok">Already up to date — ${result.output_path}</span>`;
+  } else {
+    header = `<span class="result-status result-ok">Scanned ${result.new_comment_count} new comment(s) → ${result.learning_count} learning(s). Appended to ${result.output_path}</span>`;
   }
-  const lines = [];
-  lines.push(`Scanned ${result.new_comment_count} new comment(s) → ${result.learning_count} learning(s)\nAppended to: ${result.output_path}\n`);
-  if (result.response) lines.push(result.response);
-  box.textContent = lines.join('\n');
+  const content = result.current_content || null;
+  if (content) {
+    box.innerHTML = `${header}<div class="learnings-content">${escapeHtml(content)}</div>`;
+  } else {
+    box.innerHTML = `${header}<span class="result-muted">LEARNINGS.md not found — it will be created on the first successful extraction.</span>`;
+  }
 }
 
 function toggleAutoScan() {

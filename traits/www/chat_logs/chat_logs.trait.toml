@@ -1,7 +1,7 @@
 [trait]
 description = "Local page for browsing VS Code chat history and extracting durable learnings"
-version = "v260331.193414"
-checksum = "99e0a59cf3cd6de96ea5ddfcaeea4373c6b023204c6415068013bf9a0200cde9"
+version = "v260401"
+checksum = "c2643ddef83f147967974c44a2a0ac0caf010ba1c36027eaadaa505cea3e7f6d"
 author = "system"
 tags = ["www", "chat", "logs", "learnings"]
 provides = ["www/webpage"]
