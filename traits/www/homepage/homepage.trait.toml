@@ -1,7 +1,7 @@
 [trait]
 description = "Interactive voice-driven homepage for traits.build"
-version = "v260401"
-checksum = "72eb2e21d1162d4c4fc73ef47bb85ed0f1b8588fb64b43b6e23dca4363eb72b7"
+version = "v260401.143335"
+checksum = "36bb11823eb87ebfab755eded4f76c0910b92451409a4467f7b3020aa0615950"
 author = "system"
 tags = ["www", "webpage", "homepage"]
 provides = ["www/webpage"]

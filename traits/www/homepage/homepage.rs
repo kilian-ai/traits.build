@@ -200,6 +200,7 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
     if(dead){micStr.getTracks().forEach(t=>t.stop());return '';}
 
     aCtx=new AudioContext();
+    if(aCtx.state==='suspended') await aCtx.resume();
     const sr=aCtx.sampleRate;
     const src=aCtx.createMediaStreamSource(micStr);
     const proc=aCtx.createScriptProcessor(4096,1,1);
