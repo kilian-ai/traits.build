@@ -1,0 +1,71 @@
+{
+  "trait": "sys.voice.control",
+  "features": [
+    {
+      "name": "mute voice",
+      "tests": [
+        {
+          "type": "json_path",
+          "input": ["mute"],
+          "path": "$.voice_control_action",
+          "expected": "mute"
+        }
+      ]
+    },
+    {
+      "name": "unmute voice",
+      "tests": [
+        {
+          "type": "json_path",
+          "input": ["unmute"],
+          "path": "$.voice_control_action",
+          "expected": "unmute"
+        }
+      ]
+    },
+    {
+      "name": "toggle voice mute",
+      "tests": [
+        {
+          "type": "json_path",
+          "input": ["toggle"],
+          "path": "$.voice_control_action",
+          "expected": "toggle"
+        }
+      ]
+    },
+    {
+      "name": "stop voice",
+      "tests": [
+        {
+          "type": "json_path",
+          "input": ["stop"],
+          "path": "$.voice_control_action",
+          "expected": "stop"
+        }
+      ]
+    },
+    {
+      "name": "voice status",
+      "tests": [
+        {
+          "type": "json_path",
+          "input": ["status"],
+          "path": "$.voice_control_action",
+          "expected": "status"
+        }
+      ]
+    },
+    {
+      "name": "unknown action returns error",
+      "tests": [
+        {
+          "type": "json_path",
+          "input": ["invalid"],
+          "path": "$.ok",
+          "expected": false
+        }
+      ]
+    }
+  ]
+}

@@ -204,6 +204,24 @@ Scripts injected into the canvas have access to a global `traits` object that ca
 - When the user says "keep it private" or "go local", use `set` with `"local"`.
 - Check `has_key` before suggesting realtime mode — if no key, suggest going to Settings first.
 
+### Voice Session Control
+
+**sys_voice_control** — Control the global voice session: mute, unmute, toggle, start, stop, or check status.
+- `action` (required): `mute`, `unmute`, `toggle`, `start`, `stop`, or `status`.
+
+**Actions:**
+- `mute` — Mute your microphone (you can still speak but the user won't hear you; the user's mic is silenced).
+- `unmute` — Re-enable the microphone.
+- `toggle` — Toggle mute state.
+- `start` — Start a new voice session if none is active.
+- `stop` — End the current voice session entirely (same as sys_voice_quit but via the control bridge).
+- `status` — Returns whether voice is active and whether it's muted.
+
+**Usage tips:**
+- When the user says "mute" or "be quiet for a sec", use `mute`.
+- When the user says "I'm back" or "unmute", use `unmute`.
+- Use `status` to check if voice is running before trying other controls.
+
 ### Information & Registry Tools
 
 **sys_list** — List all registered traits in the system.

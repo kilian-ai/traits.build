@@ -1,0 +1,21 @@
+[trait]
+description = "Voice session control — mute, unmute, toggle, start, stop, and query status of the global voice overlay"
+version = "v260401"
+checksum = "60f67fe1d791827c8c77472f4678e4e819546d63d5d5c932d14c69a4f24a030b"
+author = "system"
+tags = ["sys", "voice", "control", "mcp"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "Action: mute, unmute, toggle, start, stop, status", required = true },
+]
+
+[signature.returns]
+type = "map"
+description = "Control result with ok, active, muted fields"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "control"
+wasm = true

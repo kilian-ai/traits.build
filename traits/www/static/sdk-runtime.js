@@ -1684,6 +1684,14 @@ class Traits {
                                     window.dispatchEvent(new CustomEvent('traits-audio-action', { detail: r }));
                                 }
                             }
+
+                            // After sys.voice.control actions: fire event for voice control bridge
+                            if (funcName === 'sys_voice_control' && result.ok) {
+                                const r = result.result || result;
+                                if (r.voice_control_action) {
+                                    window.dispatchEvent(new CustomEvent('traits-voice-control', { detail: r }));
+                                }
+                            }
                         }).catch(e => {
                             if (_voiceDc && _voiceDc.readyState === 'open') {
                                 _voiceDc.send(JSON.stringify({
@@ -1774,6 +1782,14 @@ class Traits {
      */
     isVoiceActive() {
         return _voiceDc !== null && _voiceDc.readyState === 'open';
+    }
+
+    /**
+     * Get the current voice microphone MediaStream (for muting).
+     * @returns {MediaStream|null}
+     */
+    _getVoiceStream() {
+        return _voiceStream;
     }
 
     /**
@@ -2026,6 +2042,14 @@ class Traits {
                                 const r = toolResult.result || toolResult;
                                 if (r.audio_action) {
                                     window.dispatchEvent(new CustomEvent('traits-audio-action', { detail: r }));
+                                }
+                            }
+
+                            // After sys.voice.control actions: fire event for voice control bridge
+                            if (funcName === 'sys_voice_control' && toolResult.ok) {
+                                const r = toolResult.result || toolResult;
+                                if (r.voice_control_action) {
+                                    window.dispatchEvent(new CustomEvent('traits-voice-control', { detail: r }));
                                 }
                             }
 
