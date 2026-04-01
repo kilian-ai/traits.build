@@ -38,6 +38,31 @@ pub fn canvas(_args: &[Value]) -> Value {
                         .canvas-empty .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
                         .canvas-empty p { font-size: 14px; }
                         .canvas-empty code { color: var(--accent); font-size: 13px; }
+
+                        /* Voice status indicator */
+                        #voice-status {
+                            position: fixed; bottom: 20px; right: 24px;
+                            display: none; align-items: center; gap: 10px;
+                            padding: 10px 18px; border-radius: 12px;
+                            background: rgba(124,92,252,.12); border: 1px solid rgba(124,92,252,.3);
+                            backdrop-filter: blur(12px); z-index: 100;
+                            font-size: 13px; color: rgba(255,255,255,.7);
+                            transition: opacity .3s;
+                        }
+                        #voice-status.on { display: flex; }
+                        #voice-status .mic-dot {
+                            width: 10px; height: 10px; border-radius: 50%;
+                            background: #7c5cfc; animation: vpulse 1.8s ease-in-out infinite;
+                        }
+                        @keyframes vpulse {
+                            0%,100% { box-shadow: 0 0 0 0 rgba(124,92,252,.4); }
+                            50% { box-shadow: 0 0 0 8px rgba(124,92,252,0); }
+                        }
+                        #voice-status button {
+                            background: none; border: none; color: rgba(255,255,255,.4);
+                            cursor: pointer; font-size: 15px; padding: 0 0 0 6px;
+                        }
+                        #voice-status button:hover { color: #f44; }
                     "#))
                 }
             }
@@ -54,6 +79,11 @@ pub fn canvas(_args: &[Value]) -> Value {
                         div .icon { "🎨" }
                         p { "Canvas is empty — use " code { "sys.canvas set \"<html>\"" } " or voice to draw." }
                     }
+                }
+                div #voice-status {
+                    div .mic-dot {}
+                    span #voice-label { "Voice active — describe what to draw" }
+                    button #voice-stop title="Stop voice" { "✕" }
                 }
                 script { (PreEscaped(r#"
                     (function() {
@@ -195,8 +225,99 @@ pub fn canvas(_args: &[Value]) -> Value {
                         // Initial load
                         loadCanvas();
 
-                        // Register cleanup: remove window.traits when navigating away
-                        window._pageCleanup = () => { try { delete window.traits; } catch(_) {} };
+                        // ── Auto-start realtime voice if API key is available ──
+                        let voiceActive = false;
+                        const voiceStatus = document.getElementById('voice-status');
+                        const voiceLabel = document.getElementById('voice-label');
+                        const voiceStopBtn = document.getElementById('voice-stop');
+
+                        function hasApiKey() {
+                            try {
+                                return !!((localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim()
+                                       || (localStorage.getItem('traits.voice.api_key') || '').trim());
+                            } catch(_) { return false; }
+                        }
+
+                        async function startCanvasVoice() {
+                            const sdk = window._traitsSDK;
+                            if (!sdk || !sdk.startVoice || voiceActive) return;
+
+                            voiceStatus.classList.add('on');
+                            voiceLabel.textContent = 'Connecting voice…';
+
+                            const result = await sdk.startVoice({
+                                voice: 'shimmer',
+                                model: 'gpt-realtime-mini-2025-12-15',
+                                instructions: [
+                                    'You are a creative canvas assistant on traits.build.',
+                                    'The user will describe things they want to see drawn on the HTML canvas.',
+                                    'When the user describes something to draw, use the sys_canvas tool with action "set" to render HTML/SVG/CSS art that matches their description.',
+                                    'Be creative and make visually appealing designs. Use SVG for illustrations, CSS for layouts, and HTML5 Canvas for dynamic art.',
+                                    'Start with a warm, brief greeting — introduce yourself as the canvas voice assistant and invite them to describe what they would like to see drawn.',
+                                    'Keep responses short and conversational (1-2 sentences). Focus on creating rather than explaining.',
+                                    'After drawing, ask if they want any changes or something new.',
+                                    'Use dark-friendly colors (light text on dark background) since the canvas has a dark theme.',
+                                    'The canvas container is full-width. Make your creations fill the space nicely.',
+                                ].join('\n'),
+                                onTranscript: (text) => {
+                                    voiceLabel.textContent = '🎤 ' + text;
+                                },
+                                onResponse: (text) => {
+                                    voiceLabel.textContent = '💬 ' + text;
+                                    // Reset to default label after a few seconds
+                                    setTimeout(() => {
+                                        if (voiceActive) voiceLabel.textContent = 'Listening — describe what to draw';
+                                    }, 4000);
+                                },
+                                onToolCall: (name) => {
+                                    if (name === 'sys_canvas') voiceLabel.textContent = '🎨 Drawing…';
+                                },
+                                onError: (msg) => {
+                                    voiceLabel.textContent = '⚠ ' + msg;
+                                },
+                            });
+
+                            if (result.ok) {
+                                voiceActive = true;
+                                voiceLabel.textContent = 'Listening — describe what to draw';
+
+                                // Listen for voice-event 'stopped' (model quit)
+                                const onStopped = (e) => {
+                                    if (e.detail && e.detail.type === 'stopped') {
+                                        window.removeEventListener('voice-event', onStopped);
+                                        voiceActive = false;
+                                        voiceStatus.classList.remove('on');
+                                    }
+                                };
+                                window.addEventListener('voice-event', onStopped);
+                            } else {
+                                voiceLabel.textContent = 'Voice unavailable: ' + (result.error || 'unknown');
+                                setTimeout(() => voiceStatus.classList.remove('on'), 3000);
+                            }
+                        }
+
+                        // Stop button
+                        voiceStopBtn.addEventListener('click', () => {
+                            const sdk = window._traitsSDK;
+                            if (sdk && sdk.stopVoice) sdk.stopVoice();
+                            voiceActive = false;
+                            voiceStatus.classList.remove('on');
+                        });
+
+                        // Auto-start after a brief delay (let canvas render first)
+                        if (hasApiKey()) {
+                            setTimeout(() => startCanvasVoice(), 500);
+                        }
+
+                        // Register cleanup: stop voice and remove window.traits when navigating away
+                        window._pageCleanup = () => {
+                            if (voiceActive) {
+                                const sdk = window._traitsSDK;
+                                if (sdk && sdk.stopVoice) sdk.stopVoice();
+                                voiceActive = false;
+                            }
+                            try { delete window.traits; } catch(_) {}
+                        };
                     })();
                 "#)) }
             }
