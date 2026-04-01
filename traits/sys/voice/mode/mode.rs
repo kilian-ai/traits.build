@@ -3,8 +3,8 @@ use serde_json::{json, Value};
 /// Voice mode management — get/set preferred voice mode and check API key availability.
 ///
 /// Actions:
-///   get         → returns current mode ("local" or "realtime") and whether API key exists
-///   set <mode>  → set preferred mode to "local" or "realtime"
+///   get         → returns current mode ("local", "realtime", or "local-realtime") and whether API key exists
+///   set <mode>  → set preferred mode to "local", "realtime", or "local-realtime"
 ///   has_key     → check if OpenAI API key is available (WASM: always false, resolved by JS bridge)
 ///
 /// In WASM, mode is stored in localStorage. The JS bridge resolves has_key from secrets.
@@ -21,8 +21,8 @@ pub fn mode(args: &[Value]) -> Value {
         }
         "set" => {
             let new_mode = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
-            if new_mode != "local" && new_mode != "realtime" {
-                return json!({"ok": false, "error": "mode must be 'local' or 'realtime'"});
+            if !["local", "realtime", "local-realtime"].contains(&new_mode) {
+                return json!({"ok": false, "error": "mode must be 'local', 'realtime', or 'local-realtime'"});
             }
             json!({
                 "ok": true,

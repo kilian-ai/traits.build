@@ -452,6 +452,7 @@ async function createTerminal(mountEl, opts = {}) {
                     //   3. User preference localStorage['traits.voice.mode'] = 'local' → local
                     //   4. Auto-fallback: no API key + WebGPU available → local
                     let useLocalVoice = !!localFlag;
+                    let useVoxtralVoice = false;
                     let hasApiKey = false;
                     try {
                         const settingsKey = (localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim();
@@ -466,9 +467,82 @@ async function createTerminal(mountEl, opts = {}) {
                             useLocalVoice = false; // explicitly cloud
                         } else if (storedMode === 'local') {
                             useLocalVoice = true;
+                        } else if (storedMode === 'local-realtime') {
+                            useVoxtralVoice = true;
                         } else if (!helperConnected && browserVoiceSupported && webgpuAvailable && !hasApiKey) {
                             useLocalVoice = true; // auto-fallback
                         }
+                    }
+
+                    // ── Voxtral local-realtime mode (Voxtral ONNX STT → LLM → Kokoro TTS) ──
+                    if (useVoxtralVoice && browserVoiceSupported) {
+                        term.write(`\x1b[90mStarting Voxtral local-realtime voice…\x1b[0m\r\n`);
+                        term.write(`\x1b[90mFirst run downloads ~1.5 GB Voxtral model + ~92 MB TTS.\x1b[0m\r\n`);
+
+                        activeSdk.startVoxtralVoice({
+                            voice: voiceName || 'af_heart',
+                            instructions: agent
+                                ? `You are the "${agent}" agent on traits.build. Keep responses very short (1-2 sentences). Be conversational.`
+                                : undefined,
+                            onTranscript: (text) => {
+                                term.write(`\r\n\x1b[92m🎤 ${text}\x1b[0m\r\n`);
+                            },
+                            onResponse: (text) => {
+                                term.write(`\x1b[96m💬 ${text}\x1b[0m\r\n`);
+                            },
+                            onToolCall: (name, args) => {
+                                term.write(`\x1b[93m⚡ ${name.replace(/_/g, '.')}\x1b[0m\r\n`);
+                            },
+                            onToolResult: (name, resultStr) => {
+                                if (name === 'sys_echo') {
+                                    try {
+                                        const r = JSON.parse(resultStr);
+                                        const text = r.text || r.result?.text || '';
+                                        if (text) term.write(`\x1b[97m📋 ${text}\x1b[0m\r\n`);
+                                    } catch(_) {}
+                                }
+                            },
+                            onProgress: (text) => {
+                                if (text) term.write(`\r\x1b[K\x1b[90m⏳ ${text}\x1b[0m`);
+                            },
+                            onError: (msg) => {
+                                term.write(`\r\n\x1b[31mVoxtral voice error: ${msg}\x1b[0m\r\n`);
+                            },
+                        }).then(result => {
+                            if (result.ok) {
+                                const toolMsg = result.tools ? `, ${result.tools} tools` : '';
+                                term.write(`\r\x1b[K\x1b[90mVoxtral voice active! Speak to start${toolMsg}. Press Esc to stop.\x1b[0m\r\n`);
+                                const onVoiceStopped = (e) => {
+                                    if (e.detail && e.detail.type === 'stopped') {
+                                        window.removeEventListener('voice-event', onVoiceStopped);
+                                        term.write(`\r\n\x1b[90mVoxtral voice session ended.\x1b[0m\r\n`);
+                                        term.write(returnPrompt);
+                                        restPending = false;
+                                        requestAnimationFrame(saveState);
+                                    }
+                                };
+                                window.addEventListener('voice-event', onVoiceStopped);
+                                const stopHandler = (data) => {
+                                    if (data === '\x1b' || data === '\x03') {
+                                        activeSdk.stopVoxtralVoice().then(() => {
+                                            window.removeEventListener('voice-event', onVoiceStopped);
+                                            term.write(`\r\n\x1b[90mVoxtral voice stopped.\x1b[0m\r\n`);
+                                            term.write(returnPrompt);
+                                            restPending = false;
+                                            requestAnimationFrame(saveState);
+                                        });
+                                        term.offData(stopHandler);
+                                    }
+                                };
+                                term.onData(stopHandler);
+                            } else {
+                                term.write(`\r\n\x1b[31mVoxtral voice error: ${result.error}\x1b[0m\r\n`);
+                                term.write(returnPrompt);
+                                restPending = false;
+                                requestAnimationFrame(saveState);
+                            }
+                        });
+                        return;
                     }
 
                     // ── Local voice mode (WebGPU: Whisper STT → LLM → Kokoro TTS) ──

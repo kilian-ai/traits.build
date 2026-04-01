@@ -160,6 +160,16 @@ let _ttsModel = null;
 let _ttsLoading = null;
 let _transformersLib = null;
 
+// ── Voxtral (local-realtime) voice state ──
+let _voxtralVoiceActive = false;
+let _voxtralVoiceStream = null;
+let _voxtralVoiceAudioCtx = null;
+let _voxtralVoiceNode = null;
+let _voxtralProcessor = null;
+let _voxtralModel = null;
+let _voxtralLib4 = null;
+let _voxtralModelLoading = null;
+
 // Traits excluded from voice function-calling tools (mirrors native TOOL_EXCLUDE)
 const VOICE_TOOL_EXCLUDE = new Set([
     'sys.voice', 'sys.mcp', 'sys.serve', 'sys.cli', 'sys.cli.native', 'sys.cli.wasm',
@@ -243,6 +253,64 @@ async function _ensureTTS() {
         }
     })();
     try { return await _ttsLoading; } finally { _ttsLoading = null; }
+}
+
+/**
+ * Load Voxtral-Mini-4B-Realtime processor + model (cached after first load).
+ * Uses @huggingface/transformers 4.x and onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX.
+ * @param {Function} [onProgress] - Optional progress callback(message)
+ * @returns {Promise<{processor, model, TextStreamer}>}
+ */
+async function _ensureVoxtral(onProgress) {
+    if (_voxtralProcessor && _voxtralModel) {
+        return { processor: _voxtralProcessor, model: _voxtralModel, TextStreamer: _voxtralLib4.TextStreamer };
+    }
+    if (_voxtralModelLoading) return _voxtralModelLoading;
+    _voxtralModelLoading = (async () => {
+        try {
+            const MODEL_ID = 'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX';
+            const DTYPE = 'q4';
+            if (!_voxtralLib4) {
+                const msg = 'Loading Transformers.js 4.x for Voxtral…';
+                _localVoiceProgress(msg);
+                if (onProgress) onProgress(msg);
+                _voxtralLib4 = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.7');
+            }
+            const { VoxtralRealtimeProcessor, VoxtralRealtimeForConditionalGeneration, TextStreamer } = _voxtralLib4;
+            const mkProg = (label, startPct, span) => (info) => {
+                if (!info || typeof info !== 'object') return;
+                if (info.status === 'progress' && typeof info.progress === 'number') {
+                    const pct = Math.round(startPct + (info.progress / 100) * span);
+                    const file = info.file ? ' ' + info.file.split('/').pop() : '';
+                    const msg = `${label}: ${pct}%${file}`;
+                    _localVoiceProgress(msg);
+                    if (onProgress) onProgress(msg);
+                }
+            };
+            _localVoiceProgress('Loading Voxtral processor…');
+            if (onProgress) onProgress('Loading Voxtral processor…');
+            _voxtralProcessor = await VoxtralRealtimeProcessor.from_pretrained(MODEL_ID, {
+                progress_callback: mkProg('Processor', 0, 15),
+            });
+            const device = (typeof navigator !== 'undefined' && navigator.gpu) ? 'webgpu' : 'wasm';
+            const modelMsg = `Loading Voxtral model (~1.5 GB, first run only)…`;
+            _localVoiceProgress(modelMsg);
+            if (onProgress) onProgress(modelMsg);
+            _voxtralModel = await VoxtralRealtimeForConditionalGeneration.from_pretrained(MODEL_ID, {
+                dtype: { audio_encoder: DTYPE, embed_tokens: DTYPE, decoder_model_merged: DTYPE },
+                device,
+                progress_callback: mkProg('Model', 15, 83),
+            });
+            _localVoiceProgress('Voxtral ready.');
+            if (onProgress) onProgress('Voxtral ready.');
+            return { processor: _voxtralProcessor, model: _voxtralModel, TextStreamer };
+        } catch (e) {
+            _voxtralProcessor = null;
+            _voxtralModel = null;
+            throw e;
+        }
+    })();
+    try { return await _voxtralModelLoading; } finally { _voxtralModelLoading = null; }
 }
 
 function _resampleTo16kHz(audioData, sampleRate) {
@@ -2158,6 +2226,334 @@ class Traits {
      */
     isLocalVoiceActive() {
         return _localVoiceActive;
+    }
+
+    /**
+     * Start Voxtral local-realtime voice session.
+     * Uses Voxtral-Mini-4B-Realtime (ONNX/WebGPU) for STT + WebLLM for LLM response + Kokoro TTS.
+     * Integrates full MCP tool-calling loop identical to startLocalVoice.
+     * @param {Object} opts - voice, instructions, tools, onTranscript, onResponse, onToolCall, onToolResult, onProgress, onError
+     */
+    async startVoxtralVoice(opts = {}) {
+        await this.stopVoxtralVoice();
+        const voice = opts.voice || 'af_heart';
+
+        if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            return { ok: false, error: 'getUserMedia not supported in this browser.' };
+        }
+
+        _voxtralVoiceActive = true;
+        const enableTools = opts.tools !== false;
+        _dispatchVoiceEvent('started', { voice, mode: 'local-realtime' });
+
+        const progressHandler = (e) => {
+            if (opts.onProgress) opts.onProgress(e.detail);
+        };
+        window.addEventListener('local-voice-progress', progressHandler);
+
+        try {
+            // ── Load voice instructions ──
+            let voiceInstructions = opts.instructions || '';
+            if (!voiceInstructions) {
+                try { voiceInstructions = (localStorage.getItem('traits.voice.instructions') || '').trim(); } catch(_) {}
+            }
+            if (!voiceInstructions) {
+                try {
+                    if (wasm && wasm.vfs_read) {
+                        const content = wasm.vfs_read('traits/sys/voice/realtime_instructions.md');
+                        if (content) voiceInstructions = content;
+                    }
+                } catch(_) {}
+            }
+            if (!voiceInstructions) {
+                voiceInstructions = 'You are a concise, helpful voice assistant. Keep responses short and conversational. You have access to function-calling tools that execute locally.';
+            }
+
+            // ── Build tool definitions ──
+            let tools = [];
+            if (enableTools) {
+                _localVoiceProgress('Loading tools…');
+                tools = await _buildVoiceTools(this);
+                console.log('[VoxtralVoice] Loaded', tools.length, 'tools');
+            }
+
+            // ── Load Voxtral (STT) + TTS in parallel ──
+            _localVoiceProgress('Initializing Voxtral and TTS models…');
+            if (opts.onProgress) opts.onProgress('Initializing Voxtral and TTS models…');
+            const [voxtral, tts] = await Promise.all([
+                _ensureVoxtral(opts.onProgress),
+                _ensureTTS(),
+            ]);
+            if (!_voxtralVoiceActive) return { ok: false, error: 'Cancelled' };
+
+            // ── Auto-bind llm/prompt to WebLLM if no binding exists ──
+            if (!this._bindings.has('llm/prompt')) {
+                this.bind('llm/prompt', 'llm.prompt.webllm');
+                console.log('[VoxtralVoice] Auto-bound llm/prompt → llm.prompt.webllm');
+            }
+
+            // Preload WebLLM engine so first response is fast
+            const llmBinding = this._bindings.get('llm/prompt') || '';
+            if (llmBinding === 'llm.prompt.webllm') {
+                _localVoiceProgress('Pre-loading LLM model…');
+                if (opts.onProgress) opts.onProgress('Pre-loading LLM model…');
+                try { await _ensureWebLLM(); } catch(e) {
+                    console.warn('[VoxtralVoice] WebLLM preload failed:', e.message);
+                }
+            }
+            if (!_voxtralVoiceActive) return { ok: false, error: 'Cancelled' };
+
+            // ── Open mic at 16 kHz (Voxtral audio encoder requirement) ──
+            _voxtralVoiceStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            });
+            _voxtralVoiceAudioCtx = new AudioContext({ sampleRate: 16000 });
+            const source = _voxtralVoiceAudioCtx.createMediaStreamSource(_voxtralVoiceStream);
+            _voxtralVoiceNode = _voxtralVoiceAudioCtx.createScriptProcessor(4096, 1, 1);
+            source.connect(_voxtralVoiceNode);
+            _voxtralVoiceNode.connect(_voxtralVoiceAudioCtx.destination);
+
+            const history = [];
+            let audioBuffer = [];
+            let speechStart = 0;
+            let silenceStart = 0;
+            let processing = false;
+            const SILENCE_THRESHOLD = 0.015;
+            const SILENCE_TIMEOUT = 1200;
+            const MIN_SPEECH = 500;
+            const sdk = this;
+
+            const processTurn = async (pcm) => {
+                processing = true;
+                try {
+                    // 1. STT — Voxtral transcription (audio already at 16 kHz, no resampling)
+                    _localVoiceProgress('Transcribing with Voxtral…');
+                    _dispatchVoiceEvent('listening', { active: false });
+
+                    // Skip very short audio (< 0.5 s at 16 kHz)
+                    if (pcm.length < 8000) { processing = false; return; }
+
+                    let transcript = '';
+                    const inputs = await voxtral.processor(null, pcm);
+                    const streamer = new voxtral.TextStreamer(voxtral.processor.tokenizer, {
+                        skip_special_tokens: true,
+                        skip_prompt: true,
+                        callback_function: (token) => { transcript += token; },
+                    });
+                    await voxtral.model.generate({ ...inputs, max_new_tokens: 512, streamer });
+                    transcript = transcript.trim();
+
+                    if (!transcript || !_voxtralVoiceActive) { processing = false; return; }
+                    if (transcript.length < 3) {
+                        processing = false;
+                        _dispatchVoiceEvent('listening', { active: true });
+                        return;
+                    }
+
+                    if (opts.onTranscript) opts.onTranscript(transcript);
+                    _dispatchVoiceEvent('transcript', { text: transcript });
+
+                    // 2. LLM — generate response with tool calling
+                    _localVoiceProgress('Thinking…');
+                    history.push({ role: 'user', content: transcript });
+                    const messages = [
+                        { role: 'system', content: voiceInstructions },
+                        ...history,
+                    ];
+                    const chatTools = tools.length > 0 ? tools.map(t => ({
+                        type: 'function',
+                        function: { name: t.name, description: t.description || '', parameters: t.parameters || {} },
+                    })) : [];
+                    const llmOpts = chatTools.length > 0 ? { tools: chatTools } : undefined;
+                    let llmResult = await sdk._callWebLLM(messages, null, llmOpts);
+
+                    if (!llmResult.ok && llmOpts) {
+                        console.warn('[VoxtralVoice] Retrying without tools:', llmResult.error);
+                        llmResult = await sdk._callWebLLM(messages);
+                    }
+
+                    // ── Tool call loop — execute tools until model produces a text response ──
+                    let toolRounds = 0;
+                    const MAX_TOOL_ROUNDS = 5;
+                    while (llmResult.ok && llmResult.tool_calls && llmResult.tool_calls.length > 0 && toolRounds < MAX_TOOL_ROUNDS) {
+                        toolRounds++;
+                        history.push({ role: 'assistant', content: llmResult.result || null, tool_calls: llmResult.tool_calls });
+                        for (const tc of llmResult.tool_calls) {
+                            const funcName = tc.function?.name || '';
+                            const argsStr = tc.function?.arguments || '{}';
+                            const toolCallId = tc.id || `call_${Date.now()}`;
+
+                            if (opts.onToolCall) opts.onToolCall(funcName, argsStr);
+                            _dispatchVoiceEvent('tool_call', { name: funcName, arguments: argsStr });
+
+                            if (funcName === 'sys_voice_quit') {
+                                history.push({ role: 'tool', tool_call_id: toolCallId, content: '{"ok":true,"action":"quit"}' });
+                                sdk.stopVoxtralVoice();
+                                return;
+                            }
+
+                            _localVoiceProgress(`Running ${funcName.replace(/_/g, '.')}…`);
+                            const traitPath = funcName.replace(/_/g, '.');
+                            let callArgs = [];
+                            try {
+                                const parsed = JSON.parse(argsStr);
+                                const traitInfo = await sdk.info(traitPath);
+                                if (traitInfo && Array.isArray(traitInfo.params)) {
+                                    callArgs = traitInfo.params.map(p => parsed[p.name] !== undefined ? parsed[p.name] : null);
+                                } else {
+                                    callArgs = Object.values(parsed);
+                                }
+                            } catch(_) {}
+
+                            const toolResult = await sdk.call(traitPath, callArgs);
+                            const output = JSON.stringify(toolResult.ok ? (toolResult.result !== undefined ? toolResult.result : toolResult) : { error: toolResult.error });
+                            const truncated = output.length > 2000 ? output.slice(0, 2000) + '…(truncated)' : output;
+
+                            if (opts.onToolResult) opts.onToolResult(funcName, truncated);
+                            _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
+
+                            if (funcName === 'sys_spa' && toolResult.ok) {
+                                const r = toolResult.result || toolResult;
+                                if (r.spa_action) window.dispatchEvent(new CustomEvent('traits-spa-action', { detail: r }));
+                            }
+                            if (funcName === 'sys_voice_mode' && toolResult.ok) {
+                                const r = toolResult.result || toolResult;
+                                if (r.voice_mode_action) window.dispatchEvent(new CustomEvent('traits-voice-mode', { detail: r }));
+                            }
+                            if (funcName === 'sys_audio' && toolResult.ok) {
+                                const r = toolResult.result || toolResult;
+                                if (r.audio_action) window.dispatchEvent(new CustomEvent('traits-audio-action', { detail: r }));
+                            }
+
+                            history.push({ role: 'tool', tool_call_id: toolCallId, content: truncated });
+                        }
+                        _localVoiceProgress('Thinking…');
+                        const followUpMessages = [{ role: 'system', content: voiceInstructions }, ...history];
+                        llmResult = await sdk._callWebLLM(followUpMessages, null, llmOpts);
+                    }
+
+                    let responseText = '';
+                    if (llmResult.ok) {
+                        responseText = typeof llmResult.result === 'string'
+                            ? llmResult.result
+                            : (llmResult.result?.content || JSON.stringify(llmResult.result));
+                    } else {
+                        console.error('[VoxtralVoice] LLM error:', llmResult.error);
+                        responseText = 'Sorry, I could not generate a response.';
+                    }
+                    responseText = responseText.replace(/[*_`#]/g, '').replace(/\n+/g, ' ').trim();
+
+                    if (!responseText || !_voxtralVoiceActive) { processing = false; return; }
+
+                    history.push({ role: 'assistant', content: responseText });
+                    while (history.length > 20) history.shift();
+
+                    if (opts.onResponse) opts.onResponse(responseText);
+                    _dispatchVoiceEvent('response', { text: responseText });
+
+                    // 3. TTS — Kokoro synthesis + playback
+                    _localVoiceProgress('Speaking…');
+                    _dispatchVoiceEvent('speaking', { text: responseText });
+
+                    // Mute mic during TTS to prevent echo
+                    if (_voxtralVoiceStream) {
+                        _voxtralVoiceStream.getAudioTracks().forEach(t => t.enabled = false);
+                    }
+                    try {
+                        const audio = await tts.generate(responseText, { voice });
+                        if (!_voxtralVoiceActive) { processing = false; return; }
+                        const blob = await audio.toBlob();
+                        const audioUrl = URL.createObjectURL(blob);
+                        const audioEl = new Audio(audioUrl);
+                        await new Promise((resolve) => {
+                            audioEl.onended = () => { URL.revokeObjectURL(audioUrl); resolve(); };
+                            audioEl.onerror = () => { URL.revokeObjectURL(audioUrl); resolve(); };
+                            audioEl.play().catch(resolve);
+                        });
+                    } finally {
+                        if (_voxtralVoiceStream) {
+                            _voxtralVoiceStream.getAudioTracks().forEach(t => t.enabled = true);
+                        }
+                    }
+
+                    _localVoiceProgress('');
+                    _dispatchVoiceEvent('listening', { active: true });
+                } catch(e) {
+                    console.error('[VoxtralVoice] Turn error:', e);
+                    if (opts.onError) opts.onError(e.message || String(e));
+                    _dispatchVoiceEvent('error', { message: e.message || String(e) });
+                }
+                processing = false;
+            };
+
+            // Audio capture + VAD loop
+            _voxtralVoiceNode.onaudioprocess = (e) => {
+                if (!_voxtralVoiceActive || processing) return;
+                const input = e.inputBuffer.getChannelData(0);
+                const rms = Math.sqrt(input.reduce((s, v) => s + v * v, 0) / input.length);
+                if (rms > SILENCE_THRESHOLD) {
+                    if (!speechStart) {
+                        speechStart = Date.now();
+                        _dispatchVoiceEvent('listening', { active: true, speaking: true });
+                    }
+                    silenceStart = 0;
+                    audioBuffer.push(new Float32Array(input));
+                } else if (speechStart) {
+                    audioBuffer.push(new Float32Array(input));
+                    if (!silenceStart) {
+                        silenceStart = Date.now();
+                    } else if (Date.now() - silenceStart > SILENCE_TIMEOUT
+                               && Date.now() - speechStart > MIN_SPEECH) {
+                        const pcm = _mergeFloat32Arrays(audioBuffer);
+                        audioBuffer = [];
+                        speechStart = 0;
+                        silenceStart = 0;
+                        processTurn(pcm);
+                    }
+                }
+            };
+
+            _localVoiceProgress('Listening…');
+            if (opts.onProgress) opts.onProgress('Listening…');
+            _dispatchVoiceEvent('listening', { active: true });
+
+            return { ok: true, mode: 'local-realtime', voice, tools: tools.length };
+
+        } catch(e) {
+            await this.stopVoxtralVoice();
+            return { ok: false, error: e.message || String(e) };
+        } finally {
+            window.removeEventListener('local-voice-progress', progressHandler);
+        }
+    }
+
+    /**
+     * Stop the Voxtral local-realtime voice session.
+     */
+    async stopVoxtralVoice() {
+        _voxtralVoiceActive = false;
+        if (_voxtralVoiceNode) {
+            try { _voxtralVoiceNode.disconnect(); } catch(e) {}
+            _voxtralVoiceNode = null;
+        }
+        if (_voxtralVoiceAudioCtx) {
+            try { await _voxtralVoiceAudioCtx.close(); } catch(e) {}
+            _voxtralVoiceAudioCtx = null;
+        }
+        if (_voxtralVoiceStream) {
+            _voxtralVoiceStream.getTracks().forEach(t => t.stop());
+            _voxtralVoiceStream = null;
+        }
+        _localVoiceProgress('');
+        _dispatchVoiceEvent('stopped', { mode: 'local-realtime' });
+    }
+
+    /**
+     * Check if Voxtral voice session is active.
+     * @returns {boolean}
+     */
+    isVoxtralVoiceActive() {
+        return _voxtralVoiceActive;
     }
 
     // ── Runtime Bindings ──

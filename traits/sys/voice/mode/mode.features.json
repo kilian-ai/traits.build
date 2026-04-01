@@ -37,6 +37,15 @@
       ]
     },
     {
+      "name": "set voice mode to local-realtime (Voxtral)",
+      "examples": [
+        {
+          "input": { "args": ["set", "local-realtime"] },
+          "output": { "contains": "\"mode\":\"local-realtime\"" }
+        }
+      ]
+    },
+    {
       "name": "invalid mode rejected",
       "examples": [
         {

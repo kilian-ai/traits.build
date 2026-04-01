@@ -1,7 +1,7 @@
 [trait]
 description = "Voice mode management — get/set preferred voice mode (local vs realtime) and check API key availability"
-version = "v260331.204338"
-checksum = "bda9162e9d1a381852e20676d4b13ae5ff1a09a76639a1eeab0bac1954aa9376"
+version = "v260401"
+checksum = "db4fe1a97c1ebb0dbed0de8813740284e09e1172a0f2a8f7cdcf622da92bc1cd"
 author = "system"
 tags = ["sys", "voice", "mode", "config"]
 
