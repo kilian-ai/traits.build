@@ -1,0 +1,26 @@
+[trait]
+description = "WebAudio API — generate tones, sequences, drums, noise, chords, and frequency sweeps in the browser"
+version = "v260401"
+checksum = "d1c609e6634f752b1906c7f22f32fd75e89f7f6d991d38e274d312f892e81653"
+author = "system"
+tags = ["sys", "audio", "sound", "webaudio", "music"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "Action: tone, sequence, drum, noise, chord, sweep, stop, status", required = true, example = "tone" },
+  { name = "arg1", type = "any", description = "Primary arg: freq (tone), notes array (sequence), pattern string (drum), noise type, freqs array (chord), start_freq (sweep)", required = false },
+  { name = "arg2", type = "any", description = "Secondary arg: duration (tone/noise/chord), tempo (sequence), bpm (drum), end_freq (sweep)", required = false },
+  { name = "arg3", type = "any", description = "Tertiary arg: waveform (tone/chord), volume (sequence/noise), loops (drum), duration (sweep)", required = false },
+  { name = "arg4", type = "any", description = "Quaternary arg: volume (tone/chord/drum), waveform (sweep)", required = false },
+  { name = "arg5", type = "any", description = "Quinary arg: volume (sweep)", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "Action descriptor with audio_action field — executed by JS bridge via WebAudio API"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "audio"
+wasm = true

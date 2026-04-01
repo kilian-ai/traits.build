@@ -1,0 +1,67 @@
+{
+  "features": [
+    {
+      "name": "play a tone",
+      "examples": [
+        {
+          "input": { "args": ["tone", 440, 0.5, "sine", 0.3] },
+          "output": { "contains": "\"audio_action\":\"tone\"" }
+        }
+      ]
+    },
+    {
+      "name": "play a drum pattern",
+      "examples": [
+        {
+          "input": { "args": ["drum", "k..s..k.ks..s...", 120, 2] },
+          "output": { "contains": "\"audio_action\":\"drum\"" }
+        }
+      ]
+    },
+    {
+      "name": "play a chord",
+      "examples": [
+        {
+          "input": { "args": ["chord", [261.63, 329.63, 392.0], 1.0] },
+          "output": { "contains": "\"audio_action\":\"chord\"" }
+        }
+      ]
+    },
+    {
+      "name": "frequency sweep",
+      "examples": [
+        {
+          "input": { "args": ["sweep", 200, 2000, 1.0] },
+          "output": { "contains": "\"audio_action\":\"sweep\"" }
+        }
+      ]
+    },
+    {
+      "name": "generate noise",
+      "examples": [
+        {
+          "input": { "args": ["noise", "white", 1.0, 0.2] },
+          "output": { "contains": "\"audio_action\":\"noise\"" }
+        }
+      ]
+    },
+    {
+      "name": "stop all audio",
+      "examples": [
+        {
+          "input": { "args": ["stop"] },
+          "output": { "contains": "\"audio_action\":\"stop\"" }
+        }
+      ]
+    },
+    {
+      "name": "check audio status",
+      "examples": [
+        {
+          "input": { "args": ["status"] },
+          "output": { "contains": "\"audio_action\":\"status\"" }
+        }
+      ]
+    }
+  ]
+}

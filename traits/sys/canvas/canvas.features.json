@@ -26,6 +26,42 @@
           "output": { "contains": "\"ok\":true" }
         }
       ]
+    },
+    {
+      "name": "save project",
+      "examples": [
+        {
+          "input": { "args": ["save", "my-project"] },
+          "output": { "contains": "\"canvas_project_action\":\"save\"" }
+        }
+      ]
+    },
+    {
+      "name": "list projects",
+      "examples": [
+        {
+          "input": { "args": ["projects"] },
+          "output": { "contains": "\"canvas_project_action\":\"list\"" }
+        }
+      ]
+    },
+    {
+      "name": "load project",
+      "examples": [
+        {
+          "input": { "args": ["load", "my-project"] },
+          "output": { "contains": "\"canvas_project_action\":\"load\"" }
+        }
+      ]
+    },
+    {
+      "name": "delete project",
+      "examples": [
+        {
+          "input": { "args": ["delete_project", "my-project"] },
+          "output": { "contains": "\"canvas_project_action\":\"delete\"" }
+        }
+      ]
     }
   ]
 }

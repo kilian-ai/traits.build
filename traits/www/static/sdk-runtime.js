@@ -1565,6 +1565,10 @@ class Traits {
                                         window.dispatchEvent(new CustomEvent('traits-canvas-update', {}));
                                     });
                                 }
+                                // Canvas project actions: fire event for project bridge
+                                if (r.canvas_project_action) {
+                                    window.dispatchEvent(new CustomEvent('traits-canvas-project', { detail: r }));
+                                }
                             }
 
                             // After sys.voice.instruct changes: persist to localStorage + live session.update
@@ -1602,6 +1606,14 @@ class Traits {
                                 const r = result.result || result;
                                 if (r.voice_mode_action) {
                                     window.dispatchEvent(new CustomEvent('traits-voice-mode', { detail: r }));
+                                }
+                            }
+
+                            // After sys.audio actions: fire event for WebAudio bridge
+                            if (funcName === 'sys_audio' && result.ok) {
+                                const r = result.result || result;
+                                if (r.audio_action) {
+                                    window.dispatchEvent(new CustomEvent('traits-audio-action', { detail: r }));
                                 }
                             }
                         }).catch(e => {
@@ -1938,6 +1950,14 @@ class Traits {
                                 const r = toolResult.result || toolResult;
                                 if (r.voice_mode_action) {
                                     window.dispatchEvent(new CustomEvent('traits-voice-mode', { detail: r }));
+                                }
+                            }
+
+                            // After sys.audio actions: fire event for WebAudio bridge
+                            if (funcName === 'sys_audio' && toolResult.ok) {
+                                const r = toolResult.result || toolResult;
+                                if (r.audio_action) {
+                                    window.dispatchEvent(new CustomEvent('traits-audio-action', { detail: r }));
                                 }
                             }
 

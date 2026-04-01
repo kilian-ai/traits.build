@@ -28,6 +28,48 @@ pub fn canvas(args: &[Value]) -> Value {
             *CANVAS.lock().unwrap() = String::new();
             json!({"ok": true, "action": "clear"})
         }
+        // ── Project management actions (localStorage via JS bridge) ──
+        "save" => {
+            let name = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
+            if name.is_empty() {
+                return json!({"ok": false, "error": "Project name required"});
+            }
+            let canvas = CANVAS.lock().unwrap();
+            json!({
+                "ok": true,
+                "canvas_project_action": "save",
+                "name": name,
+                "content": &*canvas
+            })
+        }
+        "load" => {
+            let name = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
+            if name.is_empty() {
+                return json!({"ok": false, "error": "Project name required"});
+            }
+            json!({
+                "ok": true,
+                "canvas_project_action": "load",
+                "name": name
+            })
+        }
+        "projects" => {
+            json!({
+                "ok": true,
+                "canvas_project_action": "list"
+            })
+        }
+        "delete_project" => {
+            let name = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
+            if name.is_empty() {
+                return json!({"ok": false, "error": "Project name required"});
+            }
+            json!({
+                "ok": true,
+                "canvas_project_action": "delete",
+                "name": name
+            })
+        }
         _ => json!({"ok": false, "error": format!("Unknown action: {}", action)}),
     }
 }

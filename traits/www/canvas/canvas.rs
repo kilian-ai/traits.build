@@ -27,6 +27,29 @@ pub fn canvas(_args: &[Value]) -> Value {
                             cursor: pointer; font-size: 12px;
                         }
                         .canvas-header button:hover { border-color: var(--accent); color: var(--accent); }
+                        .canvas-header button.save-btn { border-color: #2a5; color: #2a5; }
+                        .canvas-header button.save-btn:hover { border-color: #3c8; color: #3c8; }
+
+                        /* Project bar */
+                        #project-bar {
+                            display: none; padding: 6px 20px; background: #0d0d0d;
+                            border-bottom: 1px solid var(--border);
+                            overflow-x: auto; white-space: nowrap;
+                        }
+                        #project-bar.has-projects { display: flex; gap: 6px; align-items: center; }
+                        #project-bar .project-chip {
+                            display: inline-flex; align-items: center; gap: 4px;
+                            padding: 3px 10px; border-radius: 4px; font-size: 11px;
+                            background: #181818; border: 1px solid var(--border);
+                            color: #aaa; cursor: pointer; flex-shrink: 0;
+                        }
+                        #project-bar .project-chip:hover { border-color: var(--accent); color: var(--accent); }
+                        #project-bar .project-chip .del {
+                            color: #555; cursor: pointer; font-size: 13px; margin-left: 2px;
+                        }
+                        #project-bar .project-chip .del:hover { color: #f44; }
+                        #project-bar .project-label { font-size: 10px; color: #555; margin-right: 4px; flex-shrink: 0; }
+
                         #canvas-container {
                             width: 100%; min-height: calc(100vh - 100px);
                             padding: 20px; position: relative;
@@ -70,10 +93,12 @@ pub fn canvas(_args: &[Value]) -> Value {
                 div .canvas-header {
                     h1 { "traits.build " span .accent { "canvas" } }
                     div .actions {
+                        button #btnSave .save-btn { "Save" }
                         button #btnClear { "Clear" }
                         button #btnSource { "View Source" }
                     }
                 }
+                div #project-bar {}
                 div #canvas-container {
                     div .canvas-empty #canvas-empty {
                         div .icon { "🎨" }
@@ -104,11 +129,98 @@ pub fn canvas(_args: &[Value]) -> Value {
                             },
                             /** Echo text to the terminal: traits.echo('hello') */
                             echo: (text) => _sdk()?.call('sys.echo', [text]),
+                            /** Play audio: traits.audio('tone', 440, 0.5) */
+                            audio: (action, ...a) => _sdk()?.call('sys.audio', [action, ...a]),
                         };
 
                         const container = document.getElementById('canvas-container');
                         const empty = document.getElementById('canvas-empty');
+                        const projectBar = document.getElementById('project-bar');
                         let sourceMode = false;
+
+                        // ── Project management ──
+                        const PROJECT_PFX = 'traits.canvas.project.';
+
+                        function getProjects() {
+                            const projects = [];
+                            for (let i = 0; i < localStorage.length; i++) {
+                                const k = localStorage.key(i);
+                                if (k && k.startsWith(PROJECT_PFX)) {
+                                    const name = k.slice(PROJECT_PFX.length);
+                                    try {
+                                        const data = JSON.parse(localStorage.getItem(k));
+                                        projects.push({ name, length: (data.content || '').length, saved: data.saved });
+                                    } catch(_) { projects.push({ name, length: 0 }); }
+                                }
+                            }
+                            return projects.sort((a, b) => (b.saved || 0) - (a.saved || 0));
+                        }
+
+                        function renderProjectBar() {
+                            const projects = getProjects();
+                            if (!projects.length) {
+                                projectBar.className = '';
+                                projectBar.innerHTML = '';
+                                return;
+                            }
+                            projectBar.className = 'has-projects';
+                            projectBar.innerHTML = '<span class="project-label">Projects:</span>' +
+                                projects.map(p =>
+                                    '<span class="project-chip" data-name="' + p.name.replace(/"/g, '&quot;') + '">' +
+                                    p.name +
+                                    ' <span class="del" data-del="' + p.name.replace(/"/g, '&quot;') + '">&times;</span>' +
+                                    '</span>'
+                                ).join('');
+                            // Click handlers
+                            projectBar.querySelectorAll('.project-chip').forEach(chip => {
+                                chip.addEventListener('click', (e) => {
+                                    if (e.target.classList.contains('del')) return;
+                                    loadProject(chip.dataset.name);
+                                });
+                            });
+                            projectBar.querySelectorAll('.del').forEach(del => {
+                                del.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    const name = del.dataset.del;
+                                    if (confirm('Delete project "' + name + '"?')) {
+                                        localStorage.removeItem(PROJECT_PFX + name);
+                                        renderProjectBar();
+                                    }
+                                });
+                            });
+                        }
+
+                        async function loadProject(name) {
+                            try {
+                                const raw = localStorage.getItem(PROJECT_PFX + name);
+                                if (!raw) return;
+                                const proj = JSON.parse(raw);
+                                const sdk = window._traitsSDK;
+                                if (sdk) await sdk.call('sys.canvas', ['set', proj.content]);
+                                renderCanvas(proj.content);
+                            } catch(e) { console.warn('load project:', e); }
+                        }
+
+                        async function saveProject() {
+                            const sdk = window._traitsSDK;
+                            if (!sdk) return;
+                            const res = await sdk.call('sys.canvas', ['get']);
+                            const content = res?.result?.content || res?.content || '';
+                            if (!content) { alert('Canvas is empty — nothing to save.'); return; }
+                            const name = prompt('Project name:');
+                            if (!name || !name.trim()) return;
+                            localStorage.setItem(PROJECT_PFX + name.trim(), JSON.stringify({ content, saved: Date.now() }));
+                            renderProjectBar();
+                        }
+
+                        // Save button
+                        document.getElementById('btnSave').addEventListener('click', saveProject);
+
+                        // Listen for external project changes (from voice/MCP bridge)
+                        window.addEventListener('traits-canvas-projects-changed', renderProjectBar);
+
+                        // Initial render
+                        renderProjectBar();
 
                         function renderCanvas(content) {
                             if (!content) {

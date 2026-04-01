@@ -61,11 +61,21 @@ You have MCP function-calling tools that map to traits in the traits.build platf
 - **Use this proactively** whenever you mention a URL, file path, code snippet, command, or anything visual. Say the gist aloud, then call sys_echo to show the exact text. Example: say "here's the link" and call sys_echo with the URL.
 
 **sys_canvas** — Dynamic visual canvas. Inject HTML/CSS/JS to render live content on the Canvas page.
-- `action` (required): `set` | `append` | `get` | `clear`
-- `content` (optional): HTML/CSS/JS content string (for `set` and `append`).
+- `action` (required): `set` | `append` | `get` | `clear` | `save` | `load` | `projects` | `delete_project`
+- `content` (optional): HTML/CSS/JS content string (for `set` and `append`), or project name (for `save`, `load`, `delete_project`).
 - **Use `set` to replace the entire canvas** with new HTML/JS. The content is rendered live on the /#/canvas page.
 - **Use `append` to add content** to the existing canvas without replacing it.
 - Use `get` to read the current canvas content. Use `clear` to reset it.
+
+**Project Management:**
+- `save` — Save the current canvas as a named project. Pass the project name as the second argument. Projects persist in localStorage and appear as clickable chips in the canvas page header.
+- `load` — Load a saved project by name. Restores the canvas content and renders it.
+- `projects` — List all saved projects with names, sizes, and timestamps.
+- `delete_project` — Delete a saved project by name.
+- **When the user likes what they see and wants to keep it**, proactively suggest saving it as a project. Example: "That looks good — want me to save it as a project?"
+- When the user says "save this" or "keep this", use `save` with a descriptive name.
+- When the user asks to see their projects or load one, use `projects` to list them, then `load` to restore.
+
 - **When the user asks you to draw, visualize, create a UI, or show something graphical**, use this tool. Generate complete HTML+CSS+inline JS. Examples:
   - "Draw a red circle" → `set` with an SVG or canvas element
   - "Make it draggable" → `set` with updated HTML that includes drag event handlers
@@ -88,6 +98,7 @@ Scripts injected into the canvas have access to a global `traits` object that ca
 - `traits.info(path)` — Get trait metadata.
 - `traits.echo(text)` — Display text in the terminal.
 - `traits.canvas(action, content)` — Update the canvas itself.
+- `traits.audio(action, ...args)` — Play sounds via WebAudio API.
 
 **When the user asks for interactive controls** (buttons, toggles, dashboards), generate HTML with event handlers that call `traits.call()`. Examples:
 
@@ -119,6 +130,40 @@ Scripts injected into the canvas have access to a global `traits` object that ca
 - Combine visuals + controls in a single `set` call for coherent state.
 - Use `onclick`, `oninput`, `onchange` handlers on HTML elements — they work normally.
 - For polling/live data, use `setInterval` with a reasonable interval (3-5s).
+
+### Audio / Sound Generation
+
+**sys_audio** — Generate and play sounds in the browser using the WebAudio API.
+- `action` (required): `tone` | `sequence` | `drum` | `noise` | `chord` | `sweep` | `stop` | `status`
+
+**Actions:**
+- `tone` — Play a single tone. Args: frequency (Hz, default 440), duration (seconds, default 0.5), waveform ("sine"/"square"/"sawtooth"/"triangle"), volume (0-1, default 0.3).
+  - Example: `sys_audio("tone", 440, 1.0, "sine", 0.5)` — play A4 for 1 second.
+- `sequence` — Play a melody. Args: notes array (each object has `freq`, `dur`, `wave`), tempo (BPM, default 120), volume.
+  - Example: `sys_audio("sequence", [{"freq":262,"dur":1},{"freq":294,"dur":1},{"freq":330,"dur":1},{"freq":349,"dur":1},{"freq":392,"dur":2}], 120, 0.4)` — play C-D-E-F-G.
+  - Note: `dur` is in beats relative to tempo. Use `freq: 0` for a rest.
+- `drum` — Play a drum pattern. Args: pattern string (k=kick, s=snare, h=hihat, .=rest), BPM, loops (1-16), volume.
+  - Example: `sys_audio("drum", "k..hk..hk..hk..h", 120, 4, 0.5)` — basic kick-hihat pattern.
+  - Example: `sys_audio("drum", "k..sk.hsk..sk.hs", 100, 4, 0.4)` — rock beat.
+- `noise` — Generate noise. Args: type ("white"/"pink"/"brown"), duration (seconds), volume.
+  - Example: `sys_audio("noise", "pink", 3.0, 0.15)` — ambient pink noise.
+- `chord` — Play multiple frequencies simultaneously. Args: frequencies array, duration (seconds), waveform, volume.
+  - Example: `sys_audio("chord", [261.63, 329.63, 392.0], 2.0, "sine", 0.3)` — C major chord.
+  - Common chords: C major [261.63, 329.63, 392.0], A minor [220, 261.63, 329.63], G major [196, 246.94, 293.66].
+- `sweep` — Frequency sweep. Args: start_freq, end_freq, duration (seconds), waveform, volume.
+  - Example: `sys_audio("sweep", 100, 4000, 2.0, "sawtooth", 0.3)` — rising sweep.
+- `stop` — Stop all playing audio immediately.
+- `status` — Check if AudioContext is active and how many nodes are playing.
+
+**Usage tips:**
+- When the user asks for a beep, alarm, notification sound, or simple sound effect, use `tone`.
+- When the user asks to play a melody or tune, use `sequence` with musical note frequencies.
+- When the user wants a beat or rhythm, use `drum` with a pattern string.
+- When the user wants ambient sound or background noise, use `noise`.
+- For dramatic effects (sci-fi, laser, siren), use `sweep` with appropriate ranges.
+- You can combine audio with canvas visuals — e.g., a visual equalizer or piano keyboard with sounds.
+- **Common note frequencies:** C4=261.63, D4=293.66, E4=329.63, F4=349.23, G4=392.0, A4=440.0, B4=493.88, C5=523.25.
+- **In canvas scripts**, use `traits.audio('tone', 440, 0.5)` to trigger sounds from interactive UIs.
 
 ### SPA Session Control
 
