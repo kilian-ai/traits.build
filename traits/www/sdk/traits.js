@@ -310,9 +310,8 @@ async function _ensureVoxtral(onProgress) {
             // In transformers.js@4.0.0-next.7 the WebGPU backend calls webgpuInit which
             // is undefined on many browsers (Safari, some Chrome configs), causing
             // "no available backend found" even when we request device:'wasm'.
-            // Skip WebGPU entirely; try 'wasm' then 'cpu' (same WASM backend, different
-            // EP name used by some ORT versions).
-            const tryDevices = ['wasm', 'cpu'];
+            // Valid devices for this version: 'webgpu' and 'wasm' only.
+            const tryDevices = ['wasm'];
             let lastErr;
             for (const device of tryDevices) {
                 try {
