@@ -103,7 +103,7 @@ fallback:'//PkxABjnDHUAVrAAD/9TxyzWiRESNQ0N4+N46Nw2NssN6zNitNSjNCdM2ZMuXMqVMqXMu
 function au(k){return 'data:audio/mpeg;base64,'+A[k];}
 
 (async function(){
-  let dead=false, curAudio=null, micStr=null, aCtx=null;
+  let dead=false, curAudio=null;
   const $=id=>document.getElementById(id);
   const wait=ms=>new Promise(r=>{if(!dead)setTimeout(r,ms);});
 
@@ -185,81 +185,26 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
     }
   }
 
-  function resample(data,from){
-    if(from===16000) return data;
-    const r=from/16000,n=Math.round(data.length/r),o=new Float32Array(n);
-    for(let i=0;i<n;i++){const s=i*r,lo=Math.floor(s),hi=Math.min(lo+1,data.length-1);o[i]=data[lo]*(1-(s-lo))+data[hi]*(s-lo);}
-    return o;
-  }
-  function merge(arrs){
-    const n=arrs.reduce((s,a)=>s+a.length,0),o=new Float32Array(n);
-    let off=0;for(const a of arrs){o.set(a,off);off+=a.length;}return o;
-  }
-
-  let sttFn=null;
   async function hear(){
-    if(dead||!sttFn) return '';
-    try{
-      micStr=await navigator.mediaDevices.getUserMedia({
-        audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
-      });
-    }catch(e){console.warn('[HP] Mic:',e);return '';}
-    if(dead){micStr.getTracks().forEach(t=>t.stop());return '';}
-
-    aCtx=new AudioContext();
-    if(aCtx.state==='suspended') await aCtx.resume();
-    const sr=aCtx.sampleRate;
-    const src=aCtx.createMediaStreamSource(micStr);
-    const proc=aCtx.createScriptProcessor(4096,1,1);
-    src.connect(proc);proc.connect(aCtx.destination);
-
+    if(dead) return '';
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR) return '';
     return new Promise(res=>{
-      let buf=[],ss=0,sil=0,done=false;
-      const TH=0.015,SIL=1200,MIN=500;
-      proc.onaudioprocess=async e=>{
-        if(done||dead) return;
-        const inp=e.inputBuffer.getChannelData(0);
-        const rms=Math.sqrt(inp.reduce((s,v)=>s+v*v,0)/inp.length);
-        if(rms>TH){if(!ss) ss=Date.now();sil=0;buf.push(new Float32Array(inp));}
-        else if(ss){
-          buf.push(new Float32Array(inp));
-          if(!sil) sil=Date.now();
-          else if(Date.now()-sil>SIL&&Date.now()-ss>MIN){
-            done=true;
-            proc.disconnect();src.disconnect();
-            micStr.getTracks().forEach(t=>t.stop());micStr=null;
-            aCtx.close().catch(()=>{});aCtx=null;
-            const pcm=merge(buf);
-            if(pcm.length<8000){res('');return;}
-            try{const r=await sttFn(resample(pcm,sr),{language:'en'});res((r.text||'').trim());}
-            catch(err){console.warn('[HP] STT:',err);res('');}
-          }
-        }
-      };
-      setTimeout(()=>{
-        if(!done){done=true;
-          try{proc.disconnect();src.disconnect();}catch(_){}
-          if(micStr){micStr.getTracks().forEach(t=>t.stop());micStr=null;}
-          if(aCtx){aCtx.close().catch(()=>{});aCtx=null;}
-          res('');
-        }
-      },15000);
+      const rec=new SR();
+      rec.lang='en-US';rec.interimResults=false;rec.continuous=false;rec.maxAlternatives=1;
+      let done=false;
+      rec.onresult=e=>{if(done) return;done=true;res((e.results[0]?.[0]?.transcript||'').trim());};
+      rec.onerror=e=>{if(!done){done=true;console.warn('[HP] SR:',e.error);res('');}};
+      rec.onend=()=>{if(!done){done=true;res('');}};
+      rec.onspeechend=()=>{try{rec.stop();}catch(_){}};
+      try{rec.start();}catch(e){done=true;res('');}
+      setTimeout(()=>{if(!done){done=true;try{rec.stop();}catch(_){}res('');}},12000);
     });
   }
 
-  /* intent classification: try WebLLM (lean prompt), regex fallback */
-  async function classify(text){
+  /* intent classification: instant regex */
+  function classify(text){
     if(!text) return 0;
-    if(window._traitsSDK){
-      try{
-        const r=await window._traitsSDK.call('llm.prompt',[
-          'Classify into one category. Reply ONLY with the number.\n'+
-          '1=AI/developer/coding 2=mobile/device/browser 3=privacy/open-source 4=speed/realtime/API 0=other\n'+
-          'Text: "'+text.replace(/"/g,'')+'"'
-        ]);
-        if(r&&r.ok){const n=parseInt(String(r.result).trim());if(n>=0&&n<=4) return n;}
-      }catch(e){console.warn('[HP] LLM:',e);}
-    }
     const t=text.toLowerCase();
     if(/\b(ai|developer|experience|code|coding|develop|first)\b/.test(t)) return 1;
     if(/\b(mobile|phone|device|run|running|tablet|android|ios|iphone)\b/.test(t)) return 2;
@@ -279,23 +224,7 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
      MAIN FLOW — instant intro, background STT
      ═══════════════════════════════════════ */
   try{
-    /* 1 — start STT download in background */
-    prog(10,'Starting\u2026');
-    const sttP=(async()=>{
-      try{
-        const{pipeline}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers');
-        if(dead) return null;
-        return pipeline('automatic-speech-recognition','onnx-community/whisper-base',{
-          device:'wasm',
-          dtype:{encoder_model:'fp32',decoder_model_merged:'q4'},
-          progress_callback:p=>{
-            if(p.progress!=null) prog(10+p.progress*.85,'Voice: '+Math.round(p.progress)+'%');
-          }
-        });
-      }catch(e){console.warn('[HP] STT load:',e);return null;}
-    })();
-
-    /* 2 — transition immediately (audio is pre-recorded) */
+    /* 1 — transition immediately (audio is pre-recorded, STT is browser-native) */
     prog(100,'Ready');
     await wait(200);
     $('hp-loading').classList.add('done');
@@ -343,11 +272,8 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
     await play('mic_prompt');
     if(dead) return;
 
-    /* 10 — wait for STT to finish loading */
-    try{sttFn=await sttP;}catch(e){console.warn('[HP] STT fail:',e);}
-    if(dead) return;
-
-    if(!sttFn){
+    /* 10 — check browser speech recognition support */
+    if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){
       $('hp-sub').textContent='Click a topic to explore.';
       linkBtns();
       $('hp-skip').style.display='none';
@@ -371,7 +297,7 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
       const speechP=hear().then(async text=>{
         $('hp-ts').textContent=text?'\u201C'+text+'\u201D':'';
         $('hp-ts').classList.add('on');
-        return text ? await classify(text) : -1;
+        return text ? classify(text) : -1;
       });
 
       const sel=await Promise.race([speechP,clickP]);
