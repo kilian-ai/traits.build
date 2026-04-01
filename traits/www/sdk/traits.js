@@ -269,19 +269,24 @@ async function _ensureVoxtral(onProgress) {
         try {
             const MODEL_ID = 'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX';
             const DTYPE = 'q4';
+            const LIB_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.7';
             if (!_voxtralLib4) {
                 const msg = 'Loading Transformers.js 4.x for Voxtral…';
                 _localVoiceProgress(msg);
                 if (onProgress) onProgress(msg);
-                _voxtralLib4 = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.7');
-                // GitHub Pages / most sites lack COOP/COEP headers, so SharedArrayBuffer
-                // is unavailable and ONNX WASM multi-threading fails with "no available
-                // backend found". Force single-threaded WASM so the CPU path is always viable.
+                _voxtralLib4 = await import(LIB_CDN);
+                // ORT-Web needs to know where its WASM binaries live when the library is
+                // loaded from CDN. Without wasmPaths, WASM session creation fails because
+                // ORT can't locate ort-wasm-simd-threaded.wasm or ort-wasm.wasm.
+                // Also force single-threaded WASM (numThreads=1) — GitHub Pages and most
+                // origins lack COOP/COEP headers so SharedArrayBuffer is unavailable,
+                // making multi-threaded WASM fail with "no available backend found".
                 try {
                     const env = _voxtralLib4.env;
                     if (env?.backends?.onnx?.wasm) {
                         env.backends.onnx.wasm.numThreads = 1;
                         env.backends.onnx.wasm.proxy = false;
+                        env.backends.onnx.wasm.wasmPaths = `${LIB_CDN}/dist/`;
                     }
                 } catch (_) { /* ignore — env not critical */ }
             }
@@ -301,17 +306,13 @@ async function _ensureVoxtral(onProgress) {
             _voxtralProcessor = await VoxtralRealtimeProcessor.from_pretrained(MODEL_ID, {
                 progress_callback: mkProg('Processor', 0, 15),
             });
-            // Detect whether WebGPU is actually usable (navigator.gpu exists AND the
-            // ONNX WebGPU backend has its init hook — Safari exposes navigator.gpu but
-            // lacks the internal webgpuInit hook that ort-web needs).
-            let webgpuUsable = false;
-            if (typeof navigator !== 'undefined' && navigator.gpu) {
-                try {
-                    const adapter = await navigator.gpu.requestAdapter();
-                    webgpuUsable = !!adapter;
-                } catch (_) { /* WebGPU not usable */ }
-            }
-            const tryDevices = webgpuUsable ? ['webgpu', 'wasm'] : ['wasm'];
+            // ORT-Web registers the WebGPU backend globally at initialization time.
+            // In transformers.js@4.0.0-next.7 the WebGPU backend calls webgpuInit which
+            // is undefined on many browsers (Safari, some Chrome configs), causing
+            // "no available backend found" even when we request device:'wasm'.
+            // Skip WebGPU entirely; try 'wasm' then 'cpu' (same WASM backend, different
+            // EP name used by some ORT versions).
+            const tryDevices = ['wasm', 'cpu'];
             let lastErr;
             for (const device of tryDevices) {
                 try {
