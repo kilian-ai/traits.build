@@ -1,0 +1,20 @@
+[trait]
+description = "3D Gaussian splat viewer using WebGPU — renders splat scenes with orbit camera controls"
+version = "v260401"
+author = "system"
+tags = ["www", "splats", "webgpu", "3d", "gaussian"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "Action: render (returns HTML viewer with example splats), scene (returns example scene JSON)", required = false, default = "render", example = "render" },
+]
+
+[signature.returns]
+type = "string"
+description = "HTML page with WebGPU Gaussian splat renderer, or scene JSON"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "splats"
+wasm = true

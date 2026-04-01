@@ -688,9 +688,16 @@ window.addEventListener('traits-voice-control', (e) => {
   };
 });
 
-// Auto-start voice when navigating to /canvas with API key
+// Auto-start voice when navigating to /canvas with API key;
+// stop it when entering homepage (which has its own voice experience)
 const _origNavigate = navigate;
 navigate = async function(route, pushState) {
+  // Stop canvas voice before homepage loads so mic is free
+  if (route === '/' && sdk && sdk.isVoiceActive && sdk.isVoiceActive()) {
+    if (sdk.stopVoice) sdk.stopVoice();
+    _voiceMuted = false;
+    _updateVoiceOverlay();
+  }
   await _origNavigate(route, pushState);
   if (route === '/canvas' && _hasVoiceApiKey() && sdk && sdk.isVoiceActive && !sdk.isVoiceActive()) {
     setTimeout(() => _startGlobalVoice(), 500);

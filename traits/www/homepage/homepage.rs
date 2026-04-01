@@ -107,6 +107,13 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
   const $=id=>document.getElementById(id);
   const wait=ms=>new Promise(r=>{if(!dead)setTimeout(r,ms);});
 
+  /* stop canvas voice if active — homepage has its own voice experience */
+  if(window._traitsSDK&&window._traitsSDK.isVoiceActive&&window._traitsSDK.isVoiceActive()){
+    if(window._traitsSDK.stopVoice) window._traitsSDK.stopVoice();
+  }
+  const vo=document.getElementById('voice-overlay');
+  if(vo) vo.classList.remove('on');
+
   window._pageCleanup=()=>{
     dead=true;
     if(curAudio){try{curAudio.pause();}catch(_){} curAudio=null;}
