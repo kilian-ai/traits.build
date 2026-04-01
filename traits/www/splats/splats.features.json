@@ -2,24 +2,33 @@
   "trait": "www.splats",
   "features": [
     {
-      "name": "Render WebGPU splat viewer",
+      "name": "Render WebGPU splat viewer with default scene",
       "examples": [
         {
           "input": ["render"],
-          "output": { "contains": ["splat-canvas", "WebGPU", "webgpu"] }
+          "output": { "contains": ["splat-canvas", "WebGPU", "webgpu", "fetchSplat"] }
         },
         {
           "input": [],
-          "output": { "contains": ["splat-canvas", "webgpu"] }
+          "output": { "contains": ["splat-canvas", "webgpu", "bonsai"] }
         }
       ]
     },
     {
-      "name": "Return example scene data",
+      "name": "Render with custom URL",
       "examples": [
         {
-          "input": ["scene"],
-          "output": { "contains": ["ok", "splats", "count"] }
+          "input": ["render", "https://example.com/test.splat"],
+          "output": { "contains": ["splat-canvas", "example.com/test.splat"] }
+        }
+      ]
+    },
+    {
+      "name": "Return gallery of example scenes",
+      "examples": [
+        {
+          "input": ["gallery"],
+          "output": { "contains": ["ok", "scenes", "bonsai", "train"] }
         }
       ]
     }

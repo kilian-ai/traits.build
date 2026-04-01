@@ -1,18 +1,19 @@
 [trait]
-description = "3D Gaussian splat viewer using WebGPU — renders splat scenes with orbit camera controls"
-version = "v260401.204226"
-checksum = "1e6e46c44d66d0befcd7731ba75bfc36fd51100ae79b09237b2bf6a444d1f6d4"
+description = "3D Gaussian splat viewer using WebGPU — fetches and renders real .splat files with orbit camera, depth sorting, and scene gallery"
+version = "v260401.204804"
+checksum = "bc1788e6e1dd295c0f79476eed1bca68885f51416c05079bf11ab1c536b17de2"
 author = "system"
 tags = ["www", "splats", "webgpu", "3d", "gaussian"]
 
 [signature]
 params = [
-  { name = "action", type = "string", description = "Action: render (returns HTML viewer with example splats), scene (returns example scene JSON)", required = false, default = "render", example = "render" },
+  { name = "action", type = "string", description = "Action: render (returns HTML viewer), gallery (returns list of example scenes)", required = false, default = "render", example = "render" },
+  { name = "url", type = "string", description = "URL to a .splat binary file to load (default: bonsai-7k-mini)", required = false, default = "", example = "https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bonsai/bonsai-7k-mini.splat" },
 ]
 
 [signature.returns]
 type = "string"
-description = "HTML page with WebGPU Gaussian splat renderer, or scene JSON"
+description = "HTML page with WebGPU Gaussian splat renderer, or gallery JSON"
 
 [implementation]
 language = "rust"

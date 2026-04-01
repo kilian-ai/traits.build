@@ -102,11 +102,33 @@ const VIEWER_JS: &str = r##"
   const info = document.getElementById('splat-info');
   const errDiv = document.getElementById('splat-error');
   const canvas = document.getElementById('splat-canvas');
+  const progress = document.getElementById('splat-progress');
+  const barFill = progress.querySelector('.bar-fill');
+  const bytesDiv = progress.querySelector('.bytes');
 
   function showError(msg) {
     errDiv.textContent = msg;
     errDiv.style.display = 'block';
     info.style.display = 'none';
+    progress.style.display = 'none';
+  }
+
+  // ── Gallery selector ──
+  const gallery = __GALLERY_JSON__;
+  const select = document.getElementById('splat-scene-select');
+  gallery.forEach((g, i) => {
+    const opt = document.createElement('option');
+    opt.value = g.url;
+    opt.textContent = g.name;
+    if (g.url === '__SPLAT_URL__') opt.selected = true;
+    select.appendChild(opt);
+  });
+  // "Custom URL" option
+  {
+    const opt = document.createElement('option');
+    opt.value = '__custom__';
+    opt.textContent = '+ custom URL…';
+    select.appendChild(opt);
   }
 
   // ── WebGPU Init ──
@@ -129,33 +151,76 @@ const VIEWER_JS: &str = r##"
   resize();
   new ResizeObserver(resize).observe(document.getElementById('splat-root'));
 
-  // ── Example splat scene ──
-  // Each splat: [x, y, z, sx, sy, sz, r, g, b, a, q0, q1, q2, q3]
-  // Position (xyz), scale (sxyz), color (rgba), quaternion rotation (q0123)
-  const SPLATS = SCENE_DATA_PLACEHOLDER;
+  // ── Fetch and parse .splat binary ──
+  // Format: 32 bytes per splat
+  //   3×f32 position (12B) + 3×f32 scale (12B) + 4×u8 RGBA (4B) + 4×u8 quaternion (4B)
+  async function fetchSplat(url) {
+    progress.style.display = 'block';
+    barFill.style.width = '0%';
+    bytesDiv.textContent = '';
+    info.textContent = 'Downloading…';
 
-  const numSplats = SPLATS.length;
-  info.textContent = numSplats + ' splats · WebGPU';
+    const resp = await fetch(url, { mode: 'cors', credentials: 'omit' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status + ' fetching ' + url);
 
-  // ── Pack splat data into GPU buffers ──
-  // Vertex data: billboard quad
-  const quadVerts = new Float32Array([
-    -1,-1,  1,-1,  1, 1,
-    -1,-1,  1, 1, -1, 1,
-  ]);
-  const quadBuf = device.createBuffer({ size: quadVerts.byteLength, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true });
-  new Float32Array(quadBuf.getMappedRange()).set(quadVerts);
-  quadBuf.unmap();
+    const contentLength = parseInt(resp.headers.get('content-length') || '0');
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let received = 0;
 
-  // Splat instance buffer: pos(3) + scale(3) + color(4) + quat(4) = 14 floats
-  const splatDataFlat = new Float32Array(numSplats * 14);
-  for (let i = 0; i < numSplats; i++) {
-    const s = SPLATS[i];
-    for (let j = 0; j < 14; j++) splatDataFlat[i * 14 + j] = s[j];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      if (contentLength > 0) {
+        const pct = Math.min(100, (received / contentLength * 100));
+        barFill.style.width = pct.toFixed(1) + '%';
+      }
+      bytesDiv.textContent = (received / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    progress.style.display = 'none';
+
+    // Concatenate chunks
+    const data = new Uint8Array(received);
+    let offset = 0;
+    for (const c of chunks) { data.set(c, offset); offset += c.length; }
+    return data;
   }
-  const splatBuf = device.createBuffer({ size: splatDataFlat.byteLength, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true });
-  new Float32Array(splatBuf.getMappedRange()).set(splatDataFlat);
-  splatBuf.unmap();
+
+  function parseSplat(data) {
+    const ROW = 32; // bytes per splat
+    const count = Math.floor(data.byteLength / ROW);
+    const f32 = new Float32Array(data.buffer, data.byteOffset, count * 8);
+    const u8 = data;
+
+    // Each splat → 14 floats: pos(3) scale(3) color(4) quat(4)
+    const out = new Float32Array(count * 14);
+    for (let i = 0; i < count; i++) {
+      // Position (3×f32)
+      out[i*14+0] = f32[i*8+0];
+      out[i*14+1] = f32[i*8+1];
+      out[i*14+2] = f32[i*8+2];
+      // Scale (3×f32)
+      out[i*14+3] = f32[i*8+3];
+      out[i*14+4] = f32[i*8+4];
+      out[i*14+5] = f32[i*8+5];
+      // Color RGBA (4×u8 → normalized float)
+      const cOff = i * ROW + 24;
+      out[i*14+6] = u8[cOff]   / 255;
+      out[i*14+7] = u8[cOff+1] / 255;
+      out[i*14+8] = u8[cOff+2] / 255;
+      out[i*14+9] = u8[cOff+3] / 255;
+      // Quaternion (4×u8 → float: (v - 128) / 128)
+      const qOff = i * ROW + 28;
+      out[i*14+10] = (u8[qOff]   - 128) / 128;
+      out[i*14+11] = (u8[qOff+1] - 128) / 128;
+      out[i*14+12] = (u8[qOff+2] - 128) / 128;
+      out[i*14+13] = (u8[qOff+3] - 128) / 128;
+    }
+    return { data: out, count };
+  }
 
   // ── Camera ──
   let camDist = 5.0, camTheta = 0.5, camPhi = 0.8;
@@ -207,7 +272,7 @@ const VIEWER_JS: &str = r##"
     ];
     const center = [panX, panY, 0];
     const aspect = canvas.width / canvas.height;
-    const proj = mat4Perspective(Math.PI / 4, aspect, 0.01, 100);
+    const proj = mat4Perspective(Math.PI / 4, aspect, 0.01, 200);
     const view = mat4LookAt(eye, center, [0, 1, 0]);
     return { vp: mat4Mul(proj, view), eye };
   }
@@ -322,6 +387,71 @@ const VIEWER_JS: &str = r##"
     depthStencil: undefined,
   });
 
+  // ── Quad buffer ──
+  const quadVerts = new Float32Array([
+    -1,-1,  1,-1,  1, 1,
+    -1,-1,  1, 1, -1, 1,
+  ]);
+  const quadBuf = device.createBuffer({ size: quadVerts.byteLength, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true });
+  new Float32Array(quadBuf.getMappedRange()).set(quadVerts);
+  quadBuf.unmap();
+
+  // ── State ──
+  let splatBuf = null;
+  let numSplats = 0;
+  let sortedIndices = null;
+  let sortedSplatBuf = null;
+  let needsSort = true;
+
+  // ── Depth-sort splats back-to-front ──
+  function sortSplats(splatData, count, viewProj) {
+    const depths = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const x = splatData[i*14], y = splatData[i*14+1], z = splatData[i*14+2];
+      // Depth = dot(viewProj row3, [x,y,z,1])
+      depths[i] = viewProj[2]*x + viewProj[6]*y + viewProj[10]*z + viewProj[14];
+    }
+    // Create index array and sort back-to-front (most negative depth first)
+    const indices = new Uint32Array(count);
+    for (let i = 0; i < count; i++) indices[i] = i;
+    indices.sort((a, b) => depths[a] - depths[b]);
+    return indices;
+  }
+
+  // ── Load .splat data into GPU ──
+  let currentSplatData = null;
+  async function loadScene(url) {
+    // Reset state
+    numSplats = 0;
+    if (splatBuf) splatBuf.destroy();
+    if (sortedSplatBuf) sortedSplatBuf.destroy();
+    splatBuf = null;
+    sortedSplatBuf = null;
+
+    const raw = await fetchSplat(url);
+    const { data, count } = parseSplat(raw);
+    currentSplatData = data;
+    numSplats = count;
+    needsSort = true;
+
+    info.textContent = count.toLocaleString() + ' splats · WebGPU';
+  }
+
+  // Upload sorted data to GPU
+  function uploadSorted(sorted, data, count) {
+    const buf = new Float32Array(count * 14);
+    for (let i = 0; i < count; i++) {
+      const src = sorted[i] * 14;
+      const dst = i * 14;
+      for (let j = 0; j < 14; j++) buf[dst+j] = data[src+j];
+    }
+    if (sortedSplatBuf) sortedSplatBuf.destroy();
+    sortedSplatBuf = device.createBuffer({ size: buf.byteLength, usage: GPUBufferUsage.VERTEX, mappedAtCreation: true });
+    new Float32Array(sortedSplatBuf.getMappedRange()).set(buf);
+    sortedSplatBuf.unmap();
+    return sortedSplatBuf;
+  }
+
   // ── Input handling ──
   let dragging = false, dragBtn = 0, lastX = 0, lastY = 0;
   canvas.addEventListener('pointerdown', (e) => {
@@ -333,31 +463,67 @@ const VIEWER_JS: &str = r##"
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
     if (e.shiftKey || dragBtn === 1) {
-      // Pan
       panX -= dx * 0.005 * camDist;
       panY += dy * 0.005 * camDist;
     } else {
-      // Orbit
       camTheta -= dx * 0.005;
       camPhi = Math.max(0.1, Math.min(Math.PI - 0.1, camPhi - dy * 0.005));
     }
+    needsSort = true;
   });
   canvas.addEventListener('pointerup', () => { dragging = false; });
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     camDist *= 1 + e.deltaY * 0.001;
-    camDist = Math.max(0.5, Math.min(50, camDist));
+    camDist = Math.max(0.5, Math.min(100, camDist));
+    needsSort = true;
   }, { passive: false });
+
+  // ── Scene selector ──
+  select.addEventListener('change', async () => {
+    if (select.value === '__custom__') {
+      const url = prompt('Enter .splat file URL:');
+      if (url) {
+        try { await loadScene(url); }
+        catch(e) { showError('Failed to load: ' + e.message); }
+      }
+    } else {
+      try { await loadScene(select.value); }
+      catch(e) { showError('Failed to load: ' + e.message); }
+    }
+  });
+
+  // ── Sort throttle ──
+  let lastSortTime = 0;
+  const SORT_INTERVAL = 200; // ms between sorts
 
   // ── Render loop ──
   function frame() {
+    if (numSplats === 0) {
+      requestAnimationFrame(frame);
+      return;
+    }
     const { vp, eye } = getViewProj();
-    const uniformData = new Float32Array(24); // 96 bytes = 24 floats
-    uniformData.set(vp, 0);              // viewProj at offset 0
-    uniformData.set(eye, 16);            // eye at offset 64
-    uniformData[20] = canvas.width;      // viewport.x at offset 80
-    uniformData[21] = canvas.height;     // viewport.y at offset 84
+    const uniformData = new Float32Array(24);
+    uniformData.set(vp, 0);
+    uniformData.set(eye, 16);
+    uniformData[20] = canvas.width;
+    uniformData[21] = canvas.height;
     device.queue.writeBuffer(uniformBuf, 0, uniformData);
+
+    // Re-sort periodically when camera moves
+    const now = performance.now();
+    if (needsSort && now - lastSortTime > SORT_INTERVAL && currentSplatData) {
+      sortedIndices = sortSplats(currentSplatData, numSplats, vp);
+      uploadSorted(sortedIndices, currentSplatData, numSplats);
+      lastSortTime = now;
+      needsSort = false;
+    }
+
+    if (!sortedSplatBuf) {
+      requestAnimationFrame(frame);
+      return;
+    }
 
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
@@ -371,62 +537,19 @@ const VIEWER_JS: &str = r##"
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.setVertexBuffer(0, quadBuf);
-    pass.setVertexBuffer(1, splatBuf);
+    pass.setVertexBuffer(1, sortedSplatBuf);
     pass.draw(6, numSplats);
     pass.end();
     device.queue.submit([encoder.finish()]);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  // ── Initial load ──
+  try {
+    await loadScene('__SPLAT_URL__');
+  } catch(e) {
+    showError('Failed to load splat file:\n' + e.message);
+  }
 })();
 "##;
-
-// Example scene data: each row is [x,y,z, sx,sy,sz, r,g,b,a, q0,q1,q2,q3]
-// A colorful molecular/nebula-like arrangement demonstrating Gaussian splatting.
-#[rustfmt::skip]
-const SPLAT_DATA: &[[f32; 14]] = &[
-    // Central bright core
-    [ 0.0,  0.0,  0.0,   0.35, 0.35, 0.35,  0.15, 0.45, 1.0, 0.95,  0.0, 0.0, 0.0, 1.0],
-    [ 0.05, 0.05,-0.05,  0.25, 0.25, 0.25,  0.3,  0.6,  1.0, 0.6,   0.0, 0.0, 0.0, 1.0],
-    // Warm cluster (right)
-    [ 0.8,  0.2,  0.3,   0.25, 0.15, 0.2,   1.0, 0.35, 0.15, 0.85,  0.0, 0.0, 0.38, 0.92],
-    [ 1.0,  0.05, 0.15,  0.18, 0.18, 0.12,  1.0, 0.55, 0.2,  0.7,   0.0, 0.0, 0.17, 0.98],
-    [ 0.65, 0.35, 0.5,   0.12, 0.2,  0.12,  0.95,0.25, 0.1,  0.75,  0.1, 0.0, 0.2, 0.97],
-    // Green cluster (upper left)
-    [-0.6,  0.5, -0.2,   0.2,  0.35, 0.15,  0.2,  0.9,  0.4, 0.8,   0.1, 0.0, 0.0, 0.99],
-    [-0.8,  0.7,  0.1,   0.15, 0.2,  0.15,  0.15, 0.75, 0.35,0.65,  0.0, 0.05,0.0, 1.0],
-    [-0.45, 0.65,-0.4,   0.1,  0.15, 0.1,   0.3,  1.0,  0.5, 0.7,   0.0, 0.0, 0.1, 0.99],
-    // Gold accent (lower)
-    [ 0.3, -0.7,  0.5,   0.15, 0.15, 0.4,   1.0, 0.8,  0.1, 0.9,   0.0, 0.2, 0.0, 0.98],
-    [ 0.15,-0.85, 0.35,  0.12, 0.1,  0.25,  0.9, 0.7,  0.05,0.7,   0.0, 0.15,0.0, 0.99],
-    // Purple nebula (lower-left)
-    [-0.4, -0.3,  0.8,   0.35, 0.2,  0.2,   0.8,  0.2,  0.9, 0.75,  0.0, 0.0, 0.17, 0.98],
-    [-0.55,-0.15, 1.0,   0.2,  0.15, 0.15,  0.65, 0.15, 0.85,0.6,   0.05,0.0, 0.1, 0.99],
-    [-0.25,-0.5,  0.65,  0.15, 0.25, 0.15,  0.9,  0.3,  1.0, 0.65,  0.0, 0.1, 0.0, 0.99],
-    // Cyan accent (upper-right)
-    [ 1.2,  0.8, -0.4,   0.18, 0.18, 0.18,  0.0,  0.8,  0.9, 0.85,  0.0, 0.0, 0.0, 1.0],
-    [ 1.0,  0.95,-0.25,  0.12, 0.12, 0.12,  0.1,  0.7,  0.85,0.6,   0.0, 0.0, 0.0, 1.0],
-    // Orange wisps (far left)
-    [-1.0, -0.5,  0.2,   0.22, 0.3,  0.12,  1.0, 0.5,  0.3, 0.8,   0.15,0.1, 0.0, 0.98],
-    [-1.2, -0.3,  0.0,   0.15, 0.2,  0.1,   0.9, 0.4,  0.2, 0.6,   0.1, 0.0, 0.05,0.99],
-    // Deep blue filament (upper)
-    [ 0.5,  1.0,  0.6,   0.12, 0.12, 0.5,   0.4,  0.2,  1.0, 0.9,   0.3, 0.0, 0.0, 0.95],
-    [ 0.35, 1.2,  0.45,  0.1,  0.1,  0.35,  0.3,  0.15, 0.85,0.7,   0.25,0.0, 0.0, 0.97],
-    // Yellow-green (mid-depth)
-    [-0.2,  0.3,  1.2,   0.4,  0.15, 0.15,  0.9,  0.9,  0.2, 0.7,   0.0, 0.25,0.0, 0.97],
-    [ 0.0,  0.15, 1.4,   0.2,  0.1,  0.1,   0.8,  0.85, 0.15,0.55,  0.0, 0.2, 0.0, 0.98],
-    // Teal cluster (lower-right)
-    [ 0.9, -0.4, -0.6,   0.2,  0.25, 0.2,   0.3,  0.7,  0.3, 0.85,  0.0, 0.0, 0.1, 0.99],
-    [ 0.75,-0.55,-0.8,   0.15, 0.15, 0.15,  0.25, 0.6,  0.25,0.65,  0.0, 0.0, 0.0, 1.0],
-    // Scattered distant splats (depth)
-    [ 1.5,  0.0,  1.0,   0.1,  0.1,  0.1,   0.5,  0.5,  1.0, 0.5,   0.0, 0.0, 0.0, 1.0],
-    [-1.3,  0.8, -0.8,   0.12, 0.12, 0.12,  1.0, 0.7,  0.5, 0.45,  0.0, 0.0, 0.0, 1.0],
-    [ 0.0, -1.2,  0.0,   0.2,  0.1,  0.2,   0.6,  0.3,  0.8, 0.55,  0.0, 0.0, 0.0, 1.0],
-    [-0.3,  0.0, -1.0,   0.15, 0.15, 0.15,  0.2,  0.8,  0.6, 0.5,   0.0, 0.0, 0.0, 1.0],
-    [ 1.1, -0.9,  0.4,   0.1,  0.25, 0.1,   0.9,  0.5,  0.1, 0.6,   0.1, 0.0, 0.0, 0.99],
-    // Reddish-pink haze (back)
-    [-0.7,  0.0, -0.7,   0.3,  0.2,  0.2,   0.85, 0.2,  0.4, 0.5,   0.0, 0.1, 0.0, 0.99],
-    [ 0.4, -0.2, -1.1,   0.2,  0.15, 0.2,   0.7,  0.15, 0.35,0.45,  0.0, 0.0, 0.15,0.99],
-    // Large soft background glow
-    [ 0.0,  0.0,  0.0,   0.8,  0.8,  0.8,   0.05, 0.08, 0.2, 0.2,   0.0, 0.0, 0.0, 1.0],
-];
