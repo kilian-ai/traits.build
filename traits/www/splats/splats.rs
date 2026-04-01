@@ -8,7 +8,21 @@ pub fn splats(args: &[Value]) -> Value {
     let action = args.first().and_then(|v| v.as_str()).unwrap_or("render");
 
     match action {
-        "scene" => Value::String(EXAMPLE_SCENE.to_string()),
+        "scene" => {
+            // Return the example scene as JSON array-of-arrays
+            let arr: Vec<serde_json::Value> = SPLAT_DATA
+                .iter()
+                .map(|row| {
+                    json!({
+                        "pos": [row[0], row[1], row[2]],
+                        "scale": [row[3], row[4], row[5]],
+                        "color": [row[6], row[7], row[8], row[9]],
+                        "quat": [row[10], row[11], row[12], row[13]],
+                    })
+                })
+                .collect();
+            json!({"ok": true, "splats": arr, "count": arr.len()})
+        }
         _ => Value::String(build_viewer()),
     }
 }

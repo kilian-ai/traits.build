@@ -1,0 +1,27 @@
+{
+  "trait": "www.splats",
+  "features": [
+    {
+      "name": "Render WebGPU splat viewer",
+      "examples": [
+        {
+          "input": ["render"],
+          "output": { "contains": ["splat-canvas", "WebGPU", "webgpu"] }
+        },
+        {
+          "input": [],
+          "output": { "contains": ["splat-canvas", "webgpu"] }
+        }
+      ]
+    },
+    {
+      "name": "Return example scene data",
+      "examples": [
+        {
+          "input": ["scene"],
+          "output": { "contains": ["ok", "splats", "count"] }
+        }
+      ]
+    }
+  ]
+}

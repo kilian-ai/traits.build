@@ -269,7 +269,26 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 if (!sdk) return;
                                 const res = await sdk.call('sys.canvas', ['get']);
                                 const content = res?.result?.content || res?.content || '';
-                                renderCanvas(content);
+                                if (content) {
+                                    renderCanvas(content);
+                                } else {
+                                    // Canvas is empty — load the splat viewer as default demo
+                                    try {
+                                        const splats = await sdk.call('www.splats', ['render']);
+                                        if (splats && typeof splats === 'string') {
+                                            await sdk.call('sys.canvas', ['set', splats]);
+                                            renderCanvas(splats);
+                                        } else if (splats?.result && typeof splats.result === 'string') {
+                                            await sdk.call('sys.canvas', ['set', splats.result]);
+                                            renderCanvas(splats.result);
+                                        } else {
+                                            renderCanvas('');
+                                        }
+                                    } catch(e) {
+                                        console.warn('splats default load:', e);
+                                        renderCanvas('');
+                                    }
+                                }
                             } catch(e) { console.warn('canvas load:', e); }
                         }
 
