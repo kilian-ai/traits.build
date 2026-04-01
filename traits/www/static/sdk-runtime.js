@@ -293,7 +293,6 @@ function _traitTypeToSchema(typeStr) {
 async function _buildVoiceTools(sdk) {
     let traits = [];
     try { traits = await sdk.list(); } catch(e) { return []; }
-    const wasmOnly = wasmReady && !helperReady;
     const tools = [];
     for (const t of traits) {
         if (!t.path) continue;
@@ -301,7 +300,6 @@ async function _buildVoiceTools(sdk) {
         if (t.path.startsWith('www.')) continue;
         const kind = (t.source || t.kind || '').toLowerCase();
         if (kind === 'library' || kind === 'interface') continue;
-        if (wasmOnly && !t.wasm_callable) continue;
 
         const toolName = t.path.replace(/\./g, '_');
         const properties = {};
@@ -316,7 +314,18 @@ async function _buildVoiceTools(sdk) {
         }
         const parameters = { type: 'object', properties };
         if (required.length) parameters.required = required;
-        tools.push({ type: 'function', name: toolName, description: t.description || '', parameters });
+        // Build description with param summary for faster model comprehension
+        let desc = t.description || '';
+        if (Array.isArray(t.params) && t.params.length > 0) {
+            const paramSummary = t.params.map(p => {
+                let s = p.name;
+                if (p.type || p.param_type) s += ':' + (p.type || p.param_type);
+                if (p.description) s += ' — ' + p.description;
+                return s;
+            }).join('; ');
+            desc += ' | Params: ' + paramSummary;
+        }
+        tools.push({ type: 'function', name: toolName, description: desc, parameters });
     }
     // Always include the synthetic quit tool so the model can end the session
     tools.push({
@@ -1684,14 +1693,6 @@ class Traits {
                                     window.dispatchEvent(new CustomEvent('traits-audio-action', { detail: r }));
                                 }
                             }
-
-                            // After sys.voice.control actions: fire event for voice control bridge
-                            if (funcName === 'sys_voice_control' && result.ok) {
-                                const r = result.result || result;
-                                if (r.voice_control_action) {
-                                    window.dispatchEvent(new CustomEvent('traits-voice-control', { detail: r }));
-                                }
-                            }
                         }).catch(e => {
                             if (_voiceDc && _voiceDc.readyState === 'open') {
                                 _voiceDc.send(JSON.stringify({
@@ -1782,14 +1783,6 @@ class Traits {
      */
     isVoiceActive() {
         return _voiceDc !== null && _voiceDc.readyState === 'open';
-    }
-
-    /**
-     * Get the current voice microphone MediaStream (for muting).
-     * @returns {MediaStream|null}
-     */
-    _getVoiceStream() {
-        return _voiceStream;
     }
 
     /**
@@ -2042,14 +2035,6 @@ class Traits {
                                 const r = toolResult.result || toolResult;
                                 if (r.audio_action) {
                                     window.dispatchEvent(new CustomEvent('traits-audio-action', { detail: r }));
-                                }
-                            }
-
-                            // After sys.voice.control actions: fire event for voice control bridge
-                            if (funcName === 'sys_voice_control' && toolResult.ok) {
-                                const r = toolResult.result || toolResult;
-                                if (r.voice_control_action) {
-                                    window.dispatchEvent(new CustomEvent('traits-voice-control', { detail: r }));
                                 }
                             }
 
