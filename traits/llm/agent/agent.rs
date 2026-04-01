@@ -339,11 +339,11 @@ fn trait_type_to_json_schema(t: &str) -> &'static str {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 /// Default tools exposed to the agent when no tools_csv is specified.
+/// All entries must be WASM-callable (wasm = true in their .trait.toml).
 const DEFAULT_TOOLS: &[&str] = &[
     "sys.call",
     "sys.list",
-    "sys.info",
-    "sys.checksum",
+    "sys.registry",
     "kernel.call",
 ];
 
