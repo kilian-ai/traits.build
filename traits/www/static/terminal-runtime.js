@@ -422,7 +422,7 @@ async function createTerminal(mountEl, opts = {}) {
                 const visible = output.replace(VOICE_RE, '');
                 if (visible) term.write(visible);
                 try {
-                    const { v: voiceName, m: model, a: agent, s: sessionId, rp: returnPrompt, local: localFlag } = JSON.parse(voiceMatch[1]);
+                    const { v: voiceName, m: model, a: agent, s: sessionId, rp: returnPrompt, local: localFlag, voxtral: voxtralFlag } = JSON.parse(voiceMatch[1]);
                     restPending = true;
 
                     // Check if helper is connected (required for native voice with sox)
@@ -452,7 +452,7 @@ async function createTerminal(mountEl, opts = {}) {
                     //   3. User preference localStorage['traits.voice.mode'] = 'local' → local
                     //   4. Auto-fallback: no API key + WebGPU available → local
                     let useLocalVoice = !!localFlag;
-                    let useVoxtralVoice = false;
+                    let useVoxtralVoice = !!voxtralFlag;
                     let hasApiKey = false;
                     try {
                         const settingsKey = (localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim();
@@ -460,7 +460,7 @@ async function createTerminal(mountEl, opts = {}) {
                         hasApiKey = !!(settingsKey || legacyKey);
                     } catch(_) {}
 
-                    if (!useLocalVoice) {
+                    if (!useLocalVoice && !useVoxtralVoice) {
                         // Check stored voice mode preference
                         const storedMode = (localStorage.getItem('traits.voice.mode') || '').trim();
                         if (storedMode === 'realtime' && hasApiKey) {

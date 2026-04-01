@@ -1248,9 +1248,15 @@ impl CliSession {
                         "/voice" => {
                             // Switch to voice mode — OpenAI Realtime API or local WebGPU
                             // "local" arg forces local voice (WebGPU STT + LLM + TTS)
-                            let is_local = arg == "local" || arg.starts_with("local ");
-                            let voice_name = if is_local {
-                                let rest = arg.strip_prefix("local").unwrap_or("").trim();
+                            // "local-realtime" arg forces Voxtral local-realtime mode
+                            let is_voxtral = arg == "local-realtime";
+                            let is_local = !is_voxtral && (arg == "local" || arg.starts_with("local "));
+                            let voice_name = if is_voxtral || is_local {
+                                let rest = if is_voxtral {
+                                    ""
+                                } else {
+                                    arg.strip_prefix("local").unwrap_or("").trim()
+                                };
                                 if rest.is_empty() { "af_heart" } else { rest }
                             } else if arg.is_empty() {
                                 "shimmer"
@@ -1266,7 +1272,7 @@ impl CliSession {
                             } else {
                                 ("".to_string(), "".to_string(), "".to_string())
                             };
-                            let mode_label = if is_local { "local voice" } else { "voice" };
+                            let mode_label = if is_voxtral { "Voxtral local-realtime voice" } else if is_local { "local voice" } else { "voice" };
                             out.push_str(&format!("{GRAY}Switching to {mode_label} mode…{RESET}\r\n"));
                             let sentinel = serde_json::json!({
                                 "v": voice_name,
@@ -1275,6 +1281,7 @@ impl CliSession {
                                 "s": session_id,
                                 "rp": CHAT_PROMPT,
                                 "local": is_local,
+                                "voxtral": is_voxtral,
                             });
                             out.push_str(&format!(
                                 "{VOICE_SENTINEL_START}{}{VOICE_SENTINEL_END}",
@@ -1297,6 +1304,7 @@ impl CliSession {
                             ));
                             out.push_str(&format!("  {GREEN}/voice{RESET} {GRAY}[name]{RESET}      Switch to voice I/O (speak/listen)\r\n"));
                             out.push_str(&format!("  {GREEN}/voice local{RESET}         Local voice (WebGPU STT + LLM + TTS)\r\n"));
+                            out.push_str(&format!("  {GREEN}/voice local-realtime{RESET} Voxtral STT (local) + cloud LLM + Kokoro TTS\r\n"));
                             out.push_str(&format!(
                                 "  {GREEN}/status{RESET}              Show session status\r\n"
                             ));
