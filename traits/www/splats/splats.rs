@@ -1,35 +1,46 @@
 use serde_json::{json, Value};
 
+/// Default .splat file URL — a small bonsai scene (~8.7 MB, 7K splats).
+const DEFAULT_SPLAT_URL: &str =
+    "https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bonsai/bonsai-7k-mini.splat";
+
+/// Gallery of example scenes the user can pick from.
+const GALLERY: &[(&str, &str)] = &[
+    ("bonsai", "https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bonsai/bonsai-7k-mini.splat"),
+    ("train",  "https://huggingface.co/cakewalk/splat-data/resolve/main/train.splat"),
+    ("truck",  "https://huggingface.co/cakewalk/splat-data/resolve/main/truck.splat"),
+];
+
 /// www.splats — 3D Gaussian splat viewer using WebGPU.
 ///
-/// Returns a self-contained HTML page that renders Gaussian splats
-/// using WebGPU compute + render pipelines with orbit camera controls.
+/// Returns a self-contained HTML page that fetches and renders real .splat
+/// binary files using WebGPU with orbit camera controls and back-to-front
+/// depth sorting for proper transparency.
 pub fn splats(args: &[Value]) -> Value {
     let action = args.first().and_then(|v| v.as_str()).unwrap_or("render");
+    let url = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
 
     match action {
-        "scene" => {
-            // Return the example scene as JSON array-of-arrays
-            let arr: Vec<serde_json::Value> = SPLAT_DATA
+        "gallery" => {
+            let list: Vec<Value> = GALLERY
                 .iter()
-                .map(|row| {
-                    json!({
-                        "pos": [row[0], row[1], row[2]],
-                        "scale": [row[3], row[4], row[5]],
-                        "color": [row[6], row[7], row[8], row[9]],
-                        "quat": [row[10], row[11], row[12], row[13]],
-                    })
-                })
+                .map(|(name, u)| json!({"name": name, "url": u}))
                 .collect();
-            json!({"ok": true, "splats": arr, "count": arr.len()})
+            json!({"ok": true, "scenes": list})
         }
-        _ => Value::String(build_viewer()),
+        _ => {
+            let splat_url = if url.is_empty() { DEFAULT_SPLAT_URL } else { url };
+            Value::String(build_viewer(splat_url))
+        }
     }
 }
 
-fn build_viewer() -> String {
-    // Embed the scene data inline—replace the SCENE_DATA placeholder in the JS
-    let js = VIEWER_JS.replace("SCENE_DATA_PLACEHOLDER", &build_scene_array());
+fn build_viewer(splat_url: &str) -> String {
+    let js = VIEWER_JS.replace("__SPLAT_URL__", splat_url);
+    let gallery_json = serde_json::to_string(
+        &GALLERY.iter().map(|(n, u)| json!({"name": n, "url": u})).collect::<Vec<_>>()
+    ).unwrap_or_else(|_| "[]".to_string());
+    let js = js.replace("__GALLERY_JSON__", &gallery_json);
     format!(
         r##"<style>
   #splat-root {{ margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }}
@@ -48,11 +59,35 @@ fn build_viewer() -> String {
     position: absolute; bottom: 10px; left: 10px; color: #888; font: 11px/1.4 monospace;
     background: rgba(0,0,0,0.5); padding: 4px 8px; border-radius: 4px; pointer-events: none;
   }}
+  #splat-gallery {{
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+  }}
+  #splat-gallery select {{
+    background: rgba(0,0,0,0.7); color: #fff; border: 1px solid #555;
+    padding: 4px 8px; border-radius: 4px; font: 12px monospace; cursor: pointer;
+  }}
+  #splat-progress {{
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #aaa; font: 14px/1.6 monospace; text-align: center; z-index: 15;
+  }}
+  #splat-progress .bar {{
+    width: 200px; height: 4px; background: #333; border-radius: 2px; margin: 8px auto 0;
+    overflow: hidden;
+  }}
+  #splat-progress .bar-fill {{
+    height: 100%; background: #4af; width: 0%; transition: width 0.2s;
+  }}
 </style>
 <div id="splat-root">
   <canvas id="splat-canvas"></canvas>
-  <div id="splat-info">Loading WebGPU…</div>
+  <div id="splat-info">Loading…</div>
   <div id="splat-error"></div>
+  <div id="splat-progress">
+    <div>Downloading splats…</div>
+    <div class="bar"><div class="bar-fill"></div></div>
+    <div class="bytes"></div>
+  </div>
+  <div id="splat-gallery"><select id="splat-scene-select"></select></div>
   <div id="splat-controls">Drag: orbit · Scroll: zoom · Shift+drag: pan</div>
 </div>
 <script>
@@ -60,23 +95,6 @@ fn build_viewer() -> String {
 </script>"##,
         js = js
     )
-}
-
-/// Build the JS array literal from SPLAT_DATA (each row: 14 floats).
-fn build_scene_array() -> String {
-    let mut out = String::from("[\n");
-    for (i, row) in SPLAT_DATA.iter().enumerate() {
-        out.push_str("  [");
-        for (j, v) in row.iter().enumerate() {
-            if j > 0 { out.push(','); }
-            out.push_str(&format!("{}", v));
-        }
-        out.push(']');
-        if i + 1 < SPLAT_DATA.len() { out.push(','); }
-        out.push('\n');
-    }
-    out.push(']');
-    out
 }
 
 const VIEWER_JS: &str = r##"

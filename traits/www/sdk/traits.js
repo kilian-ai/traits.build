@@ -274,6 +274,16 @@ async function _ensureVoxtral(onProgress) {
                 _localVoiceProgress(msg);
                 if (onProgress) onProgress(msg);
                 _voxtralLib4 = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0-next.7');
+                // GitHub Pages / most sites lack COOP/COEP headers, so SharedArrayBuffer
+                // is unavailable and ONNX WASM multi-threading fails with "no available
+                // backend found". Force single-threaded WASM so the CPU path is always viable.
+                try {
+                    const env = _voxtralLib4.env;
+                    if (env?.backends?.onnx?.wasm) {
+                        env.backends.onnx.wasm.numThreads = 1;
+                        env.backends.onnx.wasm.proxy = false;
+                    }
+                } catch (_) { /* ignore — env not critical */ }
             }
             const { VoxtralRealtimeProcessor, VoxtralRealtimeForConditionalGeneration, TextStreamer } = _voxtralLib4;
             const mkProg = (label, startPct, span) => (info) => {
@@ -291,9 +301,17 @@ async function _ensureVoxtral(onProgress) {
             _voxtralProcessor = await VoxtralRealtimeProcessor.from_pretrained(MODEL_ID, {
                 progress_callback: mkProg('Processor', 0, 15),
             });
-            // Try WebGPU first; fall back to wasm if WebGPU backend fails to init.
-            const hasWebGPU = typeof navigator !== 'undefined' && !!navigator.gpu;
-            const tryDevices = hasWebGPU ? ['webgpu', 'wasm'] : ['wasm'];
+            // Detect whether WebGPU is actually usable (navigator.gpu exists AND the
+            // ONNX WebGPU backend has its init hook — Safari exposes navigator.gpu but
+            // lacks the internal webgpuInit hook that ort-web needs).
+            let webgpuUsable = false;
+            if (typeof navigator !== 'undefined' && navigator.gpu) {
+                try {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    webgpuUsable = !!adapter;
+                } catch (_) { /* WebGPU not usable */ }
+            }
+            const tryDevices = webgpuUsable ? ['webgpu', 'wasm'] : ['wasm'];
             let lastErr;
             for (const device of tryDevices) {
                 try {
