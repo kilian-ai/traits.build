@@ -275,18 +275,21 @@ async function _ensureVoxtral(onProgress) {
                 _localVoiceProgress(msg);
                 if (onProgress) onProgress(msg);
                 _voxtralLib4 = await import(LIB_CDN);
-                // ORT-Web needs to know where its WASM binaries live when the library is
-                // loaded from CDN. Without wasmPaths, WASM session creation fails because
-                // ORT can't locate ort-wasm-simd-threaded.wasm or ort-wasm.wasm.
-                // Also force single-threaded WASM (numThreads=1) — GitHub Pages and most
-                // origins lack COOP/COEP headers so SharedArrayBuffer is unavailable,
-                // making multi-threaded WASM fail with "no available backend found".
+                // ORT-Web needs to know where its WASM binaries live. The transformers
+                // v4 dist only ships the worker script (.mjs), NOT the .wasm binary.
+                // The actual binary (ort-wasm-simd-threaded.*.wasm, ~24 MB) lives in the
+                // onnxruntime-web package. Point wasmPaths there so ORT finds both the
+                // .mjs worker script AND its companion .wasm binary from the same origin.
+                // numThreads=1: GitHub Pages lacks COOP/COEP → no SharedArrayBuffer.
+                // proxy=false: run WASM on main thread, no Worker proxy needed.
+                const ORT_VERSION = '1.25.0-dev.20260307-d626b568e0'; // must match onnxruntime-web dep in transformers@4.0.0-next.7
+                const ORT_CDN = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
                 try {
                     const env = _voxtralLib4.env;
                     if (env?.backends?.onnx?.wasm) {
                         env.backends.onnx.wasm.numThreads = 1;
                         env.backends.onnx.wasm.proxy = false;
-                        env.backends.onnx.wasm.wasmPaths = `${LIB_CDN}/dist/`;
+                        env.backends.onnx.wasm.wasmPaths = ORT_CDN;
                     }
                 } catch (_) { /* ignore — env not critical */ }
             }
