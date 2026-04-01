@@ -314,18 +314,7 @@ async function _buildVoiceTools(sdk) {
         }
         const parameters = { type: 'object', properties };
         if (required.length) parameters.required = required;
-        // Build description with param summary for faster model comprehension
-        let desc = t.description || '';
-        if (Array.isArray(t.params) && t.params.length > 0) {
-            const paramSummary = t.params.map(p => {
-                let s = p.name;
-                if (p.type || p.param_type) s += ':' + (p.type || p.param_type);
-                if (p.description) s += ' — ' + p.description;
-                return s;
-            }).join('; ');
-            desc += ' | Params: ' + paramSummary;
-        }
-        tools.push({ type: 'function', name: toolName, description: desc, parameters });
+        tools.push({ type: 'function', name: toolName, description: t.description || '', parameters });
     }
     // Always include the synthetic quit tool so the model can end the session
     tools.push({
@@ -1475,51 +1464,35 @@ class Traits {
             }
 
             // ── Ephemeral token: browser WebRTC needs a short-lived token ──
+            // Direct browser fetch to OpenAI (CORS: *) — fast, no dispatch cascade.
+            // Avoids relay timeout (60s) when stale pairing code is in localStorage.
             let ephemeralKey = null;
-
-            // Try dispatch cascade (helper → relay → server) to mint one server-side
             try {
-                const tokenResult = await this.call('sys.voice', ['token', model, voice]);
-                const result = tokenResult.ok ? (tokenResult.result || tokenResult) : null;
-                if (result && result.token) {
-                    ephemeralKey = result.token;
-                    console.log('[Voice] Got ephemeral token via helper/server');
+                const resp = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + apiKey,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session: { type: 'realtime', model,
+                                   audio: { output: { voice: voice } } }
+                    })
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    const token = (data.client_secret && data.client_secret.value) || data.value;
+                    if (token) {
+                        ephemeralKey = token;
+                        console.log('[Voice] Got ephemeral token via direct fetch');
+                    } else {
+                        console.warn('[Voice] Token response missing value:', JSON.stringify(data).slice(0, 200));
+                    }
                 } else {
-                    console.log('[Voice] Dispatch token result:', JSON.stringify(tokenResult).slice(0, 200));
+                    console.warn('[Voice] Token request failed:', resp.status, JSON.stringify(data).slice(0, 300));
                 }
             } catch(e) {
-                console.log('[Voice] Ephemeral token via dispatch failed:', e.message || e);
-            }
-
-            // Fallback: mint token directly from browser (OpenAI sets CORS: *)
-            if (!ephemeralKey) {
-                try {
-                    const resp = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': 'Bearer ' + apiKey,
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            session: { type: 'realtime', model,
-                                       audio: { output: { voice: voice } } }
-                        })
-                    });
-                    const data = await resp.json();
-                    if (resp.ok) {
-                        const token = (data.client_secret && data.client_secret.value) || data.value;
-                        if (token) {
-                            ephemeralKey = token;
-                            console.log('[Voice] Got ephemeral token via direct fetch');
-                        } else {
-                            console.warn('[Voice] Token response missing value:', JSON.stringify(data).slice(0, 200));
-                        }
-                    } else {
-                        console.warn('[Voice] Token request failed:', resp.status, JSON.stringify(data).slice(0, 300));
-                    }
-                } catch(e) {
-                    console.log('[Voice] Direct ephemeral token fetch failed:', e.message || e);
-                }
+                console.log('[Voice] Direct ephemeral token fetch failed:', e.message || e);
             }
 
             if (!ephemeralKey) {
