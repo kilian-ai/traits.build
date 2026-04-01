@@ -964,6 +964,18 @@ export class Traits {
         await this._rpcWorker(state, 'ping', {});
         await this._rpcWorker(state, 'init', {});
         await this._syncTasksToWorker(state);
+        // Push localStorage secrets into the new worker's WASM secret store
+        try {
+            const PREFIX = 'traits.secret.';
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith(PREFIX)) {
+                    const key = k.slice(PREFIX.length).toLowerCase();
+                    const val = (localStorage.getItem(k) || '').trim();
+                    if (val) await this._rpcWorker(state, 'set_secret', { key, value: val });
+                }
+            }
+        } catch(e) {}
         // Register worker as a service for sys.ps
         if (wasm && wasm.register_task) {
             try { wasm.register_task(`worker-${index}`, `Web Worker #${index}`, 'worker', Date.now(), BACKGROUND_WORKER); } catch(e) {}
@@ -1032,6 +1044,26 @@ export class Traits {
         for (const state of this._workers) {
             this._rpcWorker(state, 'set_helper_connected', { connected: helperReady }).catch(() => {});
         }
+    }
+
+    _syncSecretsToWorkers() {
+        try {
+            const PREFIX = 'traits.secret.';
+            const secrets = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith(PREFIX)) {
+                    const key = k.slice(PREFIX.length).toLowerCase();
+                    const val = (localStorage.getItem(k) || '').trim();
+                    if (val) secrets.push({ key, val });
+                }
+            }
+            for (const state of this._workers) {
+                for (const { key, val } of secrets) {
+                    this._rpcWorker(state, 'set_secret', { key, value: val }).catch(() => {});
+                }
+            }
+        } catch(e) {}
     }
 
     _trackTask(id, name, taskType, detail) {
@@ -1284,6 +1316,8 @@ export class Traits {
             try { mod.register_task('wasm-kernel', 'WASM Kernel', 'service', Date.now(), `${callable.length} callable traits`); } catch(e) {}
         }
         this._trackTask('wasm-kernel', 'WASM Kernel', 'service', `${callable.length} callable traits`);
+        // Push all localStorage secrets to any already-running workers
+        this._syncSecretsToWorkers();
     }
 
     /**
@@ -1295,6 +1329,10 @@ export class Traits {
     setSecret(key, value) {
         if (wasm && wasm.set_secret) {
             try { wasm.set_secret(key, value); } catch(e) {}
+        }
+        // Also push to all workers — they run in a separate thread and can't read localStorage
+        for (const state of this._workers) {
+            this._rpcWorker(state, 'set_secret', { key, value }).catch(() => {});
         }
     }
 
