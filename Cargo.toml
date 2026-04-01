@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260401.130539"
+version = "0.260401.141301"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -39,7 +39,7 @@ name = "traits"
 path = "src/main.rs"
 
 [dependencies]
-kernel-logic = { path = "traits/kernel/logic", version = "0.260401.130539" }
+kernel-logic = { path = "traits/kernel/logic", version = "0.260401.141301" }
 actix-web = "4"
 actix-rt = "2"
 actix-ws = "0.3"

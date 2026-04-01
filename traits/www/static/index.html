@@ -67,6 +67,18 @@ a:hover{text-decoration:underline}
 /* ── Page frame ── */
 #page-frame{min-height:calc(100vh - 48px)}
 
+/* ── Voice overlay ── */
+#voice-overlay{position:fixed;bottom:16px;right:20px;display:none;align-items:center;gap:8px;padding:8px 14px;border-radius:10px;background:rgba(124,92,252,.12);border:1px solid rgba(124,92,252,.3);backdrop-filter:blur(12px);z-index:9998;font-size:12px;color:rgba(255,255,255,.7);transition:opacity .3s}
+#voice-overlay.on{display:flex}
+#voice-overlay .mic-dot{width:9px;height:9px;border-radius:50%;background:#7c5cfc;flex-shrink:0;animation:vpulse 1.8s ease-in-out infinite}
+#voice-overlay.muted .mic-dot{background:#666;animation:none}
+@keyframes vpulse{0%,100%{box-shadow:0 0 0 0 rgba(124,92,252,.4)}50%{box-shadow:0 0 0 7px rgba(124,92,252,0)}}
+#voice-overlay .voice-label{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#voice-overlay button{background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:14px;padding:0 0 0 4px;line-height:1}
+#voice-overlay button:hover{color:var(--fg)}
+#voice-overlay .voice-mute:hover{color:#f90}
+#voice-overlay .voice-stop:hover{color:#f44}
+
 /* ── Loading overlay ── */
 #boot-overlay{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10000;transition:opacity 0.3s}
 #boot-overlay.hidden{opacity:0;pointer-events:none}
@@ -127,6 +139,13 @@ a:hover{text-decoration:underline}
 </nav>
 
 <div id="page-frame"></div>
+
+<div id="voice-overlay">
+  <div class="mic-dot"></div>
+  <span class="voice-label">Voice active</span>
+  <button class="voice-mute" title="Mute/unmute voice">🔇</button>
+  <button class="voice-stop" title="Stop voice">✕</button>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════
@@ -538,6 +557,145 @@ window.addEventListener('hashchange', () => {
   const hash = location.hash.slice(1);
   if (hash && ROUTES[hash]) navigate(hash, false);
 });
+
+// ── Global Voice Overlay ──
+const _voiceOverlay = document.getElementById('voice-overlay');
+const _voiceLabel = _voiceOverlay.querySelector('.voice-label');
+const _voiceMuteBtn = _voiceOverlay.querySelector('.voice-mute');
+const _voiceStopBtn = _voiceOverlay.querySelector('.voice-stop');
+let _voiceMuted = false;
+
+function _hasVoiceApiKey() {
+  try {
+    return !!((localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim()
+           || (localStorage.getItem('traits.voice.api_key') || '').trim());
+  } catch(_) { return false; }
+}
+
+function _updateVoiceOverlay() {
+  const active = sdk && sdk.isVoiceActive && sdk.isVoiceActive();
+  if (active) {
+    _voiceOverlay.classList.add('on');
+    _voiceMuteBtn.textContent = _voiceMuted ? '🔇' : '🔊';
+    _voiceOverlay.classList.toggle('muted', _voiceMuted);
+  } else {
+    _voiceOverlay.classList.remove('on');
+    _voiceMuted = false;
+  }
+}
+
+async function _startGlobalVoice() {
+  if (!sdk || !sdk.startVoice) return;
+  if (sdk.isVoiceActive && sdk.isVoiceActive()) return;
+
+  _voiceOverlay.classList.add('on');
+  _voiceLabel.textContent = 'Connecting voice…';
+
+  const result = await sdk.startVoice({
+    voice: 'shimmer',
+    model: 'gpt-realtime-mini-2025-12-15',
+    onTranscript: (text) => { _voiceLabel.textContent = '🎤 ' + text; },
+    onResponse: (text) => {
+      _voiceLabel.textContent = '💬 ' + text;
+      setTimeout(() => {
+        if (sdk && sdk.isVoiceActive && sdk.isVoiceActive()) _voiceLabel.textContent = 'Listening…';
+      }, 4000);
+    },
+    onToolCall: (name) => {
+      if (name === 'sys_canvas') _voiceLabel.textContent = '🎨 Drawing…';
+      else _voiceLabel.textContent = '⚙ ' + name.replace(/_/g, '.');
+    },
+    onError: (msg) => { _voiceLabel.textContent = '⚠ ' + msg; },
+  });
+
+  if (result.ok) {
+    _voiceLabel.textContent = 'Listening…';
+    _updateVoiceOverlay();
+    const onStopped = (e) => {
+      if (e.detail && e.detail.type === 'stopped') {
+        window.removeEventListener('voice-event', onStopped);
+        _updateVoiceOverlay();
+      }
+    };
+    window.addEventListener('voice-event', onStopped);
+  } else {
+    _voiceLabel.textContent = 'Voice unavailable: ' + (result.error || 'unknown');
+    setTimeout(() => _voiceOverlay.classList.remove('on'), 3000);
+  }
+}
+
+_voiceMuteBtn.addEventListener('click', () => {
+  _voiceMuted = !_voiceMuted;
+  try {
+    if (window._traitsSDK && window._traitsSDK._getVoiceStream) {
+      const s = window._traitsSDK._getVoiceStream();
+      if (s) s.getAudioTracks().forEach(t => { t.enabled = !_voiceMuted; });
+    }
+  } catch(_) {}
+  _updateVoiceOverlay();
+  window.dispatchEvent(new CustomEvent('voice-mute-changed', { detail: { muted: _voiceMuted } }));
+});
+
+_voiceStopBtn.addEventListener('click', () => {
+  if (sdk && sdk.stopVoice) sdk.stopVoice();
+  _voiceMuted = false;
+  _updateVoiceOverlay();
+});
+
+// Voice control bridge (from sys.voice.control WASM trait)
+window.addEventListener('traits-voice-control', (e) => {
+  const d = e.detail || {};
+  const action = d.voice_control_action;
+  if (action === 'mute') {
+    _voiceMuted = true;
+    try {
+      if (window._traitsSDK && window._traitsSDK._getVoiceStream) {
+        const s = window._traitsSDK._getVoiceStream();
+        if (s) s.getAudioTracks().forEach(t => { t.enabled = false; });
+      }
+    } catch(_) {}
+    _updateVoiceOverlay();
+  } else if (action === 'unmute') {
+    _voiceMuted = false;
+    try {
+      if (window._traitsSDK && window._traitsSDK._getVoiceStream) {
+        const s = window._traitsSDK._getVoiceStream();
+        if (s) s.getAudioTracks().forEach(t => { t.enabled = true; });
+      }
+    } catch(_) {}
+    _updateVoiceOverlay();
+  } else if (action === 'toggle') {
+    _voiceMuted = !_voiceMuted;
+    try {
+      if (window._traitsSDK && window._traitsSDK._getVoiceStream) {
+        const s = window._traitsSDK._getVoiceStream();
+        if (s) s.getAudioTracks().forEach(t => { t.enabled = !_voiceMuted; });
+      }
+    } catch(_) {}
+    _updateVoiceOverlay();
+  } else if (action === 'stop') {
+    if (sdk && sdk.stopVoice) sdk.stopVoice();
+    _voiceMuted = false;
+    _updateVoiceOverlay();
+  } else if (action === 'start') {
+    _startGlobalVoice();
+  }
+  window._voiceControlResult = {
+    ok: true,
+    active: !!(sdk && sdk.isVoiceActive && sdk.isVoiceActive()),
+    muted: _voiceMuted,
+    action: action
+  };
+});
+
+// Auto-start voice when navigating to /canvas with API key
+const _origNavigate = navigate;
+navigate = async function(route, pushState) {
+  await _origNavigate(route, pushState);
+  if (route === '/canvas' && _hasVoiceApiKey() && sdk && sdk.isVoiceActive && !sdk.isVoiceActive()) {
+    setTimeout(() => _startGlobalVoice(), 500);
+  }
+};
 
 function updateStatusBar() {
   const s = sdk ? sdk.status : {};
