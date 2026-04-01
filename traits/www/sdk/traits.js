@@ -2268,14 +2268,6 @@ export class Traits {
                 voiceInstructions = 'You are a concise, helpful voice assistant. Keep responses short and conversational. You have access to function-calling tools that execute locally.';
             }
 
-            // ── Build tool definitions ──
-            let tools = [];
-            if (enableTools) {
-                _localVoiceProgress('Loading tools…');
-                tools = await _buildVoiceTools(this);
-                console.log('[VoxtralVoice] Loaded', tools.length, 'tools');
-            }
-
             // ── Load Voxtral (STT) + TTS in parallel ──
             _localVoiceProgress('Initializing Voxtral and TTS models…');
             if (opts.onProgress) opts.onProgress('Initializing Voxtral and TTS models…');
@@ -2283,23 +2275,6 @@ export class Traits {
                 _ensureVoxtral(opts.onProgress),
                 _ensureTTS(),
             ]);
-            if (!_voxtralVoiceActive) return { ok: false, error: 'Cancelled' };
-
-            // ── Auto-bind llm/prompt to WebLLM if no binding exists ──
-            if (!this._bindings.has('llm/prompt')) {
-                this.bind('llm/prompt', 'llm.prompt.webllm');
-                console.log('[VoxtralVoice] Auto-bound llm/prompt → llm.prompt.webllm');
-            }
-
-            // Preload WebLLM engine so first response is fast
-            const llmBinding = this._bindings.get('llm/prompt') || '';
-            if (llmBinding === 'llm.prompt.webllm') {
-                _localVoiceProgress('Pre-loading LLM model…');
-                if (opts.onProgress) opts.onProgress('Pre-loading LLM model…');
-                try { await _ensureWebLLM(); } catch(e) {
-                    console.warn('[VoxtralVoice] WebLLM preload failed:', e.message);
-                }
-            }
             if (!_voxtralVoiceActive) return { ok: false, error: 'Cancelled' };
 
             // ── Open mic at 16 kHz (Voxtral audio encoder requirement) ──
@@ -2312,7 +2287,6 @@ export class Traits {
             source.connect(_voxtralVoiceNode);
             _voxtralVoiceNode.connect(_voxtralVoiceAudioCtx.destination);
 
-            const history = [];
             let audioBuffer = [];
             let speechStart = 0;
             let silenceStart = 0;
@@ -2352,100 +2326,39 @@ export class Traits {
                     if (opts.onTranscript) opts.onTranscript(transcript);
                     _dispatchVoiceEvent('transcript', { text: transcript });
 
-                    // 2. LLM — generate response with tool calling
+                    // 2. LLM — cloud model via llm.agent (OpenAI API + tool calling)
                     _localVoiceProgress('Thinking…');
-                    history.push({ role: 'user', content: transcript });
-                    const messages = [
-                        { role: 'system', content: voiceInstructions },
-                        ...history,
-                    ];
-                    const chatTools = tools.length > 0 ? tools.map(t => ({
-                        type: 'function',
-                        function: { name: t.name, description: t.description || '', parameters: t.parameters || {} },
-                    })) : [];
-                    const llmOpts = chatTools.length > 0 ? { tools: chatTools } : undefined;
-                    let llmResult = await sdk._callWebLLM(messages, null, llmOpts);
+                    const agentResult = await sdk.call('llm.agent', [transcript, voiceInstructions]);
 
-                    if (!llmResult.ok && llmOpts) {
-                        console.warn('[VoxtralVoice] Retrying without tools:', llmResult.error);
-                        llmResult = await sdk._callWebLLM(messages);
-                    }
-
-                    // ── Tool call loop — execute tools until model produces a text response ──
-                    let toolRounds = 0;
-                    const MAX_TOOL_ROUNDS = 5;
-                    while (llmResult.ok && llmResult.tool_calls && llmResult.tool_calls.length > 0 && toolRounds < MAX_TOOL_ROUNDS) {
-                        toolRounds++;
-                        history.push({ role: 'assistant', content: llmResult.result || null, tool_calls: llmResult.tool_calls });
-                        for (const tc of llmResult.tool_calls) {
-                            const funcName = tc.function?.name || '';
-                            const argsStr = tc.function?.arguments || '{}';
-                            const toolCallId = tc.id || `call_${Date.now()}`;
-
+                    // Surface tool call events from agent result
+                    if (agentResult.ok && Array.isArray(agentResult.result?.tool_calls)) {
+                        for (const tc of agentResult.result.tool_calls) {
+                            const funcName = (tc.name || '').replace(/\./g, '_');
+                            const argsStr = JSON.stringify(tc.args || {});
+                            const resultStr = JSON.stringify(tc.result || {});
                             if (opts.onToolCall) opts.onToolCall(funcName, argsStr);
                             _dispatchVoiceEvent('tool_call', { name: funcName, arguments: argsStr });
-
-                            if (funcName === 'sys_voice_quit') {
-                                history.push({ role: 'tool', tool_call_id: toolCallId, content: '{"ok":true,"action":"quit"}' });
-                                sdk.stopVoxtralVoice();
-                                return;
-                            }
-
-                            _localVoiceProgress(`Running ${funcName.replace(/_/g, '.')}…`);
-                            const traitPath = funcName.replace(/_/g, '.');
-                            let callArgs = [];
-                            try {
-                                const parsed = JSON.parse(argsStr);
-                                const traitInfo = await sdk.info(traitPath);
-                                if (traitInfo && Array.isArray(traitInfo.params)) {
-                                    callArgs = traitInfo.params.map(p => parsed[p.name] !== undefined ? parsed[p.name] : null);
-                                } else {
-                                    callArgs = Object.values(parsed);
-                                }
-                            } catch(_) {}
-
-                            const toolResult = await sdk.call(traitPath, callArgs);
-                            const output = JSON.stringify(toolResult.ok ? (toolResult.result !== undefined ? toolResult.result : toolResult) : { error: toolResult.error });
-                            const truncated = output.length > 2000 ? output.slice(0, 2000) + '…(truncated)' : output;
-
-                            if (opts.onToolResult) opts.onToolResult(funcName, truncated);
-                            _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
-
-                            if (funcName === 'sys_spa' && toolResult.ok) {
-                                const r = toolResult.result || toolResult;
-                                if (r.spa_action) window.dispatchEvent(new CustomEvent('traits-spa-action', { detail: r }));
-                            }
-                            if (funcName === 'sys_voice_mode' && toolResult.ok) {
-                                const r = toolResult.result || toolResult;
-                                if (r.voice_mode_action) window.dispatchEvent(new CustomEvent('traits-voice-mode', { detail: r }));
-                            }
-                            if (funcName === 'sys_audio' && toolResult.ok) {
-                                const r = toolResult.result || toolResult;
-                                if (r.audio_action) window.dispatchEvent(new CustomEvent('traits-audio-action', { detail: r }));
-                            }
-
-                            history.push({ role: 'tool', tool_call_id: toolCallId, content: truncated });
+                            if (opts.onToolResult) opts.onToolResult(funcName, resultStr);
+                            _dispatchVoiceEvent('tool_result', { name: funcName, result: resultStr });
+                            if (tc.name === 'sys.spa' && tc.result?.spa_action)
+                                window.dispatchEvent(new CustomEvent('traits-spa-action', { detail: tc.result }));
+                            if (tc.name === 'sys.voice.mode' && tc.result?.voice_mode_action)
+                                window.dispatchEvent(new CustomEvent('traits-voice-mode', { detail: tc.result }));
+                            if (tc.name === 'sys.audio' && tc.result?.audio_action)
+                                window.dispatchEvent(new CustomEvent('traits-audio-action', { detail: tc.result }));
                         }
-                        _localVoiceProgress('Thinking…');
-                        const followUpMessages = [{ role: 'system', content: voiceInstructions }, ...history];
-                        llmResult = await sdk._callWebLLM(followUpMessages, null, llmOpts);
                     }
 
                     let responseText = '';
-                    if (llmResult.ok) {
-                        responseText = typeof llmResult.result === 'string'
-                            ? llmResult.result
-                            : (llmResult.result?.content || JSON.stringify(llmResult.result));
-                    } else {
-                        console.error('[VoxtralVoice] LLM error:', llmResult.error);
+                    if (agentResult.ok && agentResult.result?.response) {
+                        responseText = agentResult.result.response;
+                    } else if (!agentResult.ok) {
+                        console.error('[VoxtralVoice] Agent error:', agentResult.error);
                         responseText = 'Sorry, I could not generate a response.';
                     }
                     responseText = responseText.replace(/[*_`#]/g, '').replace(/\n+/g, ' ').trim();
 
                     if (!responseText || !_voxtralVoiceActive) { processing = false; return; }
-
-                    history.push({ role: 'assistant', content: responseText });
-                    while (history.length > 20) history.shift();
 
                     if (opts.onResponse) opts.onResponse(responseText);
                     _dispatchVoiceEvent('response', { text: responseText });
@@ -2516,7 +2429,7 @@ export class Traits {
             if (opts.onProgress) opts.onProgress('Listening…');
             _dispatchVoiceEvent('listening', { active: true });
 
-            return { ok: true, mode: 'local-realtime', voice, tools: tools.length };
+            return { ok: true, mode: 'local-realtime', voice };
 
         } catch(e) {
             await this.stopVoxtralVoice();
