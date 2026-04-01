@@ -292,15 +292,29 @@ async function _ensureVoxtral(onProgress) {
             _voxtralProcessor = await VoxtralRealtimeProcessor.from_pretrained(MODEL_ID, {
                 progress_callback: mkProg('Processor', 0, 15),
             });
-            const device = (typeof navigator !== 'undefined' && navigator.gpu) ? 'webgpu' : 'wasm';
-            const modelMsg = `Loading Voxtral model (~1.5 GB, first run only)…`;
-            _localVoiceProgress(modelMsg);
-            if (onProgress) onProgress(modelMsg);
-            _voxtralModel = await VoxtralRealtimeForConditionalGeneration.from_pretrained(MODEL_ID, {
-                dtype: { audio_encoder: DTYPE, embed_tokens: DTYPE, decoder_model_merged: DTYPE },
-                device,
-                progress_callback: mkProg('Model', 15, 83),
-            });
+            // Try WebGPU first; fall back to wasm if WebGPU backend fails to init.
+            const hasWebGPU = typeof navigator !== 'undefined' && !!navigator.gpu;
+            const tryDevices = hasWebGPU ? ['webgpu', 'wasm'] : ['wasm'];
+            let lastErr;
+            for (const device of tryDevices) {
+                try {
+                    const modelMsg = `Loading Voxtral model (~1.5 GB, first run only, device: ${device})…`;
+                    _localVoiceProgress(modelMsg);
+                    if (onProgress) onProgress(modelMsg);
+                    _voxtralModel = await VoxtralRealtimeForConditionalGeneration.from_pretrained(MODEL_ID, {
+                        dtype: { audio_encoder: DTYPE, embed_tokens: DTYPE, decoder_model_merged: DTYPE },
+                        device,
+                        progress_callback: mkProg('Model', 15, 83),
+                    });
+                    console.log(`[Voxtral] Loaded on device: ${device}`);
+                    break; // success
+                } catch (e) {
+                    lastErr = e;
+                    console.warn(`[Voxtral] Device "${device}" failed:`, e.message);
+                    _voxtralModel = null;
+                }
+            }
+            if (!_voxtralModel) throw lastErr;
             _localVoiceProgress('Voxtral ready.');
             if (onProgress) onProgress('Voxtral ready.');
             return { processor: _voxtralProcessor, model: _voxtralModel, TextStreamer };
