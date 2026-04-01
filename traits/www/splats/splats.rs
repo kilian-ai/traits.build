@@ -224,7 +224,26 @@ const VIEWER_JS: &str = r##"
 
   // ── Camera ──
   let camDist = 5.0, camTheta = 0.5, camPhi = 0.8;
-  let panX = 0, panY = 0;
+  let panX = 0, panY = 0, panZ = 0;
+  let sceneScale = 5.0; // updated after load for zoom limits
+
+  // Compute axis-aligned bounding box of splat positions
+  function computeBounds(data, count) {
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (let i = 0; i < count; i++) {
+      const x = data[i*14], y = data[i*14+1], z = data[i*14+2];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+    const diag = Math.hypot(maxX-minX, maxY-minY, maxZ-minZ);
+    return {
+      center: [(minX+maxX)/2, (minY+maxY)/2, (minZ+maxZ)/2],
+      extent: [maxX-minX, maxY-minY, maxZ-minZ],
+      diag: diag || 1.0,
+    };
+  }
 
   function mat4Perspective(fov, aspect, near, far) {
     const f = 1 / Math.tan(fov / 2);
@@ -268,11 +287,13 @@ const VIEWER_JS: &str = r##"
     const eye = [
       panX + camDist * Math.sin(camPhi) * Math.cos(camTheta),
       panY + camDist * Math.cos(camPhi),
-      camDist * Math.sin(camPhi) * Math.sin(camTheta),
+      panZ + camDist * Math.sin(camPhi) * Math.sin(camTheta),
     ];
-    const center = [panX, panY, 0];
+    const center = [panX, panY, panZ];
     const aspect = canvas.width / canvas.height;
-    const proj = mat4Perspective(Math.PI / 4, aspect, 0.01, 200);
+    const far = Math.max(200, sceneScale * 10);
+    const near = far * 0.00005;
+    const proj = mat4Perspective(Math.PI / 4, aspect, near, far);
     const view = mat4LookAt(eye, center, [0, 1, 0]);
     return { vp: mat4Mul(proj, view), eye };
   }
@@ -434,6 +455,18 @@ const VIEWER_JS: &str = r##"
     numSplats = count;
     needsSort = true;
 
+    // Auto-fit camera to scene bounding box
+    if (count > 0) {
+      const bounds = computeBounds(data, count);
+      panX = bounds.center[0];
+      panY = bounds.center[1];
+      panZ = bounds.center[2];
+      camDist = bounds.diag * 0.7;
+      sceneScale = bounds.diag;
+      camTheta = 0.5;
+      camPhi = 0.8;
+    }
+
     info.textContent = count.toLocaleString() + ' splats · WebGPU';
   }
 
@@ -475,7 +508,7 @@ const VIEWER_JS: &str = r##"
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     camDist *= 1 + e.deltaY * 0.001;
-    camDist = Math.max(0.5, Math.min(100, camDist));
+    camDist = Math.max(0.01 * sceneScale, Math.min(10 * sceneScale, camDist));
     needsSort = true;
   }, { passive: false });
 
