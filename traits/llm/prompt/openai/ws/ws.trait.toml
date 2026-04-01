@@ -1,0 +1,24 @@
+[trait]
+description = "Streaming OpenAI-compatible inference via fetch() SSE in browser — implements llm/prompt"
+version = "v260401.102329"
+checksum = "b56fa9574efad86a2206d7ffeaf6ff595973547ca7d3c469e99b8c3fa1714ee8"
+author = "system"
+tags = ["llm", "openai", "streaming", "wasm", "browser", "prompt"]
+provides = ["llm/prompt"]
+
+[signature]
+params = [
+  { name = "prompt", type = "string", description = "User message to send to the model", required = true },
+  { name = "model", type = "string", description = "OpenAI model (default: gpt-4o-mini)", required = false, default = "gpt-4o-mini" },
+  { name = "context", type = "string", description = "Comma-separated file paths or globs for context injection", required = false },
+]
+
+[signature.returns]
+type = "string"
+description = "Assistant response text (streamed in browser, buffered on native)"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "openai_ws"
+wasm = true

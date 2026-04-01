@@ -1,0 +1,12 @@
+[
+  {
+    "trait": "llm.prompt.openai.ws",
+    "description": "Streaming OpenAI-compatible inference — sentinel in WASM, REST on native",
+    "examples": [
+      {
+        "args": ["Say hi"],
+        "expect": { "type": "contains", "value": "ok" }
+      }
+    ]
+  }
+]

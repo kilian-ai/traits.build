@@ -1,0 +1,16 @@
+[
+  {
+    "trait": "llm.agent",
+    "description": "WASM-compatible LLM agent loop with trait-based tool calling",
+    "examples": [
+      {
+        "args": ["What traits are available for LLM inference?", null, "sys.list,sys.info"],
+        "expect": { "type": "json_path", "path": "$.ok", "value": true }
+      },
+      {
+        "args": ["What traits are available for LLM inference?", null, "sys.list,sys.info"],
+        "expect": { "type": "json_path", "path": "$.step_count", "op": "gte", "value": 1 }
+      }
+    ]
+  }
+]

@@ -1171,6 +1171,10 @@ export class Traits {
                 if (wasmResult.result && wasmResult.result.dispatch === 'webllm') {
                     return this._callWebLLM(wasmResult.result.prompt, wasmResult.result.model);
                 }
+                // Intercept OpenAI streaming dispatch sentinel — route to JS-side fetch() SSE
+                if (wasmResult.result && wasmResult.result.dispatch === 'openai_stream') {
+                    return this._callOpenAIStream(wasmResult.result.prompt, wasmResult.result.model);
+                }
                 return wasmResult;
             }
             // WASM failed — fall through to native backends
@@ -2582,6 +2586,67 @@ export class Traits {
             console.error('[WebLLM] _callWebLLM error:', e);
             _webllmProgress('');
             return { ok: false, error: e.message || String(e), dispatch: 'webllm' };
+        }
+    }
+
+    // ── OpenAI streaming inference (sentinel dispatch from llm.prompt.openai.ws) ──
+    async _callOpenAIStream(prompt, model, onToken) {
+        const t0 = performance.now();
+        const apiKey = await _ensureVoiceApiKey(this);
+        if (!apiKey) {
+            return { ok: false, error: 'OpenAI API key required. Set OPENAI_API_KEY in Settings > Secrets', dispatch: 'openai_stream' };
+        }
+        const modelId = model || 'gpt-4o-mini';
+        try {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({
+                    model: modelId,
+                    messages: [{ role: 'user', content: prompt }],
+                    stream: true,
+                }),
+            });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                return { ok: false, error: err?.error?.message || `HTTP ${response.status}`, dispatch: 'openai_stream' };
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullText = '';
+            let done = false;
+            while (!done) {
+                const { done: streamDone, value } = await reader.read();
+                done = streamDone;
+                if (!value) continue;
+                const chunk = decoder.decode(value, { stream: !done });
+                for (const line of chunk.split('\n')) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith('data: ')) continue;
+                    const data = trimmed.slice(6);
+                    if (data === '[DONE]') { done = true; break; }
+                    try {
+                        const parsed = JSON.parse(data);
+                        const delta = parsed.choices?.[0]?.delta?.content || '';
+                        if (delta) {
+                            fullText += delta;
+                            if (typeof onToken === 'function') onToken(delta);
+                        }
+                    } catch (_) {}
+                }
+            }
+            return {
+                ok: true,
+                result: fullText,
+                dispatch: 'openai_stream',
+                model: modelId,
+                ms: Math.round((performance.now() - t0) * 10) / 10,
+            };
+        } catch (e) {
+            return { ok: false, error: e.message || String(e), dispatch: 'openai_stream' };
         }
     }
 
