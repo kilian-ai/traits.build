@@ -12,19 +12,20 @@ const PAGE_HTML: &str = r####"<!DOCTYPE html>
 <title>traits.build</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
 body{background:#000;color:#fff}
 
-#hp-loading{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;background:#000;transition:opacity .8s}
-#hp-loading.done{opacity:0;pointer-events:none}
+#hp-loading{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;background:#000;transition:opacity .8s;pointer-events:none}
+#hp-loading.done{opacity:0}
 .loader-ring{width:44px;height:44px;border:3px solid rgba(255,255,255,.08);border-top-color:#7c5cfc;border-radius:50%;animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 #hp-load-text{margin-top:18px;color:rgba(255,255,255,.4);font-size:.85rem;text-align:center;max-width:300px}
 #hp-progress{width:220px;height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;margin-top:14px}
 #hp-progress-bar{height:100%;width:0;background:linear-gradient(90deg,#7c5cfc,#00d4ff);transition:width .3s}
 
-#hp-exp{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;opacity:0;transition:opacity .8s}
+#hp-exp{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;opacity:0;transition:opacity .8s;pointer-events:none}
 #hp-exp.on{opacity:1}
+#hp-exp>*{pointer-events:auto}
 
 #hp-logo{font-size:clamp(2.8rem,8vw,5rem);font-weight:800;letter-spacing:-.03em;opacity:0;transform:scale(.85);transition:all 1.2s cubic-bezier(.17,.67,.35,1.15)}
 #hp-logo.on{opacity:1;transform:scale(1)}

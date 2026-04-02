@@ -62,6 +62,33 @@ pub fn canvas(_args: &[Value]) -> Value {
                         .canvas-empty p { font-size: 14px; }
                         .canvas-empty code { color: var(--accent); font-size: 13px; }
 
+                        /* FAB menu */
+                        #canvas-fab {
+                            position: fixed; bottom: 20px; right: 20px; z-index: 9990;
+                        }
+                        #canvas-fab .fab-btn {
+                            width: 44px; height: 44px; border-radius: 50%;
+                            background: rgba(124,92,252,0.15); border: 1px solid rgba(124,92,252,0.4);
+                            color: #b8a4fc; font-size: 20px; cursor: pointer;
+                            display: flex; align-items: center; justify-content: center;
+                            backdrop-filter: blur(8px); transition: transform 0.2s, background 0.2s;
+                        }
+                        #canvas-fab .fab-btn:hover { background: rgba(124,92,252,0.25); transform: scale(1.08); }
+                        #canvas-fab .fab-btn.open { transform: rotate(45deg); }
+                        #canvas-fab .fab-menu {
+                            display: none; position: absolute; bottom: 52px; right: 0;
+                            background: rgba(20,20,25,0.95); border: 1px solid #333;
+                            border-radius: 8px; padding: 4px 0; min-width: 160px;
+                            backdrop-filter: blur(12px); box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+                        }
+                        #canvas-fab .fab-menu.show { display: block; }
+                        #canvas-fab .fab-menu button {
+                            display: flex; align-items: center; gap: 8px; width: 100%;
+                            padding: 8px 14px; border: none; background: none;
+                            color: #ccc; font-size: 13px; cursor: pointer; text-align: left;
+                        }
+                        #canvas-fab .fab-menu button:hover { background: rgba(124,92,252,0.12); color: #fff; }
+                        #canvas-fab .fab-menu button .fab-icon { width: 18px; text-align: center; flex-shrink: 0; }
 
                     "#))
                 }
