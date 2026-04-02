@@ -9,9 +9,21 @@ pub(crate) mod wasm_secrets;
 
 // ── Helper connection state (set by JS when local helper is discovered) ──
 static HELPER_CONNECTED: AtomicBool = AtomicBool::new(false);
+static HELPER_URL: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
 pub(crate) fn is_helper_connected() -> bool {
     HELPER_CONNECTED.load(Ordering::Relaxed)
+}
+
+/// Get the helper URL — first from in-memory (set via RPC for workers),
+/// then from localStorage (main thread fallback).
+fn get_helper_url() -> Option<String> {
+    if let Ok(guard) = HELPER_URL.read() {
+        if let Some(ref url) = *guard {
+            return Some(url.clone());
+        }
+    }
+    ls_get("traits.helper.url")
 }
 
 // ── Task registry — delegates to kernel_logic::platform shared registry ──
@@ -161,8 +173,8 @@ fn helper_dispatch(path: &str, args: &[Value]) -> Option<Value> {
         return None;
     }
 
-    // Get helper URL from localStorage (set by JS SDK during probe)
-    let helper_url = ls_get("traits.helper.url")?;
+    // Get helper URL from memory (worker RPC) or localStorage (main thread)
+    let helper_url = get_helper_url()?;
 
     // Build REST endpoint: POST {helper_url}/traits/{namespace}/{name}
     let rest_path = path.replace('.', "/");
@@ -334,6 +346,19 @@ pub fn set_secret(key: &str, value: &str) {
 #[wasm_bindgen]
 pub fn set_helper_connected(connected: bool) {
     HELPER_CONNECTED.store(connected, Ordering::Relaxed);
+}
+
+/// Set the helper URL for worker contexts where localStorage is unavailable.
+/// Called from JS SDK via RPC to sync the helper URL into WASM memory.
+#[wasm_bindgen]
+pub fn set_helper_url(url: &str) {
+    if let Ok(mut guard) = HELPER_URL.write() {
+        if url.is_empty() {
+            *guard = None;
+        } else {
+            *guard = Some(url.to_string());
+        }
+    }
 }
 
 /// Check if a trait is registered (even if not WASM-callable).

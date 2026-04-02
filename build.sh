@@ -148,6 +148,7 @@ exports = [
     'run_tests',
     'search_traits',
     'set_helper_connected',
+    'set_helper_url',
     'set_secret',
     'unregister_task',
     'version',
@@ -189,7 +190,7 @@ worker = (
     + '    switch (cmd) {\n'
     + '      case "ping": sendOk(id, "pong"); break;\n'
     + '      case "init": sendOk(id, true); break;\n'
-    + '      case "set_helper_connected": TraitsWasm.set_helper_connected(!!payload.connected); sendOk(id, true); break;\n'      + '      case "set_secret": TraitsWasm.set_secret(String(payload.key || ""), String(payload.value || "")); sendOk(id, true); break;\n'
+    + '      case "set_helper_connected": TraitsWasm.set_helper_connected(!!payload.connected); sendOk(id, true); break;\n'      + '      case "set_helper_url": TraitsWasm.set_helper_url(String(payload.url || "")); sendOk(id, true); break;\n'      + '      case "set_secret": TraitsWasm.set_secret(String(payload.key || ""), String(payload.value || "")); sendOk(id, true); break;\n'
     + '      case "cli_input": sendOk(id, TraitsWasm.cli_input(payload.data || "")); break;\n'
     + '      case "cli_welcome": sendOk(id, TraitsWasm.cli_welcome()); break;\n'
     + '      case "cli_get_history": sendOk(id, TraitsWasm.cli_get_history()); break;\n'

@@ -1146,6 +1146,10 @@ export class Traits {
     _syncHelperToWorkers() {
         for (const state of this._workers) {
             this._rpcWorker(state, 'set_helper_connected', { connected: helperReady }).catch(() => {});
+            // Workers can't access localStorage, so push the helper URL explicitly
+            if (helperUrl) {
+                this._rpcWorker(state, 'set_helper_url', { url: helperUrl }).catch(() => {});
+            }
         }
     }
 
