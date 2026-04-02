@@ -1,7 +1,7 @@
 use serde_json::Value;
 
-/// CLI formatter for llm.agent — shows the agent's final response text.
-/// On error, shows the error message. When run with --verbose, shows tool calls too.
+/// CLI formatter for llm.agent — shows the agent's final response text,
+/// token usage, compaction stats, and tool call summary.
 pub fn format_cli(result: &Value) -> String {
     // Error case
     if let Some(err) = result.get("error").and_then(|v| v.as_str()) {
@@ -17,6 +17,29 @@ pub fn format_cli(result: &Value) -> String {
             if !response.ends_with('\n') {
                 out.push('\n');
             }
+        }
+    }
+
+    // Usage summary
+    if let Some(usage) = result.get("usage") {
+        let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        if input > 0 || output > 0 {
+            out.push_str(&format!("\nTokens: {} in / {} out\n", input, output));
+        }
+    }
+
+    // Compaction info
+    if let Some(compacted) = result.get("compacted_messages").and_then(|v| v.as_u64()) {
+        if compacted > 0 {
+            out.push_str(&format!("Compacted: {} messages\n", compacted));
+        }
+    }
+
+    // Turn mode indicator
+    if let Some(done) = result.get("done").and_then(|v| v.as_bool()) {
+        if !done {
+            out.push_str("Status: awaiting next turn (buddy mode)\n");
         }
     }
 

@@ -2,20 +2,28 @@ use serde_json::{json, Value};
 
 /// llm.agent — WASM-compatible LLM agent loop with trait-based tool calling.
 ///
-/// Implements the opencode-style agent algorithm purely in Rust:
+/// Distilled from the claw-code agent architecture (ConversationRuntime pattern):
 ///   1. Send prompt + tool definitions to OpenAI-compatible API
 ///   2. If response has `tool_calls`, execute each via platform::dispatch
-///   3. Append tool results, repeat until `finish_reason = "stop"` or max_steps
+///   3. Compact message history when token budget is exceeded (claw-code compact.rs)
+///   4. Track token usage from API responses (claw-code conversation.rs)
+///   5. Repeat until `finish_reason = "stop"` or max_steps
+///
+/// Modes:
+///   "full"  (default) — run until done, return final response
+///   "turn"  — run one LLM turn + tool execution, return state for companion/buddy UX
 ///
 /// Works natively and in WASM (via synchronous XHR in sys.call).
 ///
-/// Args: [prompt, system?, tools?, model?, max_steps?, api_secret?]
+/// Args: [prompt, system?, tools?, model?, max_steps?, api_secret?, mode?, session?]
 ///   prompt:     User message (required)
 ///   system:     System prompt (optional, has default coding agent prompt)
 ///   tools:      Comma-separated trait paths to expose as tools, or empty for defaults
 ///   model:      OpenAI model (default: gpt-4o-mini)
 ///   max_steps:  Max agent loop iterations (default: 10)
 ///   api_secret: Secret name for OpenAI API key (default: "openai_api_key")
+///   mode:       "full" (run to completion) or "turn" (single turn for buddy UX)
+///   session:    Previous messages array (for multi-turn buddy sessions)
 pub fn agent(args: &[Value]) -> Value {
     let prompt = match args.first().and_then(|v| v.as_str()) {
         Some(p) if !p.is_empty() => p.to_string(),
@@ -43,7 +51,7 @@ pub fn agent(args: &[Value]) -> Value {
     let max_steps = args.get(4)
         .and_then(|v| v.as_u64())
         .unwrap_or(10)
-        .min(50) as usize;
+        .min(MAX_STEPS_LIMIT as u64) as usize;
 
     let api_secret = args.get(5)
         .and_then(|v| v.as_str())
@@ -51,22 +59,43 @@ pub fn agent(args: &[Value]) -> Value {
         .unwrap_or("openai_api_key")
         .to_string();
 
+    let mode = args.get(6)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("full")
+        .to_string();
+
+    let is_turn_mode = mode == "turn";
+
     // Build tool definitions and a name→path reverse map
     let (tool_defs, name_to_path) = build_tool_definitions(&tools_arg);
 
-    // Initial messages
-    let mut messages: Vec<Value> = vec![
-        json!({"role": "system", "content": system}),
-        json!({"role": "user", "content": prompt}),
-    ];
+    // Restore session from previous messages (for multi-turn buddy mode)
+    let mut messages: Vec<Value> = if let Some(session) = args.get(7).and_then(|v| v.as_array()) {
+        let mut msgs = session.clone();
+        msgs.push(json!({"role": "user", "content": prompt}));
+        msgs
+    } else {
+        vec![
+            json!({"role": "system", "content": system}),
+            json!({"role": "user", "content": prompt}),
+        ]
+    };
 
     let mut step_count = 0usize;
     let mut final_response = String::new();
     let mut all_tool_calls: Vec<Value> = Vec::new();
+    let mut total_usage = UsageTracker::default();
+    let mut compacted_count = 0usize;
 
-    // Agent loop
+    // Agent loop (claw-code ConversationRuntime.run_turn pattern)
     for _ in 0..max_steps {
         step_count += 1;
+
+        // Compact if token budget exceeded (claw-code compact.rs pattern)
+        if should_compact(&messages) {
+            compacted_count += compact_messages(&mut messages);
+        }
 
         // Build request body
         let mut request_body = json!({
@@ -100,10 +129,17 @@ pub fn agent(args: &[Value]) -> Value {
                 "ok": false,
                 "error": err,
                 "step_count": step_count,
+                "usage": total_usage.to_json(),
             });
         }
 
         let body = result.get("body").cloned().unwrap_or(Value::Null);
+
+        // Track token usage (claw-code conversation.rs UsageSummary pattern)
+        if let Some(usage) = body.get("usage") {
+            total_usage.add_from_response(usage);
+        }
+
         let choice = match body.pointer("/choices/0/message") {
             Some(c) => c.clone(),
             None => {
@@ -111,6 +147,7 @@ pub fn agent(args: &[Value]) -> Value {
                     "ok": false,
                     "error": "No choices in API response",
                     "step_count": step_count,
+                    "usage": total_usage.to_json(),
                     "raw": body,
                 });
             }
@@ -133,7 +170,6 @@ pub fn agent(args: &[Value]) -> Value {
             .cloned();
 
         if finish_reason == "stop" || tool_calls.is_none() {
-            // No more tool calls — done
             messages.push(choice.clone());
             break;
         }
@@ -186,7 +222,21 @@ pub fn agent(args: &[Value]) -> Value {
             }));
         }
 
-        // If finish_reason was tool_calls, continue the loop
+        // Turn mode: return after processing one round of tool calls (buddy UX)
+        if is_turn_mode {
+            return json!({
+                "ok": true,
+                "done": false,
+                "response": final_response,
+                "tool_calls": all_tool_calls,
+                "step_count": step_count,
+                "usage": total_usage.to_json(),
+                "compacted_messages": compacted_count,
+                "session": messages,
+            });
+        }
+
+        // Full mode: continue if finish_reason was tool_calls
         if finish_reason != "tool_calls" {
             break;
         }
@@ -194,19 +244,169 @@ pub fn agent(args: &[Value]) -> Value {
 
     json!({
         "ok": true,
+        "done": true,
         "response": final_response,
         "tool_calls": all_tool_calls,
         "step_count": step_count,
-        "messages": messages,
+        "usage": total_usage.to_json(),
+        "compacted_messages": compacted_count,
+        "session": messages,
     })
 }
 
+// ─── Usage Tracking (claw-code conversation.rs UsageSummary) ────────────────
+
+#[derive(Default)]
+struct UsageTracker {
+    input_tokens: u64,
+    output_tokens: u64,
+    total_tokens: u64,
+}
+
+impl UsageTracker {
+    fn add_from_response(&mut self, usage: &Value) {
+        self.input_tokens += usage.get("prompt_tokens")
+            .and_then(|v| v.as_u64()).unwrap_or(0);
+        self.output_tokens += usage.get("completion_tokens")
+            .and_then(|v| v.as_u64()).unwrap_or(0);
+        self.total_tokens += usage.get("total_tokens")
+            .and_then(|v| v.as_u64()).unwrap_or(0);
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+        })
+    }
+}
+
+// ─── Session Compaction (claw-code compact.rs) ──────────────────────────────
+//
+// When the conversation grows beyond COMPACT_MAX_TOKENS, older messages
+// (except the most recent COMPACT_PRESERVE_RECENT) are summarized into
+// a compact system message with <summary> tags. This prevents context
+// window overflow on long agent runs while preserving recent context.
+
+fn estimate_tokens(text: &str) -> usize {
+    // claw-code formula: len/4 + 1 (rough approximation of GPT tokenization)
+    text.len() / 4 + 1
+}
+
+fn estimate_message_tokens(msg: &Value) -> usize {
+    let content_tokens = msg.get("content")
+        .and_then(|v| v.as_str())
+        .map(estimate_tokens)
+        .unwrap_or(0);
+
+    let tool_tokens = msg.get("tool_calls")
+        .and_then(|v| v.as_array())
+        .map(|tcs| tcs.iter().map(|tc| {
+            let name_t = tc.pointer("/function/name")
+                .and_then(|v| v.as_str()).map(estimate_tokens).unwrap_or(0);
+            let args_t = tc.pointer("/function/arguments")
+                .and_then(|v| v.as_str()).map(estimate_tokens).unwrap_or(0);
+            name_t + args_t
+        }).sum::<usize>())
+        .unwrap_or(0);
+
+    content_tokens + tool_tokens + 4 // +4 per-message overhead (role, separators)
+}
+
+fn should_compact(messages: &[Value]) -> bool {
+    let total: usize = messages.iter().map(|m| estimate_message_tokens(m)).sum();
+    if total <= COMPACT_MAX_TOKENS {
+        return false;
+    }
+    // Only compact if there are enough messages beyond the preserved window
+    messages.len() > COMPACT_PRESERVE_RECENT + 1
+}
+
+/// Compact older messages into a summary. Returns the number of messages removed.
+fn compact_messages(messages: &mut Vec<Value>) -> usize {
+    if messages.len() <= COMPACT_PRESERVE_RECENT + 1 {
+        return 0;
+    }
+
+    // Keep first message (system prompt) and last N messages
+    let system = messages[0].clone();
+    let split_point = messages.len().saturating_sub(COMPACT_PRESERVE_RECENT);
+    let older = &messages[1..split_point];
+    let removed_count = older.len();
+
+    if removed_count == 0 {
+        return 0;
+    }
+
+    // Build structured summary (claw-code summarize_messages pattern)
+    let mut user_requests: Vec<String> = Vec::new();
+    let mut tools_used: Vec<String> = Vec::new();
+    let mut key_results: Vec<String> = Vec::new();
+
+    for msg in older {
+        let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
+        match role {
+            "user" => {
+                if let Some(content) = msg.get("content").and_then(|v| v.as_str()) {
+                    let truncated = if content.len() > 200 { &content[..200] } else { content };
+                    user_requests.push(truncated.to_string());
+                }
+            }
+            "assistant" => {
+                if let Some(content) = msg.get("content").and_then(|v| v.as_str()) {
+                    if !content.is_empty() {
+                        let truncated = if content.len() > 150 { &content[..150] } else { content };
+                        key_results.push(truncated.to_string());
+                    }
+                }
+                if let Some(tcs) = msg.get("tool_calls").and_then(|v| v.as_array()) {
+                    for tc in tcs {
+                        if let Some(name) = tc.pointer("/function/name").and_then(|v| v.as_str()) {
+                            if !tools_used.contains(&name.to_string()) {
+                                tools_used.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            "tool" => {
+                // Tool results are implied by the tools_used list
+            }
+            _ => {}
+        }
+    }
+
+    let summary = format!(
+        "<summary>\nCompacted context ({} messages removed):\n\
+         User requests: {}\n\
+         Tools used: {}\n\
+         Key results: {}\n\
+         </summary>\n\
+         The conversation continues from here. Recent messages are preserved verbatim.",
+        removed_count,
+        if user_requests.is_empty() { "none".to_string() }
+        else { user_requests.join(" | ") },
+        if tools_used.is_empty() { "none".to_string() }
+        else { tools_used.join(", ") },
+        if key_results.is_empty() { "none".to_string() }
+        else { key_results.join(" | ") },
+    );
+
+    // Rebuild: system + compaction summary + recent messages
+    let recent: Vec<Value> = messages[split_point..].to_vec();
+    messages.clear();
+    messages.push(system);
+    messages.push(json!({"role": "system", "content": summary}));
+    messages.extend(recent);
+
+    removed_count
+}
+
+// ─── Tool name ↔ trait path conversion ──────────────────────────────────────
+
 /// Convert OpenAI tool name back to trait path: sys_checksum → sys.checksum
 fn tool_name_to_trait_path(name: &str) -> String {
-    // Replace first underscore with dot: sys_checksum → sys.checksum
-    // But handle multi-segment paths: sys_chat_protocols_vscode → sys.chat_protocols.vscode
-    // Convention: trait paths use dots, tool names use underscores
-    // We stored the mapping when building tools, so reverse via simple replacement
     name.replacen('_', ".", 1)
 }
 
@@ -215,10 +415,11 @@ fn trait_path_to_tool_name(path: &str) -> String {
     path.replace('.', "_")
 }
 
+// ─── Argument mapping ───────────────────────────────────────────────────────
+
 /// Build positional args from a named JSON object using trait signature metadata.
 /// Falls back to wrapping the whole object if no signature found.
 fn named_args_to_positional(trait_path: &str, named: &Value) -> Vec<Value> {
-    // Try to get signature from registry
     let detail = kernel_logic::platform::registry_detail(trait_path);
 
     if let Some(detail_val) = detail {
@@ -229,7 +430,6 @@ fn named_args_to_positional(trait_path: &str, named: &Value) -> Vec<Value> {
                 let value = named.get(name).cloned().unwrap_or(Value::Null);
                 positional.push(value);
             }
-            // Remove trailing Nulls to match trait's optional args
             while positional.last() == Some(&Value::Null) {
                 positional.pop();
             }
@@ -237,13 +437,13 @@ fn named_args_to_positional(trait_path: &str, named: &Value) -> Vec<Value> {
         }
     }
 
-    // Fallback: single arg with the whole object
     vec![named.clone()]
 }
 
+// ─── Tool definition building ───────────────────────────────────────────────
+
 /// Build OpenAI tool definitions from a comma-separated list of trait paths.
 /// Returns (tool_defs, name→path map).
-/// Empty string → use DEFAULT_TOOLS list.
 fn build_tool_definitions(tools_csv: &str) -> (Vec<Value>, std::collections::HashMap<String, String>) {
     let paths: Vec<&str> = if tools_csv.is_empty() {
         DEFAULT_TOOLS.iter().map(|s| *s).collect()
@@ -276,7 +476,6 @@ fn trait_to_tool_def(trait_path: &str) -> Option<Value> {
 
     let tool_name = trait_path_to_tool_name(trait_path);
 
-    // Build JSON Schema properties from trait signature params
     let mut properties = serde_json::Map::new();
     let mut required_params: Vec<Value> = Vec::new();
 
@@ -332,14 +531,12 @@ fn trait_type_to_json_schema(t: &str) -> &'static str {
         "float" => "number",
         "bool" => "boolean",
         "string" | "bytes" => "string",
-        _ => "string", // any, handle, list, map → string fallback
+        _ => "string",
     }
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/// Default tools exposed to the agent when no tools_csv is specified.
-/// All entries must be WASM-callable (wasm = true in their .trait.toml).
 const DEFAULT_TOOLS: &[&str] = &[
     "sys.call",
     "sys.list",
@@ -352,3 +549,11 @@ You are a helpful AI assistant with access to a set of tools (traits). \
 When you need to perform an action, call the appropriate tool. \
 Think step by step and use tools to accomplish the user's request. \
 When you have gathered enough information, provide a clear, concise response.";
+
+const MAX_STEPS_LIMIT: usize = 50;
+
+/// Compaction: keep the last N messages verbatim when compacting.
+const COMPACT_PRESERVE_RECENT: usize = 4;
+
+/// Compaction: trigger when estimated tokens exceed this threshold.
+const COMPACT_MAX_TOKENS: usize = 10_000;
