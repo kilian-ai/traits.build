@@ -1712,17 +1712,13 @@ class Traits {
                             // After sys.canvas changes: fire live update event for canvas page
                             if (funcName === 'sys_canvas' && result.ok) {
                                 const r = result.result || result;
-                                if (r.action === 'set' || r.action === 'append' || r.action === 'clear') {
+                                if (r.action === 'set' || r.action === 'append' || r.action === 'clear' || r.action === 'load') {
                                     this.call('sys.canvas', ['get']).then(getRes => {
                                         const content = getRes?.result?.content ?? getRes?.content ?? '';
                                         window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
                                     }).catch(() => {
                                         window.dispatchEvent(new CustomEvent('traits-canvas-update', {}));
                                     });
-                                }
-                                // Canvas project actions: fire event for project bridge
-                                if (r.canvas_project_action) {
-                                    window.dispatchEvent(new CustomEvent('traits-canvas-project', { detail: r }));
                                 }
                             }
 

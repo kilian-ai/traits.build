@@ -28,38 +28,47 @@
       ]
     },
     {
-      "name": "save project",
+      "name": "get canvas VFS path",
       "examples": [
         {
-          "input": { "args": ["save", "my-project"] },
-          "output": { "contains": "\"canvas_project_action\":\"save\"" }
+          "input": { "args": ["path"] },
+          "output": { "contains": "\"vfs_path\":\"canvas/app.html\"" }
         }
       ]
     },
     {
-      "name": "list projects",
+      "name": "save project to VFS",
+      "examples": [
+        {
+          "input": { "args": ["save", "test-project"] },
+          "output": { "contains": "\"action\":\"save\"" }
+        }
+      ]
+    },
+    {
+      "name": "list projects from VFS",
       "examples": [
         {
           "input": { "args": ["projects"] },
-          "output": { "contains": "\"canvas_project_action\":\"list\"" }
+          "output": { "contains": "\"projects\":" }
         }
       ]
     },
     {
-      "name": "load project",
+      "name": "load project from VFS",
       "examples": [
         {
-          "input": { "args": ["load", "my-project"] },
-          "output": { "contains": "\"canvas_project_action\":\"load\"" }
+          "input": { "args": ["load", "nonexistent"] },
+          "output": { "contains": "\"error\":" }
         }
       ]
     },
     {
-      "name": "delete project",
+      "name": "delete project from VFS",
       "examples": [
         {
-          "input": { "args": ["delete_project", "my-project"] },
-          "output": { "contains": "\"canvas_project_action\":\"delete\"" }
+          "input": { "args": ["delete_project", "test-project"] },
+          "output": { "contains": "\"ok\":true" }
         }
       ]
     }

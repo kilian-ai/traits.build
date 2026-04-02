@@ -1,13 +1,13 @@
 [trait]
-description = "Dynamic HTML/JS canvas — set, append, get, clear content, plus save/load/list/delete named projects"
-version = "v260401"
-checksum = "1c7f1c818fd018f3b823562d2806b96e6bcd75555bf1495cb09c5619f5595686"
+description = "VFS-backed HTML/JS canvas — set, append, get, clear, path, save/load/list/delete projects. Content persists in canvas/app.html on VFS."
+version = "v260402"
+checksum = "96646b89b876feae22b34053a77d4590d1ce6c639220eca1cc69731dd44053ac"
 author = "system"
 tags = ["sys", "canvas", "display", "html", "projects"]
 
 [signature]
 params = [
-  { name = "action", type = "string", description = "Action: set, append, get, clear, save, load, projects, delete_project", required = true },
+  { name = "action", type = "string", description = "Action: set, append, get, clear, path, save, load, projects, delete_project", required = true },
   { name = "content", type = "string", description = "HTML/JS content (for set/append) or project name (for save/load/delete_project)", required = false },
 ]
 

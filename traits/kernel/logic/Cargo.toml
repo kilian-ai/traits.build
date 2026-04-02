@@ -1,6 +1,6 @@
 [package]
 name = "kernel-logic"
-version = "0.260402.124017"
+version = "0.260402.125312"
 edition = "2021"
 description = "Shared pure-logic kernel: types, registry data model, TOML parsing"
 authors = ["kilian"]

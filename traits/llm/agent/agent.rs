@@ -595,6 +595,7 @@ const DEFAULT_TOOLS: &[&str] = &[
     "sys.registry",
     "kernel.call",
     "sys.vfs",
+    "sys.canvas",
     "llm.agent.docs",
     "llm.agent.skills",
     "skills.spotify.play",
