@@ -431,8 +431,19 @@ fn resolve_session(session_arg: Option<&Value>, system: &str, prompt: &str) -> (
     // Try to load existing session from persistent VFS
     let vfs_path = format!("{}/{}.json", SESSION_VFS_DIR, name);
     if let Some(raw) = kernel_logic::platform::vfs_read(&vfs_path) {
-        if let Ok(Value::Array(msgs)) = serde_json::from_str::<Value>(&raw) {
-            let mut messages = msgs;
+        if let Ok(Value::Array(stored)) = serde_json::from_str::<Value>(&raw) {
+            // Always use current system prompt (may have changed since session was saved)
+            let mut messages = vec![json!({"role": "system", "content": system})];
+
+            // Carry over non-system messages, but cap to recent history to avoid
+            // stale context (old tool failures, compacted summaries) poisoning the model
+            let non_system: Vec<Value> = stored.into_iter()
+                .filter(|m| m.get("role").and_then(|v| v.as_str()) != Some("system"))
+                .collect();
+            let keep = non_system.len().min(SESSION_MAX_CARRY);
+            let skip = non_system.len() - keep;
+            messages.extend(non_system.into_iter().skip(skip));
+
             messages.push(json!({"role": "user", "content": prompt}));
             return (name, messages);
         }
@@ -616,3 +627,7 @@ const COMPACT_PRESERVE_RECENT: usize = 4;
 
 /// Compaction: trigger when estimated tokens exceed this threshold.
 const COMPACT_MAX_TOKENS: usize = 10_000;
+
+/// Session: max non-system messages to carry from previous session.
+/// Keeps recent context without letting old failures poison the model.
+const SESSION_MAX_CARRY: usize = 20;
