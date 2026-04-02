@@ -23,7 +23,8 @@ use serde_json::{json, Value};
 ///   max_steps:  Max agent loop iterations (default: 10)
 ///   api_secret: Secret name for OpenAI API key (default: "openai_api_key")
 ///   mode:       "full" (run to completion) or "turn" (single turn for buddy UX)
-///   session:    Previous messages array (for multi-turn buddy sessions)
+///   session:    Session name (default: "default"). Use "new" to start fresh.
+///               Can also pass a raw messages array for manual session management.
 pub fn agent(args: &[Value]) -> Value {
     let prompt = match args.first().and_then(|v| v.as_str()) {
         Some(p) if !p.is_empty() => p.to_string(),
@@ -45,7 +46,8 @@ pub fn agent(args: &[Value]) -> Value {
     let model = args.get(3)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("gpt-4o-mini")
+       // .unwrap_or("gpt-4o-mini")
+        .unwrap_or("gpt-5.4")
         .to_string();
 
     let max_steps = args.get(4)
@@ -70,17 +72,9 @@ pub fn agent(args: &[Value]) -> Value {
     // Build tool definitions and a name→path reverse map
     let (tool_defs, name_to_path) = build_tool_definitions(&tools_arg);
 
-    // Restore session from previous messages (for multi-turn buddy mode)
-    let mut messages: Vec<Value> = if let Some(session) = args.get(7).and_then(|v| v.as_array()) {
-        let mut msgs = session.clone();
-        msgs.push(json!({"role": "user", "content": prompt}));
-        msgs
-    } else {
-        vec![
-            json!({"role": "system", "content": system}),
-            json!({"role": "user", "content": prompt}),
-        ]
-    };
+    // Resolve session: name (string) or raw messages (array)
+    let session_arg = args.get(7);
+    let (session_name, mut messages) = resolve_session(session_arg, &system, &prompt);
 
     let mut step_count = 0usize;
     let mut final_response = String::new();
@@ -224,6 +218,7 @@ pub fn agent(args: &[Value]) -> Value {
 
         // Turn mode: return after processing one round of tool calls (buddy UX)
         if is_turn_mode {
+            save_session(&session_name, &messages);
             return json!({
                 "ok": true,
                 "done": false,
@@ -232,7 +227,7 @@ pub fn agent(args: &[Value]) -> Value {
                 "step_count": step_count,
                 "usage": total_usage.to_json(),
                 "compacted_messages": compacted_count,
-                "session": messages,
+                "session": session_name,
             });
         }
 
@@ -242,6 +237,7 @@ pub fn agent(args: &[Value]) -> Value {
         }
     }
 
+    save_session(&session_name, &messages);
     json!({
         "ok": true,
         "done": true,
@@ -250,7 +246,7 @@ pub fn agent(args: &[Value]) -> Value {
         "step_count": step_count,
         "usage": total_usage.to_json(),
         "compacted_messages": compacted_count,
-        "session": messages,
+        "session": session_name,
     })
 }
 
@@ -401,6 +397,72 @@ fn compact_messages(messages: &mut Vec<Value>) -> usize {
     messages.extend(recent);
 
     removed_count
+}
+
+// ─── Persistent Session (via sys.config) ────────────────────────────────────
+
+const DEFAULT_SESSION: &str = "default";
+const SESSION_CONFIG_PREFIX: &str = "session_";
+
+/// Resolve session from arg: string name loads from config, array uses raw messages,
+/// null/absent uses "default" session. "new" always starts fresh.
+fn resolve_session(session_arg: Option<&Value>, system: &str, prompt: &str) -> (String, Vec<Value>) {
+    // Raw messages array — manual session management (no persistence)
+    if let Some(Value::Array(arr)) = session_arg {
+        let mut msgs = arr.clone();
+        msgs.push(json!({"role": "user", "content": prompt}));
+        return (String::new(), msgs);
+    }
+
+    // Session name — "new" starts fresh, anything else loads from config
+    let name = session_arg
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_SESSION)
+        .to_string();
+
+    if name == "new" {
+        return (name, vec![
+            json!({"role": "system", "content": system}),
+            json!({"role": "user", "content": prompt}),
+        ]);
+    }
+
+    // Try to load existing session from sys.config
+    let config_key = format!("{}{}", SESSION_CONFIG_PREFIX, name);
+    let stored = kernel_logic::platform::dispatch("sys.config", &[
+        json!("get"), json!("llm.agent"), json!(config_key),
+    ]);
+
+    if let Some(val) = stored {
+        // sys.config returns the value as a string — parse it back
+        let raw = val.as_str()
+            .or_else(|| val.get("value").and_then(|v| v.as_str()))
+            .unwrap_or("");
+        if let Ok(Value::Array(msgs)) = serde_json::from_str::<Value>(raw) {
+            let mut messages = msgs;
+            messages.push(json!({"role": "user", "content": prompt}));
+            return (name, messages);
+        }
+    }
+
+    // No stored session — start fresh
+    (name, vec![
+        json!({"role": "system", "content": system}),
+        json!({"role": "user", "content": prompt}),
+    ])
+}
+
+/// Save session messages to sys.config for persistence.
+fn save_session(session_name: &str, messages: &[Value]) {
+    if session_name.is_empty() || session_name == "new" {
+        return; // Raw array sessions and "new" sessions are not persisted
+    }
+    let config_key = format!("{}{}", SESSION_CONFIG_PREFIX, session_name);
+    let serialized = serde_json::to_string(messages).unwrap_or_default();
+    kernel_logic::platform::dispatch("sys.config", &[
+        json!("set"), json!("llm.agent"), json!(config_key), json!(serialized),
+    ]);
 }
 
 // ─── Tool name ↔ trait path conversion ──────────────────────────────────────
