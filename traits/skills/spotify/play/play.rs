@@ -4,29 +4,38 @@ use std::process::Command;
 /// skills.spotify.play — Play a track, album, artist, or playlist on Spotify.
 /// If no query is given, resumes the current track.
 pub fn play(args: &[Value]) -> Value {
-    let query = args.first().and_then(|v| v.as_str()).unwrap_or("").trim();
+    let query = args.first().and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
 
-    if query.is_empty() {
+    let result = if query.is_empty() {
         // Resume playback
-        return run_osascript("tell application \"Spotify\" to play");
-    }
-
-    // If it looks like a Spotify URI, play it directly
-    if query.starts_with("spotify:") {
+        run_osascript("tell application \"Spotify\" to play")
+    } else if query.starts_with("spotify:") {
+        // If it looks like a Spotify URI, play it directly
         let script = format!(
             "tell application \"Spotify\" to play track \"{}\"",
             query.replace('"', "\\\"")
         );
-        return run_osascript(&script);
-    }
+        run_osascript(&script)
+    } else {
+        // Search: use the search URI scheme
+        let search_uri = format!("spotify:search:{}", query.replace(' ', "%20"));
+        let script = format!(
+            "tell application \"Spotify\" to play track \"{}\"",
+            search_uri.replace('"', "\\\"")
+        );
+        run_osascript(&script)
+    };
 
-    // Search: use the search URI scheme
-    let search_uri = format!("spotify:search:{}", query.replace(' ', "%20"));
-    let script = format!(
-        "tell application \"Spotify\" to play track \"{}\"",
-        search_uri.replace('"', "\\\"")
-    );
-    run_osascript(&script)
+    // Enrich successful results with a human-readable status
+    if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if query.is_empty() {
+            json!({"ok": true, "status": "Playback resumed"})
+        } else {
+            json!({"ok": true, "status": format!("Now playing: {}", query)})
+        }
+    } else {
+        result
+    }
 }
 
 fn run_osascript(script: &str) -> Value {

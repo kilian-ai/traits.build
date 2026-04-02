@@ -1,7 +1,7 @@
 [trait]
 description = "Play a track, album, artist, or playlist on Spotify. Resume if no query given."
-version = "v260331.121011"
-checksum = "3d2dcbb9cd048b882f791336a720521c9ac1be8aaa8b73286e641bcfb1005d0a"
+version = "v260402"
+checksum = "2b190073e394be47639d7b73feb4bafd811f9ec465470de74c509b6af4f02f3c"
 author = "system"
 tags = ["skills", "spotify", "music"]
 

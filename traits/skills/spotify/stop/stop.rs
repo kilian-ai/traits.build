@@ -3,7 +3,10 @@ use std::process::Command;
 
 /// skills.spotify.stop — Stop Spotify playback (pause + rewind to start).
 pub fn stop(_args: &[Value]) -> Value {
-    run_osascript("tell application \"Spotify\"\npause\nset player position to 0\nend tell")
+    let result = run_osascript("tell application \"Spotify\"\npause\nset player position to 0\nend tell");
+    if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        json!({"ok": true, "status": "Playback stopped"})
+    } else { result }
 }
 
 fn run_osascript(script: &str) -> Value {

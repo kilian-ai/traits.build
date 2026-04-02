@@ -3,7 +3,10 @@ use std::process::Command;
 
 /// skills.spotify.prev — Go back to the previous track.
 pub fn prev(_args: &[Value]) -> Value {
-    run_osascript("tell application \"Spotify\" to previous track")
+    let result = run_osascript("tell application \"Spotify\" to previous track");
+    if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        json!({"ok": true, "status": "Went to previous track"})
+    } else { result }
 }
 
 fn run_osascript(script: &str) -> Value {

@@ -1,7 +1,7 @@
 [trait]
 description = "Set Spotify volume (0-100)"
-version = "v260331.121011"
-checksum = "15a447cb89a560f653c8316934d572db4626e0a6b51fcf8bfaf62a83f39e2801"
+version = "v260402"
+checksum = "6c1cd5d02f5e1448ee1467c8f3e39b805882c041989789ae1ed3d3e3b5308756"
 author = "system"
 tags = ["skills", "spotify", "music"]
 

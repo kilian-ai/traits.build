@@ -1,7 +1,7 @@
 [trait]
 description = "Stop Spotify playback (pause and rewind to start)"
-version = "v260331.121011"
-checksum = "721425f859e13db0deecfd55d8b0d73b0f5e79514a6fb35f59f37e4419c2c91d"
+version = "v260402"
+checksum = "1a1bae13de563dcbe83a50f4624075c5ae9113b6960937628e958bdd93b97110"
 author = "system"
 tags = ["skills", "spotify", "music"]
 

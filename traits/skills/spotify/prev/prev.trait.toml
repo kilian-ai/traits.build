@@ -1,7 +1,7 @@
 [trait]
 description = "Go back to the previous track on Spotify"
-version = "v260331.121011"
-checksum = "4026cea4a422b18d4fbc817538ec586ff338ecb63c1f75a023e15c29873e1f41"
+version = "v260402"
+checksum = "d008cf18998c9ece087f5d2c286aff8bca8efe8a001b778774f69148fe824968"
 author = "system"
 tags = ["skills", "spotify", "music"]
 

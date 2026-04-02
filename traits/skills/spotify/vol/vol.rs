@@ -16,7 +16,10 @@ pub fn vol(args: &[Value]) -> Value {
         "tell application \"Spotify\" to set sound volume to {}",
         level
     );
-    run_osascript(&script)
+    let result = run_osascript(&script);
+    if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        json!({"ok": true, "status": format!("Volume set to {}", level)})
+    } else { result }
 }
 
 fn run_osascript(script: &str) -> Value {

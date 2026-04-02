@@ -1,7 +1,7 @@
 [trait]
 description = "Pause Spotify playback"
-version = "v260331.121011"
-checksum = "e50bd395fcd13052c49fabc14ad9ed6cfa8f3db0441b5250fa4e2de7a9740441"
+version = "v260402"
+checksum = "9c75d716ff808301b2c65e530466f0f9bc77c25f0bd3dd01ed616f854afaf81c"
 author = "system"
 tags = ["skills", "spotify", "music"]
 

@@ -3,7 +3,10 @@ use std::process::Command;
 
 /// skills.spotify.next — Skip to the next track.
 pub fn next(_args: &[Value]) -> Value {
-    run_osascript("tell application \"Spotify\" to next track")
+    let result = run_osascript("tell application \"Spotify\" to next track");
+    if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        json!({"ok": true, "status": "Skipped to next track"})
+    } else { result }
 }
 
 fn run_osascript(script: &str) -> Value {

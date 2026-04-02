@@ -1,7 +1,7 @@
 [trait]
 description = "Skip to the next track on Spotify"
-version = "v260331.121011"
-checksum = "bea7bd44f9156acb0e7c325d1f957b0461ed36003ee4864fd8d2a97b0be4fe45"
+version = "v260402"
+checksum = "4c85401427750d986740941b8f2e00b20066a5970eaccb6dbde16b54ee2cf07b"
 author = "system"
 tags = ["skills", "spotify", "music"]
 
