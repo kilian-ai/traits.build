@@ -193,7 +193,13 @@ pub fn agent(args: &[Value]) -> Value {
             // Build positional args from named JSON object using trait signature
             let call_args = named_args_to_positional(&trait_path, &fn_args_obj);
 
-            // Execute via platform dispatch
+            // Execute via compiled dispatch (same path as voice)
+            #[cfg(not(target_arch = "wasm32"))]
+            let tool_result = crate::dispatcher::compiled::dispatch(&trait_path, &call_args)
+                .unwrap_or_else(|| json!({
+                    "error": format!("trait '{}' not found or not callable", trait_path)
+                }));
+            #[cfg(target_arch = "wasm32")]
             let tool_result = kernel_logic::platform::dispatch(&trait_path, &call_args)
                 .unwrap_or_else(|| json!({
                     "error": format!("trait '{}' not found or not callable", trait_path)

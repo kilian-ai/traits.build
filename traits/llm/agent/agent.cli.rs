@@ -49,9 +49,18 @@ pub fn format_cli(result: &Value) -> String {
             out.push('\n');
             for tc in tool_calls {
                 let name = tc.get("trait").and_then(|v| v.as_str()).unwrap_or("");
-                let ok = tc.pointer("/result/ok").and_then(|v| v.as_bool()).unwrap_or(true);
+                let has_ok = tc.pointer("/result/ok").is_some();
+                let ok = tc.pointer("/result/ok").and_then(|v| v.as_bool()).unwrap_or(!has_ok);
                 let status = if ok { "✓" } else { "✗" };
-                out.push_str(&format!("  {} {}\n", status, name));
+                out.push_str(&format!("  {} {}", status, name));
+
+                // Show error detail on failure
+                if !ok {
+                    if let Some(err) = tc.pointer("/result/error").and_then(|v| v.as_str()) {
+                        out.push_str(&format!(" — {}", err));
+                    }
+                }
+                out.push('\n');
             }
         }
     }
