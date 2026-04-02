@@ -1050,6 +1050,13 @@ class Traits {
 
         worker.onmessage = (ev) => {
             const msg = ev.data || {};
+            // Handle unsolicited messages from worker (no matching id)
+            if (msg._type === 'canvas-sync') {
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content: msg.content } }));
+                }
+                return;
+            }
             const req = pending.get(msg.id);
             if (!req) return;
             pending.delete(msg.id);

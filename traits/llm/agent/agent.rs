@@ -539,6 +539,7 @@ fn trait_type_to_json_schema(t: &str) -> &'static str {
 
 const DEFAULT_TOOLS: &[&str] = &[
     "sys.call",
+    "sys.vfs",
     "sys.list",
     "sys.registry",
     "kernel.call",
@@ -548,7 +549,18 @@ const DEFAULT_SYSTEM: &str = "\
 You are a helpful AI assistant with access to a set of tools (traits). \
 When you need to perform an action, call the appropriate tool. \
 Think step by step and use tools to accomplish the user's request. \
-When you have gathered enough information, provide a clear, concise response.";
+When you have gathered enough information, provide a clear, concise response.\n\n\
+FILE TOOLS: You have a virtual filesystem (sys.vfs) for reading and writing files. \
+Use action=\"read\" with path to read a file, action=\"write\" with path and content to write, \
+action=\"list\" to list files, action=\"delete\" to remove, action=\"exists\" to check.\n\n\
+CANVAS: The file `canvas/app.html` on the VFS is rendered live on the /canvas page in the browser. \
+To build visual/interactive content, FIRST read `canvas/app.html` with sys.vfs to see what's already there, \
+then write the updated version back with sys.vfs write. Write complete, self-contained HTML with inline \
+CSS and JS — no external dependencies. The canvas page updates automatically when this file changes. \
+Prefer dark backgrounds (#0a0a0a) and light text (#e0e0e0) to match the site theme. \
+The canvas page injects a `window.traits` object your scripts can use: \
+traits.call(path, args), traits.list(), traits.canvas(action, content), traits.echo(text), traits.audio(action, ...).";
+
 
 const MAX_STEPS_LIMIT: usize = 50;
 

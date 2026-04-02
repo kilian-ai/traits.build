@@ -232,7 +232,7 @@ worker = (
     + '        const raw = TraitsWasm.call(p, JSON.stringify(payload.args || []));\n'
     + '        const res = JSON.parse(raw);\n'
     + '        sendOk(id, res);\n'
-    + '        if (p === "sys.canvas") checkCanvasSync();\n'
+    + '        if (p === "sys.canvas" || p === "sys.vfs") checkCanvasSync();\n'
     + '        break;\n'
     + '      }\n'
     + '      case "call_raw": sendOk(id, TraitsWasm.call(payload.path || "", payload.args_json || "[]")); break;\n'
