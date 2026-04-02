@@ -313,6 +313,10 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 const content = res?.result?.content || res?.content || '';
                                 if (content) {
                                     renderCanvas(content);
+                                    // Push to helper VFS so CLI agents can read it
+                                    if (sdk.helperConnected) {
+                                        sdk.call('sys.vfs@native', ['write', 'canvas/app.html', content]).catch(() => {});
+                                    }
                                 } else {
                                     renderCanvas('');
                                 }
@@ -356,7 +360,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                         // Initial load — prefer helper VFS if connected (catches CLI writes)
                         (async () => {
                             const sdk = window._traitsSDK;
-                            if (sdk && sdk.dispatchMode('sys.vfs') !== 'wasm') {
+                            if (sdk?.helperConnected) {
                                 try {
                                     const res = await sdk.call('sys.vfs@native', ['read', 'canvas/app.html']);
                                     const content = res?.result?.content ?? res?.content ?? '';
@@ -371,9 +375,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                         const _pollId = setInterval(async () => {
                             try {
                                 const sdk = window._traitsSDK;
-                                if (!sdk || sourceMode) return;
-                                const mode = sdk.dispatchMode('sys.vfs');
-                                if (mode === 'wasm' || mode === 'none') return;
+                                if (!sdk || sourceMode || !sdk.helperConnected) return;
                                 const res = await sdk.call('sys.vfs@native', ['read', 'canvas/app.html']);
                                 const content = res?.result?.content ?? res?.content ?? '';
                                 if (content.length !== __lastLen && content) {
