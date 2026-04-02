@@ -597,6 +597,13 @@ const DEFAULT_TOOLS: &[&str] = &[
     "sys.vfs",
     "llm.agent.docs",
     "llm.agent.skills",
+    "skills.spotify.play",
+    "skills.spotify.pause",
+    "skills.spotify.stop",
+    "skills.spotify.next",
+    "skills.spotify.prev",
+    "skills.spotify.status",
+    "skills.spotify.vol",
 ];
 
 const DEFAULT_SYSTEM: &str = include_str!("../../../.github/agents/traits.build.agent.md");
