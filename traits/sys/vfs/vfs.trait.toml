@@ -1,0 +1,23 @@
+[trait]
+description = "Persistent virtual filesystem — read, write, list, delete files (localStorage on WASM, filesystem on native)"
+version = "v260402.122903"
+checksum = "ae02e422f8eaf253cdce91190dabc3195316697c43581fee07b2003b0274a5e6"
+author = "system"
+tags = ["sys", "vfs", "filesystem", "storage", "persistence"]
+
+[signature]
+params = [
+  { name = "action", type = "string", description = "Operation: read, write, list, delete, exists", required = true },
+  { name = "path", type = "string", description = "File path (relative, no leading /)", required = false },
+  { name = "content", type = "string", description = "File content (for write action)", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "{ ok, content?, files?, count?, deleted?, exists?, error? }"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "vfs"
+wasm = true

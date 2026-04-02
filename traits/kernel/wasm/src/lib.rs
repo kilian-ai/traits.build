@@ -60,6 +60,95 @@ pub(crate) fn get_registry() -> &'static registry::WasmRegistry {
     })
 }
 
+// ── Persistent VFS (global, separate from CLI session VFS) ──────────────────
+//
+// The CLI session VFS is scoped to with_session() and causes double-borrow
+// panics when traits try to access it during dispatch. This global VFS is
+// accessible from any trait via platform::vfs_read/vfs_write, auto-persists
+// to localStorage, and is seeded with the same builtins as the session VFS.
+
+use kernel_logic::vfs::Vfs;
+
+thread_local! {
+    static PERSISTENT_VFS: RefCell<Option<kernel_logic::vfs::LayeredVfs>> = const { RefCell::new(None) };
+}
+
+/// Ensure the persistent VFS is initialized (lazy — first access creates it).
+fn ensure_pvfs() {
+    PERSISTENT_VFS.with(|cell| {
+        if cell.borrow().is_none() {
+            let mut vfs = kernel_logic::vfs::LayeredVfs::new();
+            // Seed builtins (same as CliSession VFS)
+            for (_path, rel_path, toml) in BUILTIN_TRAIT_DEFS {
+                vfs.seed(rel_path, *toml);
+            }
+            for (_path, rel_path, feat) in BUILTIN_FEATURES {
+                vfs.seed(rel_path, *feat);
+            }
+            for (rel_path, content) in BUILTIN_DOCS {
+                vfs.seed(rel_path, *content);
+            }
+            // Restore user layer from localStorage
+            if let Some(json) = ls_get("traits.pvfs") {
+                vfs.load(&json);
+            }
+            *cell.borrow_mut() = Some(vfs);
+        }
+    });
+}
+
+fn pvfs_read(path: &str) -> Option<String> {
+    ensure_pvfs();
+    PERSISTENT_VFS.with(|cell| {
+        cell.borrow().as_ref().and_then(|vfs| vfs.read(path))
+    })
+}
+
+fn pvfs_write(path: &str, content: &str) {
+    ensure_pvfs();
+    PERSISTENT_VFS.with(|cell| {
+        if let Some(vfs) = cell.borrow_mut().as_mut() {
+            vfs.write(path, content);
+            // Auto-persist user layer to localStorage
+            ls_set("traits.pvfs", &vfs.dump());
+        }
+    });
+}
+
+fn pvfs_list() -> Vec<String> {
+    ensure_pvfs();
+    PERSISTENT_VFS.with(|cell| {
+        cell.borrow().as_ref().map(|vfs| vfs.list()).unwrap_or_default()
+    })
+}
+
+fn pvfs_delete(path: &str) -> bool {
+    ensure_pvfs();
+    PERSISTENT_VFS.with(|cell| {
+        if let Some(vfs) = cell.borrow_mut().as_mut() {
+            let deleted = vfs.delete(path);
+            if deleted {
+                ls_set("traits.pvfs", &vfs.dump());
+            }
+            deleted
+        } else {
+            false
+        }
+    })
+}
+
+/// Read from localStorage.
+fn ls_get(key: &str) -> Option<String> {
+    web_sys::window()?.local_storage().ok()??.get_item(key).ok()?
+}
+
+/// Write to localStorage.
+fn ls_set(key: &str, value: &str) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok()).flatten() {
+        let _ = storage.set_item(key, value);
+    }
+}
+
 /// Initialize the WASM kernel. Call once before using other functions.
 #[wasm_bindgen]
 pub fn init() -> Result<JsValue, JsValue> {
@@ -100,6 +189,10 @@ pub fn init() -> Result<JsValue, JsValue> {
         secret_get: wasm_secrets::get_secret,
         make_vfs: make_wasm_vfs,
         background_tasks: wasm_background_tasks,
+        vfs_read: pvfs_read,
+        vfs_write: pvfs_write,
+        vfs_list: pvfs_list,
+        vfs_delete: pvfs_delete,
     });
 
     Ok(serde_json::to_string(&serde_json::json!({

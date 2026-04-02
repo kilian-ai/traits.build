@@ -41,6 +41,20 @@ pub struct Platform {
     /// - Native: scans `.run/*.pid` files for background trait processes.
     /// - WASM:   reports kernel runtime state (callable traits, dispatch cascade).
     pub background_tasks: fn() -> Value,
+    /// Read a file from the persistent VFS.
+    /// - Native: checks `data/vfs/` then project root.
+    /// - WASM:   reads from global VFS (seeded from builtins + localStorage).
+    pub vfs_read: fn(&str) -> Option<String>,
+    /// Write a file to the persistent VFS.
+    /// - Native: writes to `data/vfs/`.
+    /// - WASM:   writes to global VFS + auto-persists to localStorage.
+    pub vfs_write: fn(&str, &str),
+    /// List files in the persistent VFS (user-written files).
+    /// - Native: walks `data/vfs/` directory.
+    /// - WASM:   lists all VFS entries (builtins + user layer).
+    pub vfs_list: fn() -> Vec<String>,
+    /// Delete a file from the persistent VFS.
+    pub vfs_delete: fn(&str) -> bool,
 }
 
 static PLATFORM: OnceLock<Platform> = OnceLock::new();
@@ -97,6 +111,28 @@ pub fn make_vfs() -> Box<dyn vfs::Vfs> {
     PLATFORM.get()
         .map(|p| (p.make_vfs)())
         .unwrap_or_else(|| Box::new(vfs::MemVfs::default()))
+}
+
+/// Read a file from the persistent VFS.
+pub fn vfs_read(path: &str) -> Option<String> {
+    PLATFORM.get().and_then(|p| (p.vfs_read)(path))
+}
+
+/// Write a file to the persistent VFS.
+pub fn vfs_write(path: &str, content: &str) {
+    if let Some(p) = PLATFORM.get() {
+        (p.vfs_write)(path, content);
+    }
+}
+
+/// List files in the persistent VFS.
+pub fn vfs_list() -> Vec<String> {
+    PLATFORM.get().map(|p| (p.vfs_list)()).unwrap_or_default()
+}
+
+/// Delete a file from the persistent VFS.
+pub fn vfs_delete(path: &str) -> bool {
+    PLATFORM.get().map(|p| (p.vfs_delete)(path)).unwrap_or(false)
 }
 
 /// Return platform-specific process/task status (complete JSON for `sys.ps`).

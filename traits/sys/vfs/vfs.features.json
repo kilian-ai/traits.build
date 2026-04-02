@@ -1,0 +1,60 @@
+{
+  "module": "traits/sys/vfs/vfs.rs",
+  "description": "Persistent virtual filesystem operations",
+  "features": [
+    {
+      "name": "List files",
+      "description": "List all files in the VFS",
+      "examples": [
+        {
+          "input": ["list"],
+          "output": {
+            "contains": [{"ok": true}, "\"files\""]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Write and read a file",
+      "description": "Write content then read it back",
+      "examples": [
+        {
+          "input": ["write", "test/hello.txt", "Hello, VFS!"],
+          "output": {
+            "contains": [{"ok": true}]
+          }
+        },
+        {
+          "input": ["read", "test/hello.txt"],
+          "output": {
+            "contains": [{"ok": true}, "Hello, VFS!"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Check file exists",
+      "description": "Verify a file exists in the VFS",
+      "examples": [
+        {
+          "input": ["exists", "test/hello.txt"],
+          "output": {
+            "contains": [{"ok": true}, {"exists": true}]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Delete a file",
+      "description": "Delete a file from the VFS",
+      "examples": [
+        {
+          "input": ["delete", "test/hello.txt"],
+          "output": {
+            "contains": [{"ok": true}]
+          }
+        }
+      ]
+    }
+  ]
+}

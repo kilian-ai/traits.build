@@ -24,6 +24,71 @@ fn make_native_vfs() -> Box<dyn kernel_logic::vfs::Vfs> {
     Box::new(vfs)
 }
 
+// ────────────────── native persistent VFS ──────────────────
+
+/// Data directory for user-written VFS files.
+fn native_vfs_data_dir() -> std::path::PathBuf {
+    if std::path::Path::new("/data").exists() {
+        std::path::PathBuf::from("/data/vfs")
+    } else {
+        std::path::PathBuf::from("data/vfs")
+    }
+}
+
+/// Read from the persistent VFS: user-written files first, then project root.
+fn native_vfs_read(path: &str) -> Option<String> {
+    let normalized = path.trim_start_matches('/');
+    // User-written files (data/vfs/)
+    let user_path = native_vfs_data_dir().join(normalized);
+    if let Ok(content) = std::fs::read_to_string(&user_path) {
+        return Some(content);
+    }
+    // Project files (relative to cwd)
+    std::fs::read_to_string(normalized).ok()
+}
+
+/// Write a file to the persistent VFS data directory.
+fn native_vfs_write(path: &str, content: &str) {
+    let normalized = path.trim_start_matches('/');
+    let full = native_vfs_data_dir().join(normalized);
+    if let Some(parent) = full.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&full, content);
+}
+
+/// List user-written files in the VFS data directory.
+fn native_vfs_list() -> Vec<String> {
+    let dir = native_vfs_data_dir();
+    let mut files = Vec::new();
+    if dir.exists() {
+        walk_vfs_dir(&dir, &dir, &mut files);
+    }
+    files.sort();
+    files
+}
+
+/// Delete a file from the VFS data directory.
+fn native_vfs_delete(path: &str) -> bool {
+    let normalized = path.trim_start_matches('/');
+    let full = native_vfs_data_dir().join(normalized);
+    std::fs::remove_file(&full).is_ok()
+}
+
+/// Recursively list files under a directory, producing VFS-relative paths.
+fn walk_vfs_dir(dir: &std::path::Path, root: &std::path::Path, files: &mut Vec<String>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_vfs_dir(&path, root, files);
+            } else if let Ok(rel) = path.strip_prefix(root) {
+                files.push(rel.to_string_lossy().to_string());
+            }
+        }
+    }
+}
+
 // ────────────────── native process status ──────────────────
 
 /// Scan `.run/*.pid` files and merge with in-memory task registry.
@@ -237,6 +302,10 @@ pub fn bootstrap(config: &Config) -> Result<Dispatcher, Box<dyn std::error::Erro
         },
         make_vfs: make_native_vfs,
         background_tasks: native_background_tasks,
+        vfs_read: native_vfs_read,
+        vfs_write: native_vfs_write,
+        vfs_list: native_vfs_list,
+        vfs_delete: native_vfs_delete,
     });
 
     // Load trait dylibs from the entire traits directory (recursive)

@@ -46,8 +46,8 @@ pub fn agent(args: &[Value]) -> Value {
     let model = args.get(3)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-       // .unwrap_or("gpt-4o-mini")
-        .unwrap_or("gpt-5.4")
+        .unwrap_or("gpt-4o-mini")
+       // .unwrap_or("gpt-5.4")
         .to_string();
 
     let max_steps = args.get(4)
@@ -399,12 +399,12 @@ fn compact_messages(messages: &mut Vec<Value>) -> usize {
     removed_count
 }
 
-// ─── Persistent Session (via sys.config) ────────────────────────────────────
+// ─── Persistent Session (via platform VFS → localStorage on WASM, filesystem on native) ──
 
 const DEFAULT_SESSION: &str = "default";
-const SESSION_CONFIG_PREFIX: &str = "session_";
+const SESSION_VFS_DIR: &str = "sessions/llm.agent";
 
-/// Resolve session from arg: string name loads from config, array uses raw messages,
+/// Resolve session from arg: string name loads from VFS, array uses raw messages,
 /// null/absent uses "default" session. "new" always starts fresh.
 fn resolve_session(session_arg: Option<&Value>, system: &str, prompt: &str) -> (String, Vec<Value>) {
     // Raw messages array — manual session management (no persistence)
@@ -428,18 +428,10 @@ fn resolve_session(session_arg: Option<&Value>, system: &str, prompt: &str) -> (
         ]);
     }
 
-    // Try to load existing session from sys.config
-    let config_key = format!("{}{}", SESSION_CONFIG_PREFIX, name);
-    let stored = kernel_logic::platform::dispatch("sys.config", &[
-        json!("get"), json!("llm.agent"), json!(config_key),
-    ]);
-
-    if let Some(val) = stored {
-        // sys.config returns the value as a string — parse it back
-        let raw = val.as_str()
-            .or_else(|| val.get("value").and_then(|v| v.as_str()))
-            .unwrap_or("");
-        if let Ok(Value::Array(msgs)) = serde_json::from_str::<Value>(raw) {
+    // Try to load existing session from persistent VFS
+    let vfs_path = format!("{}/{}.json", SESSION_VFS_DIR, name);
+    if let Some(raw) = kernel_logic::platform::vfs_read(&vfs_path) {
+        if let Ok(Value::Array(msgs)) = serde_json::from_str::<Value>(&raw) {
             let mut messages = msgs;
             messages.push(json!({"role": "user", "content": prompt}));
             return (name, messages);
@@ -453,16 +445,14 @@ fn resolve_session(session_arg: Option<&Value>, system: &str, prompt: &str) -> (
     ])
 }
 
-/// Save session messages to sys.config for persistence.
+/// Save session messages to persistent VFS for cross-refresh persistence.
 fn save_session(session_name: &str, messages: &[Value]) {
     if session_name.is_empty() || session_name == "new" {
         return; // Raw array sessions and "new" sessions are not persisted
     }
-    let config_key = format!("{}{}", SESSION_CONFIG_PREFIX, session_name);
+    let vfs_path = format!("{}/{}.json", SESSION_VFS_DIR, session_name);
     let serialized = serde_json::to_string(messages).unwrap_or_default();
-    kernel_logic::platform::dispatch("sys.config", &[
-        json!("set"), json!("llm.agent"), json!(config_key), json!(serialized),
-    ]);
+    kernel_logic::platform::vfs_write(&vfs_path, &serialized);
 }
 
 // ─── Tool name ↔ trait path conversion ──────────────────────────────────────
@@ -604,6 +594,7 @@ const DEFAULT_TOOLS: &[&str] = &[
     "sys.list",
     "sys.registry",
     "kernel.call",
+    "sys.vfs",
     "llm.agent.docs",
     "llm.agent.skills",
 ];
