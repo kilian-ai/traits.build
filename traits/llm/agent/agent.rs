@@ -205,20 +205,24 @@ pub fn agent(args: &[Value]) -> Value {
                     "error": format!("trait '{}' not found or not callable", trait_path)
                 }));
 
-            // Record for final output
+            let humanized = humanize_tool_result(&tool_result);
+
+            // Record for final output (includes debug info)
             all_tool_calls.push(json!({
                 "id": call_id,
                 "name": fn_name,
                 "trait": trait_path,
                 "args": fn_args_obj,
+                "positional_args": call_args,
                 "result": tool_result,
+                "humanized": humanized,
             }));
 
             // Append tool result message (humanized for model comprehension)
             messages.push(json!({
                 "role": "tool",
                 "tool_call_id": call_id,
-                "content": humanize_tool_result(&tool_result),
+                "content": humanized,
             }));
         }
 
