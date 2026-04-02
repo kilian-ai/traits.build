@@ -110,6 +110,21 @@ pub fn canvas(_args: &[Value]) -> Value {
                     }
                 }
 
+                // FAB menu
+                div #canvas-fab {
+                    button .fab-btn #fabToggle { "+" }
+                    div .fab-menu #fabMenu {
+                        button #fabVoice {
+                            span .fab-icon { "🎤" }
+                            span { "Start Voice" }
+                        }
+                        button #fabSplats {
+                            span .fab-icon { "🔮" }
+                            span { "Splat Viewer" }
+                        }
+                    }
+                }
+
                 script { (PreEscaped(r#"
                     (function() {
                         // ── Canvas SDK: thin global API for scripts injected into the canvas ──
@@ -370,9 +385,47 @@ pub fn canvas(_args: &[Value]) -> Value {
                             } catch(_) {}
                         }, 2000);
 
+                        // ── FAB menu ──
+                        const fabToggle = document.getElementById('fabToggle');
+                        const fabMenu = document.getElementById('fabMenu');
+                        fabToggle.addEventListener('click', () => {
+                            fabMenu.classList.toggle('show');
+                            fabToggle.classList.toggle('open');
+                        });
+                        // Close FAB menu when clicking outside
+                        document.addEventListener('click', (e) => {
+                            if (!e.target.closest('#canvas-fab')) {
+                                fabMenu.classList.remove('show');
+                                fabToggle.classList.remove('open');
+                            }
+                        });
+                        // Voice button
+                        document.getElementById('fabVoice').addEventListener('click', () => {
+                            fabMenu.classList.remove('show');
+                            fabToggle.classList.remove('open');
+                            // Dispatch voice start via the global voice control bridge
+                            window.dispatchEvent(new CustomEvent('traits-voice-control', { detail: { voice_control_action: 'start' } }));
+                        });
+                        // Splat viewer button
+                        document.getElementById('fabSplats').addEventListener('click', async () => {
+                            fabMenu.classList.remove('show');
+                            fabToggle.classList.remove('open');
+                            try {
+                                const sdk = window._traitsSDK;
+                                if (!sdk) return;
+                                const splats = await sdk.call('www.splats', ['render']);
+                                const html = (typeof splats === 'string') ? splats : splats?.result;
+                                if (html && typeof html === 'string') {
+                                    await sdk.call('sys.canvas', ['set', html]);
+                                    renderCanvas(html);
+                                }
+                            } catch(e) { console.warn('splat load:', e); }
+                        });
+
                         // Register cleanup: auto-save canvas and remove window.traits when navigating away
                         window._pageCleanup = async () => {
                             clearInterval(_pollId);
+                            fabMenu.classList.remove('show');
                             // Auto-save canvas content before leaving
                             try {
                                 const sdk = window._traitsSDK;
