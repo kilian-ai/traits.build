@@ -180,8 +180,10 @@ fn helper_dispatch(path: &str, args: &[Value]) -> Option<Value> {
 
     let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
     if ok {
-        // REST endpoint returns trait result as the body
-        result.get("body").cloned()
+        // REST endpoint returns {"result": ..., "error": null}
+        // sys.call wraps it as {"ok": true, "body": {"result": ..., "error": null}}
+        result.pointer("/body/result").cloned()
+            .or_else(|| result.get("body").cloned())
     } else {
         // HTTP error — return as-is so caller sees the failure
         Some(result)
@@ -226,9 +228,11 @@ pub fn init() -> Result<JsValue, JsValue> {
                 "language": t.language,
                 "source": t.source_type,
                 "wasm_callable": t.wasm_callable,
-                "params": t.params,
-                "returns": t.returns_type,
-                "returns_description": t.returns_description,
+                "signature": {
+                    "params": t.params,
+                    "returns": t.returns_type,
+                    "returns_description": t.returns_description,
+                },
             }))
         },
         config_get: |_trait_path, _key, default| default.to_string(),

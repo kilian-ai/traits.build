@@ -569,7 +569,7 @@ fn build_tool_definitions(tools_csv: &str) -> (Vec<Value>, std::collections::Has
 fn trait_to_tool_def(trait_path: &str) -> Option<Value> {
     let detail = kernel_logic::platform::registry_detail(trait_path)?;
 
-    let description = detail.pointer("/trait/description")
+    let description = detail.get("description")
         .and_then(|v| v.as_str())
         .unwrap_or(trait_path)
         .to_string();

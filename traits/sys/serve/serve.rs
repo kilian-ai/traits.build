@@ -1300,18 +1300,22 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
     let _ = crate::globals::SERVER_PORT.set(port);
 
     let cors_origins = config.traits.cors_origins.clone();
+    let is_local = config.traits.bind == "127.0.0.1" || config.traits.bind == "localhost";
     let server = HttpServer::new(move || {
         let origins = cors_origins.clone();
-        let mut cors_builder = Cors::default()
-            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-            .allowed_headers(vec!["Content-Type", "Authorization", "Accept"])
-            .max_age(3600);
-        
-        for origin in &origins {
-            cors_builder = cors_builder.allowed_origin(origin);
-        }
-
-        let cors = cors_builder;
+        let cors = if is_local {
+            // Local helper: allow any origin (safe — only reachable from this machine)
+            Cors::permissive()
+        } else {
+            let mut cors_builder = Cors::default()
+                .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+                .allowed_headers(vec!["Content-Type", "Authorization", "Accept"])
+                .max_age(3600);
+            for origin in &origins {
+                cors_builder = cors_builder.allowed_origin(origin);
+            }
+            cors_builder
+        };
 
         App::new()
             .wrap(cors)

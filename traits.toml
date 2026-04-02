@@ -6,7 +6,7 @@ timeout = 30
 
 # CORS configuration - restrict to specific origins for security
 # Set via env var TRAITS_CORS_ORIGINS as comma-separated list
-cors_origins = ["https://traits.build", "https://admin.traits.build"]
+cors_origins = ["https://traits.build", "https://www.traits.build", "https://admin.traits.build"]
 
 # Rate limiting configuration (requests per minute)
 rate_limit_relay = 60      # Rate limit for relay endpoints
