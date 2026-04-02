@@ -500,9 +500,10 @@ fn humanize_tool_result(result: &Value) -> String {
     serde_json::to_string_pretty(result).unwrap_or_default()
 }
 
-/// Convert OpenAI tool name back to trait path: sys_checksum → sys.checksum
+/// Convert OpenAI tool name back to trait path: skills_spotify_pause → skills.spotify.pause
+/// Must replace ALL underscores (same as voice dispatch_tool_call).
 fn tool_name_to_trait_path(name: &str) -> String {
-    name.replacen('_', ".", 1)
+    name.replace('_', ".")
 }
 
 /// Convert trait path to OpenAI tool name: sys.checksum → sys_checksum

@@ -26,16 +26,28 @@ pub fn play(args: &[Value]) -> Value {
         run_osascript(&script)
     };
 
-    // Enrich successful results with a human-readable status
-    if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if !result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return result;
+    }
+    // Verify actual player state
+    let state = get_player_state();
+    if state == "playing" {
         if query.is_empty() {
             json!({"ok": true, "status": "Playback resumed"})
         } else {
             json!({"ok": true, "status": format!("Now playing: {}", query)})
         }
     } else {
-        result
+        json!({"ok": false, "error": format!("Play sent but player state is: {}", state)})
     }
+}
+
+fn get_player_state() -> String {
+    Command::new("osascript")
+        .args(["-e", "tell application \"Spotify\" to player state as string"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".into())
 }
 
 fn run_osascript(script: &str) -> Value {

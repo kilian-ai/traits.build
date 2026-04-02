@@ -3,8 +3,16 @@ use serde_json::Value;
 /// Trait entry point: call(trait_path, args)
 ///
 /// Dispatches to another trait by dot-notation path.
+/// Accepts both dot and underscore notation (e.g. skills.spotify.pause or skills_spotify_pause).
 pub fn call(args: &[Value]) -> Value {
-    let trait_path = args.first().and_then(|v| v.as_str()).unwrap_or("");
+    let raw_path = args.first().and_then(|v| v.as_str()).unwrap_or("");
+    // Normalize underscore notation to dot notation (LLMs sometimes use underscores)
+    let trait_path = if raw_path.contains('_') && !raw_path.contains('.') {
+        raw_path.replace('_', ".")
+    } else {
+        raw_path.to_string()
+    };
+    let trait_path = trait_path.as_str();
     let call_args = args
         .get(1)
         .and_then(|v| v.as_array())
