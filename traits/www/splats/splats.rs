@@ -293,13 +293,16 @@ const VIEWER_JS: &str = r##"
     const aspect = canvas.width / canvas.height;
     const far = Math.max(200, sceneScale * 10);
     const near = far * 0.00005;
-    const proj = mat4Perspective(Math.PI / 4, aspect, near, far);
+    const fovY = Math.PI / 4;
+    const proj = mat4Perspective(fovY, aspect, near, far);
     const view = mat4LookAt(eye, center, [0, 1, 0]);
-    return { vp: mat4Mul(proj, view), eye };
+    const fy = canvas.height / (2 * Math.tan(fovY / 2));
+    const fx = fy; // square pixels
+    return { vp: mat4Mul(proj, view), view, eye, focal: [fx, fy] };
   }
 
-  // ── Uniform buffer (viewproj 64B + eye 16B + viewport 8B + pad 8B = 96B) ──
-  const uniformBuf = device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  // ── Uniform buffer: viewProj(64) + view(64) + focal(8) + viewport(8) = 144B ──
+  const uniformBuf = device.createBuffer({ size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
   const bindGroupLayout = device.createBindGroupLayout({
     entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }],
@@ -313,10 +316,9 @@ const VIEWER_JS: &str = r##"
   const shaderCode = `
     struct Uniforms {
       viewProj: mat4x4f,
-      eye: vec3f,
-      _pad0: f32,
+      view: mat4x4f,
+      focal: vec2f,
       viewport: vec2f,
-      _pad1: vec2f,
     };
     @group(0) @binding(0) var<uniform> u: Uniforms;
 
@@ -349,10 +351,74 @@ const VIEWER_JS: &str = r##"
     ) -> VOut {
       var out: VOut;
 
-      let rot = quatToMat3(splatQuat);
-      let worldPos = splatPos + rot * (vec3f(quad, 0.0) * splatScale);
+      // Transform splat center to view space
+      let cam = u.view * vec4f(splatPos, 1.0);
+      let camPos = cam.xyz;
 
-      out.pos = u.viewProj * vec4f(worldPos, 1.0);
+      // Clip behind camera
+      if (camPos.z > -0.2) {
+        out.pos = vec4f(0.0, 0.0, 2.0, 1.0);
+        return out;
+      }
+
+      // Project center to clip space
+      let pos2d = u.viewProj * vec4f(splatPos, 1.0);
+      let clip = 1.2 * pos2d.w;
+      if (pos2d.x < -clip || pos2d.x > clip || pos2d.y < -clip || pos2d.y > clip) {
+        out.pos = vec4f(0.0, 0.0, 2.0, 1.0);
+        return out;
+      }
+
+      // Build 3D covariance: Σ = R * S * Sᵀ * Rᵀ = (R*S)(R*S)ᵀ
+      let R = quatToMat3(splatQuat);
+      let M = mat3x3f(
+        R[0] * splatScale.x,
+        R[1] * splatScale.y,
+        R[2] * splatScale.z,
+      );
+      let Sigma = M * transpose(M);
+
+      // Jacobian of projection: J maps 3D view-space offsets to 2D screen
+      let tz = camPos.z;
+      let tz2 = tz * tz;
+      let J = mat3x3f(
+        vec3f(u.focal.x / tz, 0.0, 0.0),
+        vec3f(0.0, u.focal.y / tz, 0.0),
+        vec3f(-u.focal.x * camPos.x / tz2, -u.focal.y * camPos.y / tz2, 0.0),
+      );
+
+      // View rotation (upper-left 3×3 of view matrix)
+      let W = mat3x3f(
+        u.view[0].xyz,
+        u.view[1].xyz,
+        u.view[2].xyz,
+      );
+
+      // 2D covariance: T = J * W, cov2d = T * Σ * Tᵀ
+      let T = J * W;
+      let cov2d = T * Sigma * transpose(T);
+
+      // Extract 2×2 from upper-left of cov2d + small regularization
+      let a = cov2d[0][0] + 0.3;
+      let b = cov2d[0][1];
+      let d = cov2d[1][1] + 0.3;
+
+      // Eigendecomposition of 2×2 symmetric matrix
+      let mid = 0.5 * (a + d);
+      let radius = length(vec2f(0.5 * (a - d), b));
+      let lambda1 = mid + radius;
+      let lambda2 = max(mid - radius, 0.1);
+
+      // Eigenvectors → major/minor axes in pixels
+      let diagVec = normalize(vec2f(b, lambda1 - a));
+      let majorAxis = sqrt(lambda1) * diagVec;
+      let minorAxis = sqrt(lambda2) * vec2f(diagVec.y, -diagVec.x);
+
+      // Scale quad corners by the 2D axes, then to NDC
+      let offset = (quad.x * majorAxis + quad.y * minorAxis) * 2.0 / u.viewport;
+      let center = pos2d.xy / pos2d.w;
+
+      out.pos = vec4f(center + offset, pos2d.z / pos2d.w, 1.0);
       out.color = splatColor;
       out.uv = quad;
       return out;
@@ -536,12 +602,15 @@ const VIEWER_JS: &str = r##"
       requestAnimationFrame(frame);
       return;
     }
-    const { vp, eye } = getViewProj();
-    const uniformData = new Float32Array(24);
+    const { vp, view, eye, focal } = getViewProj();
+    // Layout: viewProj(16f) + view(16f) + focal(2f) + viewport(2f) = 36 floats = 144B
+    const uniformData = new Float32Array(36);
     uniformData.set(vp, 0);
-    uniformData.set(eye, 16);
-    uniformData[20] = canvas.width;
-    uniformData[21] = canvas.height;
+    uniformData.set(view, 16);
+    uniformData[32] = focal[0];
+    uniformData[33] = focal[1];
+    uniformData[34] = canvas.width;
+    uniformData[35] = canvas.height;
     device.queue.writeBuffer(uniformBuf, 0, uniformData);
 
     // Re-sort periodically when camera moves

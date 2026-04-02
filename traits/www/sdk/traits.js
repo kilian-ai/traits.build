@@ -322,7 +322,9 @@ async function _ensureVoxtral(onProgress) {
                     _localVoiceProgress(modelMsg);
                     if (onProgress) onProgress(modelMsg);
                     _voxtralModel = await VoxtralRealtimeForConditionalGeneration.from_pretrained(MODEL_ID, {
-                        dtype: { audio_encoder: DTYPE, embed_tokens: DTYPE, decoder_model_merged: DTYPE },
+                        // embed_tokens q4 uses GatherBlockQuantized op — only supported in WebGPU/JSEP,
+                        // not in WASM CPU EP. Use float32 for embed_tokens to get standard Gather op.
+                        dtype: { audio_encoder: DTYPE, embed_tokens: 'float32', decoder_model_merged: DTYPE },
                         device,
                         progress_callback: mkProg('Model', 15, 83),
                     });

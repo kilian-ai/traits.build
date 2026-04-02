@@ -1,7 +1,7 @@
 [trait]
 description = "3D Gaussian splat viewer using WebGPU — fetches and renders real .splat files with orbit camera, depth sorting, and scene gallery"
-version = "v260401.212512"
-checksum = "5b5b4155bc6f10723a0e19d9beed73979310f8654778d176384a4eaf019b0928"
+version = "v260402"
+checksum = "a2a7cdd80c4ee00e0c5111a75bee2d1c44783bac514ae186d10abb461ed5b674"
 author = "system"
 tags = ["www", "splats", "webgpu", "3d", "gaussian"]
 
