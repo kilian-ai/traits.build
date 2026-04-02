@@ -50,8 +50,13 @@ pub fn format_cli(result: &Value) -> String {
             for tc in tool_calls {
                 let name = tc.get("trait").and_then(|v| v.as_str()).unwrap_or("");
                 let tool_name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let has_error = tc.pointer("/result/error").is_some();
                 let has_ok = tc.pointer("/result/ok").is_some();
-                let ok = tc.pointer("/result/ok").and_then(|v| v.as_bool()).unwrap_or(!has_ok);
+                let ok = if has_error {
+                    false
+                } else {
+                    tc.pointer("/result/ok").and_then(|v| v.as_bool()).unwrap_or(!has_ok)
+                };
                 let status = if ok { "✓" } else { "✗" };
                 out.push_str(&format!("  {} {}", status, name));
 
