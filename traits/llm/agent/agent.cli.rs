@@ -49,39 +49,9 @@ pub fn format_cli(result: &Value) -> String {
             out.push('\n');
             for tc in tool_calls {
                 let name = tc.get("trait").and_then(|v| v.as_str()).unwrap_or("");
-                let tool_name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let has_error = tc.pointer("/result/error").is_some();
-                let has_ok = tc.pointer("/result/ok").is_some();
-                let ok = if has_error {
-                    false
-                } else {
-                    tc.pointer("/result/ok").and_then(|v| v.as_bool()).unwrap_or(!has_ok)
-                };
+                let ok = tc.pointer("/result/ok").and_then(|v| v.as_bool()).unwrap_or(true);
                 let status = if ok { "✓" } else { "✗" };
-                out.push_str(&format!("  {} {}", status, name));
-
-                // Show error detail on failure
-                if !ok {
-                    if let Some(err) = tc.pointer("/result/error").and_then(|v| v.as_str()) {
-                        out.push_str(&format!(" — {}", err));
-                    }
-                }
-                out.push('\n');
-
-                // Debug trace: tool name mapping, args, result, humanized
-                out.push_str(&format!("    tool_name: {} → trait: {}\n", tool_name, name));
-                if let Some(args) = tc.get("args") {
-                    out.push_str(&format!("    args: {}\n", args));
-                }
-                if let Some(pos_args) = tc.get("positional_args") {
-                    out.push_str(&format!("    positional: {}\n", pos_args));
-                }
-                if let Some(result_val) = tc.get("result") {
-                    out.push_str(&format!("    result: {}\n", result_val));
-                }
-                if let Some(humanized) = tc.get("humanized").and_then(|v| v.as_str()) {
-                    out.push_str(&format!("    → model sees: \"{}\"\n", humanized));
-                }
+                out.push_str(&format!("  {} {}\n", status, name));
             }
         }
     }

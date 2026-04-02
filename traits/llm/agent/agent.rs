@@ -23,8 +23,7 @@ use serde_json::{json, Value};
 ///   max_steps:  Max agent loop iterations (default: 10)
 ///   api_secret: Secret name for OpenAI API key (default: "openai_api_key")
 ///   mode:       "full" (run to completion) or "turn" (single turn for buddy UX)
-///   session:    Session name (default: "default"). Use "new" to start fresh.
-///               Can also pass a raw messages array for manual session management.
+///   session:    Previous messages array (for multi-turn buddy sessions)
 pub fn agent(args: &[Value]) -> Value {
     let prompt = match args.first().and_then(|v| v.as_str()) {
         Some(p) if !p.is_empty() => p.to_string(),
@@ -46,8 +45,7 @@ pub fn agent(args: &[Value]) -> Value {
     let model = args.get(3)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-     //   .unwrap_or("gpt-4o-mini")
-        .unwrap_or("gpt-5.4")
+        .unwrap_or("gpt-4o-mini")
         .to_string();
 
     let max_steps = args.get(4)
@@ -72,9 +70,17 @@ pub fn agent(args: &[Value]) -> Value {
     // Build tool definitions and a name→path reverse map
     let (tool_defs, name_to_path) = build_tool_definitions(&tools_arg);
 
-    // Resolve session: name (string) or raw messages (array)
-    let session_arg = args.get(7);
-    let (session_name, mut messages) = resolve_session(session_arg, &system, &prompt);
+    // Restore session from previous messages (for multi-turn buddy mode)
+    let mut messages: Vec<Value> = if let Some(session) = args.get(7).and_then(|v| v.as_array()) {
+        let mut msgs = session.clone();
+        msgs.push(json!({"role": "user", "content": prompt}));
+        msgs
+    } else {
+        vec![
+            json!({"role": "system", "content": system}),
+            json!({"role": "user", "content": prompt}),
+        ]
+    };
 
     let mut step_count = 0usize;
     let mut final_response = String::new();
@@ -199,30 +205,25 @@ pub fn agent(args: &[Value]) -> Value {
                     "error": format!("trait '{}' not found or not callable", trait_path)
                 }));
 
-            let humanized = humanize_tool_result(&tool_result);
-
-            // Record for final output (includes debug info)
+            // Record for final output
             all_tool_calls.push(json!({
                 "id": call_id,
                 "name": fn_name,
                 "trait": trait_path,
                 "args": fn_args_obj,
-                "positional_args": call_args,
                 "result": tool_result,
-                "humanized": humanized,
             }));
 
-            // Append tool result message (humanized for model comprehension)
+            // Append tool result message
             messages.push(json!({
                 "role": "tool",
                 "tool_call_id": call_id,
-                "content": humanized,
+                "content": serde_json::to_string(&tool_result).unwrap_or_default(),
             }));
         }
 
         // Turn mode: return after processing one round of tool calls (buddy UX)
         if is_turn_mode {
-            save_session(&session_name, &messages);
             return json!({
                 "ok": true,
                 "done": false,
@@ -231,7 +232,7 @@ pub fn agent(args: &[Value]) -> Value {
                 "step_count": step_count,
                 "usage": total_usage.to_json(),
                 "compacted_messages": compacted_count,
-                "session": session_name,
+                "session": messages,
             });
         }
 
@@ -241,7 +242,6 @@ pub fn agent(args: &[Value]) -> Value {
         }
     }
 
-    save_session(&session_name, &messages);
     json!({
         "ok": true,
         "done": true,
@@ -250,7 +250,7 @@ pub fn agent(args: &[Value]) -> Value {
         "step_count": step_count,
         "usage": total_usage.to_json(),
         "compacted_messages": compacted_count,
-        "session": session_name,
+        "session": messages,
     })
 }
 
@@ -403,111 +403,11 @@ fn compact_messages(messages: &mut Vec<Value>) -> usize {
     removed_count
 }
 
-// ─── Persistent Session (via platform VFS → localStorage on WASM, filesystem on native) ──
-
-const DEFAULT_SESSION: &str = "default";
-const SESSION_VFS_DIR: &str = "sessions/llm.agent";
-
-/// Resolve session from arg: string name loads from VFS, array uses raw messages,
-/// null/absent uses "default" session. "new" always starts fresh.
-fn resolve_session(session_arg: Option<&Value>, system: &str, prompt: &str) -> (String, Vec<Value>) {
-    // Raw messages array — manual session management (no persistence)
-    if let Some(Value::Array(arr)) = session_arg {
-        let mut msgs = arr.clone();
-        msgs.push(json!({"role": "user", "content": prompt}));
-        return (String::new(), msgs);
-    }
-
-    // Session name — "new" starts fresh, anything else loads from config
-    let name = session_arg
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or(DEFAULT_SESSION)
-        .to_string();
-
-    if name == "new" {
-        return (name, vec![
-            json!({"role": "system", "content": system}),
-            json!({"role": "user", "content": prompt}),
-        ]);
-    }
-
-    // Try to load existing session from persistent VFS
-    let vfs_path = format!("{}/{}.json", SESSION_VFS_DIR, name);
-    if let Some(raw) = kernel_logic::platform::vfs_read(&vfs_path) {
-        if let Ok(Value::Array(stored)) = serde_json::from_str::<Value>(&raw) {
-            // Always use current system prompt (may have changed since session was saved)
-            let mut messages = vec![json!({"role": "system", "content": system})];
-
-            // Carry over non-system messages, but cap to recent history to avoid
-            // stale context (old tool failures, compacted summaries) poisoning the model
-            let non_system: Vec<Value> = stored.into_iter()
-                .filter(|m| m.get("role").and_then(|v| v.as_str()) != Some("system"))
-                .collect();
-            let keep = non_system.len().min(SESSION_MAX_CARRY);
-            let skip = non_system.len() - keep;
-            messages.extend(non_system.into_iter().skip(skip));
-
-            messages.push(json!({"role": "user", "content": prompt}));
-            return (name, messages);
-        }
-    }
-
-    // No stored session — start fresh
-    (name, vec![
-        json!({"role": "system", "content": system}),
-        json!({"role": "user", "content": prompt}),
-    ])
-}
-
-/// Save session messages to persistent VFS for cross-refresh persistence.
-fn save_session(session_name: &str, messages: &[Value]) {
-    if session_name.is_empty() || session_name == "new" {
-        return; // Raw array sessions and "new" sessions are not persisted
-    }
-    let vfs_path = format!("{}/{}.json", SESSION_VFS_DIR, session_name);
-    let serialized = serde_json::to_string(messages).unwrap_or_default();
-    kernel_logic::platform::vfs_write(&vfs_path, &serialized);
-}
-
 // ─── Tool name ↔ trait path conversion ──────────────────────────────────────
 
-/// Convert tool result JSON to natural language for the model.
-///
-/// gpt-4o-mini struggles with raw JSON `{"ok":true,"status":"..."}` in tool result
-/// content — it often misinterprets success as failure. Converting to plain text
-/// makes the model reliably understand outcomes.
-fn humanize_tool_result(result: &Value) -> String {
-    if let Some(obj) = result.as_object() {
-        // Error case
-        if let Some(err) = obj.get("error").and_then(|v| v.as_str()) {
-            return format!("Error: {}", err);
-        }
-
-        let is_ok = obj.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-        if is_ok {
-            // Look for descriptive fields in priority order
-            for key in &["status", "message", "content", "result"] {
-                match obj.get(*key) {
-                    Some(Value::String(s)) if !s.is_empty() => return s.clone(),
-                    Some(val) if !val.is_null() => {
-                        return serde_json::to_string(val).unwrap_or_default();
-                    }
-                    _ => {}
-                }
-            }
-            return "Done.".to_string();
-        }
-    }
-
-    // Non-object or no special structure: pretty-print
-    serde_json::to_string_pretty(result).unwrap_or_default()
-}
-
-/// Convert OpenAI tool name back to trait path: skills_spotify_pause → skills.spotify.pause
-/// Must replace ALL underscores (same as voice dispatch_tool_call).
+/// Convert OpenAI tool name back to trait path: sys_checksum → sys.checksum
 fn tool_name_to_trait_path(name: &str) -> String {
-    name.replace('_', ".")
+    name.replacen('_', ".", 1)
 }
 
 /// Convert trait path to OpenAI tool name: sys.checksum → sys_checksum
@@ -569,7 +469,7 @@ fn build_tool_definitions(tools_csv: &str) -> (Vec<Value>, std::collections::Has
 fn trait_to_tool_def(trait_path: &str) -> Option<Value> {
     let detail = kernel_logic::platform::registry_detail(trait_path)?;
 
-    let description = detail.get("description")
+    let description = detail.pointer("/trait/description")
         .and_then(|v| v.as_str())
         .unwrap_or(trait_path)
         .to_string();
@@ -642,20 +542,13 @@ const DEFAULT_TOOLS: &[&str] = &[
     "sys.list",
     "sys.registry",
     "kernel.call",
-    "sys.vfs",
-    "sys.canvas",
-    "llm.agent.docs",
-    "llm.agent.skills",
-    "skills.spotify.play",
-    "skills.spotify.pause",
-    "skills.spotify.stop",
-    "skills.spotify.next",
-    "skills.spotify.prev",
-    "skills.spotify.status",
-    "skills.spotify.vol",
 ];
 
-const DEFAULT_SYSTEM: &str = include_str!("SYSTEM.md");
+const DEFAULT_SYSTEM: &str = "\
+You are a helpful AI assistant with access to a set of tools (traits). \
+When you need to perform an action, call the appropriate tool. \
+Think step by step and use tools to accomplish the user's request. \
+When you have gathered enough information, provide a clear, concise response.";
 
 const MAX_STEPS_LIMIT: usize = 50;
 
@@ -664,7 +557,3 @@ const COMPACT_PRESERVE_RECENT: usize = 4;
 
 /// Compaction: trigger when estimated tokens exceed this threshold.
 const COMPACT_MAX_TOKENS: usize = 10_000;
-
-/// Session: max non-system messages to carry from previous session.
-/// Keeps recent context without letting old failures poison the model.
-const SESSION_MAX_CARRY: usize = 20;
