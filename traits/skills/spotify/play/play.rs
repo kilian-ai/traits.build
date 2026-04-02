@@ -1,24 +1,29 @@
 use serde_json::{json, Value};
 use std::process::Command;
 
-/// skills.spotify.play — Play a track, album, artist, or playlist on Spotify.
-/// If no query is given, resumes the current track.
-pub fn play(args: &[Value]) -> Value {
-    let query = args.first().and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+/// Words that mean "just resume playback" rather than being a search query.
+const RESUME_WORDS: &[&str] = &["", "spotify", "music", "resume", "unpause"];
 
-    let result = if query.is_empty() {
+/// skills.spotify.play — Play a track, album, artist, or playlist on Spotify.
+/// If no query is given (or query is just "spotify"/"music"), resumes the current track.
+pub fn play(args: &[Value]) -> Value {
+    let raw_query = args.first().and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let query_lower = raw_query.to_lowercase();
+    let is_resume = RESUME_WORDS.iter().any(|w| *w == query_lower);
+
+    let result = if is_resume {
         // Resume playback
         run_osascript("tell application \"Spotify\" to play")
-    } else if query.starts_with("spotify:") {
+    } else if raw_query.starts_with("spotify:") {
         // If it looks like a Spotify URI, play it directly
         let script = format!(
             "tell application \"Spotify\" to play track \"{}\"",
-            query.replace('"', "\\\"")
+            raw_query.replace('"', "\\\"")
         );
         run_osascript(&script)
     } else {
         // Search: use the search URI scheme
-        let search_uri = format!("spotify:search:{}", query.replace(' ', "%20"));
+        let search_uri = format!("spotify:search:{}", raw_query.replace(' ', "%20"));
         let script = format!(
             "tell application \"Spotify\" to play track \"{}\"",
             search_uri.replace('"', "\\\"")
@@ -29,13 +34,19 @@ pub fn play(args: &[Value]) -> Value {
     if !result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
         return result;
     }
+
+    // For search-based playback, Spotify needs a moment to load
+    if !is_resume && !raw_query.starts_with("spotify:") {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+
     // Verify actual player state
     let state = get_player_state();
     if state == "playing" {
-        if query.is_empty() {
+        if is_resume {
             json!({"ok": true, "status": "Playback resumed"})
         } else {
-            json!({"ok": true, "status": format!("Now playing: {}", query)})
+            json!({"ok": true, "status": format!("Now playing: {}", raw_query)})
         }
     } else {
         json!({"ok": false, "error": format!("Play sent but player state is: {}", state)})
