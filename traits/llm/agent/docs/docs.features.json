@@ -1,0 +1,54 @@
+{
+  "module": "traits/llm/agent/docs/docs.rs",
+  "description": "Return raw markdown content from project documentation",
+  "features": [
+    {
+      "name": "List available docs",
+      "description": "Returns index of all available documentation pages",
+      "examples": [
+        {
+          "input": ["list"],
+          "output": {
+            "contains": [{"ok": true}, "\"docs\""]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get all docs",
+      "description": "Returns all documentation content",
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": [{"ok": true}]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get agent instructions",
+      "description": "Returns the agent instructions file content",
+      "examples": [
+        {
+          "input": ["agent"],
+          "output": {
+            "contains": [{"ok": true}, "Agent Instructions"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get specific doc",
+      "description": "Returns a single doc by slug",
+      "examples": [
+        {
+          "input": ["architecture"],
+          "output": {
+            "contains": [{"ok": true}, "architecture"]
+          }
+        }
+      ]
+    }
+  ]
+}

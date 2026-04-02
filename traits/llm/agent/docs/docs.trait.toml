@@ -1,0 +1,21 @@
+[trait]
+description = "Return raw markdown content from project documentation — for LLM agent context"
+version = "v260402.115951"
+checksum = "ac2b6a8b33786ac09660dd140213e9bbc802ee7a7348d92e8b56ce07e4dffa02"
+author = "system"
+tags = ["llm", "agent", "docs", "context"]
+
+[signature]
+params = [
+  { name = "slug", type = "string", description = "Doc slug (e.g. 'architecture', 'cli'). Use 'list' for index, 'agent' for agent instructions, empty/all for everything.", required = false, default = "all" },
+]
+
+[signature.returns]
+type = "map"
+description = "{ ok, docs: [{slug, title, category, content}] } or { ok, slug, title, content } for single doc"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "agent_docs"
+wasm = true

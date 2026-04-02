@@ -1,15 +1,15 @@
 [trait]
 description = "WASM-compatible LLM agent loop — calls OpenAI API with trait-based tool calling, session compaction, usage tracking, and turn-based buddy mode"
-version = "v260402.114655"
-checksum = "029676173f7675d6424cffb05ce7f472954d37387d97f725e4e5e3a5e6bc63e2"
+version = "v260402.115951"
+checksum = "2c1c3e6d49f537803ca5faab0082439b7f224161fc884cf6e659575da41d07be"
 author = "system"
 tags = ["llm", "agent", "tools", "openai", "wasm", "loop", "buddy", "compaction"]
 
 [signature]
 params = [
   { name = "prompt", type = "string", description = "User message to send to the agent", required = true },
-  { name = "system", type = "string", description = "System prompt (default: general coding assistant)", required = false },
-  { name = "tools", type = "string", description = "Comma-separated trait paths to expose as tools (default: sys.call,sys.list,sys.registry,kernel.call)", required = false },
+  { name = "system", type = "string", description = "System prompt (default: embedded traits.build agent instructions). Pass a custom prompt to override.", required = false },
+  { name = "tools", type = "string", description = "Comma-separated trait paths to expose as tools (default: sys.call,sys.list,sys.registry,kernel.call,llm.agent.docs,llm.agent.skills)", required = false },
   { name = "model", type = "string", description = "OpenAI model to use (default: gpt-4o-mini)", required = false, default = "gpt-4o-mini" },
   { name = "max_steps", type = "int", description = "Maximum agent loop iterations (default: 10)", required = false, default = "10" },
   { name = "api_secret", type = "string", description = "Name of the secret holding the OpenAI API key (default: openai_api_key)", required = false, default = "openai_api_key" },

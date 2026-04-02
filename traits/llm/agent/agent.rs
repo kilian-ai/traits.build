@@ -604,13 +604,11 @@ const DEFAULT_TOOLS: &[&str] = &[
     "sys.list",
     "sys.registry",
     "kernel.call",
+    "llm.agent.docs",
+    "llm.agent.skills",
 ];
 
-const DEFAULT_SYSTEM: &str = "\
-You are a helpful AI assistant with access to a set of tools (traits). \
-When you need to perform an action, call the appropriate tool. \
-Think step by step and use tools to accomplish the user's request. \
-When you have gathered enough information, provide a clear, concise response.";
+const DEFAULT_SYSTEM: &str = include_str!("../../../.github/agents/traits.build.agent.md");
 
 const MAX_STEPS_LIMIT: usize = 50;
 

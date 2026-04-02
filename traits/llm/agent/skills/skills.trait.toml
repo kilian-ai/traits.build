@@ -1,0 +1,21 @@
+[trait]
+description = "Return raw content from all SKILL.md files — for LLM agent context"
+version = "v260402.115951"
+checksum = "6050e964b53565082cbd7a29ae9af3080f7f8c96d51ac1b4aa8cab74d14b9018"
+author = "system"
+tags = ["llm", "agent", "skills", "context"]
+
+[signature]
+params = [
+  { name = "name", type = "string", description = "Skill name (e.g. 'traits.build', 'secrets'). Use 'list' for index, empty/all for everything.", required = false, default = "all" },
+]
+
+[signature.returns]
+type = "map"
+description = "{ ok, skills: [{name, description, content}] } or { ok, name, description, content } for single skill"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "agent_skills"
+wasm = true

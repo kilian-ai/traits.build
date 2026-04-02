@@ -1,0 +1,42 @@
+{
+  "module": "traits/llm/agent/skills/skills.rs",
+  "description": "Return raw content from all SKILL.md files",
+  "features": [
+    {
+      "name": "List available skills",
+      "description": "Returns index of all available skills",
+      "examples": [
+        {
+          "input": ["list"],
+          "output": {
+            "contains": [{"ok": true}, "\"skills\""]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get all skills",
+      "description": "Returns all skills content",
+      "examples": [
+        {
+          "input": [],
+          "output": {
+            "contains": [{"ok": true}]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get specific skill",
+      "description": "Returns a single skill by name",
+      "examples": [
+        {
+          "input": ["secrets"],
+          "output": {
+            "contains": [{"ok": true}, "secrets"]
+          }
+        }
+      ]
+    }
+  ]
+}
