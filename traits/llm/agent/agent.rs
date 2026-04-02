@@ -607,7 +607,7 @@ const DEFAULT_TOOLS: &[&str] = &[
     "skills.spotify.vol",
 ];
 
-const DEFAULT_SYSTEM: &str = include_str!("../../../.github/agents/traits.build.agent.md");
+const DEFAULT_SYSTEM: &str = include_str!("SYSTEM.md");
 
 const MAX_STEPS_LIMIT: usize = 50;
 
