@@ -311,11 +311,41 @@ pub fn canvas(_args: &[Value]) -> Value {
                             }
                         });
 
-                        // Initial load
-                        loadCanvas();
+                        // Initial load — prefer helper VFS if connected (catches CLI writes)
+                        (async () => {
+                            const sdk = window._traitsSDK;
+                            if (sdk && sdk.dispatchMode('sys.vfs') !== 'wasm') {
+                                try {
+                                    const res = await sdk.call('sys.vfs@native', ['read', 'canvas/app.html']);
+                                    const content = res?.result?.content ?? res?.content ?? '';
+                                    if (content) { renderCanvas(content); return; }
+                                } catch(_) {}
+                            }
+                            loadCanvas();
+                        })();
+
+                        // Poll helper VFS for external changes (CLI agent writes to native VFS)
+                        let __lastLen = -1;
+                        const _pollId = setInterval(async () => {
+                            try {
+                                const sdk = window._traitsSDK;
+                                if (!sdk || sourceMode) return;
+                                const mode = sdk.dispatchMode('sys.vfs');
+                                if (mode === 'wasm' || mode === 'none') return;
+                                const res = await sdk.call('sys.vfs@native', ['read', 'canvas/app.html']);
+                                const content = res?.result?.content ?? res?.content ?? '';
+                                if (content.length !== __lastLen && content) {
+                                    __lastLen = content.length;
+                                    renderCanvas(content);
+                                    // Mirror to WASM VFS for consistency
+                                    try { sdk.call('sys.vfs@wasm', ['write', 'canvas/app.html', content]); } catch(_) {}
+                                }
+                            } catch(_) {}
+                        }, 2000);
 
                         // Register cleanup: auto-save canvas and remove window.traits when navigating away
                         window._pageCleanup = async () => {
+                            clearInterval(_pollId);
                             // Auto-save canvas content before leaving
                             try {
                                 const sdk = window._traitsSDK;

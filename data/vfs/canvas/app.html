@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Counter</title>
+    <title>Hello World</title>
     <style>
         body {
-            background-color: #0a0a0a;
+            background-color: blue;
             color: #e0e0e0;
             display: flex;
             justify-content: center;
@@ -14,44 +14,9 @@
             height: 100vh;
             font-family: Arial, sans-serif;
         }
-        #counter {
-            font-size: 3em;
-        }
-        button {
-            font-size: 1.5em;
-            margin: 10px;
-            padding: 10px 20px;
-            cursor: pointer;
-            background-color: #555;
-            border: none;
-            color: #e0e0e0;
-        }
-        button:hover {
-            background-color: #777;
-        }
     </style>
 </head>
 <body>
-    <div>
-        <div id="counter">0</div>
-        <button id="increment">Increment</button>
-        <button id="decrement">Decrement</button>
-    </div>
-    <script>
-        let count = 0;
-        const counterDisplay = document.getElementById('counter');
-        const incrementButton = document.getElementById('increment');
-        const decrementButton = document.getElementById('decrement');
-
-        incrementButton.addEventListener('click', () => {
-            count++;  
-            counterDisplay.textContent = count;
-        });
-
-        decrementButton.addEventListener('click', () => {
-            count--;
-            counterDisplay.textContent = count;
-        });
-    </script>
+    <h1>Hello, World!</h1>
 </body>
 </html>

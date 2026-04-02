@@ -699,9 +699,6 @@ navigate = async function(route, pushState) {
     _updateVoiceOverlay();
   }
   await _origNavigate(route, pushState);
-  if (route === '/canvas' && _hasVoiceApiKey() && sdk && sdk.isVoiceActive && !sdk.isVoiceActive()) {
-    setTimeout(() => _startGlobalVoice(), 500);
-  }
 };
 
 function updateStatusBar() {
