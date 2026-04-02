@@ -1,0 +1,16 @@
+{
+  "agent": "opencode",
+  "created": "20260402_152315",
+  "messages": [
+    {
+      "content": "play spotify",
+      "role": "user"
+    },
+    {
+      "content": "\n\nPlaying Spotify — playback resumed.",
+      "role": "assistant"
+    }
+  ],
+  "model": "",
+  "session_id": "20260402_152315"
+}

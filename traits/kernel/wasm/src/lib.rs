@@ -149,6 +149,45 @@ fn ls_set(key: &str, value: &str) {
     }
 }
 
+/// Attempt to dispatch a non-WASM trait through the connected helper via HTTP.
+///
+/// When a trait isn't compiled into the WASM kernel (e.g. skills.spotify.pause),
+/// this falls back to calling the native helper binary over REST. The helper URL
+/// is stored in localStorage by the JS SDK during helper discovery.
+///
+/// Flow: WASM dispatch → None → helper_dispatch → sys.call (XHR) → helper REST → result
+fn helper_dispatch(path: &str, args: &[Value]) -> Option<Value> {
+    if !is_helper_connected() {
+        return None;
+    }
+
+    // Get helper URL from localStorage (set by JS SDK during probe)
+    let helper_url = ls_get("traits.helper.url")?;
+
+    // Build REST endpoint: POST {helper_url}/traits/{namespace}/{name}
+    let rest_path = path.replace('.', "/");
+    let url = format!("{}/traits/{}", helper_url.trim_end_matches('/'), rest_path);
+
+    // Call via sys.call (WASM-callable, uses synchronous XHR)
+    let call_args = vec![
+        serde_json::json!(url),
+        serde_json::json!({"args": args}),
+        serde_json::json!(""),      // no auth secret
+        serde_json::json!("POST"),  // method
+    ];
+
+    let result = wasm_traits::dispatch("sys.call", &call_args)?;
+
+    let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    if ok {
+        // REST endpoint returns trait result as the body
+        result.get("body").cloned()
+    } else {
+        // HTTP error — return as-is so caller sees the failure
+        Some(result)
+    }
+}
+
 /// Initialize the WASM kernel. Call once before using other functions.
 #[wasm_bindgen]
 pub fn init() -> Result<JsValue, JsValue> {
@@ -158,7 +197,14 @@ pub fn init() -> Result<JsValue, JsValue> {
 
     // Initialize platform abstraction layer (dispatch, registry, config, secrets)
     kernel_logic::platform::init(kernel_logic::platform::Platform {
-        dispatch: |path, args| wasm_traits::dispatch(path, args),
+        dispatch: |path, args| {
+            // 1. Try WASM-local dispatch first (instant, in-browser)
+            if let Some(result) = wasm_traits::dispatch(path, args) {
+                return Some(result);
+            }
+            // 2. Fall back to helper REST dispatch for non-WASM traits
+            helper_dispatch(path, args)
+        },
         registry_all: || {
             get_registry().all().iter().map(|t| serde_json::json!({
                 "path": t.path,
@@ -293,8 +339,8 @@ pub fn is_registered(trait_path: &str) -> bool {
 }
 
 /// Call a trait by dot-notation path with JSON args.
-/// Returns JSON string result. Only works for WASM-callable traits.
-/// For non-WASM traits, use the traits.js REST client.
+/// Tries WASM-local dispatch first, then helper REST fallback if connected.
+/// For non-WASM traits without a helper, use the traits.js REST client.
 #[wasm_bindgen]
 pub fn call(trait_path: &str, args_json: &str) -> Result<String, JsValue> {
     let args: Vec<Value> = match serde_json::from_str(args_json) {
@@ -303,19 +349,25 @@ pub fn call(trait_path: &str, args_json: &str) -> Result<String, JsValue> {
         Err(e) => return Err(JsValue::from_str(&format!("Invalid JSON args: {}", e))),
     };
 
-    match wasm_traits::dispatch(trait_path, &args) {
-        Some(result) => Ok(serde_json::to_string(&result).unwrap_or_default()),
-        None => {
-            let reg = get_registry();
-            if reg.get(trait_path).is_some() {
-                Err(JsValue::from_str(&format!(
-                    "Trait '{}' exists but requires REST dispatch (use Traits client)",
-                    trait_path
-                )))
-            } else {
-                Err(JsValue::from_str(&format!("Trait '{}' not found", trait_path)))
-            }
-        }
+    // Try WASM-local dispatch first
+    if let Some(result) = wasm_traits::dispatch(trait_path, &args) {
+        return Ok(serde_json::to_string(&result).unwrap_or_default());
+    }
+
+    // Try helper REST fallback for non-WASM traits
+    if let Some(result) = helper_dispatch(trait_path, &args) {
+        return Ok(serde_json::to_string(&result).unwrap_or_default());
+    }
+
+    // Neither WASM nor helper could handle it
+    let reg = get_registry();
+    if reg.get(trait_path).is_some() {
+        Err(JsValue::from_str(&format!(
+            "Trait '{}' exists but requires a connected helper or REST dispatch",
+            trait_path
+        )))
+    } else {
+        Err(JsValue::from_str(&format!("Trait '{}' not found", trait_path)))
     }
 }
 
