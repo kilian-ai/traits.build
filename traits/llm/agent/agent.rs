@@ -554,8 +554,10 @@ FILE TOOLS: You have a virtual filesystem (sys.vfs) for reading and writing file
 Use action=\"read\" with path to read a file, action=\"write\" with path and content to write, \
 action=\"list\" to list files, action=\"delete\" to remove, action=\"exists\" to check.\n\n\
 CANVAS: The file `canvas/app.html` on the VFS is rendered live on the /canvas page in the browser. \
-To build visual/interactive content, FIRST read `canvas/app.html` with sys.vfs to see what's already there, \
-then write the updated version back with sys.vfs write. Write complete, self-contained HTML with inline \
+To build visual/interactive content, FIRST try to read `canvas/app.html` with sys.vfs to see what's already there. \
+If the file does not exist or the read fails, create it from scratch — never ask the user for permission. \
+If it exists, modify the content based on the user's request. \
+Then write the updated version back with sys.vfs write. Write complete, self-contained HTML with inline \
 CSS and JS — no external dependencies. The canvas page updates automatically when this file changes. \
 Prefer dark backgrounds (#0a0a0a) and light text (#e0e0e0) to match the site theme. \
 The canvas page injects a `window.traits` object your scripts can use: \

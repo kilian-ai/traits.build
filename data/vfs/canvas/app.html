@@ -3,20 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello World</title>
+    <title>Bouncing Star</title>
     <style>
         body {
-            background-color: blue;
+            background-color: #0a0a0a;
             color: #e0e0e0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            font-family: Arial, sans-serif;
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
         }
     </style>
 </head>
 <body>
-    <h1>Hello, World!</h1>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let star = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            size: 30,
+            dx: 4,
+            dy: 4,
+        };
+
+        function drawStar(x, y, size) {
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.moveTo(x, y - size);
+            for (let i = 1; i < 6; i++) {
+                ctx.lineTo(x + size * Math.sin((i * 2 * Math.PI) / 6), y - size * Math.cos((i * 2 * Math.PI) / 6));
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function update() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawStar(star.x, star.y, star.size);
+            star.x += star.dx;
+            star.y += star.dy;
+
+            if (star.x + star.size > canvas.width || star.x - star.size < 0) {
+                star.dx *= -1;
+            }
+            if (star.y + star.size > canvas.height || star.y - star.size < 0) {
+                star.dy *= -1;
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        update();
+    </script>
 </body>
 </html>
