@@ -208,11 +208,11 @@ pub fn agent(args: &[Value]) -> Value {
                 "result": tool_result,
             }));
 
-            // Append tool result message
+            // Append tool result message (humanized for model comprehension)
             messages.push(json!({
                 "role": "tool",
                 "tool_call_id": call_id,
-                "content": serde_json::to_string(&tool_result).unwrap_or_default(),
+                "content": humanize_tool_result(&tool_result),
             }));
         }
 
@@ -467,6 +467,38 @@ fn save_session(session_name: &str, messages: &[Value]) {
 }
 
 // ─── Tool name ↔ trait path conversion ──────────────────────────────────────
+
+/// Convert tool result JSON to natural language for the model.
+///
+/// gpt-4o-mini struggles with raw JSON `{"ok":true,"status":"..."}` in tool result
+/// content — it often misinterprets success as failure. Converting to plain text
+/// makes the model reliably understand outcomes.
+fn humanize_tool_result(result: &Value) -> String {
+    if let Some(obj) = result.as_object() {
+        // Error case
+        if let Some(err) = obj.get("error").and_then(|v| v.as_str()) {
+            return format!("Error: {}", err);
+        }
+
+        let is_ok = obj.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if is_ok {
+            // Look for descriptive fields in priority order
+            for key in &["status", "message", "content", "result"] {
+                match obj.get(*key) {
+                    Some(Value::String(s)) if !s.is_empty() => return s.clone(),
+                    Some(val) if !val.is_null() => {
+                        return serde_json::to_string(val).unwrap_or_default();
+                    }
+                    _ => {}
+                }
+            }
+            return "Done.".to_string();
+        }
+    }
+
+    // Non-object or no special structure: pretty-print
+    serde_json::to_string_pretty(result).unwrap_or_default()
+}
 
 /// Convert OpenAI tool name back to trait path: sys_checksum → sys.checksum
 fn tool_name_to_trait_path(name: &str) -> String {
