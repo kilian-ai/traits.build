@@ -1328,6 +1328,7 @@ export class Traits {
             const result = await callHelper(cleanPath, args, opts);
             if (result && result.ok) {
                 result.ms = Math.round((performance.now() - t0) * 10) / 10;
+                this._syncCanvasFromRemote(cleanPath, args);
                 return result;
             }
             if (result) {
@@ -1342,6 +1343,7 @@ export class Traits {
             const result = await callRelay(cleanPath, args);
             if (result && result.ok) {
                 result.ms = Math.round((performance.now() - t0) * 10) / 10;
+                this._syncCanvasFromRemote(cleanPath, args);
                 return result;
             }
             if (result) {
@@ -1353,7 +1355,10 @@ export class Traits {
         // 2c. Server REST
         if (this.server) {
             const result = await this._callRest(cleanPath, args, opts);
-            if (result.ok) return result;
+            if (result.ok) {
+                this._syncCanvasFromRemote(cleanPath, args);
+                return result;
+            }
             remoteFailure = result;
         }
 
@@ -2890,6 +2895,34 @@ export class Traits {
             s.textContent = old.textContent;
             old.replaceWith(s);
         }
+    }
+
+    /**
+     * After a remote (helper/relay/REST) call that may have written canvas files,
+     * sync canvas/app.html back from the remote VFS → WASM VFS → fire DOM event.
+     * Fire-and-forget: never blocks the caller.
+     */
+    _syncCanvasFromRemote(path, args) {
+        const relevant = path === 'llm.agent' ||
+            (path === 'sys.vfs' && args?.[0] === 'write' && String(args?.[1] || '').startsWith('canvas/')) ||
+            (path === 'sys.canvas');
+        if (!relevant || typeof window === 'undefined') return;
+
+        const readRemote = helperReady
+            ? callHelper('sys.vfs', ['read', 'canvas/app.html'])
+            : _relayCode()
+                ? callRelay('sys.vfs', ['read', 'canvas/app.html'])
+                : Promise.resolve(null);
+
+        readRemote.then(r => {
+            const content = r?.result?.content ?? r?.content ?? null;
+            if (content === null) return;
+            // Mirror to WASM VFS so local reads stay consistent
+            if (wasmReady) {
+                try { wasm.call('sys.vfs', JSON.stringify(['write', 'canvas/app.html', content])); } catch(_) {}
+            }
+            window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
+        }).catch(() => {});
     }
 
     _callWasm(path, args) {
