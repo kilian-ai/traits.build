@@ -1344,7 +1344,9 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
     .bind(format!("{}:{}", config.traits.bind, port))?;
 
     // Spawn REPL when we have terminal IO. If stdin is piped, try reattaching /dev/tty.
-    if ensure_repl_tty() {
+    // Set TRAITS_NO_REPL=1 to run as a pure HTTP server without the interactive REPL.
+    let no_repl = std::env::var("TRAITS_NO_REPL").map(|v| v == "1" || v == "true").unwrap_or(false);
+    if !no_repl && ensure_repl_tty() {
         std::thread::spawn(|| {
             // Brief delay so the server's INFO log prints first
             std::thread::sleep(std::time::Duration::from_millis(200));
