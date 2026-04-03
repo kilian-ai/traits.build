@@ -295,14 +295,20 @@ pub fn canvas(_args: &[Value]) -> Value {
                             // Inject non-script HTML first
                             container.innerHTML = tmp.innerHTML;
 
-                            // Execute scripts via new Function() — reliable execution + proper error catching
-                            // Wrapped in IIFE scope so const/let declarations don't clash across renders
-                            for (const src of scriptSources) {
-                                if (src.text) {
-                                    try { (new Function(src.text))(); }
-                                    catch (e) { console.error('canvas script error:', e); }
+                            // Cancel any previous animation loop from older canvas content
+                            if (window.__canvasAnimId) { cancelAnimationFrame(window.__canvasAnimId); window.__canvasAnimId = null; }
+                            if (window.__canvasIntervalIds) { window.__canvasIntervalIds.forEach(id => clearInterval(id)); }
+                            window.__canvasIntervalIds = [];
+
+                            // Execute scripts after a rAF so the browser has committed the DOM
+                            requestAnimationFrame(() => {
+                                for (const src of scriptSources) {
+                                    if (src.text) {
+                                        try { (new Function(src.text))(); }
+                                        catch (e) { console.error('canvas script error:', e); }
+                                    }
                                 }
-                            }
+                            });
                         }
 
                         async function loadCanvas() {

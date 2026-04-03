@@ -559,7 +559,15 @@ If the file does not exist or the read fails, create it from scratch — never a
 If it exists, modify the content based on the user's request. \
 Then write the updated version back with sys.vfs write. Write complete, self-contained HTML with inline \
 CSS and JS — no external dependencies. The canvas page updates automatically when this file changes. \
-Prefer dark backgrounds (#0a0a0a) and light text (#e0e0e0) to match the site theme. \
+Prefer dark backgrounds (#0a0a0a) and light text (#e0e0e0) to match the site theme.\n\n\
+CANVAS RENDERING RULES (your HTML is injected into a container div, NOT a standalone page):\n\
+- Your <script> runs inside a new Function() wrapper with access to document and global scope.\n\
+- HTML is placed inside <div id=\"canvas-container\">. Use document.querySelector('#canvas-container canvas') to find your canvas element.\n\
+- NEVER use document.getElementById to find your canvas — use querySelector on the container instead.\n\
+- Use `let` for variables you reassign in loops, NEVER const. Reassigning a const crashes the script silently.\n\
+- For animation loops, store the rAF ID: window.__canvasAnimId = requestAnimationFrame(loop);\n\
+- Keep scripts simple: get canvas from container, draw, animate. No DOMContentLoaded listeners.\n\
+- Example pattern: const c = document.querySelector('#canvas-container canvas'); if(!c) return; const ctx = c.getContext('2d'); let x=100; function loop(){ ctx.clearRect(0,0,c.width,c.height); x+=2; window.__canvasAnimId=requestAnimationFrame(loop); } loop();\n\n\
 The canvas page injects a `window.traits` object your scripts can use: \
 traits.call(path, args), traits.list(), traits.canvas(action, content), traits.echo(text), traits.audio(action, ...).";
 
