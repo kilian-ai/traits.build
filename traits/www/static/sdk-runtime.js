@@ -1057,6 +1057,16 @@ class Traits {
                 }
                 return;
             }
+            if (msg._type === 'pvfs-sync') {
+                // Worker sent VFS dump — persist to localStorage (Workers can't do this)
+                try {
+                    console.log('[pvfs-sync] received from worker, len=' + (msg.json || '').length);
+                    localStorage.setItem('traits.pvfs', msg.json || '{}');
+                    // Also refresh main-thread WASM VFS if available
+                    if (wasm && wasm.pvfs_refresh) { try { wasm.pvfs_refresh(); } catch(e) {} }
+                } catch(e) { console.warn('[pvfs-sync] localStorage write failed:', e); }
+                return;
+            }
             const req = pending.get(msg.id);
             if (!req) return;
             pending.delete(msg.id);
@@ -1087,6 +1097,14 @@ class Traits {
                 }
             }
         } catch(e) {}
+        // Seed worker's persistent VFS from localStorage (Workers can't read localStorage)
+        try {
+            const pvfs = localStorage.getItem('traits.pvfs');
+            if (pvfs) {
+                console.log('[worker-init] seeding VFS, len=' + pvfs.length);
+                await this._rpcWorker(state, 'pvfs_load', { json: pvfs });
+            }
+        } catch(e) { console.warn('[worker-init] VFS seed failed:', e); }
         // Register worker as a service for sys.ps
         if (wasm && wasm.register_task) {
             try { wasm.register_task(`worker-${index}`, `Web Worker #${index}`, 'worker', Date.now(), BACKGROUND_WORKER); } catch(e) {}

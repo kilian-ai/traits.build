@@ -144,6 +144,8 @@ exports = [
     'is_callable',
     'is_registered',
     'list_traits',
+    'pvfs_dump',
+    'pvfs_load',
     'register_task',
     'run_tests',
     'search_traits',
@@ -188,6 +190,13 @@ worker = (
     + '    if (c.length !== __canvasLen) { __canvasLen = c.length; self.postMessage({ _type: "canvas-sync", content: c }); }\n'
     + '  } catch(e) {}\n'
     + '}\n'
+    + 'function syncPvfsToMain() {\n'
+    + '  try {\n'
+    + '    const json = TraitsWasm.pvfs_dump();\n'
+    + '    console.log("[worker] pvfs-sync dump len=" + json.length);\n'
+    + '    self.postMessage({ _type: "pvfs-sync", json });\n'
+    + '  } catch(e) { console.warn("[worker] pvfs-sync error:", e); }\n'
+    + '}\n'
     + 'self.onmessage = function(ev) {\n'
     + '  const msg = ev.data || {};\n'
     + '  const id = msg.id;\n'
@@ -198,11 +207,20 @@ worker = (
     + '    switch (cmd) {\n'
     + '      case "ping": sendOk(id, "pong"); break;\n'
     + '      case "init": sendOk(id, true); break;\n'
-    + '      case "set_helper_connected": TraitsWasm.set_helper_connected(!!payload.connected); sendOk(id, true); break;\n'      + '      case "set_helper_url": TraitsWasm.set_helper_url(String(payload.url || "")); sendOk(id, true); break;\n'      + '      case "set_secret": TraitsWasm.set_secret(String(payload.key || ""), String(payload.value || "")); sendOk(id, true); break;\n'
+    + '      case "set_helper_connected": TraitsWasm.set_helper_connected(!!payload.connected); sendOk(id, true); break;\n'
+    + '      case "set_helper_url": TraitsWasm.set_helper_url(String(payload.url || "")); sendOk(id, true); break;\n'
+    + '      case "set_secret": TraitsWasm.set_secret(String(payload.key || ""), String(payload.value || "")); sendOk(id, true); break;\n'
+    + '      case "pvfs_load": {\n'
+    + '        console.log("[worker] pvfs_load len=" + (payload.json || "").length);\n'
+    + '        TraitsWasm.pvfs_load(payload.json || "{}");\n'
+    + '        sendOk(id, true);\n'
+    + '        break;\n'
+    + '      }\n'
     + '      case "cli_input": {\n'
     + '        const out = TraitsWasm.cli_input(payload.data || "");\n'
     + '        sendOk(id, out);\n'
     + '        checkCanvasSync();\n'
+    + '        syncPvfsToMain();\n'
     + '        break;\n'
     + '      }\n'
     + '      case "cli_welcome": sendOk(id, TraitsWasm.cli_welcome()); break;\n'
@@ -232,7 +250,7 @@ worker = (
     + '        const raw = TraitsWasm.call(p, JSON.stringify(payload.args || []));\n'
     + '        const res = JSON.parse(raw);\n'
     + '        sendOk(id, res);\n'
-    + '        if (p === "sys.canvas" || p === "sys.vfs") checkCanvasSync();\n'
+    + '        if (p === "sys.canvas" || p === "sys.vfs") { checkCanvasSync(); syncPvfsToMain(); }\n'
     + '        break;\n'
     + '      }\n'
     + '      case "call_raw": sendOk(id, TraitsWasm.call(payload.path || "", payload.args_json || "[]")); break;\n'

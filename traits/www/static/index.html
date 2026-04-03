@@ -765,7 +765,7 @@ async function boot() {
     mod.initSync(decodeBase64Bytes(mod.WASM_BASE64));
     JSON.parse(mod.init());
     sdk.attachWasm(mod);
-    sdk.preloadWebLLM();
+    // sdk.preloadWebLLM(); // TEMPORARILY DISABLED for debugging
 
     // Pre-load terminal as classic script (import() blocked in file:// mode)
     try {
@@ -779,12 +779,12 @@ async function boot() {
   // Wait for helper discovery to finish (has its own timeout)
   await initPromise;
 
-  // Re-probe helper every second (detect connect/disconnect)
+  // Re-probe helper every 30s (reduced frequency for debugging — was 1s)
   setInterval(async () => {
     const was = sdk.helperConnected;
     await sdk.refreshHelper();
     if (sdk.helperConnected !== was) updateStatusBar();
-  }, 1000);
+  }, 30000);
 
   updateStatusBar();
 

@@ -688,6 +688,19 @@ pub fn pvfs_dump() -> String {
     })
 }
 
+/// Load JSON into the persistent VFS user layer.
+/// Used by the Worker at init time to seed VFS from main-thread localStorage
+/// (Workers can't access localStorage directly, so the main thread sends the data).
+#[wasm_bindgen]
+pub fn pvfs_load(json: &str) {
+    ensure_pvfs();
+    PERSISTENT_VFS.with(|cell| {
+        if let Some(vfs) = cell.borrow_mut().as_mut() {
+            vfs.load(json);
+        }
+    });
+}
+
 // ────────────────── MCP JSON-RPC handler (browser-only) ──────────────────
 
 /// Process a single MCP JSON-RPC message and return a JSON response string.
