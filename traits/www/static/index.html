@@ -762,7 +762,7 @@ async function boot() {
     await loadScript(runtimeScriptPath());
     const mod = window.TraitsWasm;
     if (!mod) throw new Error('TraitsWasm runtime missing');
-    mod.initSync(decodeBase64Bytes(mod.WASM_BASE64));
+    mod.initSync({ module: decodeBase64Bytes(mod.WASM_BASE64) });
     JSON.parse(mod.init());
     sdk.attachWasm(mod);
     // sdk.preloadWebLLM(); // TEMPORARILY DISABLED for debugging

@@ -304,7 +304,10 @@ pub fn canvas(_args: &[Value]) -> Value {
                             requestAnimationFrame(() => {
                                 for (const src of scriptSources) {
                                     if (src.text) {
-                                        try { (new Function(src.text))(); }
+                                        // Auto-patch const→let for variables that LLMs incorrectly declare as const
+                                        // (reassigning a const crashes the script silently in strict mode)
+                                        const patched = src.text.replace(/\bconst\s+(\w+)\s*=/g, 'let $1 =');
+                                        try { (new Function(patched))(); }
                                         catch (e) { console.error('canvas script error:', e); }
                                     }
                                 }

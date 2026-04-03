@@ -45,7 +45,7 @@ function resolveWorkerScriptUrl(explicitUrl) {
 let helperUrl = null;
 let helperReady = false;
 let helperInfo = null;
-const HELPER_PORTS = [8090, 8091, 9090];
+const HELPER_PORTS = [8090];
 const HELPER_TIMEOUT = 1500;
 
 // ── Relay state (remote helper via pairing code) ──

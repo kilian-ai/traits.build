@@ -176,7 +176,7 @@ worker = (
     + 'let __traits_ready = false;\n'
     + 'function ensureReady() {\n'
     + '  if (__traits_ready) return;\n'
-    + '  TraitsWasm.initSync(decodeBase64Bytes(TraitsWasm.WASM_BASE64));\n'
+    + '  TraitsWasm.initSync({ module: decodeBase64Bytes(TraitsWasm.WASM_BASE64) });\n'
     + '  JSON.parse(TraitsWasm.init());\n'
     + '  __traits_ready = true;\n'
     + '}\n'

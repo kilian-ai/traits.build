@@ -16,8 +16,18 @@ const HTML: &str = r##"<!DOCTYPE html>
 <title>API Reference — traits.build</title>
 <meta name="description" content="REST API documentation for the traits.build composable function kernel">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css">
-<link rel="stylesheet" href="/static/www/terminal/terminal.css">
 <style>
+  /* Terminal panel styles (inlined to avoid /static/ 404 on SPA) */
+  .terminal-wrap { position:fixed; bottom:0; left:0; right:0; z-index:9999; background:#0d1117; border-top:1px solid #30363d; }
+  .terminal-header { display:flex; align-items:center; gap:1rem; padding:0.4rem 1rem; background:#161b22; cursor:pointer; user-select:none; }
+  .terminal-toggle { background:none; border:none; color:#8b949e; font-size:0.85rem; font-weight:600; cursor:pointer; padding:0; }
+  .terminal-hint { font-size:0.75rem; color:#484f58; }
+  .terminal-status { font-size:0.7rem; color:#484f58; margin-left:auto; }
+  .terminal-status.ready { color:#3fb950; } .terminal-status.loading { color:#d29922; } .terminal-status.error { color:#f85149; }
+  .terminal-container { height:300px; padding:4px; overflow:hidden; }
+  .terminal-container.collapsed { height:0; padding:0; overflow:hidden; }
+  .xterm-mount { height:100%; }
+</style>
   body {
     margin: 0; padding: 0; background: #0d1117; color: #c9d1d9;
     font-family: system-ui, -apple-system, sans-serif;
