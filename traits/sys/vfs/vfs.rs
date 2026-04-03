@@ -16,20 +16,29 @@ pub fn vfs(args: &[Value]) -> Value {
     let path = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
     let content = args.get(2).and_then(|v| v.as_str()).unwrap_or("");
 
+    eprintln!("[vfs] action={} path={} content_len={}", action, path, content.len());
+
     match action {
         "read" => {
             if path.is_empty() {
                 return json!({"ok": false, "error": "Path required"});
             }
             match kernel_logic::platform::vfs_read(path) {
-                Some(data) => json!({"ok": true, "path": path, "content": data}),
-                None => json!({"ok": false, "error": format!("File not found: {}", path)}),
+                Some(data) => {
+                    eprintln!("[vfs] read OK path={} len={}", path, data.len());
+                    json!({"ok": true, "path": path, "content": data})
+                }
+                None => {
+                    eprintln!("[vfs] read FAIL path={} (not found)", path);
+                    json!({"ok": false, "error": format!("File not found: {}", path)})
+                }
             }
         }
         "write" => {
             if path.is_empty() {
                 return json!({"ok": false, "error": "Path required"});
             }
+            eprintln!("[vfs] write path={} bytes={}", path, content.len());
             kernel_logic::platform::vfs_write(path, content);
             json!({"ok": true, "path": path, "bytes": content.len()})
         }

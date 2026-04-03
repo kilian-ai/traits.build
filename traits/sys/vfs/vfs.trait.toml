@@ -1,7 +1,7 @@
 [trait]
 description = "Persistent virtual filesystem — read, write, list, delete files (localStorage on WASM, filesystem on native)"
-version = "v260402.122903"
-checksum = "ae02e422f8eaf253cdce91190dabc3195316697c43581fee07b2003b0274a5e6"
+version = "v260403"
+checksum = "c816cabc05d2938b5e65ceb11bd68a604a9df2925af81392f5eb7003222ed5f4"
 author = "system"
 tags = ["sys", "vfs", "filesystem", "storage", "persistence"]
 

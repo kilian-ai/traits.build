@@ -308,24 +308,28 @@ pub fn canvas(_args: &[Value]) -> Value {
                         async function loadCanvas() {
                             try {
                                 const sdk = window._traitsSDK;
-                                if (!sdk) return;
+                                if (!sdk) { console.log('[canvas] loadCanvas: no SDK'); return; }
+                                console.log('[canvas] loadCanvas: calling sys.canvas get (WASM VFS)...');
                                 const res = await sdk.call('sys.canvas', ['get']);
                                 const content = res?.result?.content || res?.content || '';
+                                console.log('[canvas] loadCanvas: sys.canvas get result — ok:', res?.ok, 'len:', content.length, 'dispatch:', res?.dispatch);
                                 if (content) {
                                     renderCanvas(content);
                                     // Push to helper VFS so CLI agents can read it
                                     if (sdk.helperConnected) {
+                                        console.log('[canvas] loadCanvas: pushing to helper VFS');
                                         sdk.call('sys.vfs@native', ['write', 'canvas/app.html', content]).catch(() => {});
                                     }
                                 } else {
                                     renderCanvas('');
                                 }
-                            } catch(e) { console.warn('canvas load:', e); }
+                            } catch(e) { console.warn('[canvas] loadCanvas error:', e); }
                         }
 
                         // Listen for live updates from voice/SDK
                         window.addEventListener('traits-canvas-update', (e) => {
                             const content = e.detail?.content;
+                            console.log('[canvas] traits-canvas-update event — content len:', content?.length ?? 'undefined');
                             if (content !== undefined) {
                                 renderCanvas(content);
                             } else {
@@ -360,31 +364,46 @@ pub fn canvas(_args: &[Value]) -> Value {
                         // Initial load — prefer helper VFS if connected (catches CLI writes)
                         (async () => {
                             const sdk = window._traitsSDK;
+                            console.log('[canvas] init load — helperConnected:', sdk?.helperConnected, 'wasmReady:', sdk?.isCallable?.('sys.vfs'));
                             if (sdk?.helperConnected) {
                                 try {
+                                    console.log('[canvas] reading from helper VFS...');
                                     const res = await sdk.call('sys.vfs@native', ['read', 'canvas/app.html']);
+                                    console.log('[canvas] helper VFS result:', res?.ok, 'content len:', (res?.result?.content ?? res?.content ?? '').length);
                                     const content = res?.result?.content ?? res?.content ?? '';
                                     if (content) { renderCanvas(content); return; }
-                                } catch(_) {}
+                                } catch(e) { console.warn('[canvas] helper VFS read failed:', e); }
                             }
+                            console.log('[canvas] falling back to loadCanvas (WASM VFS)');
                             loadCanvas();
                         })();
 
                         // Poll helper VFS for external changes (CLI agent writes to native VFS)
                         let __lastLen = -1;
+                        let __pollCount = 0;
                         const _pollId = setInterval(async () => {
+                            __pollCount++;
                             try {
                                 const sdk = window._traitsSDK;
-                                if (!sdk || sourceMode || !sdk.helperConnected) return;
+                                if (!sdk || sourceMode || !sdk.helperConnected) {
+                                    if (__pollCount <= 5 || __pollCount % 10 === 0) {
+                                        console.log('[canvas] poll #' + __pollCount + ' skipped — sdk:', !!sdk, 'sourceMode:', sourceMode, 'helper:', sdk?.helperConnected);
+                                    }
+                                    return;
+                                }
                                 const res = await sdk.call('sys.vfs@native', ['read', 'canvas/app.html']);
                                 const content = res?.result?.content ?? res?.content ?? '';
+                                if (__pollCount <= 5 || content.length !== __lastLen) {
+                                    console.log('[canvas] poll #' + __pollCount + ' — ok:', res?.ok, 'len:', content.length, 'lastLen:', __lastLen);
+                                }
                                 if (content.length !== __lastLen && content) {
                                     __lastLen = content.length;
+                                    console.log('[canvas] poll detected change! rendering', content.length, 'bytes');
                                     renderCanvas(content);
                                     // Mirror to WASM VFS for consistency
                                     try { sdk.call('sys.vfs@wasm', ['write', 'canvas/app.html', content]); } catch(_) {}
                                 }
-                            } catch(_) {}
+                            } catch(e) { console.warn('[canvas] poll error:', e); }
                         }, 2000);
 
                         // ── FAB menu ──

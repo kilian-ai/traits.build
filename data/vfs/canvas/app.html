@@ -1,65 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bouncing Star</title>
-    <style>
-        body {
-            background-color: #0a0a0a;
-            color: #e0e0e0;
-            margin: 0;
-            overflow: hidden;
-        }
-        canvas {
-            display: block;
-        }
-    </style>
+<meta charset="UTF-8">
+<title>Bouncing 6-Point Star</title>
+<style>body{background:#0a0a0a;margin:0;overflow:hidden}canvas{display:block}</style>
 </head>
 <body>
-    <canvas id="canvas"></canvas>
-    <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-
-        let star = {
-            x: canvas.width / 2,
-            y: canvas.height / 2,
-            size: 30,
-            dx: 4,
-            dy: 4,
-        };
-
-        function drawStar(x, y, size) {
-            ctx.fillStyle = 'red';
-            ctx.beginPath();
-            ctx.moveTo(x, y - size);
-            for (let i = 1; i < 6; i++) {
-                ctx.lineTo(x + size * Math.sin((i * 2 * Math.PI) / 6), y - size * Math.cos((i * 2 * Math.PI) / 6));
-            }
-            ctx.closePath();
-            ctx.fill();
-        }
-
-        function update() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawStar(star.x, star.y, star.size);
-            star.x += star.dx;
-            star.y += star.dy;
-
-            if (star.x + star.size > canvas.width || star.x - star.size < 0) {
-                star.dx *= -1;
-            }
-            if (star.y + star.size > canvas.height || star.y - star.size < 0) {
-                star.dy *= -1;
-            }
-
-            requestAnimationFrame(update);
-        }
-
-        update();
-    </script>
+<canvas id="c"></canvas>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+canvas.width=innerWidth;canvas.height=innerHeight;
+addEventListener("resize",()=>{canvas.width=innerWidth;canvas.height=innerHeight});
+const s={x:canvas.width/2,y:canvas.height/2,r:40,dx:3,dy:2.5};
+function draw(cx,cy,r){
+  const ir=r*0.5;ctx.fillStyle="#e22";ctx.strokeStyle="#ff4444";ctx.lineWidth=2;
+  ctx.beginPath();
+  for(let i=0;i<12;i++){
+    const a=i*Math.PI/6-Math.PI/2,R=i%2===0?r:ir;
+    const px=cx+R*Math.cos(a),py=cy+R*Math.sin(a);
+    i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+  }
+  ctx.closePath();ctx.fill();ctx.stroke();
+}
+function loop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  draw(s.x,s.y,s.r);s.x+=s.dx;s.y+=s.dy;
+  if(s.x+s.r>canvas.width||s.x-s.r<0)s.dx*=-1;
+  if(s.y+s.r>canvas.height||s.y-s.r<0)s.dy*=-1;
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
 </body>
 </html>

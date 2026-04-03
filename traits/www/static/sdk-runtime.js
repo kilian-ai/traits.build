@@ -2909,6 +2909,8 @@ class Traits {
             (path === 'sys.canvas');
         if (!relevant || typeof window === 'undefined') return;
 
+        console.log('[canvas-sync] triggered by', path, 'args[0]:', args?.[0], 'helperReady:', helperReady);
+
         const readRemote = helperReady
             ? callHelper('sys.vfs', ['read', 'canvas/app.html'])
             : _relayCode()
@@ -2917,13 +2919,14 @@ class Traits {
 
         readRemote.then(r => {
             const content = r?.result?.content ?? r?.content ?? null;
+            console.log('[canvas-sync] read result:', r?.ok, 'content len:', content?.length ?? 'null');
             if (content === null) return;
             // Mirror to WASM VFS so local reads stay consistent
             if (wasmReady) {
                 try { wasm.call('sys.vfs', JSON.stringify(['write', 'canvas/app.html', content])); } catch(_) {}
             }
             window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
-        }).catch(() => {});
+        }).catch((e) => { console.warn('[canvas-sync] error:', e); });
     }
 
     _callWasm(path, args) {
