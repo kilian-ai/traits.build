@@ -2931,6 +2931,11 @@ export class Traits {
     _callWasm(path, args) {
         const t0 = performance.now();
         try {
+            // Refresh main-thread persistent VFS from localStorage before VFS/canvas reads.
+            // The Worker WASM writes to localStorage but the main-thread in-memory VFS is stale.
+            if ((path === 'sys.vfs' || path === 'sys.canvas') && wasm.pvfs_refresh) {
+                try { wasm.pvfs_refresh(); } catch (_) {}
+            }
             const raw = wasm.call(path, JSON.stringify(args));
             const dt = performance.now() - t0;
             const result = JSON.parse(raw);

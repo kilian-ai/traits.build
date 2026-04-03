@@ -663,6 +663,20 @@ pub fn vfs_write(path: &str, content: &str) {
     with_session(|session| session.vfs_write(path, content))
 }
 
+/// Re-read the persistent VFS user layer from localStorage.
+/// Call this on the main-thread WASM before reading sys.vfs / sys.canvas
+/// so writes made by the Worker WASM become visible.
+#[wasm_bindgen]
+pub fn pvfs_refresh() {
+    if let Some(json) = ls_get("traits.pvfs") {
+        PERSISTENT_VFS.with(|cell| {
+            if let Some(vfs) = cell.borrow_mut().as_mut() {
+                vfs.load(&json);
+            }
+        });
+    }
+}
+
 // ────────────────── MCP JSON-RPC handler (browser-only) ──────────────────
 
 /// Process a single MCP JSON-RPC message and return a JSON response string.
