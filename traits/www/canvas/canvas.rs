@@ -315,13 +315,27 @@ pub fn canvas(_args: &[Value]) -> Value {
                             } catch(e) { console.warn('canvas load:', e); }
                         }
 
+                        // Read canvas/app.html directly from localStorage (shared by Worker + main-thread WASM).
+                        // Bypasses the in-memory WASM VFS which may be stale.
+                        function readCanvasFromStorage() {
+                            try {
+                                const raw = localStorage.getItem('traits.pvfs');
+                                if (!raw) return '';
+                                const files = JSON.parse(raw);
+                                return files['canvas/app.html'] || '';
+                            } catch(_) { return ''; }
+                        }
+
                         // Listen for live updates from voice/SDK
                         window.addEventListener('traits-canvas-update', (e) => {
                             const content = e.detail?.content;
                             if (content !== undefined) {
                                 renderCanvas(content);
                             } else {
-                                loadCanvas();
+                                // Re-read from localStorage (Worker may have written)
+                                const stored = readCanvasFromStorage();
+                                if (stored) renderCanvas(stored);
+                                else loadCanvas();
                             }
                         });
 
@@ -349,29 +363,21 @@ pub fn canvas(_args: &[Value]) -> Value {
                             }
                         });
 
-                        // Initial load — read from VFS (WASM or native via cascade)
-                        (async () => {
-                            const sdk = window._traitsSDK;
-                            if (sdk) {
-                                try {
-                                    const res = await sdk.call('sys.vfs', ['read', 'canvas/app.html']);
-                                    const content = res?.result?.content ?? res?.content ?? '';
-                                    if (content) { renderCanvas(content); return; }
-                                } catch(_) {}
-                            }
+                        // Initial load — read directly from localStorage (shared persistence)
+                        (function() {
+                            const content = readCanvasFromStorage();
+                            if (content) { renderCanvas(content); return; }
                             loadCanvas();
                         })();
 
-                        // Poll VFS for external changes (works in both WASM-only and helper modes)
-                        let __lastLen = -1;
-                        const _pollId = setInterval(async () => {
+                        // Poll localStorage for external changes (Worker writes persist here)
+                        let __lastContent = '';
+                        const _pollId = setInterval(() => {
                             try {
-                                const sdk = window._traitsSDK;
-                                if (!sdk || sourceMode) return;
-                                const res = await sdk.call('sys.vfs', ['read', 'canvas/app.html']);
-                                const content = res?.result?.content ?? res?.content ?? '';
-                                if (content.length !== __lastLen && content) {
-                                    __lastLen = content.length;
+                                if (sourceMode) return;
+                                const content = readCanvasFromStorage();
+                                if (content && content !== __lastContent) {
+                                    __lastContent = content;
                                     renderCanvas(content);
                                 }
                             } catch(_) {}
