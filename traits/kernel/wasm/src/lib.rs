@@ -677,6 +677,17 @@ pub fn pvfs_refresh() {
     }
 }
 
+/// Dump the persistent VFS user layer as JSON.
+/// Used by the Worker to send VFS state to the main thread for localStorage
+/// persistence (Workers can't access localStorage directly).
+#[wasm_bindgen]
+pub fn pvfs_dump() -> String {
+    ensure_pvfs();
+    PERSISTENT_VFS.with(|cell| {
+        cell.borrow().as_ref().map(|vfs| vfs.dump()).unwrap_or_else(|| "{}".to_string())
+    })
+}
+
 // ────────────────── MCP JSON-RPC handler (browser-only) ──────────────────
 
 /// Process a single MCP JSON-RPC message and return a JSON response string.
