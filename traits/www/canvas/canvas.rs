@@ -152,6 +152,8 @@ pub fn canvas(_args: &[Value]) -> Value {
                         const empty = document.getElementById('canvas-empty');
                         const projectBar = document.getElementById('project-bar');
                         let sourceMode = false;
+                        let _currentContent = '';
+                        let __lastContent = '';
 
                         // ── Project management ──
                         const PROJECT_PFX = 'traits.canvas.project.';
@@ -217,10 +219,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                         }
 
                         async function saveProject() {
-                            const sdk = window._traitsSDK;
-                            if (!sdk) return;
-                            const res = await sdk.call('sys.canvas', ['get']);
-                            const content = res?.result?.content || res?.content || '';
+                            const content = _currentContent;
                             if (!content) { alert('Canvas is empty — nothing to save.'); return; }
                             const name = prompt('Project name:');
                             if (!name || !name.trim()) return;
@@ -238,6 +237,8 @@ pub fn canvas(_args: &[Value]) -> Value {
                         renderProjectBar();
 
                         function renderCanvas(content) {
+                            _currentContent = content || '';
+                            __lastContent = content || '';
                             if (!content) {
                                 container.innerHTML = '';
                                 container.appendChild(empty);
@@ -356,19 +357,16 @@ pub fn canvas(_args: &[Value]) -> Value {
                         });
 
                         // View Source toggle
-                        document.getElementById('btnSource').addEventListener('click', async () => {
+                        document.getElementById('btnSource').addEventListener('click', () => {
                             sourceMode = !sourceMode;
                             const btn = document.getElementById('btnSource');
                             if (sourceMode) {
-                                const sdk = window._traitsSDK;
-                                const res = sdk ? await sdk.call('sys.canvas', ['get']) : null;
-                                const content = res?.result?.content || res?.content || '';
                                 container.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;color:#888;font-size:13px;padding:20px;"></pre>';
-                                container.querySelector('pre').textContent = content || '(empty)';
+                                container.querySelector('pre').textContent = _currentContent || '(empty)';
                                 btn.textContent = 'Live View';
                             } else {
                                 btn.textContent = 'View Source';
-                                loadCanvas();
+                                renderCanvas(_currentContent);
                             }
                         });
 
@@ -380,7 +378,6 @@ pub fn canvas(_args: &[Value]) -> Value {
                         })();
 
                         // Poll localStorage for external changes (Worker writes persist here)
-                        let __lastContent = '';
                         const _pollId = setInterval(() => {
                             try {
                                 if (sourceMode) return;
@@ -430,20 +427,15 @@ pub fn canvas(_args: &[Value]) -> Value {
                         });
 
                         // Register cleanup: auto-save canvas and remove window.traits when navigating away
-                        window._pageCleanup = async () => {
+                        window._pageCleanup = () => {
                             clearInterval(_pollId);
                             fabMenu.classList.remove('show');
                             // Auto-save canvas content before leaving
-                            try {
-                                const sdk = window._traitsSDK;
-                                if (sdk) {
-                                    const res = await sdk.call('sys.canvas', ['get']);
-                                    const content = res?.result?.content || res?.content || '';
-                                    if (content) {
-                                        localStorage.setItem('traits.canvas.project._autosave', JSON.stringify({ content, saved: Date.now() }));
-                                    }
-                                }
-                            } catch(_) {}
+                            if (_currentContent) {
+                                try {
+                                    localStorage.setItem('traits.canvas.project._autosave', JSON.stringify({ content: _currentContent, saved: Date.now() }));
+                                } catch(_) {}
+                            }
                             try { delete window.traits; } catch(_) {}
                         };
                     })();
