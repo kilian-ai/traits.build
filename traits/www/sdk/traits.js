@@ -1762,15 +1762,20 @@ export class Traits {
                         if (funcName === 'canvas') {
                             let request = '';
                             try { request = JSON.parse(argsStr).request || argsStr; } catch(e) { request = argsStr; }
-                            // Read existing canvas so agent modifies rather than replaces
-                            const _canvasGet = await this.call('sys.canvas', ['get']).catch(() => null);
-                            const _existing = _canvasGet?.result?.content ?? _canvasGet?.content ?? '';
+                            // Read existing canvas from localStorage (bypasses stale WASM VFS)
+                            let _existing = '';
+                            try {
+                                const pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}');
+                                _existing = pvfs['canvas/app.html'] || '';
+                            } catch(_) {}
                             const prompt = _existing
                                 ? `Current canvas HTML:\n\`\`\`html\n${_existing}\n\`\`\`\n\nModify the above to: ${request}`
                                 : request;
+                            console.log('[Voice/Canvas] Calling agent, existing HTML:', _existing.length, 'chars, request:', request);
                             const agentArgs = [prompt, CANVAS_AGENT_SYSTEM, 'sys.canvas', 'gpt-4o-mini', 10];
                             this.call('llm.agent', agentArgs).then(result => {
                                 const r = result?.result || result;
+                                console.log('[Voice/Canvas] Agent done, ok:', r?.ok, 'steps:', r?.step_count);
                                 const output = JSON.stringify(r?.ok ? { ok: true, response: r.response || 'Done' } : { error: r?.error || 'agent failed' });
                                 const truncated = output.length > 2000 ? output.slice(0, 2000) + '…' : output;
                                 if (_voiceDc && _voiceDc.readyState === 'open') {
@@ -1779,14 +1784,16 @@ export class Traits {
                                 }
                                 if (opts.onToolResult) opts.onToolResult(funcName, truncated);
                                 _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
-                                // Fire canvas update
-                                this.call('sys.canvas', ['get']).then(getRes => {
-                                    const content = getRes?.result?.content ?? getRes?.content ?? '';
-                                    if (content) window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
-                                }).catch(() => {
-                                    window.dispatchEvent(new CustomEvent('traits-canvas-update', {}));
-                                });
+                                // Read updated content from localStorage (agent wrote to WASM VFS which persists here)
+                                let content = '';
+                                try {
+                                    const pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}');
+                                    content = pvfs['canvas/app.html'] || '';
+                                } catch(_) {}
+                                console.log('[Voice/Canvas] Firing canvas update, content:', content.length, 'chars');
+                                window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
                             }).catch(e => {
+                                console.error('[Voice/Canvas] Agent error:', e.message || e);
                                 if (_voiceDc && _voiceDc.readyState === 'open') {
                                     _voiceDc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ error: e.message }) } }));
                                     _voiceDc.send(JSON.stringify({ type: 'response.create' }));
