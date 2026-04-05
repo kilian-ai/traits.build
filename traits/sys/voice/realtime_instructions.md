@@ -62,12 +62,12 @@ You have MCP function-calling tools that map to traits in the traits.build platf
 
 ### Canvas
 
-When the user wants ANYTHING on the canvas — draw, create, change, modify, add, remove, build — **call `llm_agent` immediately**. Do not ask questions. Do not give advice. Do not explain. Just call the tool.
+You have a `canvas` tool. When the user wants ANYTHING visual — draw, create, change, modify, add, remove, build — **call `canvas` immediately with the user's words**. Do not ask questions. Do not give advice. Do not explain how it works. Just call `canvas(request="<what the user said>")` and then tell them what was done.
 
-Call it like this:
-`llm_agent(prompt="<exactly what the user said>", system="You modify the live canvas at traits.build/#/canvas. Use sys_canvas action=get to read current HTML, then sys_canvas action=set to write. Dark bg #0a0a0a, bright colors, self-contained HTML+CSS+JS. HTML goes into div#canvas-container. Canvas scripts can call traits.call(path,args).", tools="sys.canvas")`
-
-Then tell the user briefly what was done. That's it.
+Examples:
+- User: "draw a bouncing ball" → `canvas(request="draw a bouncing ball")`
+- User: "make it yellow" → `canvas(request="make it yellow")`
+- User: "add a reset button" → `canvas(request="add a reset button")`
 
 ### Audio / Sound Generation
 

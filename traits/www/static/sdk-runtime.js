@@ -174,12 +174,14 @@ let _voxtralModelLoading = null;
 const VOICE_TOOL_EXCLUDE = new Set([
     'sys.voice', 'sys.mcp', 'sys.serve', 'sys.cli', 'sys.cli.native', 'sys.cli.wasm',
     'sys.dylib_loader', 'sys.reload', 'sys.release', 'sys.secrets',
-    'sys.canvas', 'sys.vfs',
+    'sys.canvas', 'sys.vfs', 'llm.agent',
     'kernel.main', 'kernel.dispatcher', 'kernel.globals', 'kernel.registry',
     'kernel.config', 'kernel.plugin_api', 'kernel.cli',
     'www.admin', 'www.admin.deploy', 'www.admin.fast_deploy',
     'www.admin.scale', 'www.admin.destroy', 'www.admin.save_config',
 ]);
+
+const CANVAS_AGENT_SYSTEM = 'You modify the live canvas at traits.build/#/canvas. Use sys_canvas action=get to read current HTML, then sys_canvas action=set to write. Dark bg #0a0a0a, bright colors, self-contained HTML+CSS+JS, no external deps. Use let (not const) for reassigned vars. For animation: window.__canvasAnimId=requestAnimationFrame(loop). HTML is injected into div#canvas-container. Canvas scripts can use: traits.call(path,args), traits.list(), traits.canvas(action,content), traits.echo(text), traits.audio(action,...).';
 
 function _dispatchVoiceEvent(type, data) {
     if (typeof window !== 'undefined') {
@@ -428,6 +430,23 @@ async function _buildVoiceTools(sdk) {
         name: 'sys_voice_quit',
         description: 'End the voice conversation. Call this when the user says goodbye, wants to stop, or asks to quit.',
         parameters: { type: 'object', properties: {} }
+    });
+
+    // Synthetic canvas tool — simple wrapper around llm.agent
+    tools.push({
+        type: 'function',
+        name: 'canvas',
+        description: 'Draw, create, or change anything on the visual canvas. Just describe what you want in plain language. Examples: "draw a bouncing ball", "make it yellow", "add a reset button", "create a Spotify controller".',
+        parameters: {
+            type: 'object',
+            properties: {
+                request: {
+                    type: 'string',
+                    description: 'What to draw, create, or change on the canvas. Use the user\'s exact words.'
+                }
+            },
+            required: ['request']
+        }
     });
 
     return tools;
@@ -1701,6 +1720,37 @@ class Traits {
                         const argsStr = msg.arguments || '{}';
                         if (opts.onToolCall) opts.onToolCall(funcName, argsStr);
                         _dispatchVoiceEvent('tool_call', { name: funcName, arguments: argsStr });
+
+                        // Handle synthetic canvas tool — route to llm.agent
+                        if (funcName === 'canvas') {
+                            let request = '';
+                            try { request = JSON.parse(argsStr).request || argsStr; } catch(e) { request = argsStr; }
+                            const agentArgs = [request, CANVAS_AGENT_SYSTEM, 'sys.canvas', 'gpt-4o-mini', 10];
+                            this.call('llm.agent', agentArgs).then(result => {
+                                const r = result?.result || result;
+                                const output = JSON.stringify(r?.ok ? { ok: true, response: r.response || 'Done' } : { error: r?.error || 'agent failed' });
+                                const truncated = output.length > 2000 ? output.slice(0, 2000) + '…' : output;
+                                if (_voiceDc && _voiceDc.readyState === 'open') {
+                                    _voiceDc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: truncated } }));
+                                    _voiceDc.send(JSON.stringify({ type: 'response.create' }));
+                                }
+                                if (opts.onToolResult) opts.onToolResult(funcName, truncated);
+                                _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
+                                // Fire canvas update
+                                this.call('sys.canvas', ['get']).then(getRes => {
+                                    const content = getRes?.result?.content ?? getRes?.content ?? '';
+                                    if (content) window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
+                                }).catch(() => {
+                                    window.dispatchEvent(new CustomEvent('traits-canvas-update', {}));
+                                });
+                            }).catch(e => {
+                                if (_voiceDc && _voiceDc.readyState === 'open') {
+                                    _voiceDc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ error: e.message }) } }));
+                                    _voiceDc.send(JSON.stringify({ type: 'response.create' }));
+                                }
+                            });
+                            return;
+                        }
 
                         // Handle sys_voice_quit — stop the session
                         if (funcName === 'sys_voice_quit') {
