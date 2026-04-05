@@ -45,7 +45,7 @@ function resolveWorkerScriptUrl(explicitUrl) {
 let helperUrl = null;
 let helperReady = false;
 let helperInfo = null;
-const HELPER_PORTS = [8090];
+const HELPER_PORTS = [8090, 8091, 9090];
 const HELPER_TIMEOUT = 1500;
 
 // ── Relay state (remote helper via pairing code) ──
@@ -1754,6 +1754,18 @@ class Traits {
                                 if (r.canvas_project_action) {
                                     window.dispatchEvent(new CustomEvent('traits-canvas-project', { detail: r }));
                                 }
+                            }
+
+                            // After llm.agent calls: agent may have modified canvas via sys.canvas set
+                            if (funcName === 'llm_agent' && result.ok) {
+                                this.call('sys.canvas', ['get']).then(getRes => {
+                                    const content = getRes?.result?.content ?? getRes?.content ?? '';
+                                    if (content) {
+                                        window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
+                                    }
+                                }).catch(() => {
+                                    window.dispatchEvent(new CustomEvent('traits-canvas-update', {}));
+                                });
                             }
 
                             // After sys.voice.instruct changes: persist to localStorage + live session.update
