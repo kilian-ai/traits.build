@@ -154,6 +154,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                         let sourceMode = false;
                         let _currentContent = '';
                         let __lastContent = '';
+                        let _pollSuppressedUntil = 0;
 
                         // ── Project management ──
                         const PROJECT_PFX = 'traits.canvas.project.';
@@ -212,6 +213,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 const raw = localStorage.getItem(PROJECT_PFX + name);
                                 if (!raw) return;
                                 const proj = JSON.parse(raw);
+                                _pollSuppressedUntil = Date.now() + 5000;
                                 const sdk = window._traitsSDK;
                                 if (sdk) await sdk.call('sys.canvas', ['set', proj.content]);
                                 renderCanvas(proj.content);
@@ -338,6 +340,7 @@ pub fn canvas(_args: &[Value]) -> Value {
 
                         // Listen for live updates from voice/SDK
                         window.addEventListener('traits-canvas-update', (e) => {
+                            _pollSuppressedUntil = Date.now() + 5000;
                             const content = e.detail?.content;
                             if (content !== undefined) {
                                 renderCanvas(content);
@@ -381,6 +384,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                         const _pollId = setInterval(() => {
                             try {
                                 if (sourceMode) return;
+                                if (Date.now() < _pollSuppressedUntil) return;
                                 const content = readCanvasFromStorage();
                                 if (content && content !== __lastContent) {
                                     __lastContent = content;
