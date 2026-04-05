@@ -397,11 +397,16 @@ function _traitTypeToSchema(typeStr) {
 /** Build OpenAI Realtime API tool definitions from the trait registry.
  *  In WASM-only mode (no helper/server), only WASM-callable traits are included
  *  since non-WASM traits cannot be dispatched in the browser. */
-async function _buildVoiceTools(sdk) {
+// Tools allowed on the canvas page — everything else is stripped
+const CANVAS_PAGE_TOOLS = new Set(['canvas', 'sys_echo', 'sys_audio', 'sys_voice_quit']);
+
+async function _buildVoiceTools(sdk, page) {
     let traits = [];
     try { traits = await sdk.list(); } catch(e) { return []; }
+    const isCanvas = page === 'canvas';
     const tools = [];
-    for (const t of traits) {
+    if (!isCanvas) {
+      for (const t of traits) {
         if (!t.path) continue;
         if (VOICE_TOOL_EXCLUDE.has(t.path)) continue;
         if (t.path.startsWith('www.')) continue;
@@ -422,6 +427,7 @@ async function _buildVoiceTools(sdk) {
         const parameters = { type: 'object', properties };
         if (required.length) parameters.required = required;
         tools.push({ type: 'function', name: toolName, description: t.description || '', parameters });
+      }
     }
     // Always include the synthetic quit tool so the model can end the session
     tools.push({
@@ -447,6 +453,29 @@ async function _buildVoiceTools(sdk) {
             required: ['request']
         }
     });
+
+    // On canvas page, also include echo and audio, strip everything else
+    if (isCanvas) {
+        for (const t of traits) {
+            if (!t.path) continue;
+            const toolName = t.path.replace(/\./g, '_');
+            if (toolName === 'sys_echo' || toolName === 'sys_audio') {
+                const properties = {};
+                const required = [];
+                if (Array.isArray(t.params)) {
+                    for (const p of t.params) {
+                        const prop = _traitTypeToSchema(p.type || p.param_type);
+                        if (p.description) prop.description = p.description;
+                        properties[p.name] = prop;
+                        if (p.required !== false && !p.optional) required.push(p.name);
+                    }
+                }
+                const parameters = { type: 'object', properties };
+                if (required.length) parameters.required = required;
+                tools.push({ type: 'function', name: toolName, description: t.description || '', parameters });
+            }
+        }
+    }
 
     return tools;
 }
@@ -1613,8 +1642,17 @@ export class Traits {
 
             // ── Build tool definitions ──
             let tools = [];
+            const currentPage = (typeof location !== 'undefined' && location.hash || '').replace(/^#\/?/, '').split('/')[0] || '';
             if (enableTools) {
-                tools = await _buildVoiceTools(this);
+                tools = await _buildVoiceTools(this, currentPage);
+            }
+            // Canvas page: prepend focused instructions
+            if (currentPage === 'canvas') {
+                const canvasPrefix = 'You are a canvas assistant. The user is on a visual canvas page. ' +
+                    'For ANY creative or visual request, call the `canvas` tool with the user\'s words. ' +
+                    'Do NOT ask clarifying questions. Do NOT explain how things work. Just call `canvas` and report what was done. ' +
+                    'You also have `sys_echo` (show text on screen) and `sys_audio` (play sounds).';
+                instructionParts.unshift(canvasPrefix);
             }
 
             // ── Ephemeral token: browser WebRTC needs a short-lived token ──
@@ -2042,7 +2080,8 @@ export class Traits {
             let tools = [];
             if (enableTools) {
                 _localVoiceProgress('Loading tools…');
-                tools = await _buildVoiceTools(this);
+                const _localPage = (typeof location !== 'undefined' && location.hash || '').replace(/^#\/?/, '').split('/')[0] || '';
+                tools = await _buildVoiceTools(this, _localPage);
                 console.log('[LocalVoice] Loaded', tools.length, 'tools');
             }
 
