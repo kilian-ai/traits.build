@@ -118,10 +118,6 @@ pub fn canvas(_args: &[Value]) -> Value {
                             span .fab-icon { "🎤" }
                             span #fabVoiceLabel { "Start Voice" }
                         }
-                        button #fabAgent {
-                            span .fab-icon { "💬" }
-                            span { "Ask Agent" }
-                        }
                         button #fabSplats {
                             span .fab-icon { "🔮" }
                             span { "Splat Viewer" }
@@ -431,43 +427,6 @@ pub fn canvas(_args: &[Value]) -> Value {
                             setTimeout(updateVoiceButton, 500);
                         });
 
-                        // Ask Agent button — text prompt → llm.agent → canvas update
-                        document.getElementById('fabAgent').addEventListener('click', async () => {
-                            fabMenu.classList.remove('show');
-                            fabToggle.classList.remove('open');
-                            const userPrompt = prompt('What should the agent do?');
-                            if (!userPrompt || !userPrompt.trim()) return;
-                            const sdk = window._traitsSDK;
-                            if (!sdk) return;
-                            const currentHtml = _currentContent || '';
-                            const system = 'You are a canvas assistant for traits.build. The user sees an HTML canvas. ' +
-                                'You have tools: sys_canvas (actions: set, get, clear, append). ' +
-                                'When the user asks to change the canvas, read the current content with sys_canvas get, modify it, then write it back with sys_canvas set. ' +
-                                'Always preserve existing functionality while making the requested change. Respond briefly after making changes.';
-                            try {
-                                const agentArgs = [
-                                    userPrompt + (currentHtml ? '\n\nCurrent canvas HTML (' + currentHtml.length + ' chars):\n' + currentHtml.slice(0, 4000) : ''),
-                                    system,
-                                    'sys.canvas',
-                                    'gpt-4o-mini',
-                                    '10'
-                                ];
-                                const res = await sdk.call('llm.agent', agentArgs);
-                                const r = res?.result || res;
-                                if (r?.ok) {
-                                    // Agent should have called sys.canvas set; re-read
-                                    const getRes = await sdk.call('sys.canvas', ['get']);
-                                    const content = getRes?.result?.content ?? getRes?.content ?? '';
-                                    if (content) {
-                                        _pollSuppressedUntil = Date.now() + 5000;
-                                        renderCanvas(content);
-                                    }
-                                } else {
-                                    console.warn('Agent error:', r?.error || r?.response);
-                                    alert('Agent error: ' + (r?.error || 'unknown'));
-                                }
-                            } catch(e) { console.warn('agent call:', e); alert('Agent error: ' + e.message); }
-                        });
                         // Splat viewer button
                         document.getElementById('fabSplats').addEventListener('click', async () => {
                             fabMenu.classList.remove('show');
