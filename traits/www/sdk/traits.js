@@ -180,7 +180,7 @@ const VOICE_TOOL_EXCLUDE = new Set([
     'www.admin.scale', 'www.admin.destroy', 'www.admin.save_config',
 ]);
 
-const CANVAS_AGENT_SYSTEM = 'You modify the live canvas at traits.build/#/canvas. Use sys_canvas action=get to read current HTML, then sys_canvas action=set to write. Dark bg #0a0a0a, bright colors, self-contained HTML+CSS+JS, no external deps. Use let (not const) for reassigned vars. For animation: window.__canvasAnimId=requestAnimationFrame(loop). HTML is injected into div#canvas-container. Canvas scripts can use: traits.call(path,args), traits.list(), traits.canvas(action,content), traits.echo(text), traits.audio(action,...).';
+const CANVAS_AGENT_SYSTEM = 'You modify the live canvas at traits.build/#/canvas. The user\'s prompt already contains the current HTML if any exists — ALWAYS preserve and extend the existing code, never replace it from scratch. Call sys_canvas action=set with the FULL updated HTML. Dark bg #0a0a0a, bright colors, self-contained HTML+CSS+JS, no external deps. Use let (not const) for reassigned vars. For animation: window.__canvasAnimId=requestAnimationFrame(loop). HTML is injected into div#canvas-container. Canvas scripts can use: traits.call(path,args), traits.list(), traits.canvas(action,content), traits.echo(text), traits.audio(action,...).';
 
 function _dispatchVoiceEvent(type, data) {
     if (typeof window !== 'undefined') {
@@ -1724,7 +1724,13 @@ export class Traits {
                         if (funcName === 'canvas') {
                             let request = '';
                             try { request = JSON.parse(argsStr).request || argsStr; } catch(e) { request = argsStr; }
-                            const agentArgs = [request, CANVAS_AGENT_SYSTEM, 'sys.canvas', 'gpt-4o-mini', 10];
+                            // Read existing canvas so agent modifies rather than replaces
+                            const _canvasGet = await this.call('sys.canvas', ['get']).catch(() => null);
+                            const _existing = _canvasGet?.result?.content ?? _canvasGet?.content ?? '';
+                            const prompt = _existing
+                                ? `Current canvas HTML:\n\`\`\`html\n${_existing}\n\`\`\`\n\nModify the above to: ${request}`
+                                : request;
+                            const agentArgs = [prompt, CANVAS_AGENT_SYSTEM, 'sys.canvas', 'gpt-4o-mini', 10];
                             this.call('llm.agent', agentArgs).then(result => {
                                 const r = result?.result || result;
                                 const output = JSON.stringify(r?.ok ? { ok: true, response: r.response || 'Done' } : { error: r?.error || 'agent failed' });
