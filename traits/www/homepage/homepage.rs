@@ -116,8 +116,6 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
   window._pageCleanup=()=>{
     dead=true;
     if(curAudio){try{curAudio.pause();}catch(_){} curAudio=null;}
-    if(micStr){micStr.getTracks().forEach(t=>t.stop()); micStr=null;}
-    if(aCtx){try{aCtx.close();}catch(_){} aCtx=null;}
   };
 
   function prog(pct,txt){
