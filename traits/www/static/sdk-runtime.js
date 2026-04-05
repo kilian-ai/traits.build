@@ -174,6 +174,7 @@ let _voxtralModelLoading = null;
 const VOICE_TOOL_EXCLUDE = new Set([
     'sys.voice', 'sys.mcp', 'sys.serve', 'sys.cli', 'sys.cli.native', 'sys.cli.wasm',
     'sys.dylib_loader', 'sys.reload', 'sys.release', 'sys.secrets',
+    'sys.canvas', 'sys.vfs',
     'kernel.main', 'kernel.dispatcher', 'kernel.globals', 'kernel.registry',
     'kernel.config', 'kernel.plugin_api', 'kernel.cli',
     'www.admin', 'www.admin.deploy', 'www.admin.fast_deploy',
