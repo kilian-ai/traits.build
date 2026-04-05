@@ -140,12 +140,13 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
   $('hp-skip').onclick=e=>{e.preventDefault();showAll();};
 
   function linkBtns(){
+    const nav=typeof navigate==='function'?navigate:r=>{location.hash=r;};
     document.querySelectorAll('.hero-btn').forEach(btn=>{
       btn.onclick=()=>{
         const t=btn.dataset.topic;
-        if(t==='1') location.hash='/docs';
-        else if(t==='2') location.hash='/terminal';
-        else location.hash='/playground';
+        if(t==='1') nav('/docs');
+        else if(t==='2') nav('/terminal');
+        else nav('/playground');
       };
     });
   }
@@ -279,8 +280,12 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
       return;
     }
 
-    /* 11 — interactive listen loop */
-    while(!dead){
+    /* 11 — interactive listen loop (max 3 rounds, then link buttons) */
+    let rounds=0;
+    const nav=typeof navigate==='function'?navigate:r=>{location.hash=r;};
+    const topicRoute={1:'/docs',2:'/terminal',3:'/playground'};
+    while(!dead&&rounds<3){
+      rounds++;
       btns.forEach(b=>{b.classList.remove('selected','dim');b.onclick=null;});
       $('hp-ts').textContent='';$('hp-ts').classList.remove('on');
 
@@ -311,9 +316,9 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
         sparkle();
         await play('confirm'+sel);
         if(dead) return;
-        $('hp-sub').textContent='Try another, or click to explore.';
-        await wait(2500);
-        if(dead) return;
+        /* Navigate to selected topic */
+        nav(topicRoute[sel]);
+        return;
       } else if(sel===4){
         sparkle();
         if(hasApiKey()){
@@ -353,6 +358,11 @@ function au(k){return 'data:audio/mpeg;base64,'+A[k];}
       }
     }
 
+    /* Voice loop ended — switch to click-only mode */
+    $('hp-mic').classList.remove('on');
+    $('hp-sub').textContent='Click a topic to explore.';
+    btns.forEach(b=>{b.classList.remove('selected','dim');b.onclick=null;});
+    linkBtns();
     $('hp-skip').style.display='none';
 
   }catch(err){
