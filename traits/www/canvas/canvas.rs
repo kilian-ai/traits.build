@@ -167,6 +167,10 @@ pub fn canvas(_args: &[Value]) -> Value {
                 div #canvas-fab {
                     button .fab-btn #fabToggle { "+" }
                     div .fab-menu #fabMenu {
+                        button #fabNew {
+                            span .fab-icon { "✨" }
+                            span { "New Canvas" }
+                        }
                         button #fabVoice {
                             span .fab-icon { "🎤" }
                             span { "Start Voice" }
@@ -396,11 +400,12 @@ pub fn canvas(_args: &[Value]) -> Value {
                         window.addEventListener('traits-canvas-update', (e) => {
                             const content = e.detail?.content;
                             if (content !== undefined) {
+                                __lastContent = content; // keep poller in sync — avoid duplicate re-render
                                 renderCanvas(content);
                             } else {
                                 // Re-read from localStorage (Worker may have written)
                                 const stored = readCanvasFromStorage();
-                                if (stored) renderCanvas(stored);
+                                if (stored) { __lastContent = stored; renderCanvas(stored); }
                                 else loadCanvas();
                             }
                         });
@@ -430,15 +435,12 @@ pub fn canvas(_args: &[Value]) -> Value {
                             }
                         });
 
-                        // Initial load — read directly from localStorage (shared persistence)
-                        (function() {
-                            const content = readCanvasFromStorage();
-                            if (content) { renderCanvas(content); return; }
-                            loadCanvas();
-                        })();
+                        // Don't auto-render stale content from previous sessions.
+                        // Initialise __lastContent so the poller ignores pre-existing storage
+                        // and only fires on NEW writes from the agent.
+                        let __lastContent = readCanvasFromStorage();
 
-                        // Poll localStorage for external changes (Worker writes persist here)
-                        let __lastContent = '';
+                        // Poll localStorage for agent writes (1 s — backup for missed events)
                         const _pollId = setInterval(() => {
                             try {
                                 if (sourceMode) return;
@@ -448,7 +450,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                                     renderCanvas(content);
                                 }
                             } catch(_) {}
-                        }, 2000);
+                        }, 1000);
 
                         // ── FAB menu ──
                         const fabToggle = document.getElementById('fabToggle');
@@ -464,6 +466,16 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 fabToggle.classList.remove('open');
                             }
                         });
+                        // New Canvas button
+                        document.getElementById('fabNew').addEventListener('click', async () => {
+                            fabMenu.classList.remove('show');
+                            fabToggle.classList.remove('open');
+                            const sdk = window._traitsSDK;
+                            if (sdk) await sdk.call('sys.canvas', ['clear']);
+                            __lastContent = '';
+                            renderCanvas('');
+                        });
+
                         // Voice button
                         document.getElementById('fabVoice').addEventListener('click', () => {
                             fabMenu.classList.remove('show');

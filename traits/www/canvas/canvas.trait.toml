@@ -1,7 +1,7 @@
 [trait]
 description = "Live-rendering canvas page — displays dynamic HTML/JS content from sys.canvas"
-version = "v260407.175112"
-checksum = "196b562f6d2a8214a33cb97f145fec24e5b8f87c40f4eeee9d609940604a90c0"
+version = "v260407.213015"
+checksum = "6aa30ab467db60e24c059d5f4301cb0dadbcdba5c0f8889d1a16baa112ff8790"
 author = "system"
 tags = ["www", "canvas", "display"]
 provides = ["www/webpage"]
