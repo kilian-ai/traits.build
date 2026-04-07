@@ -1,7 +1,7 @@
 [trait]
 description = "Build OpenAI Realtime API tool definitions from the trait registry — canonical tool list used by both native WebSocket and browser WebRTC voice sessions"
-version = "v260407.164545"
-checksum = "1fb1b78138d2edfa4f6af1e24710d581ead1b75eec903a1ab1ac6e46d45d2e10"
+version = "v260407.165830"
+checksum = "2e68bfcd8767d0f81edffb083b9d60661cdda2bd203846b7db89806660a951c4"
 author = "system"
 tags = ["sys", "voice", "tools", "registry"]
 

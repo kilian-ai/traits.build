@@ -107,17 +107,17 @@ pub fn voice_tools(args: &[Value]) -> Value {
         "parameters": { "type": "object", "properties": {} }
     }));
 
-    // Synthetic canvas tool — simple description-driven wrapper around llm.agent
+    // Synthetic canvas tool — routes to llm.agent which uses sys.vfs to write canvas/app.html
     tools.push(json!({
         "type": "function",
         "name": "canvas",
-        "description": "Draw, create, or change anything on the visual canvas. Just describe what you want in plain language. Examples: \"draw a bouncing ball\", \"make it yellow\", \"add a reset button\".",
+        "description": "Create, build, or modify anything on the live visual canvas. Invokes a coding agent that writes a complete self-contained HTML+CSS+JS app to canvas/app.html — the canvas page updates automatically. Examples: \"create a breakout clone\", \"draw animated particles\", \"make a Spotify controller\", \"add a reset button\".",
         "parameters": {
             "type": "object",
             "properties": {
                 "request": {
                     "type": "string",
-                    "description": "What to draw, create, or change on the canvas. Use the user's exact words."
+                    "description": "What to create or change on the canvas. Use the user's exact words — the agent will expand this into a full implementation."
                 }
             },
             "required": ["request"]

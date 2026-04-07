@@ -180,7 +180,16 @@ const VOICE_TOOL_EXCLUDE = new Set([
     'www.admin.scale', 'www.admin.destroy', 'www.admin.save_config',
 ]);
 
-const CANVAS_AGENT_SYSTEM = 'You modify the live canvas at traits.build/#/canvas. The user\'s prompt already contains the current HTML if any exists — ALWAYS preserve and extend the existing code, never replace it from scratch. Call sys_canvas action=set with the FULL updated HTML. Dark bg #0a0a0a, bright colors, self-contained HTML+CSS+JS, no external deps. Use let (not const) for reassigned vars. For animation: window.__canvasAnimId=requestAnimationFrame(loop). HTML is injected into div#canvas-container. Canvas scripts can use: traits.call(path,args), traits.list(), traits.canvas(action,content), traits.echo(text), traits.audio(action,...).';
+const CANVAS_AGENT_SYSTEM = 'You are a visual app and game creator for the live canvas at traits.build/#/canvas. The canvas page renders canvas/app.html from the VFS automatically — no reload needed.\n\n' +
+    'WORKFLOW: (1) Call sys_vfs(action=read, path=canvas/app.html) to read any existing content. (2) Write the COMPLETE updated HTML with sys_vfs(action=write, path=canvas/app.html, content=<full HTML>). Always write the entire file in one call — not a diff, not a partial update.\n\n' +
+    'RENDERING RULES (HTML injected into div#canvas-container — NOT a standalone page):\n' +
+    '- Get canvas: document.querySelector(\'#canvas-container canvas\') — NEVER getElementById\n' +
+    '- Use let (NEVER const) for variables you reassign. const in loops crashes silently.\n' +
+    '- Animation: cancel old first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId); then: window.__canvasAnimId = requestAnimationFrame(loop)\n' +
+    '- No DOMContentLoaded listeners — script runs immediately on injection\n' +
+    '- No external dependencies — all CSS and JS inline\n\n' +
+    'STYLE: Dark bg #0a0a0a, bright accent colors (#00ff88, #ff6b35, #4fc3f7), smooth 60fps.\n' +
+    'Canvas scripts can call: traits.call(path,args), traits.echo(text), traits.audio(action,...).'
 
 function _dispatchVoiceEvent(type, data) {
     if (typeof window !== 'undefined') {
@@ -1760,11 +1769,13 @@ export class Traits {
                                 const pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}');
                                 _existing = pvfs['canvas/app.html'] || '';
                             } catch(_) {}
+                            // Augment the request into a precise spec for the agent
                             const prompt = _existing
-                                ? `Current canvas HTML:\n\`\`\`html\n${_existing}\n\`\`\`\n\nModify the above to: ${request}`
-                                : request;
-                            console.log('[Voice/Canvas] Calling agent, existing HTML:', _existing.length, 'chars, request:', request);
-                            const agentArgs = [prompt, CANVAS_AGENT_SYSTEM, 'sys.canvas', 'gpt-4o-mini', 10];
+                                ? `Current canvas (${_existing.length} chars):\n\`\`\`html\n${_existing}\n\`\`\`\n\nUser request: ${request}\n\nRead the file first (sys_vfs read canvas/app.html), then write the COMPLETE updated HTML back.`
+                                : `Build the following for the canvas:\n\n${request}\n\nWrite a complete, self-contained HTML+CSS+JS file to canvas/app.html. Requirements:\n- All game/app logic, interactive controls, score/status display\n- Dark theme: background #0a0a0a, bright accent colors\n- No external dependencies — all CSS and JS inline\n- Use querySelector('#canvas-container canvas') for canvas access\n- Use let (not const) for any reassigned variables\n- Cancel any existing animation first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId)\n- Store new animation ID: window.__canvasAnimId = requestAnimationFrame(loop)\n- No DOMContentLoaded listeners needed`;
+                            console.log('[Voice/Canvas] Calling agent, existing:', _existing.length, 'chars, create:', !_existing, 'request:', request);
+                            // Give agent VFS + canvas tools; use gpt-4.1 for complex creative tasks
+                            const agentArgs = [prompt, CANVAS_AGENT_SYSTEM, 'sys.vfs,sys.canvas', 'gpt-4.1', 20];
                             this.call('llm.agent', agentArgs).then(result => {
                                 const r = result?.result || result;
                                 console.log('[Voice/Canvas] Agent done, ok:', r?.ok, 'steps:', r?.step_count);
