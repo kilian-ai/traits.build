@@ -1,0 +1,21 @@
+[trait]
+description = "Build OpenAI Realtime API tool definitions from the trait registry — canonical tool list used by both native WebSocket and browser WebRTC voice sessions"
+version = "v260407.164545"
+checksum = "1fb1b78138d2edfa4f6af1e24710d581ead1b75eec903a1ab1ac6e46d45d2e10"
+author = "system"
+tags = ["sys", "voice", "tools", "registry"]
+
+[signature]
+params = [
+  { name = "page", type = "string", description = "Active page context ('canvas' restricts to canvas tools)", required = false },
+]
+
+[signature.returns]
+type = "map"
+description = "{ok: bool, tools: array, count: int}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "voice_tools"
+wasm = true

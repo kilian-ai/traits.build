@@ -15,10 +15,13 @@ static CUSTOM_INSTRUCTIONS: Mutex<Option<String>> = Mutex::new(None);
 /// sys.voice.instruct — read, replace, or reset the voice agent instructions.
 ///
 /// Actions:
-///   get    — return current instructions (custom if set, else default)
-///   set    — replace instructions entirely with provided text
-///   reset  — remove custom override, revert to compiled-in default
-///   append — add text to the end of current instructions
+///   get          — return current instructions (custom if set, else default)
+///   set          — replace instructions entirely with provided text
+///   reset        — remove custom override, revert to compiled-in default
+///   append       — add text to the end of current instructions
+///   build        — assemble full session instructions: agent + memory + history + instruct
+///     arg1: agent (optional, e.g. "traits.build")
+///     arg2: session_id (optional — injects recent chat history)
 pub fn voice_instruct(args: &[Value]) -> Value {
     let action = args.first().and_then(|v| v.as_str()).unwrap_or("");
     let text = args.get(1).and_then(|v| v.as_str()).unwrap_or("");
@@ -54,8 +57,100 @@ pub fn voice_instruct(args: &[Value]) -> Value {
             write_instructions(&new_text);
             json!({ "ok": true, "action": "append", "length": new_text.len(), "source": "custom" })
         }
-        _ => json!({ "ok": false, "error": format!("Unknown action: '{}'. Use get, set, reset, or append.", action) }),
+        "build" => {
+            // arg1 = agent name (optional), arg2 = session_id (optional)
+            let agent = text;
+            let session_id = args.get(2).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+            let instructions = build_instructions(agent, session_id);
+            json!({ "ok": true, "instructions": instructions, "length": instructions.len() })
+        }
+        _ => json!({ "ok": false, "error": format!("Unknown action: '{}'. Use get, set, reset, append, or build.", action) }),
     }
+}
+
+/// Assemble full voice session instructions:
+///   1. Agent context (if agent name provided)
+///   2. Persistent memory notes from sys.voice.memory
+///   3. Recent conversation history from sys.chat (if session_id provided)
+///   4. Voice-specific instructions (custom if set, else compiled-in default)
+///
+/// This is the canonical single source of truth used by both:
+///   - Native WebSocket voice (voice.rs)
+///   - Browser WebRTC voice (traits.js via sdk.call('sys.voice.instruct', ['build', agent, session_id]))
+pub fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    // 1. Agent context
+    if !agent.is_empty() {
+        parts.push(format!(
+            "You are operating as the \"{}\" coding agent on the traits.build platform. \
+             The user is a developer who may ask about code, architecture, or technical topics. \
+             Maintain awareness of this agent context in your responses.",
+            agent
+        ));
+    }
+
+    // 2. Persistent memory notes
+    if let Some(result) = kernel_logic::platform::dispatch("sys.voice.memory", &[json!("list")]) {
+        if let Some(notes) = result.get("notes").and_then(|v| v.as_array()) {
+            let texts: Vec<&str> = notes
+                .iter()
+                .filter_map(|n| n.get("text").and_then(|v| v.as_str()))
+                .collect();
+            if !texts.is_empty() {
+                let mut mem = String::from("Your persistent memory (facts you chose to remember):\n");
+                for t in &texts {
+                    mem.push_str(&format!("- {}\n", t));
+                }
+                parts.push(mem);
+            }
+        }
+    }
+
+    // 3. Recent conversation history from sys.chat
+    if let Some(sid) = session_id {
+        if let Some(result) =
+            kernel_logic::platform::dispatch("sys.chat", &[json!("get"), json!(sid)])
+        {
+            if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                if let Some(messages) = result
+                    .pointer("/session/messages")
+                    .and_then(|v| v.as_array())
+                {
+                    let recent: Vec<&Value> = messages
+                        .iter()
+                        .rev()
+                        .take(6)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
+                    if !recent.is_empty() {
+                        let mut ctx = String::from("Recent conversation context (for continuity):\n");
+                        for msg in &recent {
+                            let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("?");
+                            let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                            let short = if content.len() > 200 {
+                                let mut end = 200;
+                                while !content.is_char_boundary(end) { end -= 1; }
+                                &content[..end]
+                            } else {
+                                content
+                            };
+                            ctx.push_str(&format!("  {}: {}\n", role, short));
+                        }
+                        parts.push(ctx);
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Voice-specific instructions (custom if set, else compiled-in default)
+    let (instr, _) = read_instructions();
+    parts.push(instr);
+
+    parts.join("\n\n")
 }
 
 /// Read current instructions. Returns (text, "custom"|"default").

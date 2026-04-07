@@ -1,14 +1,15 @@
 [trait]
 description = "Read, replace, or reset the voice agent's system instructions — the model can edit its own personality"
-version = "v260331"
-checksum = "c30c74c129cf36ad7b61dd50b9ba03fcf15aff24e741ce53c29d2b0f46524c31"
+version = "v260407"
+checksum = "9865163a64e7abf4b7010698cac98c9d9cf1c27cd5444e4d68b85597d62ee2c9"
 author = "system"
 tags = ["sys", "voice", "instructions", "personality"]
 
 [signature]
 params = [
-  { name = "action", type = "string", description = "get | set | reset | append", required = true, example = "get" },
-  { name = "text", type = "string", description = "New instructions (for set) or text to append (for append)", required = false },
+  { name = "action", type = "string", description = "get | set | reset | append | build", required = true, example = "get" },
+  { name = "text", type = "string", description = "New instructions (for set/append) or agent name (for build)", required = false },
+  { name = "session_id", type = "string", description = "Session ID for chat history injection (for build only)", required = false },
 ]
 
 [signature.returns]

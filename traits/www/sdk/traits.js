@@ -1603,56 +1603,47 @@ export class Traits {
         _voiceSdk = this;
 
         try {
-            // ── Load custom voice instructions FIRST ──
-            // Priority: opts.instructions > localStorage custom > VFS bundled default
             const LS_VOICE_INSTRUCTIONS = 'traits.voice.instructions';
-            let voiceInstructions = opts.instructions || '';
-            if (!voiceInstructions) {
-                try { voiceInstructions = (localStorage.getItem(LS_VOICE_INSTRUCTIONS) || '').trim(); } catch(_) {}
-            }
-            if (!voiceInstructions) {
-                // Try reading from WASM VFS (bundled realtime_instructions.md)
-                try {
-                    if (wasm && wasm.vfs_read) {
-                        const content = wasm.vfs_read('traits/sys/voice/realtime_instructions.md');
-                        if (content) voiceInstructions = content;
-                    }
-                } catch(_) {}
-            }
-            if (!voiceInstructions) {
-                voiceInstructions = 'You are a concise, helpful voice assistant powered by traits.build. Keep responses short and conversational. You have access to function-calling tools that execute locally via WebAssembly.';
-            }
-            // Inject into WASM instruct trait so get/set work during the session
-            try { await this.call('sys.voice.instruct', ['set', voiceInstructions]); } catch(_) {}
-
-            // ── Build full instructions (mirrors native build_instructions) ──
-            const instructionParts = [];
-            // 1. Agent context
-            if (opts.agent) {
-                instructionParts.push(
-                    `You are operating as the "${opts.agent}" coding agent on the traits.build platform. ` +
-                    `The user is a developer who may ask about code, architecture, or technical topics. ` +
-                    `Maintain awareness of this agent context in your responses.`
-                );
-            }
-            // 2. Voice-specific instructions (custom or default)
-            instructionParts.push(voiceInstructions);
-            const fullInstructions = instructionParts.join('\n\n');
-            console.log('[Voice] Instructions loaded (' + fullInstructions.length + ' chars, source: ' + (opts.instructions ? 'opts' : 'vfs/localStorage') + ')');
-
-            // ── Build tool definitions ──
-            let tools = [];
             const currentPage = (typeof location !== 'undefined' && location.hash || '').replace(/^#\/?/, '').split('/')[0] || '';
-            if (enableTools) {
-                tools = await _buildVoiceTools(this, currentPage);
+
+            // ── If caller passed custom instructions, inject them so sys.voice.instruct build picks them up ──
+            if (opts.instructions) {
+                try { await this.call('sys.voice.instruct', ['set', opts.instructions]); } catch(_) {}
+            } else {
+                // Mirror localStorage overrides into WASM so build action reads the right value
+                const lsInstr = (() => { try { return (localStorage.getItem(LS_VOICE_INSTRUCTIONS) || '').trim(); } catch(_) { return ''; } })();
+                if (lsInstr) { try { await this.call('sys.voice.instruct', ['set', lsInstr]); } catch(_) {} }
             }
-            // Canvas page: prepend focused instructions
+
+            // ── Build full instructions via sys.voice.instruct build (single source of truth) ──
+            // Includes: agent context + memory notes + chat history + voice instruct text
+            let fullInstructions = '';
+            try {
+                const instrResult = await this.call('sys.voice.instruct', ['build', opts.agent || '', opts.sessionId || '']);
+                fullInstructions = instrResult?.instructions || instrResult?.result?.instructions || '';
+            } catch(_) {}
+            if (!fullInstructions) {
+                fullInstructions = 'You are a concise, helpful voice assistant powered by traits.build. Keep responses short and conversational. You have access to function-calling tools that execute locally via WebAssembly.';
+            }
+            // Canvas page prefix (visual context cue)
             if (currentPage === 'canvas') {
                 const canvasPrefix = 'You are a canvas assistant. The user is on a visual canvas page. ' +
                     'For ANY creative or visual request, call the `canvas` tool with the user\'s words. ' +
                     'Do NOT ask clarifying questions. Do NOT explain how things work. Just call `canvas` and report what was done. ' +
                     'You also have `sys_echo` (show text on screen) and `sys_audio` (play sounds).';
-                instructionParts.unshift(canvasPrefix);
+                fullInstructions = canvasPrefix + '\n\n' + fullInstructions;
+            }
+            console.log('[Voice] Instructions loaded (' + fullInstructions.length + ' chars, source: sys.voice.instruct build)');
+
+            // ── Build tool definitions via sys.voice.tools (shared registry, single source of truth) ──
+            let tools = [];
+            if (enableTools) {
+                try {
+                    const toolsResult = await this.call('sys.voice.tools', [currentPage]);
+                    tools = toolsResult?.tools || toolsResult?.result?.tools || [];
+                } catch(_) {
+                    tools = await _buildVoiceTools(this, currentPage); // fallback if trait not yet compiled
+                }
             }
 
             // ── Ephemeral token: browser WebRTC needs a short-lived token ──
@@ -2085,12 +2076,17 @@ export class Traits {
                 voiceInstructions = 'You are a concise, helpful voice assistant. Keep responses short and conversational. You have access to function-calling tools that execute locally.';
             }
 
-            // ── Build tool definitions ──
+            // ── Build tool definitions via sys.voice.tools ──
             let tools = [];
             if (enableTools) {
                 _localVoiceProgress('Loading tools…');
                 const _localPage = (typeof location !== 'undefined' && location.hash || '').replace(/^#\/?/, '').split('/')[0] || '';
-                tools = await _buildVoiceTools(this, _localPage);
+                try {
+                    const toolsResult = await this.call('sys.voice.tools', [_localPage]);
+                    tools = toolsResult?.tools || toolsResult?.result?.tools || [];
+                } catch(_) {
+                    tools = await _buildVoiceTools(this, _localPage); // fallback
+                }
                 console.log('[LocalVoice] Loaded', tools.length, 'tools');
             }
 

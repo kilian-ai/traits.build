@@ -67,8 +67,8 @@ pub fn voice(args: &[Value]) -> Value {
         return json!({"ok": false, "error": "sox not found. Install: brew install sox"});
     }
 
-    // Build combined instructions: agent context + voice-specific tuning
-    let instructions = build_instructions(agent, session_id.as_deref());
+    // Build combined instructions via sys.voice.instruct build
+    let instructions = build_instructions_via_trait(agent, session_id.as_deref());
 
     match realtime_session(
         &api_key,
@@ -82,94 +82,19 @@ pub fn voice(args: &[Value]) -> Value {
     }
 }
 
-/// Build combined instructions from agent context + memory + voice-specific tuning.
-fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
-    let mut parts: Vec<String> = Vec::new();
-
-    // 1. Agent context — tell the model who it's acting as
-    if !agent.is_empty() {
-        parts.push(format!(
-            "You are operating as the \"{}\" coding agent on the traits.build platform. \
-             The user is a developer who may ask about code, architecture, or technical topics. \
-             Maintain awareness of this agent context in your responses.",
-            agent
-        ));
-    }
-
-    // 2. Persistent memory notes — things the model remembered from prior sessions
-    if let Some(result) = kernel_logic::platform::dispatch("sys.voice.memory", &[json!("list")]) {
-        if let Some(notes) = result.get("notes").and_then(|v| v.as_array()) {
-            let texts: Vec<&str> = notes
-                .iter()
-                .filter_map(|n| n.get("text").and_then(|v| v.as_str()))
-                .collect();
-            if !texts.is_empty() {
-                let mut mem =
-                    String::from("Your persistent memory (facts you chose to remember):\n");
-                for t in &texts {
-                    mem.push_str(&format!("- {}\n", t));
-                }
-                parts.push(mem);
-            }
+/// Delegate instruction assembly to sys.voice.instruct build (single source of truth).
+fn build_instructions_via_trait(agent: &str, session_id: Option<&str>) -> String {
+    let sid = session_id.map(|s| json!(s)).unwrap_or(Value::Null);
+    if let Some(result) = kernel_logic::platform::dispatch(
+        "sys.voice.instruct",
+        &[json!("build"), json!(agent), sid],
+    ) {
+        if let Some(s) = result.get("instructions").and_then(|v| v.as_str()) {
+            return s.to_string();
         }
     }
-
-    // 3. Conversation history — provide recent context from the chat session
-    if let Some(sid) = session_id {
-        if let Some(result) =
-            kernel_logic::platform::dispatch("sys.chat", &[json!("get"), json!(sid)])
-        {
-            if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
-                if let Some(messages) = result
-                    .pointer("/session/messages")
-                    .and_then(|v| v.as_array())
-                {
-                    // Include last few messages as context (not too many — voice is concise)
-                    let recent: Vec<&Value> = messages
-                        .iter()
-                        .rev()
-                        .take(6)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .collect();
-                    if !recent.is_empty() {
-                        let mut ctx =
-                            String::from("Recent conversation context (for continuity):\n");
-                        for msg in &recent {
-                            let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("?");
-                            let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                            // Truncate long messages for voice context
-                            let short = if content.len() > 200 {
-                                let mut end = 200;
-                                while !content.is_char_boundary(end) {
-                                    end -= 1;
-                                }
-                                &content[..end]
-                            } else {
-                                content
-                            };
-                            ctx.push_str(&format!("  {}: {}\n", role, short));
-                        }
-                        parts.push(ctx);
-                    }
-                }
-            }
-        }
-    }
-
-    // 4. Voice-specific tuning — custom instructions if set, else compiled-in default
-    if let Some(result) = kernel_logic::platform::dispatch("sys.voice.instruct", &[json!("get")]) {
-        if let Some(instr) = result.get("instructions").and_then(|v| v.as_str()) {
-            parts.push(instr.to_string());
-        } else {
-            parts.push(VOICE_INSTRUCTIONS.to_string());
-        }
-    } else {
-        parts.push(VOICE_INSTRUCTIONS.to_string());
-    }
-
-    parts.join("\n\n")
+    // Fallback: compiled-in default
+    VOICE_INSTRUCTIONS.to_string()
 }
 
 fn resolve_api_key() -> Option<String> {
@@ -273,8 +198,13 @@ fn realtime_session(
         return Err("Timeout waiting for session.created".into());
     }
 
-    // ── Configure session with tools ──
-    let tools = build_tools();
+    // ── Configure session with tools via sys.voice.tools (single source of truth) ──
+    let tools: Vec<Value> = kernel_logic::platform::dispatch(
+        "sys.voice.tools",
+        &[json!("")],
+    )
+    .and_then(|r| r.get("tools").and_then(|v| v.as_array()).cloned())
+    .unwrap_or_default();
     let tool_count = tools.len();
     let mut session_config = json!({
         "instructions": instructions,
@@ -506,7 +436,7 @@ fn realtime_session(
 
                             // If the model changed instructions, rebuild and update session
                             if func_name == "sys_voice_instruct" {
-                                let new_instructions = build_instructions(
+                                let new_instructions = build_instructions_via_trait(
                                     &read_voice_pref("agent").unwrap_or_default(),
                                     session_id,
                                 );
@@ -522,7 +452,7 @@ fn realtime_session(
 
                             // If the model added/removed a memory note, rebuild and update session
                             if func_name == "sys_voice_memory" {
-                                let new_instructions = build_instructions(
+                                let new_instructions = build_instructions_via_trait(
                                     &read_voice_pref("agent").unwrap_or_default(),
                                     session_id,
                                 );
@@ -917,7 +847,7 @@ fn apply_live_config_change(
         }
         "agent" => {
             // Rebuild instructions with new agent and send session.update
-            let instructions = build_instructions(value, session_id);
+            let instructions = build_instructions_via_trait(value, session_id);
             let update = json!({
                 "type": "session.update",
                 "session": { "instructions": instructions }
@@ -934,127 +864,11 @@ fn apply_live_config_change(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Tool registration — expose traits as Realtime API function-calling tools
+// Tool dispatch — args assembly + trait call
+// Tool list building has moved to sys.voice.tools (WASM-callable, shared with
+// the browser WebRTC session so both always use the same exclusion list and
+// schema generation).
 // ═══════════════════════════════════════════════════════════════════════════
-
-/// Traits to exclude from voice tool calling (internal/dangerous/interactive).
-pub const TOOL_EXCLUDE: &[&str] = &[
-    "sys.voice.config",
-    "sys.voice.instruct",
-    "sys.voice.memory",
-    "sys.voice.status",
-    "sys.mcp",
-    "sys.serve",
-    "sys.cli",
-    "sys.cli.native",
-    "sys.cli.wasm",
-    "sys.dylib_loader",
-    "sys.reload",
-    "sys.release",
-    "sys.secrets",
-    "kernel.main",
-    "kernel.dispatcher",
-    "kernel.globals",
-    "kernel.registry",
-    "kernel.config",
-    "kernel.plugin_api",
-    "kernel.cli",
-    "www.admin",
-    "www.admin.deploy",
-    "www.admin.fast_deploy",
-    "www.admin.scale",
-    "www.admin.destroy",
-    "www.admin.save_config",
-];
-
-/// Build OpenAI Realtime API tool definitions from the trait registry.
-fn build_tools() -> Vec<Value> {
-    let registry = match crate::globals::REGISTRY.get() {
-        Some(r) => r,
-        None => return Vec::new(),
-    };
-
-    let mut tools: Vec<Value> = Vec::new();
-    let mut entries = registry.all();
-    entries.sort_by(|a, b| a.path.cmp(&b.path));
-
-    for entry in &entries {
-        if TOOL_EXCLUDE.contains(&entry.path.as_str()) {
-            continue;
-        }
-        // Skip www.* traits (they return HTML, not useful for voice)
-        if entry.path.starts_with("www.") {
-            continue;
-        }
-        // Skip non-callable / library traits
-        if entry.kind == "library" || entry.kind == "interface" {
-            continue;
-        }
-
-        let tool_name = entry.path.replace('.', "_");
-        let schema = build_tool_schema(&entry.signature);
-
-        tools.push(json!({
-            "type": "function",
-            "name": tool_name,
-            "description": entry.description,
-            "parameters": schema
-        }));
-    }
-
-    tools
-}
-
-/// Build JSON Schema parameters object from a trait's signature.
-fn build_tool_schema(sig: &crate::types::TraitSignature) -> Value {
-    let mut properties = Map::new();
-    let mut required: Vec<Value> = Vec::new();
-
-    for param in &sig.params {
-        let mut prop = match trait_type_to_schema(&param.param_type) {
-            Value::Object(m) => m,
-            _ => Map::new(),
-        };
-        if !param.description.is_empty() {
-            prop.insert("description".to_string(), json!(param.description));
-        }
-        properties.insert(param.name.clone(), Value::Object(prop));
-        if !param.optional {
-            required.push(json!(param.name));
-        }
-    }
-
-    let mut schema = Map::new();
-    schema.insert("type".to_string(), json!("object"));
-    schema.insert("properties".to_string(), Value::Object(properties));
-    if !required.is_empty() {
-        schema.insert("required".to_string(), Value::Array(required));
-    }
-    Value::Object(schema)
-}
-
-/// Map TraitType → JSON Schema type.
-fn trait_type_to_schema(tt: &crate::types::TraitType) -> Value {
-    match tt {
-        crate::types::TraitType::Int => json!({"type": "integer"}),
-        crate::types::TraitType::Float => json!({"type": "number"}),
-        crate::types::TraitType::String => json!({"type": "string"}),
-        crate::types::TraitType::Bool => json!({"type": "boolean"}),
-        crate::types::TraitType::Bytes => json!({"type": "string"}),
-        crate::types::TraitType::List(inner) => json!({
-            "type": "array",
-            "items": trait_type_to_schema(inner)
-        }),
-        crate::types::TraitType::Map(_k, v) => json!({
-            "type": "object",
-            "additionalProperties": trait_type_to_schema(v)
-        }),
-        crate::types::TraitType::Optional(inner) => trait_type_to_schema(inner),
-        crate::types::TraitType::Any => json!({"type": "string"}),
-        crate::types::TraitType::Handle => json!({"type": "string"}),
-        crate::types::TraitType::Null => json!({"type": "string"}),
-    }
-}
 
 /// Build ordered args array from function call arguments, matching param order.
 fn build_args_from_call(

@@ -1,0 +1,22 @@
+{
+  "features": [
+    {
+      "name": "build full tool list",
+      "examples": [
+        {
+          "input": [],
+          "output": { "contains": ["ok", "tools", "count"] }
+        }
+      ]
+    },
+    {
+      "name": "canvas page restricts tools",
+      "examples": [
+        {
+          "input": ["canvas"],
+          "output": { "contains": ["ok", "tools", "canvas"] }
+        }
+      ]
+    }
+  ]
+}
