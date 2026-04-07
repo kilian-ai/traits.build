@@ -180,17 +180,23 @@ const VOICE_TOOL_EXCLUDE = new Set([
     'www.admin.scale', 'www.admin.destroy', 'www.admin.save_config',
 ]);
 
-const CANVAS_AGENT_SYSTEM = 'You are a visual app and game creator for the live canvas at traits.build/#/canvas. The canvas page renders canvas/app.html inside a phone screen frame (390×844px viewport). Design everything for that dimension.\n\n' +
-    'WORKFLOW: (1) Call sys_vfs(action=read, path=canvas/app.html) to read any existing content. (2) Write the COMPLETE updated HTML with sys_vfs(action=write, path=canvas/app.html, content=<full HTML>). Always write the entire file in one call — not a diff, not a partial update.\n\n' +
-    'DIMENSIONS: Target exactly 390px wide × 844px tall — the phone viewport. Make your layout fill 100% of both dimensions. For <canvas> elements set width=390 height=844 and size the element to width:390px;height:844px.\n\n' +
-    'RENDERING RULES (HTML injected into div#phone-viewport inside the phone frame):\n' +
+const CANVAS_AGENT_SYSTEM =
+    'You are a canvas code executor. NEVER explain, suggest, or answer in text. ALWAYS call tools immediately.\n\n' +
+    'WORKFLOW — execute these steps in order, no skipping, no chatting:\n' +
+    '1. sys_vfs(action=read, path=canvas/app.html) — read the current file\n' +
+    '2. Apply the requested change to the full HTML\n' +
+    '3. sys_vfs(action=write, path=canvas/app.html, content=<COMPLETE updated HTML>) — write the whole file, never a diff\n\n' +
+    'DIMENSIONS: 390px wide × 844px tall — fills the phone viewport.\n' +
+    '- body/root: width:390px; height:844px; overflow:hidden; margin:0\n' +
+    '- <canvas>: set attribute width=390 height=844 and CSS width:390px;height:844px\n\n' +
+    'RENDERING (HTML injected into div#phone-viewport):\n' +
     '- Get canvas: document.querySelector(\'#phone-viewport canvas\') — NEVER getElementById\n' +
-    '- Use let (NEVER const) for variables you reassign. const in loops crashes silently.\n' +
-    '- Animation: cancel old first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId); then: window.__canvasAnimId = requestAnimationFrame(loop)\n' +
-    '- No DOMContentLoaded listeners — script runs immediately on injection\n' +
-    '- No external dependencies — all CSS and JS inline\n' +
-    '- overflow hidden on body/root, no scrollbars — everything must fit 390×844\n\n' +
-    'STYLE: Dark bg #0a0a0a, bright accent colors (#00ff88, #ff6b35, #4fc3f7), smooth 60fps.\n' +
+    '- Use let (NEVER const) for any reassigned variable. const in loops crashes silently.\n' +
+    '- Cancel existing animation before starting: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId);\n' +
+    '- Store new id: window.__canvasAnimId = requestAnimationFrame(loop)\n' +
+    '- No DOMContentLoaded — script runs immediately on injection\n' +
+    '- No external dependencies — inline all CSS and JS\n\n' +
+    'STYLE: Dark bg #0a0a0a, bright accents (#00ff88, #ff6b35, #4fc3f7), smooth 60fps.\n' +
     'Canvas scripts can call: traits.call(path,args), traits.echo(text), traits.audio(action,...).'
 
 function _dispatchVoiceEvent(type, data) {
@@ -1773,8 +1779,8 @@ export class Traits {
                             } catch(_) {}
                             // Augment the request into a precise spec for the agent
                             const prompt = _existing
-                                ? `Current canvas (${_existing.length} chars):\n\`\`\`html\n${_existing}\n\`\`\`\n\nUser request: ${request}\n\nRead the file first (sys_vfs read canvas/app.html), then write the COMPLETE updated HTML back.`
-                                : `Build the following for the canvas:\n\n${request}\n\nWrite a complete, self-contained HTML+CSS+JS file to canvas/app.html. Requirements:\n- All game/app logic, interactive controls, score/status display\n- Dark theme: background #0a0a0a, bright accent colors\n- No external dependencies — all CSS and JS inline\n- Use querySelector('#canvas-container canvas') for canvas access\n- Use let (not const) for any reassigned variables\n- Cancel any existing animation first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId)\n- Store new animation ID: window.__canvasAnimId = requestAnimationFrame(loop)\n- No DOMContentLoaded listeners needed`;
+                                ? `User request: ${request}\n\nRead canvas/app.html, apply the change, write the COMPLETE updated file back immediately.`
+                                : `Build the following for the canvas:\n\n${request}\n\nWrite a complete, self-contained HTML+CSS+JS file to canvas/app.html. Requirements:\n- 390px wide × 844px tall, fills the phone viewport\n- Dark theme: background #0a0a0a, bright accent colors\n- Inline all CSS and JS — no external dependencies\n- querySelector('#phone-viewport canvas') for canvas access — NEVER getElementById\n- let (not const) for any reassigned variables\n- Cancel any existing animation first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId)\n- Store new animation ID: window.__canvasAnimId = requestAnimationFrame(loop)\n- No DOMContentLoaded listeners`;
                             console.log('[Voice/Canvas] Calling agent — existing:', _existing.length, 'chars | create:', !_existing, '| model: gpt-4.1 | request:', request);
                             // Give agent VFS + canvas tools; use gpt-4.1 for complex creative tasks
                             const agentArgs = [prompt, CANVAS_AGENT_SYSTEM, 'sys.vfs,sys.canvas', 'gpt-4.1', 20];
