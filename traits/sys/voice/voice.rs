@@ -23,33 +23,11 @@ extern "C" fn sigint_handler(_: libc::c_int) {
 /// with audio directly. No intermediate STT/TTS pipeline.
 ///
 /// Args: [voice?, model?, agent?, session_id?]
-///       ["token", model?, voice?] — mint ephemeral browser token
 pub fn voice(args: &[Value]) -> Value {
-    // Sub-command: mint ephemeral token for browser WebSocket auth
-    if args.first().and_then(|v| v.as_str()) == Some("token") {
-        let model = args
-            .get(1)
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("gpt-realtime-mini-2025-12-15");
-        let voice_name = args
-            .get(2)
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("shimmer");
-        let api_key = match resolve_api_key() {
-            Some(k) => k,
-            None => {
-                return json!({"ok": false, "error": "OpenAI API key not found. Set via: traits call sys.secrets set openai_api_key <key>"})
-            }
-        };
-        return mint_ephemeral_token(&api_key, model, voice_name);
-    }
-
     // Read persistent defaults from sys.config, then allow arg overrides
-    let default_voice = read_voice_pref("voice").unwrap_or_else(|| "shimmer".into());
+    let default_voice = read_voice_pref("voice").unwrap_or_else(|| "cedar".into());
     let default_model =
-        read_voice_pref("model").unwrap_or_else(|| "gpt-realtime-mini-2025-12-15".into());
+        read_voice_pref("model").unwrap_or_else(|| "gpt-4o-mini-realtime-preview".into());
     let default_agent = read_voice_pref("agent").unwrap_or_default();
 
     let voice_name = args
@@ -197,66 +175,6 @@ fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
 fn resolve_api_key() -> Option<String> {
     kernel_logic::platform::secret_get("openai_api_key")
         .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-}
-
-/// Mint an ephemeral API token for browser WebSocket auth.
-///
-/// OpenAI's Realtime WebSocket requires ephemeral tokens (not standard API keys)
-/// when connecting from browsers. This calls POST /v1/realtime/client_secrets
-/// using the server's API key and returns a short-lived token.
-fn mint_ephemeral_token(api_key: &str, model: &str, voice: &str) -> Value {
-    let session_config = json!({
-        "session": {
-            "type": "realtime",
-            "model": model,
-            "audio": {
-                "output": { "voice": voice }
-            }
-        }
-    });
-
-    let headers = json!({
-        "Authorization": format!("Bearer {}", api_key)
-    });
-
-    let result = kernel_logic::platform::dispatch(
-        "sys.call",
-        &[
-            json!("https://api.openai.com/v1/realtime/client_secrets"),
-            session_config,
-            Value::Null,    // auth_secret (using explicit header instead)
-            json!("POST"),
-            headers,
-        ],
-    );
-
-    match result {
-        Some(r) => {
-            let ok = r.get("ok").and_then(|v| v.as_bool()) == Some(true);
-            if ok {
-                if let Some(body) = r.get("body") {
-                    // Response: { "client_secret": { "value": "ek_...", "expires_at": ... } }
-                    if let Some(token) = body
-                        .pointer("/client_secret/value")
-                        .or_else(|| body.get("value"))
-                        .and_then(|v| v.as_str())
-                    {
-                        return json!({"ok": true, "token": token});
-                    }
-                }
-                json!({"ok": false, "error": "No token in response", "response": r.get("body")})
-            } else {
-                let err = r
-                    .get("body")
-                    .and_then(|b| b.get("error").and_then(|e| e.get("message")))
-                    .or_else(|| r.get("error"))
-                    .cloned()
-                    .unwrap_or(json!("API request failed"));
-                json!({"ok": false, "error": err})
-            }
-        }
-        None => json!({"ok": false, "error": "sys.call dispatch failed"}),
-    }
 }
 
 /// Read a voice preference from persistent config (sys.config sys.voice <key>).
@@ -529,12 +447,7 @@ fn realtime_session(
                         let arguments =
                             ev.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
 
-                        // Log tool call with pretty-printed arguments
-                        let args_display = serde_json::from_str::<Value>(arguments)
-                            .map(|v| serde_json::to_string_pretty(&v).unwrap_or_else(|_| arguments.to_string()))
-                            .unwrap_or_else(|_| arguments.to_string());
-                        eprintln!("\x1b[93m⚡ Tool call: {}\x1b[0m", func_name);
-                        eprintln!("\x1b[90m  Args: {}\x1b[0m", args_display);
+                        eprintln!("\x1b[93m⚡ {func_name}\x1b[0m");
 
                         if func_name == "llm_prompt_acp" {
                             // ── Background ACP dispatch — keep voice interactive ──
@@ -574,16 +487,6 @@ fn realtime_session(
                         } else {
                             // ── Synchronous dispatch for fast tools ──
                             let result = dispatch_tool_call(func_name, arguments);
-
-                            // Log tool result (preview truncated to 400 chars)
-                            let result_preview = if result.len() > 400 {
-                                let mut end = 400;
-                                while !result.is_char_boundary(end) { end -= 1; }
-                                format!("{}…", &result[..end])
-                            } else {
-                                result.clone()
-                            };
-                            eprintln!("\x1b[90m  Result: {}\x1b[0m", result_preview);
 
                             // Truncate very long results for voice context
                             let output = if result.len() > 2000 {
@@ -1036,7 +939,6 @@ fn apply_live_config_change(
 
 /// Traits to exclude from voice tool calling (internal/dangerous/interactive).
 pub const TOOL_EXCLUDE: &[&str] = &[
-    "sys.voice",
     "sys.voice.config",
     "sys.voice.instruct",
     "sys.voice.memory",
@@ -1099,14 +1001,6 @@ fn build_tools() -> Vec<Value> {
             "parameters": schema
         }));
     }
-
-    // Always include the synthetic quit tool so the model can end the session
-    tools.push(json!({
-        "type": "function",
-        "name": "sys_voice_quit",
-        "description": "End the voice conversation. Call this when the user says goodbye, wants to stop, or asks to quit.",
-        "parameters": { "type": "object", "properties": {} }
-    }));
 
     tools
 }

@@ -1755,6 +1755,7 @@ export class Traits {
                         const callId = msg.call_id || '';
                         const funcName = msg.name || '';
                         const argsStr = msg.arguments || '{}';
+                        try { console.log('[Voice] ⚡ Tool call:', funcName, JSON.parse(argsStr)); } catch(_) { console.log('[Voice] ⚡ Tool call:', funcName, argsStr); }
                         if (opts.onToolCall) opts.onToolCall(funcName, argsStr);
                         _dispatchVoiceEvent('tool_call', { name: funcName, arguments: argsStr });
 
@@ -1830,6 +1831,7 @@ export class Traits {
                         this.call(traitPath, callArgs).then(result => {
                             const output = JSON.stringify(result.ok ? (result.result !== undefined ? result.result : result) : { error: result.error });
                             const truncated = output.length > 2000 ? output.slice(0, 2000) + '…(truncated)' : output;
+                            console.log('[Voice] ✓ Result:', funcName, output.length > 400 ? output.slice(0, 400) + '…' : output);
                             if (_voiceDc && _voiceDc.readyState === 'open') {
                                 _voiceDc.send(JSON.stringify({
                                     type: 'conversation.item.create',

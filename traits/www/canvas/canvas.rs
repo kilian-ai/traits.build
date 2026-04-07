@@ -116,7 +116,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                     div .fab-menu #fabMenu {
                         button #fabVoice {
                             span .fab-icon { "🎤" }
-                            span #fabVoiceLabel { "Start Voice" }
+                            span { "Start Voice" }
                         }
                         button #fabSplats {
                             span .fab-icon { "🔮" }
@@ -152,9 +152,6 @@ pub fn canvas(_args: &[Value]) -> Value {
                         const empty = document.getElementById('canvas-empty');
                         const projectBar = document.getElementById('project-bar');
                         let sourceMode = false;
-                        let _currentContent = '';
-                        let __lastContent = '';
-                        let _pollSuppressedUntil = 0;
 
                         // ── Project management ──
                         const PROJECT_PFX = 'traits.canvas.project.';
@@ -213,7 +210,6 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 const raw = localStorage.getItem(PROJECT_PFX + name);
                                 if (!raw) return;
                                 const proj = JSON.parse(raw);
-                                _pollSuppressedUntil = Date.now() + 5000;
                                 const sdk = window._traitsSDK;
                                 if (sdk) await sdk.call('sys.canvas', ['set', proj.content]);
                                 renderCanvas(proj.content);
@@ -221,7 +217,10 @@ pub fn canvas(_args: &[Value]) -> Value {
                         }
 
                         async function saveProject() {
-                            const content = _currentContent;
+                            const sdk = window._traitsSDK;
+                            if (!sdk) return;
+                            const res = await sdk.call('sys.canvas', ['get']);
+                            const content = res?.result?.content || res?.content || '';
                             if (!content) { alert('Canvas is empty — nothing to save.'); return; }
                             const name = prompt('Project name:');
                             if (!name || !name.trim()) return;
@@ -239,8 +238,6 @@ pub fn canvas(_args: &[Value]) -> Value {
                         renderProjectBar();
 
                         function renderCanvas(content) {
-                            _currentContent = content || '';
-                            __lastContent = content || '';
                             if (!content) {
                                 container.innerHTML = '';
                                 container.appendChild(empty);
@@ -307,10 +304,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                             requestAnimationFrame(() => {
                                 for (const src of scriptSources) {
                                     if (src.text) {
-                                        // Auto-patch const→let for variables that LLMs incorrectly declare as const
-                                        // (reassigning a const crashes the script silently in strict mode)
-                                        const patched = src.text.replace(/\bconst\s+(\w+)\s*=/g, 'let $1 =');
-                                        try { (new Function(patched))(); }
+                                        try { (new Function(src.text))(); }
                                         catch (e) { console.error('canvas script error:', e); }
                                     }
                                 }
@@ -340,7 +334,6 @@ pub fn canvas(_args: &[Value]) -> Value {
 
                         // Listen for live updates from voice/SDK
                         window.addEventListener('traits-canvas-update', (e) => {
-                            _pollSuppressedUntil = Date.now() + 5000;
                             const content = e.detail?.content;
                             if (content !== undefined) {
                                 renderCanvas(content);
@@ -360,16 +353,19 @@ pub fn canvas(_args: &[Value]) -> Value {
                         });
 
                         // View Source toggle
-                        document.getElementById('btnSource').addEventListener('click', () => {
+                        document.getElementById('btnSource').addEventListener('click', async () => {
                             sourceMode = !sourceMode;
                             const btn = document.getElementById('btnSource');
                             if (sourceMode) {
+                                const sdk = window._traitsSDK;
+                                const res = sdk ? await sdk.call('sys.canvas', ['get']) : null;
+                                const content = res?.result?.content || res?.content || '';
                                 container.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;color:#888;font-size:13px;padding:20px;"></pre>';
-                                container.querySelector('pre').textContent = _currentContent || '(empty)';
+                                container.querySelector('pre').textContent = content || '(empty)';
                                 btn.textContent = 'Live View';
                             } else {
                                 btn.textContent = 'View Source';
-                                renderCanvas(_currentContent);
+                                loadCanvas();
                             }
                         });
 
@@ -381,10 +377,10 @@ pub fn canvas(_args: &[Value]) -> Value {
                         })();
 
                         // Poll localStorage for external changes (Worker writes persist here)
+                        let __lastContent = '';
                         const _pollId = setInterval(() => {
                             try {
                                 if (sourceMode) return;
-                                if (Date.now() < _pollSuppressedUntil) return;
                                 const content = readCanvasFromStorage();
                                 if (content && content !== __lastContent) {
                                     __lastContent = content;
@@ -407,26 +403,13 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 fabToggle.classList.remove('open');
                             }
                         });
-                        // Voice button — toggles start/stop
-                        const fabVoiceLabel = document.getElementById('fabVoiceLabel');
-                        function updateVoiceButton() {
-                            const sdk = window._traitsSDK;
-                            const active = sdk && sdk.isVoiceActive && sdk.isVoiceActive();
-                            fabVoiceLabel.textContent = active ? 'Stop Voice' : 'Start Voice';
-                            document.getElementById('fabVoice').querySelector('.fab-icon').textContent = active ? '⏹' : '🎤';
-                        }
-                        window.addEventListener('voice-event', updateVoiceButton);
+                        // Voice button
                         document.getElementById('fabVoice').addEventListener('click', () => {
                             fabMenu.classList.remove('show');
                             fabToggle.classList.remove('open');
-                            const sdk = window._traitsSDK;
-                            const active = sdk && sdk.isVoiceActive && sdk.isVoiceActive();
-                            window.dispatchEvent(new CustomEvent('traits-voice-control', {
-                                detail: { voice_control_action: active ? 'stop' : 'start' }
-                            }));
-                            setTimeout(updateVoiceButton, 500);
+                            // Dispatch voice start via the global voice control bridge
+                            window.dispatchEvent(new CustomEvent('traits-voice-control', { detail: { voice_control_action: 'start' } }));
                         });
-
                         // Splat viewer button
                         document.getElementById('fabSplats').addEventListener('click', async () => {
                             fabMenu.classList.remove('show');
@@ -444,16 +427,20 @@ pub fn canvas(_args: &[Value]) -> Value {
                         });
 
                         // Register cleanup: auto-save canvas and remove window.traits when navigating away
-                        window._pageCleanup = () => {
+                        window._pageCleanup = async () => {
                             clearInterval(_pollId);
                             fabMenu.classList.remove('show');
-                            window.removeEventListener('voice-event', updateVoiceButton);
                             // Auto-save canvas content before leaving
-                            if (_currentContent) {
-                                try {
-                                    localStorage.setItem('traits.canvas.project._autosave', JSON.stringify({ content: _currentContent, saved: Date.now() }));
-                                } catch(_) {}
-                            }
+                            try {
+                                const sdk = window._traitsSDK;
+                                if (sdk) {
+                                    const res = await sdk.call('sys.canvas', ['get']);
+                                    const content = res?.result?.content || res?.content || '';
+                                    if (content) {
+                                        localStorage.setItem('traits.canvas.project._autosave', JSON.stringify({ content, saved: Date.now() }));
+                                    }
+                                }
+                            } catch(_) {}
                             try { delete window.traits; } catch(_) {}
                         };
                     })();
