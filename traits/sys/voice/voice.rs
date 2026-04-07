@@ -529,7 +529,12 @@ fn realtime_session(
                         let arguments =
                             ev.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
 
-                        eprintln!("\x1b[93m⚡ {func_name}\x1b[0m");
+                        // Log tool call with pretty-printed arguments
+                        let args_display = serde_json::from_str::<Value>(arguments)
+                            .map(|v| serde_json::to_string_pretty(&v).unwrap_or_else(|_| arguments.to_string()))
+                            .unwrap_or_else(|_| arguments.to_string());
+                        eprintln!("\x1b[93m⚡ Tool call: {}\x1b[0m", func_name);
+                        eprintln!("\x1b[90m  Args: {}\x1b[0m", args_display);
 
                         if func_name == "llm_prompt_acp" {
                             // ── Background ACP dispatch — keep voice interactive ──
@@ -569,6 +574,16 @@ fn realtime_session(
                         } else {
                             // ── Synchronous dispatch for fast tools ──
                             let result = dispatch_tool_call(func_name, arguments);
+
+                            // Log tool result (preview truncated to 400 chars)
+                            let result_preview = if result.len() > 400 {
+                                let mut end = 400;
+                                while !result.is_char_boundary(end) { end -= 1; }
+                                format!("{}…", &result[..end])
+                            } else {
+                                result.clone()
+                            };
+                            eprintln!("\x1b[90m  Result: {}\x1b[0m", result_preview);
 
                             // Truncate very long results for voice context
                             let output = if result.len() > 2000 {
