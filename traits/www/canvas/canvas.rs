@@ -52,7 +52,8 @@ pub fn canvas(_args: &[Value]) -> Value {
 
                         #canvas-container {
                             width: 100%; min-height: calc(100vh - 100px);
-                            padding: 20px; position: relative;
+                            padding: 40px 20px; position: relative;
+                            display: flex; justify-content: center; align-items: flex-start;
                         }
                         .canvas-empty {
                             display: flex; flex-direction: column; align-items: center;
@@ -61,6 +62,50 @@ pub fn canvas(_args: &[Value]) -> Value {
                         .canvas-empty .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
                         .canvas-empty p { font-size: 14px; }
                         .canvas-empty code { color: var(--accent); font-size: 13px; }
+
+                        /* Phone frame */
+                        #phone-frame {
+                            display: none;
+                            position: relative;
+                            width: 430px;
+                            background: #1a1a1c;
+                            border-radius: 50px;
+                            border: 2px solid #3a3a3c;
+                            box-shadow: 0 0 0 1px #111, 0 30px 80px rgba(0,0,0,0.8), inset 0 0 0 1px #2a2a2c;
+                            padding: 18px 16px 22px;
+                            flex-shrink: 0;
+                        }
+                        #phone-frame.visible { display: block; }
+                        .phone-notch {
+                            width: 120px; height: 34px;
+                            background: #1a1a1c;
+                            border-radius: 0 0 22px 22px;
+                            margin: 0 auto 10px;
+                            position: relative; z-index: 2;
+                            display: flex; align-items: center; justify-content: center;
+                            gap: 8px;
+                        }
+                        .phone-notch .camera {
+                            width: 12px; height: 12px; border-radius: 50%;
+                            background: #111; border: 1px solid #2a2a2c;
+                        }
+                        .phone-notch .speaker {
+                            width: 50px; height: 6px; border-radius: 3px;
+                            background: #111; border: 1px solid #222;
+                        }
+                        #phone-viewport {
+                            width: 398px;
+                            height: 844px;
+                            border-radius: 36px;
+                            overflow: hidden;
+                            background: #000;
+                            position: relative;
+                        }
+                        .phone-home-bar {
+                            width: 134px; height: 5px;
+                            background: #555; border-radius: 3px;
+                            margin: 10px auto 0;
+                        }
 
                         /* FAB menu */
                         #canvas-fab {
@@ -107,6 +152,14 @@ pub fn canvas(_args: &[Value]) -> Value {
                     div .canvas-empty #canvas-empty {
                         div .icon { "🎨" }
                         p { "Canvas is empty — use " code { "sys.canvas set \"<html>\"" } " or voice to draw." }
+                    }
+                    div #phone-frame {
+                        div .phone-notch {
+                            div .speaker {}
+                            div .camera {}
+                        }
+                        div #phone-viewport {}
+                        div .phone-home-bar {}
                     }
                 }
 
@@ -237,26 +290,30 @@ pub fn canvas(_args: &[Value]) -> Value {
                         // Initial render
                         renderProjectBar();
 
+                        const phoneFrame    = document.getElementById('phone-frame');
+                        const phoneViewport = document.getElementById('phone-viewport');
+
                         function renderCanvas(content) {
                             if (!content) {
-                                container.innerHTML = '';
+                                phoneFrame.classList.remove('visible');
                                 container.appendChild(empty);
                                 empty.style.display = 'flex';
                                 return;
                             }
                             empty.style.display = 'none';
+                            phoneFrame.classList.add('visible');
                             // Remove previous canvas styles
                             document.querySelectorAll('style[data-canvas]').forEach(s => s.remove());
-                            // Base style for injected content: ensure visibility on dark bg
+                            // Base style scoped to phone viewport
                             const base = document.createElement('style');
                             base.dataset.canvas = '1';
                             base.textContent = `
-                                #canvas-container { color: #e0e0e0; }
-                                #canvas-container svg { fill: #e0e0e0; stroke: #e0e0e0; }
-                                #canvas-container svg text { fill: #e0e0e0; }
-                                #canvas-container canvas { display: block; }
-                                #canvas-container h1, #canvas-container h2, #canvas-container h3,
-                                #canvas-container p, #canvas-container span, #canvas-container div {
+                                #phone-viewport { color: #e0e0e0; }
+                                #phone-viewport svg { fill: #e0e0e0; stroke: #e0e0e0; }
+                                #phone-viewport svg text { fill: #e0e0e0; }
+                                #phone-viewport canvas { display: block; }
+                                #phone-viewport h1, #phone-viewport h2, #phone-viewport h3,
+                                #phone-viewport p, #phone-viewport span, #phone-viewport div {
                                     color: inherit;
                                 }
                             `;
@@ -293,7 +350,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                             });
 
                             // Inject non-script HTML first
-                            container.innerHTML = tmp.innerHTML;
+                            phoneViewport.innerHTML = tmp.innerHTML;
 
                             // Cancel any previous animation loop from older canvas content
                             if (window.__canvasAnimId) { cancelAnimationFrame(window.__canvasAnimId); window.__canvasAnimId = null; }
@@ -310,6 +367,9 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 }
                             });
                         }
+
+                        // Update querySelector to find canvas inside phone-viewport
+                        // (agents use #canvas-container in old code; patch at injection time)
 
                         async function loadCanvas() {
                             try {
@@ -360,8 +420,9 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 const sdk = window._traitsSDK;
                                 const res = sdk ? await sdk.call('sys.canvas', ['get']) : null;
                                 const content = res?.result?.content || res?.content || '';
-                                container.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;color:#888;font-size:13px;padding:20px;"></pre>';
-                                container.querySelector('pre').textContent = content || '(empty)';
+                                phoneFrame.classList.add('visible');
+                                phoneViewport.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;color:#888;font-size:13px;padding:20px;overflow:auto;height:100%;box-sizing:border-box;"></pre>';
+                                phoneViewport.querySelector('pre').textContent = content || '(empty)';
                                 btn.textContent = 'Live View';
                             } else {
                                 btn.textContent = 'View Source';
