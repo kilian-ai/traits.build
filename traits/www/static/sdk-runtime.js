@@ -1913,6 +1913,15 @@ class Traits {
                 const sessionConfig = {
                     type: 'realtime',
                     instructions: fullInstructions || fallbackInstructions,
+                    // Give the user more time to finish their thought before the model responds.
+                    // silence_duration_ms: 1200ms (default ~500ms) — waits longer after speech stops.
+                    // prefix_padding_ms: 400ms — more audio before speech counts as a turn start.
+                    turn_detection: {
+                        type: 'server_vad',
+                        silence_duration_ms: 1200,
+                        prefix_padding_ms: 400,
+                        threshold: 0.5,
+                    },
                 };
                 if (tools.length > 0) sessionConfig.tools = tools;
                 _voiceDc.send(JSON.stringify({ type: 'session.update', session: sessionConfig }));
