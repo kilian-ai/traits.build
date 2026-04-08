@@ -673,8 +673,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                         const smBodyEl     = document.getElementById('smBody');
                         const smCloseBtn   = document.getElementById('smClose');
                         const RELAY        = 'https://relay.traits.build';
-                        const ICE_SERVERS  = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
-                        let _smAbort = false, _smPc = null;
+                        let _smAbort = false;
 
                         smCloseBtn.addEventListener('click', (e) => { e.stopPropagation(); smHide(); });
 
@@ -705,7 +704,6 @@ pub fn canvas(_args: &[Value]) -> Value {
                         function smHide() {
                             _smAbort = true;
                             shareModal.classList.remove('sm-open');
-                            if (_smPc) { try { _smPc.close(); } catch(_) {} _smPc = null; }
                         }
                         function smStatus(text, cls) {
                             const el = smBodyEl.querySelector('.sm-status');
@@ -719,28 +717,17 @@ pub fn canvas(_args: &[Value]) -> Value {
                         }
 
                         // ── SENDER ──
+                        // Strategy: register relay code, display it, wait for receiver to
+                        // call path='project.recv' via relay/call, then respond with the
+                        // full project content. No WebRTC — content travels through the
+                        // relay (Cloudflare Worker). Two round-trips, always works.
                         async function smStartSend() {
-                            smBodyEl.innerHTML = '<div class="sm-status">Preparing offer…</div>';
+                            smBodyEl.innerHTML = '<div class="sm-status">Registering\u2026</div>';
 
-                            // Build PC + DC first so we can gather ICE before registering
-                            const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-                            _smPc = pc;
-                            const dc = pc.createDataChannel('project', { ordered: true });
-
-                            const offerComplete = new Promise(res => {
-                                pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') res(); };
-                                pc.onicecandidate = e => { if (!e.candidate) res(); };
-                                setTimeout(res, 9000);
-                            });
-                            const offer = await pc.createOffer();
-                            await pc.setLocalDescription(offer);
-                            await offerComplete;
-                            if (_smAbort) return;
-
-                            // Register relay AFTER offer is ready so receiver can call immediately
                             let code;
                             try {
                                 const r = await fetch(RELAY + '/relay/register', { method: 'POST' });
+                                if (!r.ok) throw new Error('HTTP ' + r.status);
                                 const j = await r.json(); code = j.code;
                             } catch(e) {
                                 smBodyEl.innerHTML = '<div class="sm-status err">\u26a0 Relay unreachable: ' + e.message + '</div>';
@@ -750,7 +737,7 @@ pub fn canvas(_args: &[Value]) -> Value {
 
                             const shareUrl = location.origin + location.pathname + '#/canvas?receive=' + code;
                             smBodyEl.innerHTML = `
-                                <div class="sm-label">Share this code — offer is ready</div>
+                                <div class="sm-label">Share this code with the receiver:</div>
                                 <div class="sm-code-display">
                                     ${code.split('').map(c => `<div class="sm-code-char">${c}</div>`).join('')}
                                 </div>
@@ -768,99 +755,57 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 });
                             });
 
-                            // Poll round 1 — receiver requests offer
-                            let poll1;
+                            // Long-poll: wait for receiver to knock
+                            let knock;
                             try {
-                                const r = await fetch(RELAY + '/relay/poll?code=' + code, { signal: AbortSignal.timeout(35000) });
+                                const r = await fetch(RELAY + '/relay/poll?code=' + code, { signal: AbortSignal.timeout(120000) });
                                 if (!r.ok) throw new Error('poll ' + r.status);
-                                poll1 = await r.json();
+                                knock = await r.json();
                             } catch(e) {
                                 if (!_smAbort) smStatus('\u26a0 Timed out — no receiver connected.', 'err');
                                 return;
                             }
                             if (_smAbort) return;
-                            smStatus('Sending offer\u2026');
-                            smProgress(25);
 
-                            // Respond with full SDP offer
-                            await fetch(RELAY + '/relay/respond', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ code, id: poll1.id, result: { sdp: pc.localDescription.sdp, type: pc.localDescription.type } })
-                            });
+                            smStatus('Receiver connected! Reading project\u2026');
+                            smProgress(40);
 
-                            smStatus('Offer sent, waiting for answer\u2026');
-                            smProgress(50);
-
-                            // Poll round 2 — receiver sends answer
-                            let poll2;
+                            // Read the current project
+                            let content = '';
                             try {
-                                const r = await fetch(RELAY + '/relay/poll?code=' + code, { signal: AbortSignal.timeout(35000) });
-                                if (!r.ok) throw new Error('poll2 ' + r.status);
-                                poll2 = await r.json();
-                            } catch(e) {
-                                if (!_smAbort) smStatus('\u26a0 Timed out waiting for answer.', 'err');
-                                return;
-                            }
-                            if (_smAbort) return;
+                                const sdk = window._traitsSDK;
+                                if (sdk) {
+                                    const res = await sdk.call('sys.canvas', ['get']);
+                                    content = res?.result?.content || res?.content || '';
+                                }
+                            } catch(_) {}
+                            if (!content) content = document.getElementById('phone-viewport')?.srcdoc || '';
 
-                            const answerData = poll2.args && poll2.args[0];
-                            if (!answerData?.sdp) {
-                                smStatus('\u26a0 Invalid answer from receiver.', 'err');
-                                return;
-                            }
-                            await pc.setRemoteDescription(new RTCSessionDescription(answerData));
-                            await fetch(RELAY + '/relay/respond', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ code, id: poll2.id, result: 'ok' })
-                            });
-
-                            smStatus('P2P connecting\u2026');
+                            smStatus('Sending project\u2026');
                             smProgress(70);
 
-                            // Wait for DataChannel open then send project
-                            dc.onopen = async () => {
-                                if (_smAbort) return;
-                                smStatus('Sending project\u2026');
-                                smProgress(85);
+                            // Respond with the project content
+                            try {
+                                await fetch(RELAY + '/relay/respond', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ code, id: knock.id, result: { content } }),
+                                });
+                            } catch(e) {
+                                smStatus('\u26a0 Failed to send project: ' + e.message, 'err');
+                                return;
+                            }
 
-                                let content = '';
-                                try {
-                                    const sdk = window._traitsSDK;
-                                    if (sdk) {
-                                        const res = await sdk.call('sys.canvas', ['get']);
-                                        content = res?.result?.content || res?.content || '';
-                                    }
-                                } catch(_) {}
-                                if (!content) content = document.getElementById('phone-viewport')?.srcdoc || '';
-
-                                const payload = JSON.stringify({ type: 'project', content, ts: Date.now() });
-                                const CHUNK = 60 * 1024;
-                                if (payload.length <= CHUNK) {
-                                    dc.send(payload);
-                                } else {
-                                    const chunks = Math.ceil(payload.length / CHUNK);
-                                    dc.send(JSON.stringify({ type: 'chunked', total: chunks }));
-                                    for (let i = 0; i < chunks; i++) {
-                                        dc.send(payload.slice(i * CHUNK, (i + 1) * CHUNK));
-                                        smProgress(85 + 14 * (i + 1) / chunks);
-                                    }
-                                }
-                                smStatus('\u2713 Project sent!', 'ok');
-                                smProgress(100);
-                                setTimeout(() => smHide(), 2000);
-                            };
-                            pc.onconnectionstatechange = () => {
-                                if (pc.connectionState === 'failed' && !_smAbort)
-                                    smStatus('\u26a0 P2P connection failed. Try again.', 'err');
-                            };
+                            smProgress(100);
+                            smStatus('\u2713 Project sent!', 'ok');
+                            setTimeout(() => smHide(), 1800);
                         }
 
                         // ── RECEIVER ──
                         async function smStartReceive() {
-                            // Auto-detect ?receive=CODE in hash
-                            const autoCode = (location.hash.split('?')[1] ? new URLSearchParams(location.hash.split('?')[1]).get('receive') : '') || '';
+                            const autoCode = (() => {
+                                try { const h = location.hash.split('?')[1]; return h ? new URLSearchParams(h).get('receive') || '' : ''; } catch(_) { return ''; }
+                            })();
                             smBodyEl.innerHTML = `
                                 <div class="sm-label">Enter the 4-letter code from the sender:</div>
                                 <div class="sm-code-inputs" id="smCodeInputs">
@@ -869,11 +814,10 @@ pub fn canvas(_args: &[Value]) -> Value {
                                     <input class="sm-ci" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false">
                                     <input class="sm-ci" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false">
                                 </div>
-                                <button class="sm-btn-primary" id="smConnectBtn">Connect \u2192</button>
+                                <button class="sm-btn-primary" id="smConnectBtn">Receive \u2192</button>
                                 <div class="sm-progress" style="opacity:0"><div class="sm-progress-bar" style="width:0%"></div></div>
                                 <div class="sm-status"></div>
                             `;
-                            // Wire up 4-box code input with auto-advance
                             const inputs = Array.from(smBodyEl.querySelectorAll('.sm-ci'));
                             inputs.forEach((inp, i) => {
                                 inp.addEventListener('input', () => {
@@ -888,10 +832,10 @@ pub fn canvas(_args: &[Value]) -> Value {
                                     const txt = (e.clipboardData.getData('text') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
                                     inputs.forEach((b, j) => { b.value = txt[j] || ''; });
                                     e.preventDefault();
+                                    inputs[Math.min(txt.length, 3)].focus();
                                 });
                             });
                             smBodyEl.querySelector('#smConnectBtn').addEventListener('click', () => smDoReceive(inputs));
-                            // Pre-fill and auto-connect if URL has code
                             if (autoCode.length >= 4) {
                                 autoCode.toUpperCase().split('').forEach((c, i) => { if (inputs[i]) inputs[i].value = c; });
                                 setTimeout(() => smDoReceive(inputs), 300);
@@ -906,95 +850,30 @@ pub fn canvas(_args: &[Value]) -> Value {
 
                             smBodyEl.querySelector('#smConnectBtn').disabled = true;
                             smBodyEl.querySelector('.sm-progress').style.opacity = '1';
-                            smStatus('Requesting offer\u2026');
-                            smProgress(15);
+                            smStatus('Contacting sender\u2026');
+                            smProgress(30);
 
-                            let offerData;
+                            let result;
                             try {
                                 const r = await fetch(RELAY + '/relay/call', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ code, path: 'rtc.request', args: [] }),
+                                    body: JSON.stringify({ code, path: 'project.recv', args: [] }),
                                 });
-                                if (!r.ok) throw new Error('relay ' + r.status);
+                                if (!r.ok) throw new Error('HTTP ' + r.status);
                                 const j = await r.json();
-                                offerData = j.result || j;
+                                if (j.error) throw new Error(j.error);
+                                result = j.result;
                             } catch(e) {
-                                smStatus('\u26a0 Could not reach sender — check code.', 'err');
+                                smStatus('\u26a0 ' + e.message, 'err');
                                 smBodyEl.querySelector('#smConnectBtn').disabled = false;
                                 return;
                             }
-                            if (!offerData?.sdp) {
-                                smStatus('\u26a0 No valid offer from sender.', 'err');
-                                smBodyEl.querySelector('#smConnectBtn').disabled = false;
-                                return;
-                            }
-
-                            smStatus('Creating answer\u2026');
-                            smProgress(35);
-
-                            const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-                            _smPc = pc;
-                            await pc.setRemoteDescription(new RTCSessionDescription(offerData));
-                            const answer = await pc.createAnswer();
-                            const answerComplete = new Promise(res => {
-                                pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') res(); };
-                                pc.onicecandidate = e => { if (!e.candidate) res(); };
-                                setTimeout(res, 9000);
-                            });
-                            await pc.setLocalDescription(answer);
-                            await answerComplete;
                             if (_smAbort) return;
 
-                            smStatus('Sending answer\u2026');
-                            smProgress(55);
-
-                            try {
-                                await fetch(RELAY + '/relay/call', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ code, path: 'rtc.answer', args: [{ sdp: pc.localDescription.sdp, type: pc.localDescription.type }] }),
-                                });
-                            } catch(e) {
-                                smStatus('\u26a0 Failed to send answer.', 'err');
-                                return;
-                            }
-
-                            smStatus('Connecting P2P\u2026');
-                            smProgress(70);
-
-                            // Wait for data over the channel
-                            let _chunkedBuf = '', _chunkedTotal = 0, _chunkedCount = 0;
-                            pc.ondatachannel = (e) => {
-                                const ch = e.channel;
-                                ch.onmessage = async (ev) => {
-                                    try {
-                                        const msg = JSON.parse(ev.data);
-                                        if (msg.type === 'chunked') {
-                                            _chunkedTotal = msg.total; _chunkedCount = 0; _chunkedBuf = '';
-                                            smStatus('Receiving\u2026 0/' + _chunkedTotal);
-                                            return;
-                                        }
-                                        if (_chunkedTotal > 0) {
-                                            _chunkedBuf += ev.data;
-                                            _chunkedCount++;
-                                            smStatus('Receiving\u2026 ' + _chunkedCount + '/' + _chunkedTotal);
-                                            smProgress(70 + 28 * _chunkedCount / _chunkedTotal);
-                                            if (_chunkedCount === _chunkedTotal) {
-                                                const full = JSON.parse(_chunkedBuf);
-                                                _chunkedTotal = 0;
-                                                await smApplyProject(full.content);
-                                            }
-                                            return;
-                                        }
-                                        if (msg.type === 'project') await smApplyProject(msg.content);
-                                    } catch(e) { console.warn('[share recv]', e); }
-                                };
-                            };
-                            pc.onconnectionstatechange = () => {
-                                if (pc.connectionState === 'connected') { smStatus('P2P connected! Waiting for data\u2026'); smProgress(85); }
-                                if (pc.connectionState === 'failed' && !_smAbort) smStatus('\u26a0 P2P failed — NAT may be blocking.', 'err');
-                            };
+                            smStatus('Applying project\u2026');
+                            smProgress(80);
+                            await smApplyProject(result?.content || result);
                         }
 
                         async function smApplyProject(content) {
