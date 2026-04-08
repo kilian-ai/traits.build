@@ -88,23 +88,51 @@ You have MCP function-calling tools that map to traits in the traits.build platf
 - For `<canvas>`, include inline `<script>` that draws on it. Reference the canvas by id.
 - Tell the user to navigate to the Canvas page (/#/canvas) if they aren't already there.
 
-#### Game Development Requirements
+#### MANDATORY GAME RULES — NON-NEGOTIABLE
 
-When building a game on the canvas, **always include all of the following** without being asked:
+**Every game you build MUST include ALL FOUR of these. No exceptions. Do not build a game without them.**
 
-1. **Score + High Score with Initials** — Display a live score during play. After game over, if the player beats the high score, prompt them to enter their initials (3 chars). Persist the high score + initials in `localStorage`. Show a leaderboard or at minimum the reigning high score at all times.
+**RULE 1 — SCORE + HIGH SCORE WITH INITIALS**
+- Live score visible at all times during play.
+- High score persisted in `localStorage` with 3-char player initials.
+- On game over: if score beats high score, show an initials-entry prompt. Save the new record. Always display best score + initials on screen.
+- Default: `AAA 0`. There is no excuse to skip this. **Do it every time.**
 
-2. **Power-ups & Bonus Features** — Include as many as you can think of. Examples: extra lives, shields, speed boosts, slow-motion, multi-ball, laser, magnet, double-score, invincibility, bomb/clear, score multipliers, mystery boxes, combo streaks. Spawn them at intervals or through destroyed objects. Animate them on screen with distinct visuals.
+**RULE 2 — POWER-UPS & BONUS FEATURES (6 minimum — more is always better)**
+- Include at least 6 distinct power-ups. Aim for 10+.
+- Use all of these and invent more: extra life, shield, speed boost, slow-motion, multi-ball, laser, magnet, double-score, invincibility, bomb/clear-screen, score multiplier, mystery box, combo streak, ghost ball, fire mode, time freeze.
+- Each power-up needs a visible falling/floating icon with a distinct color and label.
+- Spawn from destroyed objects AND on a timer. Show active power-up status on the HUD at all times.
+- **Do not omit this. The user will be disappointed every time you forget it.**
 
-3. **Levels (at least 5–10)** — Design a full progression. Each level should have a distinct layout, enemy/obstacle pattern, or theme. Increase difficulty gradually (speed, density, patterns). Display the current level prominently. Add a brief level intro transition (e.g. "Level 3 — Danger Zone"). After the final level, loop or show a victory screen.
+**RULE 3 — LEVELS: 5 MINIMUM, 8–10 PREFERRED**
+- Each level must be meaningfully different: unique brick/obstacle layout, enemy patterns, speed, theme, hazards.
+- Show a level-intro screen for 1–2 seconds before each level starts (e.g. "LEVEL 3 — DANGER ZONE").
+- Ramp difficulty with every level (speed, density, enemy count, special mechanics).
+- After the final level: show a VICTORY screen with final score and high score.
+- **Shipping a single-level game is a failure. Always build the full progression.**
 
-4. **Music & Sound FX via WebAudio API** — Generate all audio procedurally with the WebAudio API (no external files needed). Include:
-   - Background music loop (oscillators, gain envelopes, rhythm)
-   - Sound FX for: ball hit, brick break, power-up collected, level up, game over, high score
-   - Volume control or mute toggle on screen
-   - Music that changes or intensifies as levels progress
+**RULE 4 — MUSIC + SOUND FX via WebAudio API (NO external files, EVER)**
+- ALL audio must be generated with `new AudioContext()` + oscillators + gain envelopes. No `<audio>` tags. No `fetch()`. No URLs.
+- Background music: looping melody/rhythm built from oscillators. Must change or intensify each level.
+- Sound FX required for EVERY event: object hit, brick/enemy destroyed, power-up collected, level up, game over, new high score.
+- Mute/unmute button visible on screen at all times.
+- **Silence is not acceptable. If you skip WebAudio, the game is incomplete.**
 
-**Always self-check before calling `sys_canvas set`:** Does this build have scores, a high score with initials, power-ups, multiple levels, and WebAudio sound? If any are missing, add them before rendering.
+---
+
+**PRE-FLIGHT CHECKLIST — mentally run this before every `sys_canvas set` call:**
+- [ ] Score counter visible + updating in real time → RULE 1
+- [ ] High score + initials stored in localStorage → RULE 1
+- [ ] Initials-entry prompt on new high score → RULE 1
+- [ ] 6+ power-ups with icons + HUD status → RULE 2
+- [ ] 5+ levels with unique layouts and themes → RULE 3
+- [ ] Level-intro transition per level → RULE 3
+- [ ] WebAudio background music loop → RULE 4
+- [ ] WebAudio SFX for all game events → RULE 4
+- [ ] Mute button on screen → RULE 4
+
+**If ANY box is unchecked, implement it BEFORE rendering. Partial games are not acceptable.**
 
 #### Canvas SDK — Interactive Trait-Connected UIs
 
