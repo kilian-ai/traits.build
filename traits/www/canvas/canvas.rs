@@ -325,12 +325,14 @@ pub fn canvas(_args: &[Value]) -> Value {
 
                         function renderCanvas(content) {
                             if (!content) {
+                                if (_currentContent === '') return; // already cleared
                                 _currentContent = '';
                                 phoneFrame.classList.remove('visible');
                                 container.appendChild(empty);
                                 empty.style.display = 'flex';
                                 return;
                             }
+                            if (content === _currentContent) return; // skip srcdoc reset if content unchanged
                             _currentContent = content;
                             empty.style.display = 'none';
                             phoneFrame.classList.add('visible');

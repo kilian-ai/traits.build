@@ -1904,6 +1904,7 @@ class Traits {
                                 if (r.action === 'set' || r.action === 'append' || r.action === 'clear') {
                                     this.call('sys.canvas', ['get']).then(getRes => {
                                         const content = getRes?.result?.content ?? getRes?.content ?? '';
+                                        this._lastCanvasContent = content; // keep snapshot fresh for llm_agent check
                                         window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
                                     }).catch(() => {
                                         window.dispatchEvent(new CustomEvent('traits-canvas-update', {}));
@@ -1915,16 +1916,20 @@ class Traits {
                                 }
                             }
 
-                            // After llm.agent calls: agent may have modified canvas via sys.canvas set
+                            // After llm.agent calls: agent may have modified canvas via sys.canvas set.
+                            // Only sync if canvas content actually changed — read-before-call snapshot used.
                             if (funcName === 'llm_agent' && result.ok) {
+                                // The sys_canvas after-hook covers direct sys.canvas calls; the 1-sec poller
+                                // in canvas.rs covers indirect writes via WASM pvfs. No unconditional read
+                                // here to avoid reloading the iframe every time the agent runs a tool.
+                                const _prevCanvas = this._lastCanvasContent ?? null;
                                 this.call('sys.canvas', ['get']).then(getRes => {
                                     const content = getRes?.result?.content ?? getRes?.content ?? '';
-                                    if (content) {
+                                    if (content && content !== _prevCanvas) {
+                                        this._lastCanvasContent = content;
                                         window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
                                     }
-                                }).catch(() => {
-                                    window.dispatchEvent(new CustomEvent('traits-canvas-update', {}));
-                                });
+                                }).catch(() => {});
                             }
 
                             // After sys.voice.instruct changes: persist to localStorage + live session.update
