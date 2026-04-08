@@ -1673,6 +1673,10 @@ export class Traits {
         wasmCallableSet.clear();
         const callable = JSON.parse(mod.callable_traits());
         callable.forEach(p => wasmCallableSet.add(p));
+        // Populate _wasmInfo so status.traits / status.callable / status.version are correct
+        try { this._wasmInfo = JSON.parse(mod.init()); } catch(_) {
+            this._wasmInfo = { traits_registered: callable.length, wasm_callable: callable.length, version: null };
+        }
         syncHelperToWasm();
         this._syncHelperToWorkers();
         // Inject localStorage secrets into WASM in-memory store so sys.call can resolve them
