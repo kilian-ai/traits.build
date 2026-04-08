@@ -100,6 +100,8 @@ pub fn canvas(_args: &[Value]) -> Value {
                             overflow: hidden;
                             background: #000;
                             position: relative;
+                            border: none;
+                            display: block;
                         }
                         .phone-home-bar {
                             width: 134px; height: 5px;
@@ -158,7 +160,7 @@ pub fn canvas(_args: &[Value]) -> Value {
                             div .speaker {}
                             div .camera {}
                         }
-                        div #phone-viewport {}
+                        iframe #phone-viewport sandbox="allow-scripts allow-same-origin" {}
                         div .phone-home-bar {}
                     }
                 }
@@ -296,84 +298,66 @@ pub fn canvas(_args: &[Value]) -> Value {
 
                         const phoneFrame    = document.getElementById('phone-frame');
                         const phoneViewport = document.getElementById('phone-viewport');
+                        let _currentContent = '';
+
+                        // Bridge script injected into every iframe render.
+                        // Exposes window.traits, forward calls to parent SDK.
+                        // Also adds querySelector shim for legacy #phone-viewport/#canvas-container selectors.
+                        const BRIDGE = `<script>(function(){
+                            var sdk = function(){ return window.parent._traitsSDK; };
+                            window.traits = {
+                                call:   function(p,a)   { return sdk() && sdk().call(p, a||[]); },
+                                list:   function(ns)    { return sdk() && sdk().call('sys.list', ns?[ns]:[]); },
+                                info:   function(p)     { return sdk() && sdk().call('sys.info', [p]); },
+                                echo:   function(t)     { return sdk() && sdk().call('sys.echo', [t]); },
+                                canvas: function(a,c)   { return sdk() && sdk().call('sys.canvas', c!==undefined?[a,c]:[a]); },
+                                audio:  function(a)     {
+                                    var r = Array.prototype.slice.call(arguments, 1);
+                                    return sdk() && sdk().call('sys.audio', [a].concat(r));
+                                },
+                            };
+                            // querySelector compat: strip legacy outer-DOM prefixes
+                            var _qs = document.querySelector.bind(document);
+                            document.querySelector = function(s) {
+                                return _qs(s.replace(/^#phone-viewport\s+/,'').replace(/^#canvas-container\s+/,''));
+                            };
+                        })();<\/script>`;
 
                         function renderCanvas(content) {
                             if (!content) {
+                                _currentContent = '';
                                 phoneFrame.classList.remove('visible');
                                 container.appendChild(empty);
                                 empty.style.display = 'flex';
                                 return;
                             }
+                            _currentContent = content;
                             empty.style.display = 'none';
                             phoneFrame.classList.add('visible');
-                            // Remove previous canvas styles
+                            // No global style injection — iframe provides full CSS isolation.
                             document.querySelectorAll('style[data-canvas]').forEach(s => s.remove());
-                            // Base style scoped to phone viewport
-                            const base = document.createElement('style');
-                            base.dataset.canvas = '1';
-                            base.textContent = `
-                                #phone-viewport { color: #e0e0e0; }
-                                #phone-viewport svg { fill: #e0e0e0; stroke: #e0e0e0; }
-                                #phone-viewport svg text { fill: #e0e0e0; }
-                                #phone-viewport canvas { display: block; }
-                                #phone-viewport h1, #phone-viewport h2, #phone-viewport h3,
-                                #phone-viewport p, #phone-viewport span, #phone-viewport div {
-                                    color: inherit;
-                                }
-                            `;
-                            document.head.appendChild(base);
 
-                            // Extract HTML body from full documents, use as-is for fragments
-                            let html = content;
-                            if (/<body[\s>]/i.test(content)) {
-                                const doc = new DOMParser().parseFromString(content, 'text/html');
-                                doc.querySelectorAll('head style').forEach(style => {
-                                    const s = document.createElement('style');
-                                    s.dataset.canvas = '1';
-                                    s.textContent = style.textContent;
-                                    document.head.appendChild(s);
-                                });
-                                html = doc.body.innerHTML;
+                            // Build a complete HTML document, injecting the traits bridge.
+                            let fullHtml = content.trim();
+                            if (!/<html[\s>]/i.test(fullHtml)) {
+                                // Fragment — wrap in a minimal document
+                                fullHtml = '<!DOCTYPE html><html><head>' +
+                                    '<meta charset="UTF-8">' +
+                                    '<style>*{margin:0;padding:0;box-sizing:border-box}' +
+                                    'html,body{width:390px;height:844px;overflow:hidden;background:#0a0a0a;color:#e0e0e0}' +
+                                    'canvas{display:block}</style>' +
+                                    BRIDGE + '</head><body>' + fullHtml + '</body></html>';
+                            } else {
+                                // Full document — inject bridge after opening <head> tag
+                                if (/<head\b[^>]*>/i.test(fullHtml)) {
+                                    fullHtml = fullHtml.replace(/(<head\b[^>]*>)/i, '$1' + BRIDGE);
+                                } else {
+                                    fullHtml = fullHtml.replace(/(<html\b[^>]*>)/i, '$1<head>' + BRIDGE + '</head>');
+                                }
                             }
 
-                            // Separate scripts from HTML before injecting
-                            const tmp = document.createElement('div');
-                            tmp.innerHTML = html;
-                            const scriptSources = [];
-                            tmp.querySelectorAll('script').forEach(s => {
-                                scriptSources.push({ text: s.textContent, attrs: Array.from(s.attributes).map(a => [a.name, a.value]) });
-                                s.remove();
-                            });
-                            // Move inline style tags to head
-                            tmp.querySelectorAll('style').forEach(style => {
-                                const s = document.createElement('style');
-                                s.dataset.canvas = '1';
-                                s.textContent = style.textContent;
-                                document.head.appendChild(s);
-                                style.remove();
-                            });
-
-                            // Inject non-script HTML first
-                            phoneViewport.innerHTML = tmp.innerHTML;
-
-                            // Cancel any previous animation loop from older canvas content
-                            if (window.__canvasAnimId) { cancelAnimationFrame(window.__canvasAnimId); window.__canvasAnimId = null; }
-                            if (window.__canvasIntervalIds) { window.__canvasIntervalIds.forEach(id => clearInterval(id)); }
-                            window.__canvasIntervalIds = [];
-
-                            // Execute scripts after a rAF so the browser has committed the DOM
-                            requestAnimationFrame(() => {
-                                for (const src of scriptSources) {
-                                    if (src.text) {
-                                        try { (new Function(src.text))(); }
-                                        catch (e) { console.error('canvas script error:', e); }
-                                    }
-                                }
-                            });
+                            phoneViewport.srcdoc = fullHtml;
                         }
-
-                        // Update querySelector to find canvas inside phone-viewport
-                        // (agents use #canvas-container in old code; patch at injection time)
 
                         async function loadCanvas() {
                             try {
@@ -418,20 +402,22 @@ pub fn canvas(_args: &[Value]) -> Value {
                         });
 
                         // View Source toggle
-                        document.getElementById('btnSource').addEventListener('click', async () => {
+                        document.getElementById('btnSource').addEventListener('click', () => {
                             sourceMode = !sourceMode;
                             const btn = document.getElementById('btnSource');
                             if (sourceMode) {
-                                const sdk = window._traitsSDK;
-                                const res = sdk ? await sdk.call('sys.canvas', ['get']) : null;
-                                const content = res?.result?.content || res?.content || '';
                                 phoneFrame.classList.add('visible');
-                                phoneViewport.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;color:#888;font-size:13px;padding:20px;overflow:auto;height:100%;box-sizing:border-box;"></pre>';
-                                phoneViewport.querySelector('pre').textContent = content || '(empty)';
+                                const escaped = (_currentContent || '(empty)')
+                                    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                                phoneViewport.srcdoc = '<!DOCTYPE html><html><head><style>' +
+                                    'body{margin:0;background:#0a0a0a}' +
+                                    'pre{white-space:pre-wrap;word-break:break-all;color:#888;' +
+                                    'font-size:12px;padding:16px;height:100vh;box-sizing:border-box;overflow:auto}' +
+                                    '</style></head><body><pre>' + escaped + '</pre></body></html>';
                                 btn.textContent = 'Live View';
                             } else {
                                 btn.textContent = 'View Source';
-                                loadCanvas();
+                                renderCanvas(_currentContent);
                             }
                         });
 

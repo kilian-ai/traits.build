@@ -190,7 +190,7 @@ const CANVAS_AGENT_SYSTEM =
     '- body/root: width:390px; height:844px; overflow:hidden; margin:0\n' +
     '- <canvas>: set attribute width=390 height=844 and CSS width:390px;height:844px\n\n' +
     'RENDERING (HTML injected into div#phone-viewport):\n' +
-    '- Get canvas: document.querySelector(\'#phone-viewport canvas\') — NEVER getElementById\n' +
+    '- Get canvas: document.querySelector(\'canvas\') — scripts run inside an iframe, no #phone-viewport prefix needed\n' +
     '- Use let (NEVER const) for any reassigned variable. const in loops crashes silently.\n' +
     '- Cancel existing animation before starting: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId);\n' +
     '- Store new id: window.__canvasAnimId = requestAnimationFrame(loop)\n' +
@@ -209,7 +209,7 @@ async function _runCanvasAgent(sdk, request) {
 
     const prompt = _existing
         ? `User request: ${request}\n\nRead canvas/app.html, apply the change, write the COMPLETE updated file back immediately.`
-        : `Build the following for the canvas:\n\n${request}\n\nWrite a complete, self-contained HTML+CSS+JS file to canvas/app.html. Requirements:\n- 390px wide × 844px tall, fills the phone viewport\n- Dark theme: background #0a0a0a, bright accent colors\n- Inline all CSS and JS — no external dependencies\n- querySelector('#phone-viewport canvas') for canvas access — NEVER getElementById\n- let (not const) for any reassigned variables\n- Cancel any existing animation first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId)\n- Store new animation ID: window.__canvasAnimId = requestAnimationFrame(loop)\n- No DOMContentLoaded listeners`;
+: `Build the following for the canvas:\n\n${request}\n\nWrite a complete, self-contained HTML+CSS+JS file to canvas/app.html. Requirements:\n- 390px wide × 844px tall, fills the phone viewport\n- Dark theme: background #0a0a0a, bright accent colors\n- Inline all CSS and JS — no external dependencies\n- querySelector('canvas') for canvas access (scripts run inside an iframe)\n- let (not const) for any reassigned variables\n- Cancel any existing animation first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId)\n- Store new animation ID: window.__canvasAnimId = requestAnimationFrame(loop)\n- No DOMContentLoaded listeners`;
 
     console.log('[Canvas/Agent] ▶ Starting — existing:', _existing.length, 'chars | request:', request);
     const agentArgs = [prompt, CANVAS_AGENT_SYSTEM, 'sys.vfs,sys.canvas', 'gpt-4.1', 20];
