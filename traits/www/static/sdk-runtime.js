@@ -1844,13 +1844,17 @@ class Traits {
                         if (funcName === 'canvas') {
                             let request = '';
                             try { request = JSON.parse(argsStr).request || argsStr; } catch(e) { request = argsStr; }
+                            console.log('[Voice/Canvas] ▶ Canvas tool triggered, launching agent for request:', request);
                             _runCanvasAgent(this, request).then(truncated => {
+                                console.log('[Voice/Canvas] ✓ Agent finished, sending result to voice model');
                                 if (_voiceDc && _voiceDc.readyState === 'open') {
                                     _voiceDc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: truncated } }));
                                     _voiceDc.send(JSON.stringify({ type: 'response.create' }));
                                 }
                                 if (opts.onToolResult) opts.onToolResult(funcName, truncated);
                                 _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
+                            }).catch(e => {
+                                console.error('[Voice/Canvas] ✗ _runCanvasAgent rejected:', e);
                             });
                             return;
                         }
