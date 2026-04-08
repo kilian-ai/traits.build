@@ -882,9 +882,17 @@ pub fn canvas(_args: &[Value]) -> Value {
                                 const sdk = window._traitsSDK;
                                 if (sdk) await sdk.call('sys.canvas', ['set', content]);
                             } catch(_) {}
+                            // Auto-save as named project + autosave slot
+                            try {
+                                const saved = Date.now();
+                                const entry = JSON.stringify({ content, saved });
+                                localStorage.setItem(PROJECT_PFX + '(received)', entry);
+                                localStorage.setItem('traits.canvas.project._autosave', entry);
+                                renderProjectBar();
+                            } catch(_) {}
                             __lastContent = content;
                             renderCanvas(content);
-                            smStatus('\u2713 Project received!', 'ok');
+                            smStatus('\u2713 Project received & saved!', 'ok');
                             smProgress(100);
                             setTimeout(() => smHide(), 1800);
                         }
