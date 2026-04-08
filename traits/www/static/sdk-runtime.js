@@ -241,6 +241,7 @@ const CANVAS_AGENT_SYSTEM =
     'Canvas scripts can call: traits.call(path,args), traits.echo(text), traits.audio(action,...).'
 
 // ── Shared canvas agent runner — used by BOTH WebRTC and local voice paths ──
+// Prefers browser-native direct OpenAI fetch (no helper/server needed).
 async function _runCanvasAgent(sdk, request) {
     let _existing = '';
     try {
@@ -248,32 +249,23 @@ async function _runCanvasAgent(sdk, request) {
         _existing = pvfs['canvas/app.html'] || '';
     } catch(_) {}
 
+    console.log('[Canvas/Agent] ▶ Starting — existing:', _existing.length, 'chars | request:', request);
+
+    // ── Browser-native path: direct OpenAI fetch — works without helper or server ──
+    const apiKey = _voiceApiKey || await _ensureVoiceApiKey(sdk).catch(() => null);
+    if (apiKey) {
+        return await _runCanvasAgentBrowser(request, _existing, apiKey);
+    }
+
+    // ── Fallback: dispatch through SDK cascade (needs helper or server) ──
     const prompt = _existing
         ? `User request: ${request}\n\nRead canvas/app.html, apply the change, write the COMPLETE updated file back immediately.`
 : `Build the following for the canvas:\n\n${request}\n\nWrite a complete, self-contained HTML+CSS+JS file to canvas/app.html. Requirements:\n- 390px wide × 844px tall, fills the phone viewport\n- Dark theme: background #0a0a0a, bright accent colors\n- Inline all CSS and JS — no external dependencies\n- querySelector('canvas') for canvas access (scripts run inside an iframe)\n- let (not const) for any reassigned variables\n- Cancel any existing animation first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId)\n- Store new animation ID: window.__canvasAnimId = requestAnimationFrame(loop)\n- No DOMContentLoaded listeners`;
 
-    console.log('[Canvas/Agent] ▶ Starting — existing:', _existing.length, 'chars | request:', request);
     const agentArgs = [prompt, CANVAS_AGENT_SYSTEM, 'sys.vfs,sys.canvas', 'gpt-4.1', 20];
     try {
         const result = await sdk.call('llm.agent', agentArgs);
         const r = result?.result || result;
-
-        if (Array.isArray(r?.tool_calls) && r.tool_calls.length > 0) {
-            console.group(`[Canvas/Agent] ${r.tool_calls.length} tool call(s):`);
-            r.tool_calls.forEach((tc, i) => {
-                const isWrite = tc.name === 'sys_vfs' && tc.args?.action === 'write';
-                const argsLog = isWrite
-                    ? { ...tc.args, content: `[${(tc.args?.content || '').length} chars]` }
-                    : (tc.args || {});
-                console.log(`[${i+1}/${r.tool_calls.length}] ${tc.name}`, argsLog);
-                console.log('  result:', tc.result);
-            });
-            console.groupEnd();
-        } else {
-            console.warn('[Canvas/Agent] ⚠ NO tool calls — model replied with text only:', (r?.response || '').slice(0, 300));
-        }
-        console.log('[Canvas/Agent] ✓ Done — ok:', r?.ok, '| steps:', r?.step_count, '| tokens:', r?.usage?.total_tokens);
-
         let content = '';
         if (Array.isArray(r?.tool_calls)) {
             for (let i = r.tool_calls.length - 1; i >= 0; i--) {
@@ -292,22 +284,97 @@ async function _runCanvasAgent(sdk, request) {
             }
         }
         if (!content) {
-            console.warn('[Canvas/Agent] No write in tool_calls — falling back to localStorage');
-            try {
-                const pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}');
-                content = pvfs['canvas/app.html'] || '';
-            } catch(_) {}
+            try { const pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}'); content = pvfs['canvas/app.html'] || ''; } catch(_) {}
         }
         if (content) {
-            console.log('[Canvas/Agent] Firing traits-canvas-update, len:', content.length);
             window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
-        } else {
-            console.warn('[Canvas/Agent] No canvas content — update skipped');
         }
-
         return JSON.stringify(r?.ok ? { ok: true, response: r.response || 'Done' } : { error: r?.error || 'agent failed' });
     } catch(e) {
         console.error('[Canvas/Agent] ✗ Error:', e.message || e);
+        return JSON.stringify({ error: e.message || String(e) });
+    }
+}
+
+// ── Browser-native canvas agent loop — direct OpenAI chat completions, no server needed ──
+// Handles sys_vfs read/write locally via localStorage['traits.pvfs'].
+async function _runCanvasAgentBrowser(request, existing, apiKey) {
+    const SYS_VFS_TOOL = {
+        type: 'function',
+        function: {
+            name: 'sys_vfs',
+            description: 'Read or write a file in the canvas virtual filesystem',
+            parameters: {
+                type: 'object',
+                properties: {
+                    action: { type: 'string', enum: ['read', 'write'], description: 'read or write' },
+                    path: { type: 'string', description: 'file path, e.g. canvas/app.html' },
+                    content: { type: 'string', description: 'full file content (write only)' }
+                },
+                required: ['action', 'path']
+            }
+        }
+    };
+
+    const messages = [
+        { role: 'system', content: CANVAS_AGENT_SYSTEM },
+        { role: 'user', content: existing
+            ? `User request: ${request}\n\nRead canvas/app.html, apply the change, write the COMPLETE updated file back immediately.`
+: `Build the following for the canvas:\n\n${request}\n\nWrite a complete, self-contained HTML+CSS+JS file to canvas/app.html. Requirements:\n- 390px wide × 844px tall, fills the phone viewport\n- Dark theme: background #0a0a0a, bright accent colors\n- Inline all CSS and JS — no external dependencies\n- querySelector('canvas') for canvas access (scripts run inside an iframe)\n- let (not const) for any reassigned variables\n- Cancel any existing animation first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId)\n- Store new animation ID: window.__canvasAnimId = requestAnimationFrame(loop)\n- No DOMContentLoaded listeners`
+        }
+    ];
+
+    let lastContent = '';
+    try {
+        for (let step = 0; step < 6; step++) {
+            console.log('[Canvas/Agent/Browser] Step', step + 1);
+            const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'gpt-4.1', messages, tools: [SYS_VFS_TOOL], tool_choice: 'auto' })
+            });
+            if (!resp.ok) {
+                const err = await resp.text().catch(() => String(resp.status));
+                console.error('[Canvas/Agent/Browser] OpenAI error:', err);
+                return JSON.stringify({ error: 'OpenAI error: ' + err });
+            }
+            const data = await resp.json();
+            const choice = data.choices?.[0];
+            const msg = choice?.message;
+            if (!msg) break;
+            messages.push(msg);
+            const toolCalls = msg.tool_calls || [];
+            if (toolCalls.length === 0) { console.log('[Canvas/Agent/Browser] Done at step', step + 1); break; }
+            for (const tc of toolCalls) {
+                let args = {};
+                try { args = JSON.parse(tc.function.arguments || '{}'); } catch(_) {}
+                let toolResult = '{"error":"unknown tool"}';
+                if (tc.function.name === 'sys_vfs') {
+                    if (args.action === 'read') {
+                        let pvfs = {}; try { pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}'); } catch(_) {}
+                        const fileContent = pvfs[args.path] || '';
+                        toolResult = fileContent || '(empty)';
+                        console.log('[Canvas/Agent/Browser] VFS read:', args.path, fileContent.length, 'chars');
+                    } else if (args.action === 'write') {
+                        let pvfs = {}; try { pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}'); } catch(_) {}
+                        pvfs[args.path] = args.content || '';
+                        try { localStorage.setItem('traits.pvfs', JSON.stringify(pvfs)); } catch(_) {}
+                        lastContent = args.content || '';
+                        const isCanvas = args.path === 'canvas/app.html' || String(args.path).endsWith('/app.html');
+                        if (isCanvas && lastContent) {
+                            console.log('[Canvas/Agent/Browser] Firing traits-canvas-update, len:', lastContent.length);
+                            window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content: lastContent } }));
+                        }
+                        toolResult = '{"ok":true}';
+                    }
+                }
+                messages.push({ role: 'tool', tool_call_id: tc.id, content: toolResult });
+            }
+            if (choice?.finish_reason === 'stop') break;
+        }
+        return JSON.stringify(lastContent ? { ok: true, response: 'Canvas updated' } : { ok: false, error: 'No canvas content written' });
+    } catch(e) {
+        console.error('[Canvas/Agent/Browser] ✗', e);
         return JSON.stringify({ error: e.message || String(e) });
     }
 }
