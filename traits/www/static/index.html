@@ -329,6 +329,7 @@ async function injectPage(fullHtml, route) {
   TC.cleanup();
   if (currentPageCleanup) { currentPageCleanup(); currentPageCleanup = null; }
   document.querySelectorAll('style[data-page]').forEach(s => s.remove());
+  document.querySelectorAll('style[data-canvas]').forEach(s => s.remove());
   document.querySelectorAll('link[data-page]').forEach(l => l.remove());
   document.querySelectorAll('body > .terminal-wrap').forEach(t => t.remove());
   frame.style.paddingBottom = '';

@@ -503,6 +503,8 @@ pub fn canvas(_args: &[Value]) -> Value {
                         window._pageCleanup = async () => {
                             clearInterval(_pollId);
                             fabMenu.classList.remove('show');
+                            // Remove injected canvas styles so they don't bleed into other pages
+                            document.querySelectorAll('style[data-canvas]').forEach(s => s.remove());
                             // Auto-save canvas content before leaving
                             try {
                                 const sdk = window._traitsSDK;
