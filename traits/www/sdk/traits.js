@@ -199,6 +199,78 @@ const CANVAS_AGENT_SYSTEM =
     'STYLE: Dark bg #0a0a0a, bright accents (#00ff88, #ff6b35, #4fc3f7), smooth 60fps.\n' +
     'Canvas scripts can call: traits.call(path,args), traits.echo(text), traits.audio(action,...).'
 
+// ── Shared canvas agent runner — used by BOTH WebRTC and local voice paths ──
+async function _runCanvasAgent(sdk, request) {
+    let _existing = '';
+    try {
+        const pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}');
+        _existing = pvfs['canvas/app.html'] || '';
+    } catch(_) {}
+
+    const prompt = _existing
+        ? `User request: ${request}\n\nRead canvas/app.html, apply the change, write the COMPLETE updated file back immediately.`
+        : `Build the following for the canvas:\n\n${request}\n\nWrite a complete, self-contained HTML+CSS+JS file to canvas/app.html. Requirements:\n- 390px wide × 844px tall, fills the phone viewport\n- Dark theme: background #0a0a0a, bright accent colors\n- Inline all CSS and JS — no external dependencies\n- querySelector('#phone-viewport canvas') for canvas access — NEVER getElementById\n- let (not const) for any reassigned variables\n- Cancel any existing animation first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId)\n- Store new animation ID: window.__canvasAnimId = requestAnimationFrame(loop)\n- No DOMContentLoaded listeners`;
+
+    console.log('[Canvas/Agent] ▶ Starting — existing:', _existing.length, 'chars | request:', request);
+    const agentArgs = [prompt, CANVAS_AGENT_SYSTEM, 'sys.vfs,sys.canvas', 'gpt-4.1', 20];
+    try {
+        const result = await sdk.call('llm.agent', agentArgs);
+        const r = result?.result || result;
+
+        if (Array.isArray(r?.tool_calls) && r.tool_calls.length > 0) {
+            console.group(`[Canvas/Agent] ${r.tool_calls.length} tool call(s):`);
+            r.tool_calls.forEach((tc, i) => {
+                const isWrite = tc.name === 'sys_vfs' && tc.args?.action === 'write';
+                const argsLog = isWrite
+                    ? { ...tc.args, content: `[${(tc.args?.content || '').length} chars]` }
+                    : (tc.args || {});
+                console.log(`[${i+1}/${r.tool_calls.length}] ${tc.name}`, argsLog);
+                console.log('  result:', tc.result);
+            });
+            console.groupEnd();
+        } else {
+            console.warn('[Canvas/Agent] ⚠ NO tool calls — model replied with text only:', (r?.response || '').slice(0, 300));
+        }
+        console.log('[Canvas/Agent] ✓ Done — ok:', r?.ok, '| steps:', r?.step_count, '| tokens:', r?.usage?.total_tokens);
+
+        let content = '';
+        if (Array.isArray(r?.tool_calls)) {
+            for (let i = r.tool_calls.length - 1; i >= 0; i--) {
+                const tc = r.tool_calls[i];
+                if (tc.name === 'sys_vfs' && tc.args?.action === 'write' &&
+                    (tc.args?.path === 'canvas/app.html' || String(tc.args?.path || '').endsWith('/app.html'))) {
+                    content = String(tc.args?.content || '');
+                    console.log('[Canvas/Agent] Content from sys_vfs write, len:', content.length);
+                    break;
+                }
+                if (tc.name === 'sys_canvas' && tc.args?.action === 'set') {
+                    content = String(tc.args?.content || '');
+                    console.log('[Canvas/Agent] Content from sys_canvas set, len:', content.length);
+                    break;
+                }
+            }
+        }
+        if (!content) {
+            console.warn('[Canvas/Agent] No write in tool_calls — falling back to localStorage');
+            try {
+                const pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}');
+                content = pvfs['canvas/app.html'] || '';
+            } catch(_) {}
+        }
+        if (content) {
+            console.log('[Canvas/Agent] Firing traits-canvas-update, len:', content.length);
+            window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
+        } else {
+            console.warn('[Canvas/Agent] No canvas content — update skipped');
+        }
+
+        return JSON.stringify(r?.ok ? { ok: true, response: r.response || 'Done' } : { error: r?.error || 'agent failed' });
+    } catch(e) {
+        console.error('[Canvas/Agent] ✗ Error:', e.message || e);
+        return JSON.stringify({ error: e.message || String(e) });
+    }
+}
+
 function _dispatchVoiceEvent(type, data) {
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('voice-event', { detail: { type, ...data } }));
@@ -1767,99 +1839,17 @@ export class Traits {
                         if (opts.onToolCall) opts.onToolCall(funcName, argsStr);
                         _dispatchVoiceEvent('tool_call', { name: funcName, arguments: argsStr });
 
-                        // Handle synthetic canvas tool — route to llm.agent
+                        // Handle synthetic canvas tool — route to shared _runCanvasAgent
                         if (funcName === 'canvas') {
                             let request = '';
                             try { request = JSON.parse(argsStr).request || argsStr; } catch(e) { request = argsStr; }
-                            // Read existing canvas from localStorage (bypasses stale WASM VFS)
-                            let _existing = '';
-                            try {
-                                const pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}');
-                                _existing = pvfs['canvas/app.html'] || '';
-                            } catch(_) {}
-                            // Augment the request into a precise spec for the agent
-                            const prompt = _existing
-                                ? `User request: ${request}\n\nRead canvas/app.html, apply the change, write the COMPLETE updated file back immediately.`
-                                : `Build the following for the canvas:\n\n${request}\n\nWrite a complete, self-contained HTML+CSS+JS file to canvas/app.html. Requirements:\n- 390px wide × 844px tall, fills the phone viewport\n- Dark theme: background #0a0a0a, bright accent colors\n- Inline all CSS and JS — no external dependencies\n- querySelector('#phone-viewport canvas') for canvas access — NEVER getElementById\n- let (not const) for any reassigned variables\n- Cancel any existing animation first: if(window.__canvasAnimId) cancelAnimationFrame(window.__canvasAnimId)\n- Store new animation ID: window.__canvasAnimId = requestAnimationFrame(loop)\n- No DOMContentLoaded listeners`;
-                            console.log('[Voice/Canvas] Calling agent — existing:', _existing.length, 'chars | create:', !_existing, '| model: gpt-4.1 | request:', request);
-                            // Give agent VFS + canvas tools; use gpt-4.1 for complex creative tasks
-                            const agentArgs = [prompt, CANVAS_AGENT_SYSTEM, 'sys.vfs,sys.canvas', 'gpt-4.1', 20];
-                            this.call('llm.agent', agentArgs).then(result => {
-                                const r = result?.result || result;
-
-                                // ── Extensive debug: log each tool call the agent made ──
-                                if (Array.isArray(r?.tool_calls) && r.tool_calls.length > 0) {
-                                    console.log('[Voice/Canvas] Agent made', r.tool_calls.length, 'tool call(s):');
-                                    r.tool_calls.forEach((tc, i) => {
-                                        const argsSnip = JSON.stringify(tc.args || {});
-                                        const resSnip  = JSON.stringify(tc.result || {});
-                                        console.log(
-                                            `  [${i+1}/${r.tool_calls.length}] ${tc.name}(${argsSnip.length > 400 ? argsSnip.slice(0, 400) + '…' : argsSnip})`
-                                        );
-                                        console.log(
-                                            `       → ${resSnip.length > 200 ? resSnip.slice(0, 200) + '…' : resSnip}`
-                                        );
-                                    });
-                                } else {
-                                    console.warn('[Voice/Canvas] Agent made NO tool calls — it may have responded with text only.');
-                                }
-                                if (r?.response) {
-                                    const resp = r.response;
-                                    console.log('[Voice/Canvas] Agent final response:', resp.length > 600 ? resp.slice(0, 600) + '…' : resp);
-                                }
-                                console.log('[Voice/Canvas] Agent done — ok:', r?.ok, '| steps:', r?.step_count, '| usage:', JSON.stringify(r?.usage));
-
-                                const output = JSON.stringify(r?.ok ? { ok: true, response: r.response || 'Done' } : { error: r?.error || 'agent failed' });
-                                const truncated = output.length > 2000 ? output.slice(0, 2000) + '…' : output;
+                            _runCanvasAgent(this, request).then(truncated => {
                                 if (_voiceDc && _voiceDc.readyState === 'open') {
                                     _voiceDc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: truncated } }));
                                     _voiceDc.send(JSON.stringify({ type: 'response.create' }));
                                 }
                                 if (opts.onToolResult) opts.onToolResult(funcName, truncated);
                                 _dispatchVoiceEvent('tool_result', { name: funcName, result: truncated });
-
-                                // ── Extract written canvas content from agent tool_calls (most reliable —
-                                //    avoids localStorage/pvfs-sync race condition and works even when a
-                                //    project is loaded, since we use the actual written bytes directly) ──
-                                let content = '';
-                                if (Array.isArray(r?.tool_calls)) {
-                                    for (let i = r.tool_calls.length - 1; i >= 0; i--) {
-                                        const tc = r.tool_calls[i];
-                                        // sys_vfs write to canvas/app.html
-                                        if (tc.name === 'sys_vfs' && tc.args?.action === 'write' &&
-                                            (tc.args?.path === 'canvas/app.html' || String(tc.args?.path || '').endsWith('/app.html'))) {
-                                            content = String(tc.args?.content || '');
-                                            console.log('[Voice/Canvas] Content from sys_vfs write, len:', content.length);
-                                            break;
-                                        }
-                                        // sys_canvas set (alternative write path)
-                                        if (tc.name === 'sys_canvas' && tc.args?.action === 'set') {
-                                            content = String(tc.args?.content || '');
-                                            console.log('[Voice/Canvas] Content from sys_canvas set, len:', content.length);
-                                            break;
-                                        }
-                                    }
-                                }
-                                // Fallback: read from localStorage (may lag pvfs-sync by one tick)
-                                if (!content) {
-                                    console.warn('[Voice/Canvas] No write found in tool_calls — falling back to localStorage');
-                                    try {
-                                        const pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}');
-                                        content = pvfs['canvas/app.html'] || '';
-                                    } catch(_) {}
-                                }
-                                if (content) {
-                                    console.log('[Voice/Canvas] Firing traits-canvas-update, len:', content.length);
-                                    window.dispatchEvent(new CustomEvent('traits-canvas-update', { detail: { content } }));
-                                } else {
-                                    console.warn('[Voice/Canvas] No canvas content to fire — update skipped');
-                                }
-                            }).catch(e => {
-                                console.error('[Voice/Canvas] Agent error:', e.message || e);
-                                if (_voiceDc && _voiceDc.readyState === 'open') {
-                                    _voiceDc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: JSON.stringify({ error: e.message }) } }));
-                                    _voiceDc.send(JSON.stringify({ type: 'response.create' }));
-                                }
                             });
                             return;
                         }
@@ -2281,6 +2271,18 @@ export class Traits {
                                 history.push({ role: 'tool', tool_call_id: toolCallId, content: '{"ok":true,"action":"quit"}' });
                                 sdk.stopLocalVoice();
                                 return;
+                            }
+
+                            // Handle canvas tool — routes to llm.agent via shared helper
+                            if (funcName === 'canvas') {
+                                let request = '';
+                                try { request = JSON.parse(argsStr).request || argsStr; } catch(e) { request = argsStr; }
+                                _localVoiceProgress('Building canvas…');
+                                const canvasOutput = await _runCanvasAgent(sdk, request);
+                                if (opts.onToolResult) opts.onToolResult(funcName, canvasOutput);
+                                _dispatchVoiceEvent('tool_result', { name: funcName, result: canvasOutput });
+                                history.push({ role: 'tool', tool_call_id: toolCallId, content: canvasOutput });
+                                continue;
                             }
 
                             // Dispatch tool via SDK cascade
