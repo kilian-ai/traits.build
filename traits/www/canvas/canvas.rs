@@ -192,6 +192,90 @@ pub fn canvas(_args: &[Value]) -> Value {
                         }
                         #vcmSend:hover { background: rgba(124,92,252,0.45); }
 
+                        /* P2P Share Modal */
+                        #share-modal {
+                            display: none; position: fixed;
+                            bottom: 74px; right: 20px;
+                            width: 320px;
+                            background: rgba(14,14,18,0.97);
+                            border: 1px solid rgba(124,92,252,0.4);
+                            border-radius: 12px; z-index: 9996;
+                            box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+                            backdrop-filter: blur(16px);
+                            flex-direction: column;
+                        }
+                        #share-modal.sm-open { display: flex; }
+                        .sm-header {
+                            display: flex; justify-content: space-between; align-items: center;
+                            padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.07);
+                            cursor: move; flex-shrink: 0;
+                        }
+                        .sm-title { color: #b8a4fc; font-size: 13px; font-weight: 600; }
+                        .sm-close {
+                            background: none; border: none; color: #555; font-size: 18px;
+                            cursor: pointer; padding: 0 2px; line-height: 1; transition: color 0.15s;
+                        }
+                        .sm-close:hover { color: #fff; }
+                        .sm-body {
+                            padding: 18px 16px 16px;
+                            display: flex; flex-direction: column; align-items: center; gap: 14px;
+                        }
+                        .sm-label { color: #888; font-size: 12px; text-align: center; }
+                        .sm-code-display {
+                            display: flex; gap: 8px;
+                        }
+                        .sm-code-char {
+                            width: 52px; height: 64px;
+                            background: rgba(124,92,252,0.1);
+                            border: 1px solid rgba(124,92,252,0.4);
+                            border-radius: 8px; color: #b8a4fc;
+                            font-size: 28px; font-weight: 700; font-family: monospace;
+                            display: flex; align-items: center; justify-content: center;
+                            letter-spacing: 0;
+                        }
+                        .sm-code-inputs { display: flex; gap: 8px; }
+                        .sm-ci {
+                            width: 52px; height: 64px; text-align: center;
+                            background: rgba(255,255,255,0.06);
+                            border: 1px solid rgba(124,92,252,0.35);
+                            border-radius: 8px; color: #d4c8ff;
+                            font-size: 26px; font-weight: 700; font-family: monospace;
+                            outline: none; text-transform: uppercase; caret-color: #b8a4fc;
+                        }
+                        .sm-ci:focus { border-color: rgba(124,92,252,0.8); background: rgba(124,92,252,0.08); }
+                        .sm-link-row {
+                            display: flex; gap: 6px; width: 100%; align-items: center;
+                        }
+                        .sm-link {
+                            flex: 1; font-size: 10px; color: #555; overflow: hidden;
+                            text-overflow: ellipsis; white-space: nowrap; user-select: text;
+                        }
+                        .sm-btn {
+                            background: rgba(124,92,252,0.2); border: 1px solid rgba(124,92,252,0.4);
+                            border-radius: 6px; color: #b8a4fc; padding: 5px 12px;
+                            font-size: 12px; cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+                        }
+                        .sm-btn:hover { background: rgba(124,92,252,0.4); }
+                        .sm-btn-primary {
+                            background: rgba(124,92,252,0.3); border: 1px solid rgba(124,92,252,0.6);
+                            border-radius: 8px; color: #d4c8ff; padding: 9px 28px;
+                            font-size: 14px; cursor: pointer; transition: background 0.15s; width: 100%;
+                        }
+                        .sm-btn-primary:hover { background: rgba(124,92,252,0.5); }
+                        .sm-status {
+                            font-size: 12px; color: #888; text-align: center; min-height: 16px;
+                        }
+                        .sm-status.ok { color: #4ade80; }
+                        .sm-status.err { color: #f87171; }
+                        .sm-progress {
+                            width: 100%; height: 3px; background: rgba(255,255,255,0.08);
+                            border-radius: 2px; overflow: hidden;
+                        }
+                        .sm-progress-bar {
+                            height: 100%; background: linear-gradient(90deg,#7c5cfc,#b8a4fc);
+                            border-radius: 2px; transition: width 0.3s;
+                        }
+
                     "#))
                 }
             }
@@ -236,7 +320,24 @@ pub fn canvas(_args: &[Value]) -> Value {
                             span .fab-icon { "🔮" }
                             span { "Splat Viewer" }
                         }
+                        button #fabShare {
+                            span .fab-icon { "📤" }
+                            span { "Share Project" }
+                        }
+                        button #fabReceive {
+                            span .fab-icon { "📥" }
+                            span { "Receive Project" }
+                        }
                     }
+                }
+
+                // P2P project share modal
+                div #share-modal {
+                    div .sm-header {
+                        span .sm-title #smTitle { "📤  Share Project" }
+                        button .sm-close #smClose { "×" }
+                    }
+                    div .sm-body #smBody {}
                 }
 
                 // Voice chat floating modal
@@ -556,7 +657,358 @@ pub fn canvas(_args: &[Value]) -> Value {
                             } catch(e) { console.warn('splat load:', e); }
                         });
 
-                        // Register cleanup: auto-save canvas and remove window.traits when navigating away
+                        // Share / Receive project via WebRTC P2P
+                        document.getElementById('fabShare').addEventListener('click', () => {
+                            fabMenu.classList.remove('show'); fabToggle.classList.remove('open');
+                            smOpen('send');
+                        });
+                        document.getElementById('fabReceive').addEventListener('click', () => {
+                            fabMenu.classList.remove('show'); fabToggle.classList.remove('open');
+                            smOpen('receive');
+                        });
+
+                        // ── P2P Share Modal ──
+                        const shareModal   = document.getElementById('share-modal');
+                        const smTitleEl    = document.getElementById('smTitle');
+                        const smBodyEl     = document.getElementById('smBody');
+                        const smCloseBtn   = document.getElementById('smClose');
+                        const RELAY        = 'https://relay.traits.build';
+                        const ICE_SERVERS  = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+                        let _smAbort = false, _smPc = null;
+
+                        smCloseBtn.addEventListener('click', (e) => { e.stopPropagation(); smHide(); });
+
+                        // Drag
+                        (() => {
+                            let drag = false, ox = 0, oy = 0;
+                            shareModal.querySelector('.sm-header').addEventListener('mousedown', (e) => {
+                                drag = true;
+                                shareModal.style.right = 'auto'; shareModal.style.bottom = 'auto';
+                                ox = e.clientX - shareModal.offsetLeft;
+                                oy = e.clientY - shareModal.offsetTop;
+                            });
+                            document.addEventListener('mousemove', (e) => {
+                                if (!drag) return;
+                                shareModal.style.left = (e.clientX - ox) + 'px';
+                                shareModal.style.top  = (e.clientY - oy) + 'px';
+                            });
+                            document.addEventListener('mouseup', () => { drag = false; });
+                        })();
+
+                        function smOpen(mode) {
+                            _smAbort = false;
+                            shareModal.classList.add('sm-open');
+                            smTitleEl.textContent = mode === 'send' ? '\ud83d\udce4\u2002Share Project' : '\ud83d\udce5\u2002Receive Project';
+                            if (mode === 'send') smStartSend();
+                            else smStartReceive();
+                        }
+                        function smHide() {
+                            _smAbort = true;
+                            shareModal.classList.remove('sm-open');
+                            if (_smPc) { try { _smPc.close(); } catch(_) {} _smPc = null; }
+                        }
+                        function smStatus(text, cls) {
+                            const el = smBodyEl.querySelector('.sm-status');
+                            if (!el) return;
+                            el.textContent = text;
+                            el.className = 'sm-status' + (cls ? ' ' + cls : '');
+                        }
+                        function smProgress(pct) {
+                            const bar = smBodyEl.querySelector('.sm-progress-bar');
+                            if (bar) bar.style.width = pct + '%';
+                        }
+
+                        // ── SENDER ──
+                        async function smStartSend() {
+                            smBodyEl.innerHTML = '<div class="sm-status">Preparing offer…</div>';
+
+                            // Build PC + DC first so we can gather ICE before registering
+                            const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+                            _smPc = pc;
+                            const dc = pc.createDataChannel('project', { ordered: true });
+
+                            const offerComplete = new Promise(res => {
+                                pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') res(); };
+                                pc.onicecandidate = e => { if (!e.candidate) res(); };
+                                setTimeout(res, 9000);
+                            });
+                            const offer = await pc.createOffer();
+                            await pc.setLocalDescription(offer);
+                            await offerComplete;
+                            if (_smAbort) return;
+
+                            // Register relay AFTER offer is ready so receiver can call immediately
+                            let code;
+                            try {
+                                const r = await fetch(RELAY + '/relay/register', { method: 'POST' });
+                                const j = await r.json(); code = j.code;
+                            } catch(e) {
+                                smBodyEl.innerHTML = '<div class="sm-status err">\u26a0 Relay unreachable: ' + e.message + '</div>';
+                                return;
+                            }
+                            if (_smAbort) return;
+
+                            const shareUrl = location.origin + location.pathname + '#/canvas?receive=' + code;
+                            smBodyEl.innerHTML = `
+                                <div class="sm-label">Share this code — offer is ready</div>
+                                <div class="sm-code-display">
+                                    ${code.split('').map(c => `<div class="sm-code-char">${c}</div>`).join('')}
+                                </div>
+                                <div class="sm-link-row">
+                                    <span class="sm-link" title="${shareUrl}">${shareUrl}</span>
+                                    <button class="sm-btn" id="smCopyBtn">Copy</button>
+                                </div>
+                                <div class="sm-progress"><div class="sm-progress-bar" style="width:0%"></div></div>
+                                <div class="sm-status">Waiting for receiver\u2026</div>
+                            `;
+                            smBodyEl.querySelector('#smCopyBtn').addEventListener('click', function() {
+                                navigator.clipboard.writeText(shareUrl).then(() => {
+                                    this.textContent = 'Copied!';
+                                    setTimeout(() => { this.textContent = 'Copy'; }, 1600);
+                                });
+                            });
+
+                            // Poll round 1 — receiver requests offer
+                            let poll1;
+                            try {
+                                const r = await fetch(RELAY + '/relay/poll?code=' + code, { signal: AbortSignal.timeout(35000) });
+                                if (!r.ok) throw new Error('poll ' + r.status);
+                                poll1 = await r.json();
+                            } catch(e) {
+                                if (!_smAbort) smStatus('\u26a0 Timed out — no receiver connected.', 'err');
+                                return;
+                            }
+                            if (_smAbort) return;
+                            smStatus('Sending offer\u2026');
+                            smProgress(25);
+
+                            // Respond with full SDP offer
+                            await fetch(RELAY + '/relay/respond', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ code, id: poll1.id, result: { sdp: pc.localDescription.sdp, type: pc.localDescription.type } })
+                            });
+
+                            smStatus('Offer sent, waiting for answer\u2026');
+                            smProgress(50);
+
+                            // Poll round 2 — receiver sends answer
+                            let poll2;
+                            try {
+                                const r = await fetch(RELAY + '/relay/poll?code=' + code, { signal: AbortSignal.timeout(35000) });
+                                if (!r.ok) throw new Error('poll2 ' + r.status);
+                                poll2 = await r.json();
+                            } catch(e) {
+                                if (!_smAbort) smStatus('\u26a0 Timed out waiting for answer.', 'err');
+                                return;
+                            }
+                            if (_smAbort) return;
+
+                            const answerData = poll2.args && poll2.args[0];
+                            if (!answerData?.sdp) {
+                                smStatus('\u26a0 Invalid answer from receiver.', 'err');
+                                return;
+                            }
+                            await pc.setRemoteDescription(new RTCSessionDescription(answerData));
+                            await fetch(RELAY + '/relay/respond', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ code, id: poll2.id, result: 'ok' })
+                            });
+
+                            smStatus('P2P connecting\u2026');
+                            smProgress(70);
+
+                            // Wait for DataChannel open then send project
+                            dc.onopen = async () => {
+                                if (_smAbort) return;
+                                smStatus('Sending project\u2026');
+                                smProgress(85);
+
+                                let content = '';
+                                try {
+                                    const sdk = window._traitsSDK;
+                                    if (sdk) {
+                                        const res = await sdk.call('sys.canvas', ['get']);
+                                        content = res?.result?.content || res?.content || '';
+                                    }
+                                } catch(_) {}
+                                if (!content) content = document.getElementById('phone-viewport')?.srcdoc || '';
+
+                                const payload = JSON.stringify({ type: 'project', content, ts: Date.now() });
+                                const CHUNK = 60 * 1024;
+                                if (payload.length <= CHUNK) {
+                                    dc.send(payload);
+                                } else {
+                                    const chunks = Math.ceil(payload.length / CHUNK);
+                                    dc.send(JSON.stringify({ type: 'chunked', total: chunks }));
+                                    for (let i = 0; i < chunks; i++) {
+                                        dc.send(payload.slice(i * CHUNK, (i + 1) * CHUNK));
+                                        smProgress(85 + 14 * (i + 1) / chunks);
+                                    }
+                                }
+                                smStatus('\u2713 Project sent!', 'ok');
+                                smProgress(100);
+                                setTimeout(() => smHide(), 2000);
+                            };
+                            pc.onconnectionstatechange = () => {
+                                if (pc.connectionState === 'failed' && !_smAbort)
+                                    smStatus('\u26a0 P2P connection failed. Try again.', 'err');
+                            };
+                        }
+
+                        // ── RECEIVER ──
+                        async function smStartReceive() {
+                            // Auto-detect ?receive=CODE in hash
+                            const autoCode = (location.hash.split('?')[1] ? new URLSearchParams(location.hash.split('?')[1]).get('receive') : '') || '';
+                            smBodyEl.innerHTML = `
+                                <div class="sm-label">Enter the 4-letter code from the sender:</div>
+                                <div class="sm-code-inputs" id="smCodeInputs">
+                                    <input class="sm-ci" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false">
+                                    <input class="sm-ci" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false">
+                                    <input class="sm-ci" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false">
+                                    <input class="sm-ci" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false">
+                                </div>
+                                <button class="sm-btn-primary" id="smConnectBtn">Connect \u2192</button>
+                                <div class="sm-progress" style="opacity:0"><div class="sm-progress-bar" style="width:0%"></div></div>
+                                <div class="sm-status"></div>
+                            `;
+                            // Wire up 4-box code input with auto-advance
+                            const inputs = Array.from(smBodyEl.querySelectorAll('.sm-ci'));
+                            inputs.forEach((inp, i) => {
+                                inp.addEventListener('input', () => {
+                                    inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                    if (inp.value && i < 3) inputs[i + 1].focus();
+                                });
+                                inp.addEventListener('keydown', (e) => {
+                                    if (e.key === 'Backspace' && !inp.value && i > 0) inputs[i - 1].focus();
+                                    if (e.key === 'Enter') smDoReceive(inputs);
+                                });
+                                inp.addEventListener('paste', (e) => {
+                                    const txt = (e.clipboardData.getData('text') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                    inputs.forEach((b, j) => { b.value = txt[j] || ''; });
+                                    e.preventDefault();
+                                });
+                            });
+                            smBodyEl.querySelector('#smConnectBtn').addEventListener('click', () => smDoReceive(inputs));
+                            // Pre-fill and auto-connect if URL has code
+                            if (autoCode.length >= 4) {
+                                autoCode.toUpperCase().split('').forEach((c, i) => { if (inputs[i]) inputs[i].value = c; });
+                                setTimeout(() => smDoReceive(inputs), 300);
+                            } else {
+                                inputs[0].focus();
+                            }
+                        }
+
+                        async function smDoReceive(inputs) {
+                            const code = inputs.map(i => i.value).join('').toUpperCase();
+                            if (code.length < 4) { smStatus('Enter all 4 characters.'); return; }
+
+                            smBodyEl.querySelector('#smConnectBtn').disabled = true;
+                            smBodyEl.querySelector('.sm-progress').style.opacity = '1';
+                            smStatus('Requesting offer\u2026');
+                            smProgress(15);
+
+                            let offerData;
+                            try {
+                                const r = await fetch(RELAY + '/relay/call', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ code, path: 'rtc.request', args: [] }),
+                                });
+                                if (!r.ok) throw new Error('relay ' + r.status);
+                                const j = await r.json();
+                                offerData = j.result || j;
+                            } catch(e) {
+                                smStatus('\u26a0 Could not reach sender — check code.', 'err');
+                                smBodyEl.querySelector('#smConnectBtn').disabled = false;
+                                return;
+                            }
+                            if (!offerData?.sdp) {
+                                smStatus('\u26a0 No valid offer from sender.', 'err');
+                                smBodyEl.querySelector('#smConnectBtn').disabled = false;
+                                return;
+                            }
+
+                            smStatus('Creating answer\u2026');
+                            smProgress(35);
+
+                            const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+                            _smPc = pc;
+                            await pc.setRemoteDescription(new RTCSessionDescription(offerData));
+                            const answer = await pc.createAnswer();
+                            const answerComplete = new Promise(res => {
+                                pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') res(); };
+                                pc.onicecandidate = e => { if (!e.candidate) res(); };
+                                setTimeout(res, 9000);
+                            });
+                            await pc.setLocalDescription(answer);
+                            await answerComplete;
+                            if (_smAbort) return;
+
+                            smStatus('Sending answer\u2026');
+                            smProgress(55);
+
+                            try {
+                                await fetch(RELAY + '/relay/call', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ code, path: 'rtc.answer', args: [{ sdp: pc.localDescription.sdp, type: pc.localDescription.type }] }),
+                                });
+                            } catch(e) {
+                                smStatus('\u26a0 Failed to send answer.', 'err');
+                                return;
+                            }
+
+                            smStatus('Connecting P2P\u2026');
+                            smProgress(70);
+
+                            // Wait for data over the channel
+                            let _chunkedBuf = '', _chunkedTotal = 0, _chunkedCount = 0;
+                            pc.ondatachannel = (e) => {
+                                const ch = e.channel;
+                                ch.onmessage = async (ev) => {
+                                    try {
+                                        const msg = JSON.parse(ev.data);
+                                        if (msg.type === 'chunked') {
+                                            _chunkedTotal = msg.total; _chunkedCount = 0; _chunkedBuf = '';
+                                            smStatus('Receiving\u2026 0/' + _chunkedTotal);
+                                            return;
+                                        }
+                                        if (_chunkedTotal > 0) {
+                                            _chunkedBuf += ev.data;
+                                            _chunkedCount++;
+                                            smStatus('Receiving\u2026 ' + _chunkedCount + '/' + _chunkedTotal);
+                                            smProgress(70 + 28 * _chunkedCount / _chunkedTotal);
+                                            if (_chunkedCount === _chunkedTotal) {
+                                                const full = JSON.parse(_chunkedBuf);
+                                                _chunkedTotal = 0;
+                                                await smApplyProject(full.content);
+                                            }
+                                            return;
+                                        }
+                                        if (msg.type === 'project') await smApplyProject(msg.content);
+                                    } catch(e) { console.warn('[share recv]', e); }
+                                };
+                            };
+                            pc.onconnectionstatechange = () => {
+                                if (pc.connectionState === 'connected') { smStatus('P2P connected! Waiting for data\u2026'); smProgress(85); }
+                                if (pc.connectionState === 'failed' && !_smAbort) smStatus('\u26a0 P2P failed — NAT may be blocking.', 'err');
+                            };
+                        }
+
+                        async function smApplyProject(content) {
+                            if (!content) return;
+                            try {
+                                const sdk = window._traitsSDK;
+                                if (sdk) await sdk.call('sys.canvas', ['set', content]);
+                            } catch(_) {}
+                            __lastContent = content;
+                            renderCanvas(content);
+                            smStatus('\u2713 Project received!', 'ok');
+                            smProgress(100);
+                            setTimeout(() => smHide(), 1800);
+                        }
                         window._pageCleanup = async () => {
                             clearInterval(_pollId);
                             fabMenu.classList.remove('show');
