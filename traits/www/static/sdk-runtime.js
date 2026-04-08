@@ -1955,10 +1955,19 @@ class Traits {
                             let request = '';
                             try { request = JSON.parse(argsStr).request || argsStr; } catch(e) { request = argsStr; }
                             console.log('[Voice/Canvas] ▶ Canvas tool triggered, launching agent for request:', request);
+
+                            // Immediately resolve the tool call so the model speaks now
+                            // rather than waiting silently for the full agent to finish
+                            if (_voiceDc && _voiceDc.readyState === 'open') {
+                                _voiceDc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: '{"status":"building","message":"Working on it now, give me a moment!"}' } }));
+                                _voiceDc.send(JSON.stringify({ type: 'response.create' }));
+                            }
+
                             _runCanvasAgent(this, request).then(truncated => {
-                                console.log('[Voice/Canvas] ✓ Agent finished, sending result to voice model');
+                                console.log('[Voice/Canvas] ✓ Agent finished, injecting completion message');
+                                // Inject a user message so the model knows the canvas is ready and speaks again
                                 if (_voiceDc && _voiceDc.readyState === 'open') {
-                                    _voiceDc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: truncated } }));
+                                    _voiceDc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Canvas update is ready.' }] } }));
                                     _voiceDc.send(JSON.stringify({ type: 'response.create' }));
                                 }
                                 if (opts.onToolResult) opts.onToolResult(funcName, truncated);
