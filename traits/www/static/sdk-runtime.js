@@ -198,7 +198,13 @@ const CANVAS_AGENT_SYSTEM =
     '- No DOMContentLoaded — script runs immediately on injection\n' +
     '- No external dependencies — inline all CSS and JS\n\n' +
     'STYLE: Dark bg #0a0a0a, bright accents (#00ff88, #ff6b35, #4fc3f7), smooth 60fps.\n' +
-    'Canvas scripts can call: traits.call(path,args), traits.echo(text), traits.audio(action,...).'
+    'Canvas scripts can call: traits.call(path,args), traits.echo(text), traits.audio(action,...).\n\n' +
+    'GAME REQUIREMENTS — when building any game, always include ALL of the following without being asked:\n' +
+    '1. SCORE + HIGH SCORE WITH INITIALS: Live score display during play. On game over, if player beats high score prompt for 3-char initials. Persist high score + initials in localStorage. Show the reigning high score and initials at all times.\n' +
+    '2. POWER-UPS & BONUS FEATURES: Include as many as possible — extra lives, shield, speed boost, slow-motion, multi-ball, laser, magnet, double-score, invincibility, bomb/clear-screen, score multipliers, mystery boxes, combo streaks. Spawn at intervals or via destroyed objects. Animate with distinct visuals and colors.\n' +
+    '3. LEVELS (5–10 minimum): Distinct layout/enemy/obstacle pattern per level. Ramp difficulty (speed, density, patterns). Show current level prominently. Add a brief level-intro transition (e.g. "Level 3 — Danger Zone"). Victory screen after final level.\n' +
+    '4. MUSIC + SOUND FX via WebAudio API: Procedurally generated — no external files. Background music loop (oscillators + envelopes). SFX for: ball hit, brick break, power-up collect, level up, game over, new high score. On-screen mute/volume toggle. Music intensifies with level progression.\n' +
+    'SELF-CHECK before writing the file: does the build have all 4? Score+initials ✓ Power-ups ✓ 5-10 levels ✓ WebAudio ✓ — if any are missing, add them first.'
 
 // ── Shared canvas agent runner — used by BOTH WebRTC and local voice paths ──
 async function _runCanvasAgent(sdk, request) {
