@@ -137,6 +137,61 @@ pub fn canvas(_args: &[Value]) -> Value {
                         #canvas-fab .fab-menu button:hover { background: rgba(124,92,252,0.12); color: #fff; }
                         #canvas-fab .fab-menu button .fab-icon { width: 18px; text-align: center; flex-shrink: 0; }
 
+                        /* Voice Chat Modal */
+                        #voice-chat-modal {
+                            display: none; position: fixed;
+                            bottom: 74px; right: 20px;
+                            width: 340px; height: 460px;
+                            background: rgba(14,14,18,0.97);
+                            border: 1px solid rgba(124,92,252,0.4);
+                            border-radius: 12px; z-index: 9995;
+                            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+                            backdrop-filter: blur(16px);
+                            flex-direction: column;
+                        }
+                        #voice-chat-modal.vcm-open { display: flex; }
+                        .vcm-header {
+                            display: flex; justify-content: space-between; align-items: center;
+                            padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.07);
+                            cursor: move; flex-shrink: 0;
+                        }
+                        .vcm-title { color: #b8a4fc; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+                        .vcm-close {
+                            background: none; border: none; color: #555; font-size: 18px;
+                            cursor: pointer; padding: 0 2px; line-height: 1; transition: color 0.15s;
+                        }
+                        .vcm-close:hover { color: #fff; }
+                        .vcm-log {
+                            flex: 1; overflow-y: auto; padding: 10px 12px;
+                            display: flex; flex-direction: column; gap: 5px;
+                        }
+                        .vcm-log::-webkit-scrollbar { width: 4px; }
+                        .vcm-log::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+                        .vcm-msg {
+                            padding: 5px 10px; border-radius: 8px; font-size: 12px;
+                            line-height: 1.5; max-width: 95%; word-break: break-word;
+                        }
+                        .vcm-msg.user { background: rgba(124,92,252,0.2); color: #d4c8ff; align-self: flex-end; }
+                        .vcm-msg.assistant { background: rgba(30,30,38,0.9); color: #e0e0e0; align-self: flex-start; border: 1px solid rgba(255,255,255,0.06); }
+                        .vcm-msg.tool { background: rgba(0,200,100,0.08); color: #4ade80; font-family: monospace; font-size: 11px; align-self: flex-start; }
+                        .vcm-msg.tool-result { background: rgba(56,189,248,0.07); color: #7dd3fc; font-family: monospace; font-size: 11px; align-self: flex-start; }
+                        .vcm-msg.system { color: #555; font-size: 11px; font-style: italic; align-self: center; }
+                        .vcm-input-row {
+                            display: flex; gap: 6px; padding: 8px 10px;
+                            border-top: 1px solid rgba(255,255,255,0.07); flex-shrink: 0;
+                        }
+                        #vcmInput {
+                            flex: 1; background: rgba(255,255,255,0.06); border: 1px solid #333;
+                            border-radius: 6px; color: #eee; padding: 6px 10px; font-size: 13px; outline: none;
+                        }
+                        #vcmInput:focus { border-color: rgba(124,92,252,0.55); }
+                        #vcmSend {
+                            background: rgba(124,92,252,0.25); border: 1px solid rgba(124,92,252,0.45);
+                            border-radius: 6px; color: #b8a4fc; padding: 6px 12px;
+                            cursor: pointer; font-size: 16px; transition: background 0.15s;
+                        }
+                        #vcmSend:hover { background: rgba(124,92,252,0.45); }
+
                     "#))
                 }
             }
@@ -181,6 +236,19 @@ pub fn canvas(_args: &[Value]) -> Value {
                             span .fab-icon { "🔮" }
                             span { "Splat Viewer" }
                         }
+                    }
+                }
+
+                // Voice chat floating modal
+                div #voice-chat-modal {
+                    div .vcm-header {
+                        span .vcm-title { "💬  Voice Chat" }
+                        button .vcm-close #vcmClose { "×" }
+                    }
+                    div .vcm-log #vcmLog {}
+                    div .vcm-input-row {
+                        input #vcmInput type="text" placeholder="Type to voice agent…" {}
+                        button #vcmSend { "↑" }
                     }
                 }
 
@@ -443,13 +511,14 @@ pub fn canvas(_args: &[Value]) -> Value {
                         // ── FAB menu ──
                         const fabToggle = document.getElementById('fabToggle');
                         const fabMenu = document.getElementById('fabMenu');
-                        fabToggle.addEventListener('click', () => {
+                        fabToggle.addEventListener('click', (e) => {
+                            e.stopPropagation();
                             fabMenu.classList.toggle('show');
                             fabToggle.classList.toggle('open');
                         });
                         // Close FAB menu when clicking outside
                         document.addEventListener('click', (e) => {
-                            if (!e.target.closest('#canvas-fab')) {
+                            if (!e.target.closest('#canvas-fab') && !e.target.closest('#voice-chat-modal')) {
                                 fabMenu.classList.remove('show');
                                 fabToggle.classList.remove('open');
                             }
@@ -506,6 +575,125 @@ pub fn canvas(_args: &[Value]) -> Value {
                             } catch(_) {}
                             try { delete window.traits; } catch(_) {}
                         };
+
+                        // ── Voice Chat Modal ──
+                        const vcModal   = document.getElementById('voice-chat-modal');
+                        const vcmLog    = document.getElementById('vcmLog');
+                        const vcmInput  = document.getElementById('vcmInput');
+                        const vcmSendBtn = document.getElementById('vcmSend');
+                        const vcmCloseBtn = document.getElementById('vcmClose');
+
+                        function vcmOpen()  { vcModal.classList.add('vcm-open'); }
+                        function vcmHide()  { vcModal.classList.remove('vcm-open'); }
+                        function vcmToggle() {
+                            vcModal.classList.contains('vcm-open') ? vcmHide() : vcmOpen();
+                        }
+
+                        function vcmAppend(role, text) {
+                            if (!text) return;
+                            const el = document.createElement('div');
+                            el.className = 'vcm-msg ' + role;
+                            el.textContent = text;
+                            vcmLog.appendChild(el);
+                            vcmLog.scrollTop = vcmLog.scrollHeight;
+                        }
+
+                        // Long-press (+) button to open the chat modal
+                        (() => {
+                            let _pressTimer = null;
+                            fabToggle.addEventListener('pointerdown', () => {
+                                _pressTimer = setTimeout(() => {
+                                    _pressTimer = null;
+                                    fabMenu.classList.remove('show');
+                                    fabToggle.classList.remove('open');
+                                    vcmToggle();
+                                }, 500);
+                            });
+                            fabToggle.addEventListener('pointerup', () => { if (_pressTimer) clearTimeout(_pressTimer); });
+                            fabToggle.addEventListener('pointercancel', () => { if (_pressTimer) clearTimeout(_pressTimer); });
+                            // Double-click also opens the modal immediately
+                            fabToggle.addEventListener('dblclick', (e) => {
+                                e.stopPropagation();
+                                fabMenu.classList.remove('show');
+                                fabToggle.classList.remove('open');
+                                vcmToggle();
+                            });
+                        })();
+
+                        vcmCloseBtn.addEventListener('click', (e) => { e.stopPropagation(); vcmHide(); });
+
+                        // Drag-to-reposition via header
+                        (() => {
+                            let drag = false, ox = 0, oy = 0;
+                            const header = vcModal.querySelector('.vcm-header');
+                            header.addEventListener('mousedown', (e) => {
+                                drag = true;
+                                vcModal.style.right = 'auto';
+                                vcModal.style.bottom = 'auto';
+                                ox = e.clientX - vcModal.offsetLeft;
+                                oy = e.clientY - vcModal.offsetTop;
+                            });
+                            document.addEventListener('mousemove', (e) => {
+                                if (!drag) return;
+                                vcModal.style.left = (e.clientX - ox) + 'px';
+                                vcModal.style.top  = (e.clientY - oy) + 'px';
+                            });
+                            document.addEventListener('mouseup', () => { drag = false; });
+                        })();
+
+                        // Voice events → chat log
+                        window.addEventListener('voice-event', (e) => {
+                            const d = e.detail;
+                            switch (d.type) {
+                                case 'started':
+                                    vcmAppend('system', '🎤 Voice session started');
+                                    break;
+                                case 'stopped':
+                                case 'disconnected':
+                                    vcmAppend('system', '⏹ Voice session ended');
+                                    break;
+                                case 'transcript':
+                                    vcmAppend('user', d.text);
+                                    break;
+                                case 'response':
+                                    vcmAppend('assistant', d.text);
+                                    break;
+                                case 'tool_call': {
+                                    let args = d.arguments || '';
+                                    try { args = JSON.stringify(JSON.parse(args), null, 0).slice(0, 140); } catch(_) { args = args.slice(0, 100); }
+                                    vcmAppend('tool', '\u26A1 ' + d.name + '(' + args + ')');
+                                    break;
+                                }
+                                case 'tool_result': {
+                                    const preview = (d.result || '').slice(0, 140);
+                                    vcmAppend('tool-result', '\u2713 ' + d.name + ': ' + preview);
+                                    break;
+                                }
+                                case 'error':
+                                    vcmAppend('system', '\u26A0 ' + d.message);
+                                    break;
+                            }
+                        });
+
+                        // Send typed message to voice model
+                        function vcmSendText() {
+                            const text = vcmInput.value.trim();
+                            if (!text) return;
+                            const sdk = window._traitsSDK;
+                            if (!sdk || !sdk.sendVoiceText) {
+                                vcmAppend('system', '\u26A0 Voice not active — start voice first');
+                                return;
+                            }
+                            const ok = sdk.sendVoiceText(text);
+                            if (ok) {
+                                vcmAppend('user', text);
+                                vcmInput.value = '';
+                            } else {
+                                vcmAppend('system', '\u26A0 Voice not connected');
+                            }
+                        }
+                        vcmSendBtn.addEventListener('click', vcmSendText);
+                        vcmInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') vcmSendText(); });
                     })();
                 "#)) }
             }

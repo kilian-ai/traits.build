@@ -1869,6 +1869,9 @@ class Traits {
                         if (opts.onResponse && msg.transcript) {
                             opts.onResponse(msg.transcript.trim());
                         }
+                        if (msg.transcript) {
+                            _dispatchVoiceEvent('response', { text: msg.transcript.trim() });
+                        }
                     }
 
                     // ── Function call — model wants to invoke a trait tool ──
@@ -2107,6 +2110,21 @@ class Traits {
      */
     isVoiceActive() {
         return _voiceDc !== null && _voiceDc.readyState === 'open';
+    }
+
+    /**
+     * Send a typed text message to the active voice model.
+     * @param {string} text - The text to send as a user message.
+     * @returns {boolean} true if sent, false if voice is not active.
+     */
+    sendVoiceText(text) {
+        if (!_voiceDc || _voiceDc.readyState !== 'open') return false;
+        _voiceDc.send(JSON.stringify({
+            type: 'conversation.item.create',
+            item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] }
+        }));
+        _voiceDc.send(JSON.stringify({ type: 'response.create' }));
+        return true;
     }
 
     /**
