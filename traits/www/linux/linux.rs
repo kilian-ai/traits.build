@@ -378,6 +378,14 @@ const BOOT_SCRIPT: &str = r#"
     setStatus('Booting Linux kernel…');
     statusNote && (statusNote.textContent = 'Starting on 3 virtual CPUs');
 
+    // ── Show terminal wrapper FIRST so xterm gets real layout dimensions ──
+    // If we call term.open() while display:none, fitAddon gets 0×0 and the
+    // terminal renders as a tiny square in the corner.
+    hideStatus();
+    showTerminal();
+    // Wait one animation frame so the flex layout settles before fit()
+    await new Promise(r => requestAnimationFrame(r));
+
     // ── Create xterm.js terminal ──
     let term, fitAddon;
     try {
@@ -410,14 +418,17 @@ const BOOT_SCRIPT: &str = r#"
         term.loadAddon(fitAddon);
         term.open(xtermContainer);
         fitAddon.fit();
+        // Focus immediately so keyboard input works right away
+        term.focus();
     } catch (err) {
         setError('Terminal init failed: ' + err.message);
         console.error('xterm init error:', err);
         return;
     }
 
-    hideStatus();
-    showTerminal();
+    // Re-focus on click (user may click elsewhere and lose focus)
+    xtermContainer.addEventListener('click', () => term.focus());
+
     setProgress(95);
 
     term.write('\x1B[2m[traits.build] Booting Linux 6.4.16 via WebAssembly...\x1B[0m\r\n');
