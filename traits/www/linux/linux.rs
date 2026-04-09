@@ -51,10 +51,6 @@ pub fn linux_page(_args: &[Value]) -> Value {
                     }
                 }
 
-                // ── CDN scripts ──
-                script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/lib/xterm.js" {}
-                script src="https://cdn.jsdelivr.net/npm/@xterm/xterm-addon-fit@0.10/lib/xterm-addon-fit.js" {}
-
                 // ── Embedded linux-worker.js source (read as text, used for Blob worker) ──
                 (PreEscaped(format!(
                     r#"<script id="linux-worker-src" type="text/plain">{}</script>"#,
@@ -324,9 +320,25 @@ const BOOT_SCRIPT: &str = r#"
 
     setProgress(10);
     setStatus('Cross-origin isolation active ✓');
-    statusNote && (statusNote.textContent = 'Preparing to download Linux kernel…');
+    statusNote && (statusNote.textContent = 'Loading terminal library…');
 
-    await new Promise(r => setTimeout(r, 300));
+    // ── Load xterm.js via dynamic import (correct scoped packages) ──
+    let Terminal, FitAddon;
+    try {
+        const [xtermMod, fitMod] = await Promise.all([
+            import('https://cdn.jsdelivr.net/npm/@xterm/xterm@5/+esm'),
+            import('https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10/+esm'),
+        ]);
+        Terminal = xtermMod.Terminal;
+        FitAddon = fitMod.FitAddon;
+        setProgress(15);
+    } catch (err) {
+        setError('Failed to load xterm.js: ' + err.message);
+        return;
+    }
+
+    statusNote && (statusNote.textContent = 'Preparing to download Linux kernel…');
+    await new Promise(r => setTimeout(r, 200));
 
     // ── Download vmlinux.wasm ──
     let vmlinux;
@@ -367,35 +379,42 @@ const BOOT_SCRIPT: &str = r#"
     statusNote && (statusNote.textContent = 'Starting on 3 virtual CPUs');
 
     // ── Create xterm.js terminal ──
-    const term = new Terminal({
-        theme: {
-            background:   '#0a0e1a',
-            foreground:   '#e0e5ef',
-            cursor:       '#00ff88',
-            cursorAccent: '#0a0e1a',
-            selectionBackground: '#264f78',
-            black:   '#0a0e1a', brightBlack:   '#484f58',
-            red:     '#e74c3c', brightRed:     '#ff6248',
-            green:   '#00c07f', brightGreen:   '#00ff88',
-            yellow:  '#f39c12', brightYellow:  '#ffd700',
-            blue:    '#4e9af1', brightBlue:    '#79b8ff',
-            magenta: '#a855f7', brightMagenta: '#d2a8ff',
-            cyan:    '#00bcd4', brightCyan:    '#56d3e8',
-            white:   '#c9d1d9', brightWhite:   '#ffffff',
-        },
-        fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Courier New', monospace",
-        fontSize: 14,
-        lineHeight: 1.3,
-        cursorStyle: 'bar',
-        cursorBlink: true,
-        scrollback: 5000,
-        allowProposedApi: true,
-    });
+    let term, fitAddon;
+    try {
+        term = new Terminal({
+            theme: {
+                background:   '#0a0e1a',
+                foreground:   '#e0e5ef',
+                cursor:       '#00ff88',
+                cursorAccent: '#0a0e1a',
+                selectionBackground: '#264f78',
+                black:   '#0a0e1a', brightBlack:   '#484f58',
+                red:     '#e74c3c', brightRed:     '#ff6248',
+                green:   '#00c07f', brightGreen:   '#00ff88',
+                yellow:  '#f39c12', brightYellow:  '#ffd700',
+                blue:    '#4e9af1', brightBlue:    '#79b8ff',
+                magenta: '#a855f7', brightMagenta: '#d2a8ff',
+                cyan:    '#00bcd4', brightCyan:    '#56d3e8',
+                white:   '#c9d1d9', brightWhite:   '#ffffff',
+            },
+            fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Courier New', monospace",
+            fontSize: 14,
+            lineHeight: 1.3,
+            cursorStyle: 'bar',
+            cursorBlink: true,
+            scrollback: 5000,
+            allowProposedApi: true,
+        });
 
-    const fitAddon = new FitAddon.FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(xtermContainer);
-    fitAddon.fit();
+        fitAddon = new FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(xtermContainer);
+        fitAddon.fit();
+    } catch (err) {
+        setError('Terminal init failed: ' + err.message);
+        console.error('xterm init error:', err);
+        return;
+    }
 
     hideStatus();
     showTerminal();
