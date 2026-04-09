@@ -457,9 +457,9 @@ const BOOT_SCRIPT: &str = r#"
     }
 
     // ── Keyboard input ──
-    // Capture keydown at document level (capture phase) so input works
-    // regardless of which element holds browser focus in the SPA.
-    // Translate keydown events → ANSI/VT100 sequences → os.key_input().
+    // Primary path: let xterm translate keys via its onData when focused.
+    // Fallback path: capture-phase document listener for when xterm loses
+    // focus in the SPA — sends the key manually AND re-focuses xterm.
     const KEY_SEQ = {
         'Enter':'\r', 'Backspace':'\x7f', 'Tab':'\t', 'Escape':'\x1b',
         'Delete':'\x1b[3~',
@@ -472,30 +472,42 @@ const BOOT_SCRIPT: &str = r#"
         'F9':'\x1b[20~', 'F10':'\x1b[21~', 'F11':'\x1b[23~', 'F12':'\x1b[24~',
     };
 
+    // PRIMARY: xterm's own input handling (correct VT100 translation)
+    term.onData(data => os.key_input(data));
+
+    // FALLBACK: when xterm's textarea doesn't have focus, handle manually
     const handleKey = (e) => {
-        // Don't steal Meta shortcuts (Cmd on Mac)
         if (e.metaKey) return;
+        // If xterm is focused let term.onData handle it — don't double-send
+        if (term.textarea && document.activeElement === term.textarea) {
+            term.focus(); // ensure it stays focused
+            return;
+        }
         let seq = null;
         if (e.ctrlKey && !e.altKey && e.key.length === 1) {
             const c = e.key.toUpperCase();
-            if (c >= 'A' && c <= 'Z')       seq = String.fromCharCode(c.charCodeAt(0) - 64);
-            else if (e.key === ' ')          seq = '\x00';
-            else if (e.key === '[')          seq = '\x1b';
-            else if (e.key === '\\')         seq = '\x1c';
-            else if (e.key === ']')          seq = '\x1d';
+            if (c >= 'A' && c <= 'Z')    seq = String.fromCharCode(c.charCodeAt(0) - 64);
+            else if (e.key === ' ')       seq = '\x00';
+            else if (e.key === '[')       seq = '\x1b';
+            else if (e.key === '\\')      seq = '\x1c';
+            else if (e.key === ']')       seq = '\x1d';
         } else if (!e.ctrlKey && !e.altKey) {
             if (KEY_SEQ[e.key] !== undefined) seq = KEY_SEQ[e.key];
-            else if (e.key.length === 1)     seq = e.key;
+            else if (e.key.length === 1)      seq = e.key;
         }
         if (seq !== null) {
             e.preventDefault();
             e.stopPropagation();
             os.key_input(seq);
         }
+        // Re-focus xterm so next keypress goes through term.onData
+        term.focus();
     };
 
-    // Capture phase so we intercept before SPA bubble-phase handlers
+    // Capture phase fires before any bubble-phase handler in the SPA
     document.addEventListener('keydown', handleKey, true);
+    // Also re-focus on click anywhere in the linux page
+    document.getElementById('linux-root')?.addEventListener('click', () => term.focus());
 
     // Clean up when SPA navigates away from this page
     window._pageCleanup = () => document.removeEventListener('keydown', handleKey, true);
