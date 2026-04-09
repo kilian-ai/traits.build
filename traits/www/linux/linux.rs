@@ -457,9 +457,9 @@ const BOOT_SCRIPT: &str = r#"
     }
 
     // ── Keyboard input ──
-    // Primary path: let xterm translate keys via its onData when focused.
-    // Fallback path: capture-phase document listener for when xterm loses
-    // focus in the SPA — sends the key manually AND re-focuses xterm.
+    // Single handler: capture-phase document listener handles ALL input.
+    // We do NOT rely on xterm's term.onData because its hidden textarea
+    // loses focus in the SPA context and silently stops receiving events.
     const KEY_SEQ = {
         'Enter':'\r', 'Backspace':'\x7f', 'Tab':'\t', 'Escape':'\x1b',
         'Delete':'\x1b[3~',
@@ -472,17 +472,8 @@ const BOOT_SCRIPT: &str = r#"
         'F9':'\x1b[20~', 'F10':'\x1b[21~', 'F11':'\x1b[23~', 'F12':'\x1b[24~',
     };
 
-    // PRIMARY: xterm's own input handling (correct VT100 translation)
-    term.onData(data => os.key_input(data));
-
-    // FALLBACK: when xterm's textarea doesn't have focus, handle manually
     const handleKey = (e) => {
         if (e.metaKey) return;
-        // If xterm is focused let term.onData handle it — don't double-send
-        if (term.textarea && document.activeElement === term.textarea) {
-            term.focus(); // ensure it stays focused
-            return;
-        }
         let seq = null;
         if (e.ctrlKey && !e.altKey && e.key.length === 1) {
             const c = e.key.toUpperCase();
@@ -498,16 +489,12 @@ const BOOT_SCRIPT: &str = r#"
         if (seq !== null) {
             e.preventDefault();
             e.stopPropagation();
-            os.key_input(seq);
+            try { os.key_input(seq); } catch(err) { console.error('[linux] key_input error:', err); }
         }
-        // Re-focus xterm so next keypress goes through term.onData
-        term.focus();
     };
 
     // Capture phase fires before any bubble-phase handler in the SPA
     document.addEventListener('keydown', handleKey, true);
-    // Also re-focus on click anywhere in the linux page
-    document.getElementById('linux-root')?.addEventListener('click', () => term.focus());
 
     // Clean up when SPA navigates away from this page
     window._pageCleanup = () => document.removeEventListener('keydown', handleKey, true);

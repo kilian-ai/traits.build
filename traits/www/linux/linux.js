@@ -214,9 +214,13 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
       const key_buffer = text_encoder.encode(data);  // Possibly UTF-8 (up to 16 bits).
 
       // Append key_buffer to the end of input_buffer.
-      const old_size = input_buffer.byteLength;
-      input_buffer = input_buffer.transfer(old_size + key_buffer.byteLength);
-      (new Uint8Array(input_buffer)).set(key_buffer, old_size);
+      // Use manual copy instead of ArrayBuffer.transfer() for broader compatibility.
+      const old = new Uint8Array(input_buffer);
+      const combined = new ArrayBuffer(old.byteLength + key_buffer.byteLength);
+      const view = new Uint8Array(combined);
+      view.set(old, 0);
+      view.set(key_buffer, old.byteLength);
+      input_buffer = combined;
     }
   };
 };
