@@ -1,0 +1,19 @@
+[trait]
+description = "Linux kernel running in the browser via WebAssembly (vmlinux 6.4.16 + BusyBox + musl)"
+version = "v260409.152859"
+checksum = "0812003da9376b1da0c4e8d6ba9289bd8ba57497a4085ed8e1c4b683745fc5d5"
+author = "system"
+tags = ["www", "webpage", "linux", "wasm", "kernel"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "Full HTML page that boots Linux 6.4.16 via WebAssembly in the browser"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "linux_page"
+wasm = true

@@ -572,6 +572,18 @@ fn base64_decode(input: &str) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
+/// Serve the COI (Cross-Origin Isolation) service worker.
+/// Required for Linux/WASM which uses SharedArrayBuffer.
+/// Sets Service-Worker-Allowed: / so it can control the whole origin.
+async fn serve_coi_sw() -> HttpResponse {
+    const COI_SW: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/coi-sw.js"));
+    HttpResponse::Ok()
+        .content_type("application/javascript")
+        .insert_header(("Service-Worker-Allowed", "/"))
+        .insert_header(("Cache-Control", "no-cache"))
+        .body(COI_SW)
+}
+
 /// Serve embedded static assets (.css, .js) discovered at build time from trait directories.
 async fn serve_static(req: HttpRequest) -> HttpResponse {
     let path = req.match_info().get("path").unwrap_or("");
@@ -1325,6 +1337,7 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
             .route("/health", web::get().to(health_check))
             .route("/metrics", web::get().to(metrics))
             .route("/mcp", web::get().to(mcp_ws))
+            .route("/coi-sw.js", web::get().to(serve_coi_sw))
             .route("/relay/register", web::post().to(relay_register))
             .route("/relay/poll", web::get().to(relay_poll))
             .route("/relay/call", web::post().to(relay_call_handler))
