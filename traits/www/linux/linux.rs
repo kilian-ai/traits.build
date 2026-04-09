@@ -448,7 +448,9 @@ const BOOT_SCRIPT: &str = r#"
     let os;
     try {
         os = await linux(workerUrl, vmlinux, boot_cmdline, initrd, logLine, console_write);
-        URL.revokeObjectURL(workerUrl);
+        // Do NOT revoke workerUrl here! linux() returns immediately but
+        // CPU 0 boots async and will create secondary CPUs + user tasks
+        // later by calling new Worker(workerUrl). Revoke on page cleanup.
         setProgress(100);
     } catch (err) {
         term.write('\r\n\x1B[1;31m[ERROR] ' + err.message + '\x1B[0m\r\n');
@@ -497,7 +499,10 @@ const BOOT_SCRIPT: &str = r#"
     document.addEventListener('keydown', handleKey, true);
 
     // Clean up when SPA navigates away from this page
-    window._pageCleanup = () => document.removeEventListener('keydown', handleKey, true);
+    window._pageCleanup = () => {
+        document.removeEventListener('keydown', handleKey, true);
+        URL.revokeObjectURL(workerUrl);
+    };
 
     term.focus();
 
