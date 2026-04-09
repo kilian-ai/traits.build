@@ -445,16 +445,62 @@ const BOOT_SCRIPT: &str = r#"
     const logLine = (text) => term.write(('\x1B[2m' + text + '\x1B[0m\n').replaceAll('\n', '\r\n'));
     const console_write = (data) => term.write(data);
 
+    let os;
     try {
-        const os = await linux(workerUrl, vmlinux, boot_cmdline, initrd, logLine, console_write);
-        term.onData(data => os.key_input(data));
-        term.focus();
+        os = await linux(workerUrl, vmlinux, boot_cmdline, initrd, logLine, console_write);
         URL.revokeObjectURL(workerUrl);
         setProgress(100);
     } catch (err) {
         term.write('\r\n\x1B[1;31m[ERROR] ' + err.message + '\x1B[0m\r\n');
         console.error('Linux/WASM boot failed:', err);
+        return;
     }
+
+    // ── Keyboard input ──
+    // Capture keydown at document level (capture phase) so input works
+    // regardless of which element holds browser focus in the SPA.
+    // Translate keydown events → ANSI/VT100 sequences → os.key_input().
+    const KEY_SEQ = {
+        'Enter':'\r', 'Backspace':'\x7f', 'Tab':'\t', 'Escape':'\x1b',
+        'Delete':'\x1b[3~',
+        'ArrowUp':'\x1b[A', 'ArrowDown':'\x1b[B',
+        'ArrowRight':'\x1b[C', 'ArrowLeft':'\x1b[D',
+        'Home':'\x1b[H', 'End':'\x1b[F',
+        'PageUp':'\x1b[5~', 'PageDown':'\x1b[6~',
+        'F1':'\x1bOP', 'F2':'\x1bOQ', 'F3':'\x1bOR', 'F4':'\x1bOS',
+        'F5':'\x1b[15~', 'F6':'\x1b[17~', 'F7':'\x1b[18~', 'F8':'\x1b[19~',
+        'F9':'\x1b[20~', 'F10':'\x1b[21~', 'F11':'\x1b[23~', 'F12':'\x1b[24~',
+    };
+
+    const handleKey = (e) => {
+        // Don't steal Meta shortcuts (Cmd on Mac)
+        if (e.metaKey) return;
+        let seq = null;
+        if (e.ctrlKey && !e.altKey && e.key.length === 1) {
+            const c = e.key.toUpperCase();
+            if (c >= 'A' && c <= 'Z')       seq = String.fromCharCode(c.charCodeAt(0) - 64);
+            else if (e.key === ' ')          seq = '\x00';
+            else if (e.key === '[')          seq = '\x1b';
+            else if (e.key === '\\')         seq = '\x1c';
+            else if (e.key === ']')          seq = '\x1d';
+        } else if (!e.ctrlKey && !e.altKey) {
+            if (KEY_SEQ[e.key] !== undefined) seq = KEY_SEQ[e.key];
+            else if (e.key.length === 1)     seq = e.key;
+        }
+        if (seq !== null) {
+            e.preventDefault();
+            e.stopPropagation();
+            os.key_input(seq);
+        }
+    };
+
+    // Capture phase so we intercept before SPA bubble-phase handlers
+    document.addEventListener('keydown', handleKey, true);
+
+    // Clean up when SPA navigates away from this page
+    window._pageCleanup = () => document.removeEventListener('keydown', handleKey, true);
+
+    term.focus();
 
     // Refit on resize
     window.addEventListener('resize', () => {
