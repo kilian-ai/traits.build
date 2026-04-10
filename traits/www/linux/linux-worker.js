@@ -30,6 +30,10 @@
   /// A messenger to synchronize with the main thread, as well as communicate how many bytes were read on the console.
   let console_read_messenger = new Int32Array(new SharedArrayBuffer(4));
 
+  /// Messengers for network I/O (SharedArrayBuffer-backed, same pattern as console).
+  let net_recv_messenger = new Int32Array(new SharedArrayBuffer(4));
+  let net_poll_messenger = new Int32Array(new SharedArrayBuffer(4));
+
   /// An exception type used to abort part of execution (useful for collapsing the call stack of user code).
   class Trap extends Error {
     constructor(kind) {
@@ -246,6 +250,40 @@
       Atomics.wait(console_read_messenger, 0, -1);
       let console_read_count = Atomics.load(console_read_messenger, 0);
       return console_read_count;
+    },
+
+    // Host callbacks used by the Wasm network driver (net_wasm.c).
+
+    wasm_net_send: (buffer, length) => {
+      const memory_u8 = new Uint8Array(memory.buffer);
+      const packet = memory_u8.slice(buffer, buffer + length);
+      port.postMessage({
+        method: "net_send",
+        packet: packet.buffer,
+      }, [packet.buffer]);
+      return length;
+    },
+
+    wasm_net_recv: (buffer, max_length) => {
+      Atomics.store(net_recv_messenger, 0, -1);
+      port.postMessage({
+        method: "net_recv",
+        buffer: buffer,
+        max_length: max_length,
+        net_recv_messenger: net_recv_messenger,
+      });
+      Atomics.wait(net_recv_messenger, 0, -1);
+      return Atomics.load(net_recv_messenger, 0);
+    },
+
+    wasm_net_poll: () => {
+      Atomics.store(net_poll_messenger, 0, -1);
+      port.postMessage({
+        method: "net_poll",
+        net_poll_messenger: net_poll_messenger,
+      });
+      Atomics.wait(net_poll_messenger, 0, -1);
+      return Atomics.load(net_poll_messenger, 0);
     },
   };
 

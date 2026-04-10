@@ -4,6 +4,7 @@ use maud::{html, DOCTYPE, PreEscaped};
 
 const LINUX_JS: &str = include_str!("linux.js");
 const LINUX_WORKER_JS: &str = include_str!("linux-worker.js");
+const NET_PROXY_JS: &str = include_str!("net-proxy.js");
 
 pub fn linux_page(_args: &[Value]) -> Value {
     let markup = html! {
@@ -55,6 +56,12 @@ pub fn linux_page(_args: &[Value]) -> Value {
                 (PreEscaped(format!(
                     r#"<script id="linux-worker-src" type="text/plain">{}</script>"#,
                     LINUX_WORKER_JS
+                )))
+
+                // ── Embedded net-proxy.js (TCP/IP proxy for guest networking) ──
+                (PreEscaped(format!(
+                    "<script>\n{}\n</script>",
+                    NET_PROXY_JS
                 )))
 
                 // ── Embedded linux.js runtime + boot logic ──
@@ -212,7 +219,7 @@ const BOOT_SCRIPT: &str = r#"
 
 (async function bootLinuxWasm() {
     const CDN = 'https://kilian-ai.github.io/linux-wasm';
-    const ASSET_REV = '8641394';
+    const ASSET_REV = '77665e5';
     const assetUrl = (name) => `${CDN}/${name}?rev=${ASSET_REV}`;
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 

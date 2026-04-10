@@ -107,6 +107,37 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
     log: (message) => {
       log(message.message);
     },
+
+    // Network I/O handlers (bridge worker ↔ NetProxy on main thread).
+
+    net_send: (message) => {
+      if (typeof NetProxy !== 'undefined') {
+        NetProxy.send(new Uint8Array(message.packet));
+      }
+    },
+
+    net_recv: (message) => {
+      const memory_u8 = new Uint8Array(memory.buffer);
+      let count = 0;
+      if (typeof NetProxy !== 'undefined') {
+        const packet = NetProxy.recv(message.max_length);
+        if (packet && packet.length > 0) {
+          memory_u8.set(packet, message.buffer);
+          count = packet.length;
+        }
+      }
+      Atomics.store(message.net_recv_messenger, 0, count);
+      Atomics.notify(message.net_recv_messenger, 0, 1);
+    },
+
+    net_poll: (message) => {
+      let count = 0;
+      if (typeof NetProxy !== 'undefined') {
+        count = NetProxy.poll();
+      }
+      Atomics.store(message.net_poll_messenger, 0, count);
+      Atomics.notify(message.net_poll_messenger, 0, 1);
+    },
   };
 
   /// Memory shared between all CPUs.
