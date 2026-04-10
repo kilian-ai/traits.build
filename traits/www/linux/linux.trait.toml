@@ -1,7 +1,7 @@
 [trait]
 description = "Linux kernel running in the browser via WebAssembly (vmlinux 6.4.16 + BusyBox + musl)"
-version = "v260410"
-checksum = "95dfcef77a5bab5ba4c8287bb2191ac135b91e515d4cc4de5173dde9bfb0c39c"
+version = "v260410.073924"
+checksum = "7cdfe3cd1a28ca3520fd40f068b06313c85927f0d14fe81191d4b745ee6e5cac"
 author = "system"
 tags = ["www", "webpage", "linux", "wasm", "kernel"]
 provides = ["www/webpage"]

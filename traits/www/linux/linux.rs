@@ -214,6 +214,14 @@ const BOOT_SCRIPT: &str = r#"
     const CDN = 'https://kilian-ai.github.io/linux-wasm';
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 
+    // ── Shell history persistence (survives page refresh via localStorage) ──
+    const HIST_KEY = 'linux-wasm-history';
+    const HIST_MAX = 500;
+    let savedHistory = [];
+    try { savedHistory = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch(e) {}
+    let promptDetected = false;
+    let outputTail = '';
+
     const statusEl  = document.getElementById('linux-status');
     const statusTxt = document.getElementById('status-text');
     const statusNote = document.getElementById('status-note');
@@ -443,7 +451,14 @@ const BOOT_SCRIPT: &str = r#"
     const boot_cmdline = 'maxcpus=3 nohz_full=0,2-63 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
 
     const logLine = (text) => term.write(('\x1B[2m' + text + '\x1B[0m\n').replaceAll('\n', '\r\n'));
-    const console_write = (data) => term.write(data);
+    const console_write = (data) => {
+        term.write(data);
+        // Detect first shell prompt for history injection
+        if (!promptDetected && typeof data === 'string') {
+            outputTail = (outputTail + data).slice(-200);
+            if (/\s#\s*$/.test(outputTail)) promptDetected = true;
+        }
+    };
 
     let os;
     try {
@@ -489,6 +504,25 @@ const BOOT_SCRIPT: &str = r#"
             else if (e.key.length === 1)      seq = e.key;
         }
         if (seq !== null) {
+            // ── Track shell history on Enter ──
+            if (seq === '\r') {
+                try {
+                    const buf = term.buffer.active;
+                    const line = buf.getLine(buf.baseY + buf.cursorY);
+                    if (line) {
+                        const text = line.translateToString(true).trim();
+                        const m = text.match(/^.*?[#$]\s+(.+)$/);
+                        if (m && m[1].trim()) {
+                            const cmd = m[1].trim();
+                            if (cmd !== savedHistory[savedHistory.length - 1]) {
+                                savedHistory.push(cmd);
+                                if (savedHistory.length > HIST_MAX) savedHistory = savedHistory.slice(-HIST_MAX);
+                                try { localStorage.setItem(HIST_KEY, JSON.stringify(savedHistory)); } catch(e2) {}
+                            }
+                        }
+                    }
+                } catch(e2) {}
+            }
             e.preventDefault();
             e.stopPropagation();
             try { os.key_input(seq); } catch(err) { console.error('[linux] key_input error:', err); }
@@ -505,6 +539,20 @@ const BOOT_SCRIPT: &str = r#"
     };
 
     term.focus();
+
+    // ── Inject saved shell history after first prompt ──
+    if (savedHistory.length > 0) {
+        const _hi = setInterval(() => {
+            if (promptDetected) {
+                clearInterval(_hi);
+                const esc = savedHistory.map(c => c.replace(/'/g, "'\\''"));
+                const args = esc.map(c => "'" + c + "'").join(' ');
+                const inject = "export HISTFILE=~/.ash_history; printf '%s\\n' " + args + " > ~/.ash_history; clear; exec ash\n";
+                try { os.key_input(inject); } catch(e) {}
+            }
+        }, 200);
+        setTimeout(() => clearInterval(_hi), 30000);
+    }
 
     // Refit on resize
     window.addEventListener('resize', () => {
