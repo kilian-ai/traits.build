@@ -8,6 +8,15 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
   /// Dict of tasks.
   const tasks = {};
 
+  /// Set of online CPU IDs (for heartbeat).
+  const onlineCpus = new Set();
+
+  /// Timer heartbeat: periodically raises WASM_IRQ_TIMER on non-IRQ CPUs
+  /// to work around broken timer delegation on hotplugged nohz_full CPUs.
+  const WASM_IRQ_TIMER = 1;
+  const IRQ_CPU = 1;
+  let heartbeatStarted = false;
+
   /// Input buffer (from keyboard to tty).
   let input_buffer = new ArrayBuffer(0);
 
@@ -33,6 +42,7 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
       // CPU 0 has init_task which sits in static storage. After booting it becomes CPU 0's idle task. The runner will
       // in this special case tell us where it is so that we can register it.
       log("Starting cpu 0 with init_task " + message.init_task)
+      onlineCpus.add(0);
       tasks[message.init_task] = cpus[0];
     },
 
@@ -43,7 +53,9 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
 
       log("Starting cpu " + message.cpu + " (" + message.idle_task + ")" +
         " with start stack " + message.start_stack);
+      onlineCpus.add(message.cpu);
       make_cpu(message.cpu, message.idle_task, message.start_stack);
+      startHeartbeat();
     },
 
     stop_secondary: (message) => {
@@ -55,6 +67,8 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
           throw new Error("Trying to stop secondary cpu with ID 0");
         }
       }
+
+      onlineCpus.delete(message.cpu);
 
       if (cpus[message.cpu]) {
         log("[Main]: Stopping CPU " + message.cpu);
@@ -245,6 +259,54 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
 
   // Create the primary cpu, it will later on callback to us and we start secondaries.
   make_cpu(0);
+
+  /// Start the timer heartbeat: instantiate a lightweight vmlinux instance on
+  /// the main thread and periodically call raise_interrupt(cpu, WASM_IRQ_TIMER)
+  /// for each online non-IRQ CPU. This works around broken nohz_full timer
+  /// delegation on hotplugged CPUs where arch_cpu_idle waits forever because
+  /// local_timer_expiries is never programmed.
+  ///
+  /// raise_interrupt is pure WASM (atomic OR + notify on shared memory) and is
+  /// safe to call from any context. The idle loop handles spurious wakeups
+  /// gracefully: it re-checks expire times and only fires actual pending timers.
+  const startHeartbeat = async () => {
+    if (heartbeatStarted) return;
+    heartbeatStarted = true;
+    try {
+      // Build stub imports — raise_interrupt uses NO host callbacks, but
+      // WebAssembly.instantiate requires all declared imports to be present.
+      const stub_imports = { env: { memory: memory } };
+      for (const imp of WebAssembly.Module.imports(vmlinux)) {
+        if (imp.module !== "env" || imp.name === "memory") continue;
+        if (imp.kind === "function") {
+          stub_imports.env[imp.name] =
+            imp.name === "wasm_cpu_clock_get_monotonic" ? () => 0n : () => 0;
+        } else if (imp.kind === "table") {
+          stub_imports.env[imp.name] =
+            new WebAssembly.Table({ initial: 4096, element: "anyfunc" });
+        } else if (imp.kind === "global") {
+          stub_imports.env[imp.name] =
+            new WebAssembly.Global({ value: "i32", mutable: true }, 0);
+        }
+      }
+      const hb = await WebAssembly.instantiate(vmlinux, stub_imports);
+      const raise = hb.exports.raise_interrupt;
+      if (!raise) {
+        log("[Heartbeat] raise_interrupt not exported — disabled");
+        return;
+      }
+      log("[Heartbeat] Timer assist active (200ms interval)");
+      setInterval(() => {
+        for (const cpu of onlineCpus) {
+          if (cpu !== IRQ_CPU) {
+            try { raise(cpu, WASM_IRQ_TIMER); } catch (_) {}
+          }
+        }
+      }, 200);
+    } catch (e) {
+      log("[Heartbeat] Failed: " + e.message);
+    }
+  };
 
   /// Fulfill a pending console_read with whatever is in input_buffer.
   /// Uses CAS to safely race with the Worker's 50ms timeout.
