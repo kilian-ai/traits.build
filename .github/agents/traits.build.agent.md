@@ -1011,6 +1011,7 @@ Test types: `exit_code`, `contains`, `matches` (regex), `json_path`
 - **GitHub Pages deploy:** just `git push origin main` — root `index.html` is auto-served.
 - **Two admin pages exist:** `www.admin` (server-rendered) and `www.admin.spa` (browser-only SPA).
 - **Terminal dispatch:** `terminal.js` uses `window._traitsSDK.call()` (3-tier cascade) and `Traits.backgroundCall()` for CLI session commands, NOT raw fetch/direct trait-specific command switches.
+- **linux-wasm initramfs networking:** prefer `ifconfig` + `route` in `patches/initramfs/init`. Do not rely on bare `ip` in early boot scripts because `/sbin` may not be on `PATH` during init.
 
 ## Trait .trait.toml Template
 
