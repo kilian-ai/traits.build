@@ -457,7 +457,7 @@ const BOOT_SCRIPT: &str = r#"
     const workerBlob = new Blob([workerSrc], { type: 'application/javascript' });
     const workerUrl = URL.createObjectURL(workerBlob);
 
-    const boot_cmdline = 'maxcpus=3 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
+    const boot_cmdline = 'maxcpus=3 nohz_full=0,2-63 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
 
     const logLine = (text) => term.write(('\x1B[2m' + text + '\x1B[0m\n').replaceAll('\n', '\r\n'));
     const console_write = (data) => {
