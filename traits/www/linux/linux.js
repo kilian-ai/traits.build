@@ -11,6 +11,9 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
   /// Input buffer (from keyboard to tty).
   let input_buffer = new ArrayBuffer(0);
 
+  /// Pending console_read request (deferred until input arrives).
+  let pendingConsoleRead = null;
+
   const text_decoder = new TextDecoder("utf-8");
   const text_encoder = new TextEncoder();
 
@@ -86,18 +89,21 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
     },
 
     console_read: (message, worker) => {
-      const memory_u8 = new Uint8Array(memory.buffer);
       const buffer = new Uint8Array(input_buffer);
-
-      const used = buffer.slice(0, message.count);
-      memory_u8.set(used, message.buffer);
-
-      const unused = buffer.slice(message.count);
-      input_buffer = unused.buffer;
-
-      // Tell the Worker that asked for input how many bytes (perhaps 0) were actually written.
-      Atomics.store(message.console_read_messenger, 0, used.length);
-      Atomics.notify(message.console_read_messenger, 0, 1);
+      if (buffer.length > 0) {
+        // Input available — deliver immediately.
+        const memory_u8 = new Uint8Array(memory.buffer);
+        const used = buffer.slice(0, message.count);
+        memory_u8.set(used, message.buffer);
+        const unused = buffer.slice(message.count);
+        input_buffer = unused.buffer;
+        Atomics.store(message.console_read_messenger, 0, used.length);
+        Atomics.notify(message.console_read_messenger, 0, 1);
+      } else {
+        // No input yet — park the request. The Worker stays blocked on
+        // Atomics.wait until key_input() delivers data and notifies it.
+        pendingConsoleRead = message;
+      }
     },
 
     console_write: (message) => {
@@ -240,6 +246,22 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
   // Create the primary cpu, it will later on callback to us and we start secondaries.
   make_cpu(0);
 
+  /// Fulfill a pending console_read with whatever is in input_buffer.
+  const fulfillPendingConsoleRead = () => {
+    if (!pendingConsoleRead) return;
+    const buf = new Uint8Array(input_buffer);
+    if (buf.length === 0) return;
+    const msg = pendingConsoleRead;
+    pendingConsoleRead = null;
+    const memory_u8 = new Uint8Array(memory.buffer);
+    const used = buf.slice(0, msg.count);
+    memory_u8.set(used, msg.buffer);
+    const unused = buf.slice(msg.count);
+    input_buffer = unused.buffer;
+    Atomics.store(msg.console_read_messenger, 0, used.length);
+    Atomics.notify(msg.console_read_messenger, 0, 1);
+  };
+
   return {
     key_input: (data) => {
       const key_buffer = text_encoder.encode(data);  // Possibly UTF-8 (up to 16 bits).
@@ -252,6 +274,9 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
       view.set(old, 0);
       view.set(key_buffer, old.byteLength);
       input_buffer = combined;
+
+      // Wake any blocked console_read immediately.
+      fulfillPendingConsoleRead();
     }
   };
 };
