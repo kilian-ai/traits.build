@@ -547,7 +547,9 @@ const BOOT_SCRIPT: &str = r#"
                 clearInterval(_hi);
                 const esc = savedHistory.map(c => c.replace(/'/g, "'\\''"));
                 const args = esc.map(c => "'" + c + "'").join(' ');
-                const inject = "export HISTFILE=~/.ash_history; printf '%s\\n' " + args + " > ~/.ash_history; clear; exec ash\n";
+                // Inject history without exec (to keep current shell alive)
+                // Try ash if available, else sh will just use its native history
+                const inject = "export HISTFILE=~/.history; printf '%s\\n' " + args + " >> ~/.history\n";
                 try { os.key_input(inject); } catch(e) {}
             }
         }, 200);
