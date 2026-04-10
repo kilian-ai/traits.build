@@ -212,6 +212,8 @@ const BOOT_SCRIPT: &str = r#"
 
 (async function bootLinuxWasm() {
     const CDN = 'https://kilian-ai.github.io/linux-wasm';
+    const ASSET_REV = '2573d3d';
+    const assetUrl = (name) => `${CDN}/${name}?rev=${ASSET_REV}`;
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 
     // ── Shell history persistence (survives page refresh via localStorage) ──
@@ -355,7 +357,7 @@ const BOOT_SCRIPT: &str = r#"
         statusNote && (statusNote.textContent = '~8 MB — this may take a moment');
         setProgress(12);
         const vmlinuxBuf = await fetchWithProgress(
-            CDN + '/vmlinux.wasm',
+            assetUrl('vmlinux.wasm'),
             'Downloading vmlinux.wasm (Linux kernel)…',
             12, 60
         );
@@ -372,7 +374,7 @@ const BOOT_SCRIPT: &str = r#"
     let initrd;
     try {
         const initrdBuf = await fetchWithProgress(
-            CDN + '/initramfs.cpio.gz',
+            assetUrl('initramfs.cpio.gz'),
             'Downloading initramfs (BusyBox + musl)…',
             70, 90
         );
