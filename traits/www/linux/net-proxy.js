@@ -323,6 +323,14 @@ const NetProxy = (() => {
       const scheme = this.dstPort === 443 ? 'https' : 'http';
       const url = `${scheme}://${host}${path}`;
 
+      // The Linux page is served over HTTPS, so browser fetch() blocks plain HTTP
+      // as mixed content. Prefer HTTPS for guest HTTP requests when possible.
+      const candidateUrls = [];
+      if (scheme === 'http' && typeof location !== 'undefined' && location.protocol === 'https:') {
+        candidateUrls.push(`https://${host}${path}`);
+      }
+      candidateUrls.push(url);
+
       try {
         const fetchOpts = { method, headers: {} };
         // Forward safe headers
@@ -330,7 +338,19 @@ const NetProxy = (() => {
         if (headers['content-type']) fetchOpts.headers['Content-Type'] = headers['content-type'];
         if (headers['user-agent']) fetchOpts.headers['User-Agent'] = headers['user-agent'];
 
-        const resp = await fetch(url, fetchOpts);
+        let resp = null;
+        let lastErr = null;
+        let fetchedUrl = candidateUrls[0];
+        for (const candidate of candidateUrls) {
+          try {
+            fetchedUrl = candidate;
+            resp = await fetch(candidate, fetchOpts);
+            break;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        if (!resp) throw lastErr || new Error('fetch failed');
         const bodyBytes = new Uint8Array(await resp.arrayBuffer());
 
         // Build HTTP response
@@ -350,7 +370,7 @@ const NetProxy = (() => {
         // Send response data in MTU-sized chunks
         this.sendDataChunked(fullResp);
       } catch (e) {
-        console.warn('[net-proxy] fetch failed for', url, e);
+        console.warn('[net-proxy] fetch failed for', candidateUrls, e);
         // Send 502 Bad Gateway
         const err = `HTTP/1.1 502 Bad Gateway\r\nContent-Length: ${e.message.length}\r\nConnection: close\r\n\r\n${e.message}`;
         const errBytes = new TextEncoder().encode(err);
