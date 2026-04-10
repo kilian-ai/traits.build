@@ -246,10 +246,33 @@
         console_read_messenger: console_read_messenger,
       });
 
-      // Wait for a response from the main thread about how many bytes were actually written, could be 0.
-      Atomics.wait(console_read_messenger, 0, -1);
-      let console_read_count = Atomics.load(console_read_messenger, 0);
-      return console_read_count;
+      // Wait up to 50ms for a response. The main thread either responds
+      // immediately (input available) or defers (no input, waits for key_input).
+      // The 50ms timeout prevents blocking the Worker forever, which would
+      // freeze the CPU and prevent context switching to other kernel tasks.
+      Atomics.wait(console_read_messenger, 0, -1, 50);
+      let n = Atomics.load(console_read_messenger, 0);
+
+      // Data delivered (or explicit 0).
+      if (n >= 0) return n;
+
+      // Main thread is writing data (-3 sentinel from CAS claim).
+      if (n === -3) {
+        Atomics.wait(console_read_messenger, 0, -3, 20);
+        n = Atomics.load(console_read_messenger, 0);
+        return (n >= 0) ? n : 0;
+      }
+
+      // Timed out (n === -1). CAS to -2 to signal departure.
+      const old = Atomics.compareExchange(console_read_messenger, 0, -1, -2);
+      if (old >= 0) return old;  // Main responded between load and CAS.
+      if (old === -3) {
+        // Main is claiming right now. Wait for it to finish writing.
+        Atomics.wait(console_read_messenger, 0, -3, 20);
+        n = Atomics.load(console_read_messenger, 0);
+        return (n >= 0) ? n : 0;
+      }
+      return 0;  // CAS succeeded (old === -1), we left cleanly.
     },
 
     // Host callbacks used by the Wasm network driver (net_wasm.c).

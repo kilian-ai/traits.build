@@ -100,8 +100,8 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
         Atomics.store(message.console_read_messenger, 0, used.length);
         Atomics.notify(message.console_read_messenger, 0, 1);
       } else {
-        // No input yet — park the request. The Worker stays blocked on
-        // Atomics.wait until key_input() delivers data and notifies it.
+        // No input yet — defer. Worker waits up to 50ms for key_input
+        // to arrive and fulfill this request via fulfillPendingConsoleRead.
         pendingConsoleRead = message;
       }
     },
@@ -247,17 +247,28 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
   make_cpu(0);
 
   /// Fulfill a pending console_read with whatever is in input_buffer.
+  /// Uses CAS to safely race with the Worker's 50ms timeout.
+  /// Messenger protocol: -1 = waiting, -2 = Worker left, -3 = main claiming, ≥0 = byte count.
   const fulfillPendingConsoleRead = () => {
     if (!pendingConsoleRead) return;
     const buf = new Uint8Array(input_buffer);
     if (buf.length === 0) return;
     const msg = pendingConsoleRead;
     pendingConsoleRead = null;
+
+    // CAS from -1 (Worker waiting) to -3 (we're claiming).
+    // If Worker already timed out (-2), this fails and data stays in input_buffer.
+    const old = Atomics.compareExchange(msg.console_read_messenger, 0, -1, -3);
+    if (old !== -1) return;
+
+    // Worker is still waiting. Write data to WASM memory.
     const memory_u8 = new Uint8Array(memory.buffer);
     const used = buf.slice(0, msg.count);
     memory_u8.set(used, msg.buffer);
     const unused = buf.slice(msg.count);
     input_buffer = unused.buffer;
+
+    // Signal the Worker with byte count and wake it.
     Atomics.store(msg.console_read_messenger, 0, used.length);
     Atomics.notify(msg.console_read_messenger, 0, 1);
   };
