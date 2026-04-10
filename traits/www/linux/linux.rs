@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only (runtime js from joelseverin/linux-wasm)
+// SPDX-License-Identifier: GPL-2.0-only (runtime js from kilian-ai/linux-wasm, forked from joelseverin/linux-wasm)
 use serde_json::Value;
 use maud::{html, DOCTYPE, PreEscaped};
 
@@ -206,12 +206,12 @@ body {
 const BOOT_SCRIPT: &str = r#"
 // ─────────────────────────────────────────────────────────────────────────────
 // Linux/WASM Boot Script
-// Adapts joelseverin/linux-wasm runtime into the traits.build SPA.
-// Fetches vmlinux.wasm + initramfs.cpio.gz from the joelseverin CDN.
+// Adapts kilian-ai/linux-wasm runtime into the traits.build SPA.
+// Fetches vmlinux.wasm + initramfs.cpio.gz from the kilian-ai CDN (includes QuickJS).
 // ─────────────────────────────────────────────────────────────────────────────
 
 (async function bootLinuxWasm() {
-    const CDN = 'https://joelseverin.github.io/linux-wasm';
+    const CDN = 'https://kilian-ai.github.io/linux-wasm';
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 
     const statusEl  = document.getElementById('linux-status');
