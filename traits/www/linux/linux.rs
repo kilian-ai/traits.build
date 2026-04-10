@@ -212,7 +212,7 @@ const BOOT_SCRIPT: &str = r#"
 
 (async function bootLinuxWasm() {
     const CDN = 'https://kilian-ai.github.io/linux-wasm';
-    const ASSET_REV = '2573d3d';
+    const ASSET_REV = '89028bc';
     const assetUrl = (name) => `${CDN}/${name}?rev=${ASSET_REV}`;
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 
