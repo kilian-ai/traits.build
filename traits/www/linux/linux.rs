@@ -219,7 +219,7 @@ const BOOT_SCRIPT: &str = r#"
 
 (async function bootLinuxWasm() {
     const CDN = 'https://kilian-ai.github.io/linux-wasm';
-    const ASSET_REV = '642efda';
+    const ASSET_REV = '9adf969';
     const assetUrl = (name) => `${CDN}/${name}?rev=${ASSET_REV}`;
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 
@@ -470,7 +470,7 @@ const BOOT_SCRIPT: &str = r#"
     const workerBlob = new Blob([workerSrc], { type: 'application/javascript' });
     const workerUrl = URL.createObjectURL(workerBlob);
 
-    const boot_cmdline = 'maxcpus=4 nohz_full=0,2-63 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
+    const boot_cmdline = 'maxcpus=4 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
 
     const logLine = (text) => term.write(('\x1B[2m' + text + '\x1B[0m\n').replaceAll('\n', '\r\n'));
     const console_write = (data) => term.write(data);
