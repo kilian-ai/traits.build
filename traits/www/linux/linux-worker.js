@@ -486,7 +486,48 @@
         // * clone: clone explicitly passes its tls pointer to the kernel as part of the syscall. Unless the tls pointer
         //   has been overridden with CLONE_SETTLS, it will be copied from the old task to the new one. This is mostly
         //   useful when CLONE_VFORK is used, in which case the new task can borrow the TLS until it calls exec or exit.
-        let woken = user_executable.then((user_module) => WebAssembly.instantiate(user_module, user_executable_imports));
+        let woken = user_executable.then((user_module) => {
+          // PIC shared libraries (-fPIC -shared) import symbols across three modules:
+          //   env.*      — memory, table, globals, syscall stubs, AND libc function stubs
+          //   GOT.func.* — mutable i32 globals for indirect function call resolution
+          //   GOT.mem.*  — mutable i32 globals for data symbol address resolution
+          //
+          // After instantiation, __wasm_apply_data_relocs() patches the GOT entries to point to the
+          // module's own definitions. PIC code uses indirect calls through the GOT, so the env.*
+          // function stubs are never actually called — they exist only to satisfy the import contract.
+          const module_imports = WebAssembly.Module.imports(user_module);
+
+          // Provide stub functions for any env.* function imports not already in our import object.
+          // These stubs should never be called (PIC code routes through GOT), but the import contract
+          // requires them. If one IS called, it means a direct (non-GOT) call path exists and we log it.
+          const env_stub = function() {
+            log("Warning: direct call to unresolved env import (PIC code should use GOT)");
+            return 0;
+          };
+          for (const imp of module_imports) {
+            if (imp.module === 'env' && imp.kind === 'function' && !(imp.name in user_executable_imports.env)) {
+              user_executable_imports.env[imp.name] = env_stub;
+            }
+          }
+
+          // Provide GOT.func and GOT.mem modules with auto-created mutable i32 globals.
+          // Initial value 0; __wasm_apply_data_relocs() patches them post-instantiation.
+          const got_func = {};
+          const got_mem = {};
+          for (const imp of module_imports) {
+            if (imp.kind === 'global') {
+              if (imp.module === 'GOT.func') {
+                got_func[imp.name] = new WebAssembly.Global({ value: 'i32', mutable: true }, 0);
+              } else if (imp.module === 'GOT.mem') {
+                got_mem[imp.name] = new WebAssembly.Global({ value: 'i32', mutable: true }, 0);
+              }
+            }
+          }
+          user_executable_imports['GOT.func'] = got_func;
+          user_executable_imports['GOT.mem'] = got_mem;
+
+          return WebAssembly.instantiate(user_module, user_executable_imports);
+        });
 
         woken = woken.then((instance) => {
           instance.exports.__wasm_apply_data_relocs();
