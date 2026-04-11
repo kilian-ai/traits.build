@@ -965,6 +965,56 @@ traits test_runner 'sys.*'
 
 Test types: `exit_code`, `contains`, `matches` (regex), `json_path`
 
+### Deep Debug Workflow (linux-wasm guest failures)
+
+Use this workflow when a guest binary fails with messages like `RuntimeError: abort`, `memory access out of bounds`, `Illegal instruction`, `Unable to mmap process binary`, or other Wasm/kernel traps.
+
+1. **Freeze and classify the failure first**
+  - Capture exact command, full stderr/stdout, and kernel trace before changing any code.
+  - Classify failure type: load-time (`mmap`/`exec`), runtime memory fault (OOB), explicit abort (`__wasm_abort`/`abort()`), or syscall mismatch.
+
+2. **Make the reproduction deterministic**
+  - Run the same command sequence from a clean boot and clean working directory.
+  - Use a fixed command matrix, e.g. `git --version`, `git init`, `git status`, `git add`, `git commit`, `git log`.
+  - Record first failing command and whether subsequent commands fail for the same reason.
+
+3. **Build debug and release variants side-by-side**
+  - Keep at least two binaries:
+    - `debug` (no strip, no wasm-opt, lower optimization such as `-O0` or `-Og`)
+    - `release` (stripped, production flags)
+  - Do not apply multiple transformations at once when debugging (for example, avoid combining new linker flags + wasm-opt + wrapper changes in one step).
+
+4. **Narrow by one variable at a time**
+  - Test one change per run:
+    - compiler optimization level (`-O0`/`-O2`/`-Os`)
+    - linker behavior (`--gc-sections`, shared-memory flags, import/export flags)
+    - size transforms (strip only, debug-strip, wasm-opt pass level)
+    - feature toggles (`NO_OPENSSL`, `NO_CURL`, regex backend, etc.)
+  - Keep a short result table: `change -> first failing command -> error signature`.
+
+5. **Prioritize root-cause signals over symptom patches**
+  - High-value signals:
+    - failing syscall and arguments immediately before crash
+    - allocation sizes and contiguous mapping lengths
+    - trap site stability across rebuilds
+    - whether failure disappears in debug/no-opt builds
+  - Temporary wrappers are acceptable for unblocking users, but they must be labeled as mitigation while root cause investigation continues.
+
+6. **Use binary-size thresholds for NOMMU load failures**
+  - If exec fails near mmap allocation boundaries, track both file size and requested mapping length.
+  - Favor conservative size reductions first (strip/debug-section removal) before aggressive wasm-opt transforms.
+
+7. **Close the loop with a proof run**
+  - After a candidate fix, rerun the same deterministic matrix from step 2.
+  - Only mark resolved when:
+    - original failing command passes
+    - at least one subsequent command on a different code path also passes
+    - deployment revision is verified by exact asset commit (`ASSET_REV`) and CDN `HTTP 200`.
+
+8. **Write a short postmortem note in this repo**
+  - Save: failing signature, root cause, exact fix, and regression guardrails.
+  - Update this agent file when new debugging patterns prove useful.
+
 ---
 
 ## What IS and ISN'T in this project
