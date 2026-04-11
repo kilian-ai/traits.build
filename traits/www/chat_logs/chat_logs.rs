@@ -17,7 +17,7 @@ pub fn chat_logs(_args: &[Value]) -> Value {
                         p.kicker { "localhost test surface" }
                         h1 { "Chat logs and durable learnings" }
                         p.subtitle {
-                            "Inspect VS Code workspace chat history, select existing sessions, and extract only the stable instructions into "
+                            "Goal is to extract discussed topics, generated knowledge, consensus and user instructions from chat session logs. Add extracted data into agent.md so it will be injected in any agent prompt. Inspect VS Code workspace chat history, select existing sessions, and extract only the stable instructions into "
                             code { "LEARNINGS.md" }
                             "."
                         }
