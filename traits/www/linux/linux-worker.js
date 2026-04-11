@@ -453,18 +453,18 @@
             // To make syscalls faster (allowing them to not go through a slow JavaScript wrapper), we skip transferring
             // them back to the user instance. They always have to be transferred to vmlinux at syscall sites, as a
             // signal being handled in its return path would need to save (and restore) them on its signal stack.
-            __wasm_syscall_0: (nr) => { log("SYSCALL[0] nr=" + nr); return vmlinux_instance.exports.wasm_syscall_0(nr); },
-            __wasm_syscall_1: (nr,a) => { log("SYSCALL[1] nr=" + nr + " a=" + a); return vmlinux_instance.exports.wasm_syscall_1(nr,a); },
-            __wasm_syscall_2: (nr,a,b) => { log("SYSCALL[2] nr=" + nr + " a=" + a + " b=" + b); return vmlinux_instance.exports.wasm_syscall_2(nr,a,b); },
-            __wasm_syscall_3: (nr,a,b,c) => { log("SYSCALL[3] nr=" + nr + " a=" + a + " b=" + b + " c=" + c); return vmlinux_instance.exports.wasm_syscall_3(nr,a,b,c); },
-            __wasm_syscall_4: (nr,a,b,c,d) => { log("SYSCALL[4] nr=" + nr); return vmlinux_instance.exports.wasm_syscall_4(nr,a,b,c,d); },
-            __wasm_syscall_5: (nr,a,b,c,d,e) => { log("SYSCALL[5] nr=" + nr); return vmlinux_instance.exports.wasm_syscall_5(nr,a,b,c,d,e); },
-            __wasm_syscall_6: (nr,a,b,c,d,e,f) => { log("SYSCALL[6] nr=" + nr); return vmlinux_instance.exports.wasm_syscall_6(nr,a,b,c,d,e,f); },
+            __wasm_syscall_0: vmlinux_instance.exports.wasm_syscall_0,
+            __wasm_syscall_1: vmlinux_instance.exports.wasm_syscall_1,
+            __wasm_syscall_2: vmlinux_instance.exports.wasm_syscall_2,
+            __wasm_syscall_3: vmlinux_instance.exports.wasm_syscall_3,
+            __wasm_syscall_4: vmlinux_instance.exports.wasm_syscall_4,
+            __wasm_syscall_5: vmlinux_instance.exports.wasm_syscall_5,
+            __wasm_syscall_6: vmlinux_instance.exports.wasm_syscall_6,
 
             __wasm_abort: () => {
               const err = new WebAssembly.RuntimeError('abort');
               log("__wasm_abort called! Stack: " + err.stack);
-              debugger
+              debugger;
               throw err;
             },
           },
