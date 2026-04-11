@@ -59,6 +59,18 @@ The `build.rs` script runs at compile time and performs:
 
 No manual registration is needed. Drop a trait in `traits/` and rebuild.
 
+## Linux-WASM Guest Artifact Notes
+
+- Guest user binaries (such as `git.bin` in `initramfs.cpio.gz`) are sensitive to optimizer toolchain versions.
+- Prefer upstream Binaryen `wasm-opt` builds (v129 or newer). Older distro-packaged versions can produce artifacts that fail to execute in the linux-wasm guest with `Exec format error`.
+- For NOMMU guest load issues, treat both binary size and optimizer version as independent variables during debugging.
+
+### Linux Terminal UX Notes
+
+- The Linux SPA terminal persists command history in `localStorage` (`linux-wasm-history`) and restores it through JS-level ArrowUp/ArrowDown navigation.
+- History restoration intentionally avoids boot-time shell command injection (no startup `printf` replay), keeping prompts clean and preventing history corruption.
+- Clipboard integration is host-aware: on macOS, `Cmd+C` copies selected terminal text to the OS clipboard and `Cmd+V` pastes OS clipboard text into the guest shell input.
+
 ## Bootstrap sequence
 
 ```

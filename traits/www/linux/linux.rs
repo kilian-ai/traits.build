@@ -228,8 +228,21 @@ const BOOT_SCRIPT: &str = r#"
     const HIST_MAX = 500;
     let savedHistory = [];
     try { savedHistory = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch(e) {}
-    let promptDetected = false;
-    let outputTail = '';
+    if (!Array.isArray(savedHistory)) savedHistory = [];
+    // Drop malformed/oversized entries and old bootstrap-injection artifacts.
+    savedHistory = savedHistory
+        .filter((c) => typeof c === 'string' && c.trim() && c.length <= 400)
+        .filter((c) => {
+            const s = String(c).replace(/\s+/g, ' ').trim();
+            // Drop legacy boot-time history injection command (all known variants).
+            if (s.includes('export HISTFILE=/home/.history')) return false;
+            if (s.startsWith('mkdir -p /home &&')) return false;
+            if (s.includes("printf '%s\\n'")) return false;
+            return true;
+        })
+        .slice(-HIST_MAX);
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(savedHistory)); } catch(e) {}
+    let historyNavIndex = null;
 
     const statusEl  = document.getElementById('linux-status');
     const statusTxt = document.getElementById('status-text');
@@ -460,14 +473,7 @@ const BOOT_SCRIPT: &str = r#"
     const boot_cmdline = 'maxcpus=4 nohz_full=0,2-63 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
 
     const logLine = (text) => term.write(('\x1B[2m' + text + '\x1B[0m\n').replaceAll('\n', '\r\n'));
-    const console_write = (data) => {
-        term.write(data);
-        // Detect first shell prompt for history injection
-        if (!promptDetected && typeof data === 'string') {
-            outputTail = (outputTail + data).slice(-200);
-            if (/\s#\s*$/.test(outputTail)) promptDetected = true;
-        }
-    };
+    const console_write = (data) => term.write(data);
 
     let os;
     try {
@@ -500,8 +506,104 @@ const BOOT_SCRIPT: &str = r#"
         'F9':'\x1b[20~', 'F10':'\x1b[21~', 'F11':'\x1b[23~', 'F12':'\x1b[24~',
     };
 
+    const currentPromptInput = () => {
+        try {
+            const buf = term.buffer.active;
+            const line = buf.getLine(buf.baseY + buf.cursorY);
+            if (!line) return null;
+            const text = line.translateToString(true);
+            const m = text.match(/^.*?[#$]\s*(.*)$/);
+            return m ? m[1] : null;
+        } catch(e) {
+            return null;
+        }
+    };
+
+    const replacePromptInput = (nextText) => {
+        const current = currentPromptInput();
+        if (current === null) return false;
+        try {
+            if (current.length > 0) os.key_input('\x15'); // Ctrl+U clear current input
+            if (nextText) os.key_input(nextText);
+            return true;
+        } catch(e) {
+            return false;
+        }
+    };
+
+    const sendPastedText = (text) => {
+        if (!text) return;
+        historyNavIndex = null;
+        // Normalize CRLF from clipboard into LF for shell input.
+        const normalized = String(text).replace(/\r\n/g, '\n');
+        try { os.key_input(normalized); } catch(err) { console.error('[linux] paste error:', err); }
+    };
+
+    const copySelectionToClipboard = async () => {
+        const text = term && term.hasSelection && term.hasSelection() ? term.getSelection() : '';
+        if (!text) return false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch(e) {}
+        return false;
+    };
+
     const handleKey = (e) => {
+        // macOS shortcuts (Cmd+C / Cmd+V) for host clipboard integration.
+        if (e.metaKey && !e.ctrlKey && !e.altKey) {
+            const key = e.key.toLowerCase();
+            if (key === 'c') {
+                if (term.hasSelection && term.hasSelection()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void copySelectionToClipboard();
+                    return;
+                }
+                // No selection: allow normal Ctrl-C behavior below via OS key mapping.
+                // We intentionally do not swallow the event here.
+            } else if (key === 'v') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    navigator.clipboard.readText().then(sendPastedText).catch(() => {});
+                }
+                return;
+            }
+        }
         if (e.metaKey) return;
+
+        // JS-level persistent history: works immediately after boot/reload.
+        if (!e.ctrlKey && !e.altKey && savedHistory.length > 0 && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            if (e.key === 'ArrowUp') {
+                if (historyNavIndex === null) historyNavIndex = savedHistory.length - 1;
+                else if (historyNavIndex > 0) historyNavIndex -= 1;
+                if (replacePromptInput(savedHistory[historyNavIndex] || '')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+            } else if (historyNavIndex !== null) {
+                if (historyNavIndex < savedHistory.length - 1) {
+                    historyNavIndex += 1;
+                    if (replacePromptInput(savedHistory[historyNavIndex] || '')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
+                } else {
+                    historyNavIndex = null;
+                    if (replacePromptInput('')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
+                }
+            }
+        }
+
         let seq = null;
         if (e.ctrlKey && !e.altKey && e.key.length === 1) {
             const c = e.key.toUpperCase();
@@ -533,6 +635,10 @@ const BOOT_SCRIPT: &str = r#"
                         }
                     }
                 } catch(e2) {}
+                historyNavIndex = null;
+            } else {
+                // Any non-Enter key input exits history-navigation mode.
+                historyNavIndex = null;
             }
             e.preventDefault();
             e.stopPropagation();
@@ -540,32 +646,41 @@ const BOOT_SCRIPT: &str = r#"
         }
     };
 
+    const handlePaste = (e) => {
+        const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+        if (!text) return;
+        e.preventDefault();
+        e.stopPropagation();
+        sendPastedText(text);
+    };
+
+    const handleCopy = (e) => {
+        if (!(term.hasSelection && term.hasSelection())) return;
+        const text = term.getSelection();
+        if (!text) return;
+        if (e.clipboardData) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.clipboardData.setData('text/plain', text);
+        }
+    };
+
     // Capture phase fires before any bubble-phase handler in the SPA
     document.addEventListener('keydown', handleKey, true);
+    document.addEventListener('paste', handlePaste, true);
+    document.addEventListener('copy', handleCopy, true);
 
     // Clean up when SPA navigates away from this page
     window._pageCleanup = () => {
         document.removeEventListener('keydown', handleKey, true);
+        document.removeEventListener('paste', handlePaste, true);
+        document.removeEventListener('copy', handleCopy, true);
         URL.revokeObjectURL(workerUrl);
     };
 
     term.focus();
 
-    // ── Inject saved shell history after first prompt ──
-    if (savedHistory.length > 0) {
-        const _hi = setInterval(() => {
-            if (promptDetected) {
-                clearInterval(_hi);
-                const esc = savedHistory.map(c => c.replace(/'/g, "'\\''"));
-                const args = esc.map(c => "'" + c + "'").join(' ');
-                // Inject history without exec (to keep current shell alive)
-                // Try ash if available, else sh will just use its native history
-                const inject = "mkdir -p /home && export HISTFILE=/home/.history; printf '%s\\n' " + args + " >> /home/.history\n";
-                try { os.key_input(inject); } catch(e) {}
-            }
-        }, 200);
-        setTimeout(() => clearInterval(_hi), 30000);
-    }
+    // History is restored via JS-level ArrowUp/ArrowDown navigation above.
 
     // Refit on resize
     window.addEventListener('resize', () => {

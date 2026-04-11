@@ -880,6 +880,8 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - `TRAITS_REPL_LINE_MODE=1` forces line-mode REPL for `serve` (useful when terminal raw-mode event capture is flaky in piped startup contexts).
 - `local/helper.sh` now re-execs `serve` through a downloaded helper file (instead of stdin pipe) when launched via `curl ... | bash`, to match local script TTY behavior.
 - line-mode REPL normalizes newline input to carriage return before feeding `CliSession`, preventing command concatenation artifacts.
+- `www.linux` terminal keeps persistent command history in JS (`localStorage`) and maps ArrowUp/ArrowDown directly, instead of replaying shell-history injection commands at boot.
+- `www.linux` clipboard behavior must preserve host integration on macOS: `Cmd+C` copies selected terminal text; `Cmd+V` pastes clipboard text into guest stdin.
 
 **Relay endpoints** (registered in `sys.serve`):
 ```
@@ -1003,6 +1005,8 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 6. **Use binary-size thresholds for NOMMU load failures**
   - If exec fails near mmap allocation boundaries, track both file size and requested mapping length.
   - Favor conservative size reductions first (strip/debug-section removal) before aggressive wasm-opt transforms.
+  - Treat optimizer version as a first-class variable: older Binaryen releases (for example Debian `binaryen` v91) can emit outputs that fail guest exec (`Exec format error`) even when section layout looks valid.
+  - Prefer upstream Binaryen release builds (currently `wasm-opt` v129+) for linux-wasm guest artifacts.
 
 7. **Close the loop with a proof run**
   - After a candidate fix, rerun the same deterministic matrix from step 2.
