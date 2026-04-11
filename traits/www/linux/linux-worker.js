@@ -492,21 +492,28 @@
           //   GOT.func.* — mutable i32 globals for indirect function call resolution
           //   GOT.mem.*  — mutable i32 globals for data symbol address resolution
           //
-          // After instantiation, __wasm_apply_data_relocs() patches the GOT entries to point to the
-          // module's own definitions. PIC code uses indirect calls through the GOT, so the env.*
-          // function stubs are never actually called — they exist only to satisfy the import contract.
+          // PIC modules linked with --export-all export their own definitions (including musl libc).
+          // env.* function imports exist for dynamic linking override but should resolve to the
+          // module's own exports when no dynamic linker is present. We use trampolines: each env
+          // stub forwards to instance.exports[name] once the instance is available.
           const module_imports = WebAssembly.Module.imports(user_module);
+          const instance_ref = { instance: null };
 
-          // Provide stub functions for any env.* function imports not already in our import object.
-          // These stubs should never be called (PIC code routes through GOT), but the import contract
-          // requires them. If one IS called, it means a direct (non-GOT) call path exists and we log it.
-          const env_stub = function() {
-            log("Warning: direct call to unresolved env import (PIC code should use GOT)");
-            return 0;
-          };
+          // Create trampolines for unknown env.* function imports. After instantiation,
+          // these forward to the module's own exports (musl libc linked with --export-all).
+          // During instantiation (__wasm_init_memory), no libc calls happen so the null
+          // instance_ref is safe. By the time _start() runs, instance_ref is set.
           for (const imp of module_imports) {
             if (imp.module === 'env' && imp.kind === 'function' && !(imp.name in user_executable_imports.env)) {
-              user_executable_imports.env[imp.name] = env_stub;
+              const name = imp.name;
+              user_executable_imports.env[name] = function(...args) {
+                const inst = instance_ref.instance;
+                if (inst && name in inst.exports) {
+                  return inst.exports[name](...args);
+                }
+                log("Warning: env." + name + " called but no self-export found");
+                return 0;
+              };
             }
           }
 
@@ -526,7 +533,10 @@
           user_executable_imports['GOT.func'] = got_func;
           user_executable_imports['GOT.mem'] = got_mem;
 
-          return WebAssembly.instantiate(user_module, user_executable_imports);
+          return WebAssembly.instantiate(user_module, user_executable_imports).then(instance => {
+            instance_ref.instance = instance;
+            return instance;
+          });
         });
 
         woken = woken.then((instance) => {
