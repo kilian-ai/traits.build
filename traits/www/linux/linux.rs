@@ -472,6 +472,8 @@ const BOOT_SCRIPT: &str = r#"
     let os;
     try {
         os = await linux(workerUrl, vmlinux, boot_cmdline, initrd, logLine, console_write);
+        // Expose for programmatic testing (e.g. os.key_input("cmd\r"))
+        window._linuxOS = os;
         // Do NOT revoke workerUrl here! linux() returns immediately but
         // CPU 0 boots async and will create secondary CPUs + user tasks
         // later by calling new Worker(workerUrl). Revoke on page cleanup.
