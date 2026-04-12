@@ -491,12 +491,15 @@ const BOOT_SCRIPT: &str = r#"
         NetProxy.setTunnelURL(tunnelUrl);
     }
     
+    let bootNetMode = 'unknown';
+
     // Wait for tunnel readiness (5s timeout) and report status with error details if any
     if (typeof NetProxy !== 'undefined' && NetProxy.waitForTunnelReady) {
         console.log('[linux.rs] waiting for tunnel readiness (5 second timeout)...');
         const wasConnected = await NetProxy.waitForTunnelReady(5000);
         console.log('[linux.rs] tunnel ready result:', wasConnected);
         const mode = (typeof NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
+        bootNetMode = mode;
         const suffix = tunnelUrl ? ` (${tunnelUrl})` : '';
         term.write(`\x1B[2m[traits.build] NET mode: ${mode}${suffix}\x1B[0m\r\n`);
         if (mode === 'browser-fallback') {
@@ -525,6 +528,7 @@ const BOOT_SCRIPT: &str = r#"
 
         // Periodic network observability: mode, queue depth, drops, callback timings.
         let lastNetLine = '';
+        let lastMode = bootNetMode;
         netStatsTimer = setInterval(() => {
             try {
                 const proxy = (typeof NetProxy !== 'undefined' && NetProxy.getStats) ? NetProxy.getStats() : null;
@@ -532,6 +536,14 @@ const BOOT_SCRIPT: &str = r#"
                 if (!proxy && !host) return;
 
                 const mode = (typeof NetProxy !== 'undefined' && NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
+                if (mode !== lastMode) {
+                    if (lastMode === 'browser-fallback' && mode === 'tunnel') {
+                        term.write('\x1B[32m[traits.build] NET upgraded: tunnel connected after boot\x1B[0m\r\n');
+                    } else {
+                        term.write(`\x1B[2m[traits.build] NET mode changed: ${lastMode} -> ${mode}\x1B[0m\r\n`);
+                    }
+                    lastMode = mode;
+                }
                 const q = proxy ? proxy.queueLen : 0;
                 const qh = proxy ? proxy.queueHighWater : 0;
                 const drop = proxy ? proxy.rxDroppedPackets : 0;
