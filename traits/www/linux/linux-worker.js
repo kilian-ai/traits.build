@@ -246,11 +246,13 @@
         console_read_messenger: console_read_messenger,
       });
 
-      // Wait up to 50ms for a response. The main thread either responds
-      // immediately (input available) or defers (no input, waits for key_input).
-      // The 50ms timeout prevents blocking the Worker forever, which would
-      // freeze the CPU and prevent context switching to other kernel tasks.
-      Atomics.wait(console_read_messenger, 0, -1, 50);
+      // NON-BLOCKING: Use zero timeout to check if main thread already
+      // responded. This function is called by hvc_console.c __hvc_poll()
+      // with hp->lock spinlock HELD. Blocking here would prevent any
+      // concurrent hvc_write() from making progress (infinite spin on
+      // WASM where cpu_relax is weak). khvcd will retry via
+      // schedule_timeout_interruptible() if we return 0.
+      Atomics.wait(console_read_messenger, 0, -1, 0);
       let n = Atomics.load(console_read_messenger, 0);
 
       // Data delivered (or explicit 0).
@@ -258,17 +260,18 @@
 
       // Main thread is writing data (-3 sentinel from CAS claim).
       if (n === -3) {
-        Atomics.wait(console_read_messenger, 0, -3, 20);
+        // Brief wait for the main thread to finish writing (bounded).
+        Atomics.wait(console_read_messenger, 0, -3, 5);
         n = Atomics.load(console_read_messenger, 0);
         return (n >= 0) ? n : 0;
       }
 
-      // Timed out (n === -1). CAS to -2 to signal departure.
+      // No data yet (n === -1). CAS to -2 to signal departure.
       const old = Atomics.compareExchange(console_read_messenger, 0, -1, -2);
       if (old >= 0) return old;  // Main responded between load and CAS.
       if (old === -3) {
-        // Main is claiming right now. Wait for it to finish writing.
-        Atomics.wait(console_read_messenger, 0, -3, 20);
+        // Main is claiming right now. Brief wait for it to finish writing.
+        Atomics.wait(console_read_messenger, 0, -3, 5);
         n = Atomics.load(console_read_messenger, 0);
         return (n >= 0) ? n : 0;
       }
