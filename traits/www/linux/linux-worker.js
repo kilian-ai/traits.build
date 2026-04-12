@@ -313,8 +313,14 @@
     },
 
     wasm_net_recv: (buffer, max_length) => {
-      // Fast path: last poll said no data — skip expensive round-trip.
-      if (performance.now() < net_nodata_until) return 0;
+      // Fast path: last poll said no data — sleep for remaining cache
+      // window instead of returning immediately. Under ARCH_NO_PREEMPT,
+      // the kernel's tight poll loop would otherwise monopolize the CPU.
+      const recv_now = performance.now();
+      if (recv_now < net_nodata_until) {
+        Atomics.wait(net_recv_messenger, 0, 0, Math.ceil(net_nodata_until - recv_now));
+        return 0;
+      }
 
       Atomics.store(net_recv_messenger, 0, -1);
       port.postMessage({
@@ -361,9 +367,15 @@
     },
 
     wasm_net_poll: () => {
-      // Fast path: recently polled with no data — skip round-trip.
+      // Fast path: recently polled with no data — sleep for remaining
+      // cache window. Under ARCH_NO_PREEMPT, returning 0 immediately
+      // causes the kernel's poll loop to spin at 100% CPU, triggering
+      // RCU stalls and freezing the task (e.g. ifconfig hangs on wasm0).
       const now = performance.now();
-      if (now < net_nodata_until) return 0;
+      if (now < net_nodata_until) {
+        Atomics.wait(net_poll_messenger, 0, 0, Math.ceil(net_nodata_until - now));
+        return 0;
+      }
 
       Atomics.store(net_poll_messenger, 0, -1);
       port.postMessage({
