@@ -512,9 +512,30 @@ const BOOT_SCRIPT: &str = r#"
         }
     }
 
+    const resolveInitProgram = () => {
+        try {
+            const params = new URLSearchParams(location.search);
+            const fromQuery = params.get('linux_init');
+            if (fromQuery) return fromQuery;
+        } catch (e) {}
+
+        try {
+            const fromStorage = localStorage.getItem('linux-wasm.init') || '';
+            if (fromStorage) return fromStorage;
+        } catch (e) {}
+
+        // Default to a fork-safe shell init to avoid early busybox login-script fork bursts.
+        return '/bin/sh';
+    };
+
+    const initProgram = resolveInitProgram();
+
     // Temporary stability mitigation: keep Linux on a single CPU.
     // The current SMP path can stall during network/ifconfig operations.
-    const boot_cmdline = 'maxcpus=1 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
+    const boot_cmdline = `maxcpus=1 root=/dev/ram0 rootfstype=ramfs init=${initProgram} console=hvc console=ttyS0`;
+    if (initProgram !== '/init') {
+        term.write(`\x1B[2m[traits.build] INIT mode: minimal (${initProgram})\x1B[0m\r\n`);
+    }
 
     const logLine = (text) => term.write(('\x1B[2m' + text + '\x1B[0m\n').replaceAll('\n', '\r\n'));
     const console_write = (data) => term.write(data);
