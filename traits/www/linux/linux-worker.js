@@ -71,16 +71,15 @@
   };
 
   const lock_wait = (lock) => {
-    // Guard: if the lock is already 1 (spurious notify from a prior scheduling
-    // race), log a warning.  This means a duplicate serialize_tasks wakeup
-    // targeted this task, leaving a stale '1' that would cause Atomics.wait
-    // to return instantly ("not-equal") and serialize_me() to return with a
-    // stale last_task pointer — likely causing EBUSY from the kernel.
-    const cur = Atomics.load(locks._memory, locks[lock]);
-    if (cur !== 0) {
-      log("WARN lock_wait: serialize lock already " + cur + " (spurious notify) — resetting before wait");
-      Atomics.store(locks._memory, locks[lock], 0);
-    }
+    // Atomics.wait blocks only when value === expected (0 here).
+    // If lock is already 1 (pre-notified from a scheduling race), wait
+    // returns immediately with "not-equal" — no deadlock, no lost wakeup.
+    // The caller (serialize_me) reads last_task[0] which was written by
+    // the main thread BEFORE lock_notify, so it's always current.
+    //
+    // Previous code reset the lock to 0 before waiting when it was already
+    // 1 — this caused Atomics.wait to block forever (value matches 0),
+    // deadlocking boot and ifconfig.
     Atomics.wait(locks._memory, locks[lock], 0);
     Atomics.store(locks._memory, locks[lock], 0);
   };
