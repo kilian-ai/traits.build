@@ -490,12 +490,17 @@ const BOOT_SCRIPT: &str = r#"
     if (typeof NetProxy !== 'undefined' && NetProxy.setTunnelURL && tunnelUrl) {
         NetProxy.setTunnelURL(tunnelUrl);
     }
-    if (typeof NetProxy !== 'undefined' && NetProxy.getMode) {
-        const mode = NetProxy.getMode();
+    
+    // Wait for tunnel readiness (3.5s timeout) and report status with error details if any
+    if (typeof NetProxy !== 'undefined' && NetProxy.waitForTunnelReady) {
+        const wasConnected = await NetProxy.waitForTunnelReady(3500);
+        const mode = (typeof NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
         const suffix = tunnelUrl ? ` (${tunnelUrl})` : '';
         term.write(`\x1B[2m[traits.build] NET mode: ${mode}${suffix}\x1B[0m\r\n`);
         if (mode === 'browser-fallback') {
-            term.write('\x1B[33m[traits.build] NET degraded: browser emulation fallback (tunnel unavailable)\x1B[0m\r\n');
+            const errMsg = (typeof NetProxy.getTunnelError) ? NetProxy.getTunnelError() : null;
+            const errDetail = errMsg ? ` — ${errMsg}` : '';
+            term.write(`\x1B[33m[traits.build] NET degraded: browser emulation fallback (tunnel unavailable${errDetail})\x1B[0m\r\n`);
         }
     }
 

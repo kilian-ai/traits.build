@@ -52,6 +52,8 @@ const NetProxy = (() => {
   let tunnelUrl = null;
   let tunnelWs = null;
   let tunnelConnected = false;
+  let tunnelError = null;  // Error message if connection failed
+  let tunnelConnectTimeout = null;  // Timeout ID for connection wait
 
   // ── IP packet helpers ──
 
@@ -574,12 +576,16 @@ const NetProxy = (() => {
 
       tunnelUrl = normalized;
       tunnelConnected = false;
+      tunnelError = null;  // Clear previous errors
+      if (tunnelConnectTimeout) clearTimeout(tunnelConnectTimeout);
       if (tunnelWs) tunnelWs.close();
       if (normalized) {
         tunnelWs = new WebSocket(normalized);
         tunnelWs.binaryType = 'arraybuffer';
         tunnelWs.onopen = () => {
           tunnelConnected = true;
+          tunnelError = null;
+          if (tunnelConnectTimeout) clearTimeout(tunnelConnectTimeout);
           console.info('[net-proxy] tunnel connected:', normalized);
         };
         tunnelWs.onclose = () => {
@@ -595,14 +601,35 @@ const NetProxy = (() => {
         tunnelWs.onerror = (e) => {
           tunnelConnected = false;
           stats.tunnelTxErrors++;
-          console.warn('[net-proxy] tunnel error:', e);
+          // Capture detailed error message for diagnostics
+          tunnelError = (e && e.message) || String(e) || 'WebSocket error';
+          console.warn('[net-proxy] tunnel error:', tunnelError);
         };
+        // Set timeout for connection attempt — if not connected within 3s, report as failed
+        tunnelConnectTimeout = setTimeout(() => {
+          if (!tunnelConnected && tunnelWs && tunnelWs.readyState === WebSocket.CONNECTING) {
+            tunnelError = 'Connection timeout (relay server not responding)';
+            console.warn('[net-proxy]', tunnelError);
+          }
+        }, 3000);
       } else {
         tunnelWs = null;
       }
     },
 
+    // Wait for tunnel readiness (connected or failed); returns true if connected, false if failed/timeout
+    async waitForTunnelReady(timeout = 3500) {
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        if (tunnelConnected) return true;     // Connected successfully
+        if (tunnelError) return false;        // Connection failed
+        await new Promise(r => setTimeout(r, 50));
+      }
+      return tunnelConnected;  // Timeout reached; return current state
+    },
+
     getMode() { return tunnelConnected ? 'tunnel' : 'browser-fallback'; },
+    getTunnelError() { return tunnelError; },  // Return connection error if any
     getStats() {
       const avgTxHandleMs = stats.txHandleCalls > 0 ? (stats.txHandleTotalMs / stats.txHandleCalls) : 0;
       return {
