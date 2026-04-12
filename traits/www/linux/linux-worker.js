@@ -318,6 +318,7 @@
       // the kernel's tight poll loop would otherwise monopolize the CPU.
       const recv_now = performance.now();
       if (recv_now < net_nodata_until) {
+        Atomics.store(net_recv_messenger, 0, 0);
         Atomics.wait(net_recv_messenger, 0, 0, Math.ceil(net_nodata_until - recv_now));
         return 0;
       }
@@ -373,6 +374,7 @@
       // RCU stalls and freezing the task (e.g. ifconfig hangs on wasm0).
       const now = performance.now();
       if (now < net_nodata_until) {
+        Atomics.store(net_poll_messenger, 0, 0);
         Atomics.wait(net_poll_messenger, 0, 0, Math.ceil(net_nodata_until - now));
         return 0;
       }
