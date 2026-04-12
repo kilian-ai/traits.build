@@ -34,6 +34,12 @@
   let net_recv_messenger = new Int32Array(new SharedArrayBuffer(4));
   let net_poll_messenger = new Int32Array(new SharedArrayBuffer(4));
 
+  // No-data cache: when poll returns 0, skip main-thread round-trips for
+  // NET_POLL_CACHE_MS. Prevents the kernel driver's tight poll loop from
+  // flooding postMessage and causing RCU stalls under ARCH_NO_PREEMPT.
+  let net_nodata_until = 0;
+  const NET_POLL_CACHE_MS = 50;
+
   /// An exception type used to abort part of execution (useful for collapsing the call stack of user code).
   class Trap extends Error {
     constructor(kind) {
@@ -308,6 +314,9 @@
     },
 
     wasm_net_recv: (buffer, max_length) => {
+      // Fast path: last poll said no data — skip expensive round-trip.
+      if (performance.now() < net_nodata_until) return 0;
+
       Atomics.store(net_recv_messenger, 0, -1);
       port.postMessage({
         method: "net_recv",
@@ -315,34 +324,88 @@
         max_length: max_length,
         net_recv_messenger: net_recv_messenger,
       });
-      // Non-blocking check: do not park inside network callback paths.
-      Atomics.wait(net_recv_messenger, 0, -1, 0);
+      // Brief blocking wait: gives main thread time to respond and
+      // prevents the kernel driver from busy-spinning the CPU when polling
+      // for packets (which causes RCU stalls under ARCH_NO_PREEMPT).
+      Atomics.wait(net_recv_messenger, 0, -1, 10);
       let n = Atomics.load(net_recv_messenger, 0);
 
       // Data delivered (or explicit 0).
-      if (n >= 0) return n;
+      if (n >= 0) {
+        if (n > 0) net_nodata_until = 0;  // got data — invalidate cache
+        return n;
+      }
+
+      // Main thread is currently claiming/writing (-3); briefly wait for it.
+      if (n === -3) {
+        Atomics.wait(net_recv_messenger, 0, -3, 5);
+        n = Atomics.load(net_recv_messenger, 0);
+        if (n > 0) net_nodata_until = 0;
+        return (n >= 0) ? n : 0;
+      }
 
       // Still waiting (or main in-progress): mark departure so main thread
       // won't write stale memory.
       const old = Atomics.compareExchange(net_recv_messenger, 0, -1, -2);
-      if (old >= 0) return old;
+      if (old >= 0) {
+        if (old > 0) net_nodata_until = 0;
+        return old;
+      }
+      if (old === -3) {
+        Atomics.wait(net_recv_messenger, 0, -3, 5);
+        n = Atomics.load(net_recv_messenger, 0);
+        if (n > 0) net_nodata_until = 0;
+        return (n >= 0) ? n : 0;
+      }
       return 0;
     },
 
     wasm_net_poll: () => {
+      // Fast path: recently polled with no data — skip round-trip.
+      const now = performance.now();
+      if (now < net_nodata_until) return 0;
+
       Atomics.store(net_poll_messenger, 0, -1);
       port.postMessage({
         method: "net_poll",
         net_poll_messenger: net_poll_messenger,
       });
-      // Non-blocking check: never park in poll callback.
-      Atomics.wait(net_poll_messenger, 0, -1, 0);
+      // Brief blocking wait: prevents busy-spin when kernel polls
+      // repeatedly (RCU stall prevention under ARCH_NO_PREEMPT).
+      Atomics.wait(net_poll_messenger, 0, -1, 5);
       let n = Atomics.load(net_poll_messenger, 0);
-      if (n >= 0) return n;
+      if (n >= 0) {
+        if (n === 0) net_nodata_until = now + NET_POLL_CACHE_MS;
+        return n;
+      }
+
+      // Main thread is currently claiming/writing (-3); briefly wait for it.
+      if (n === -3) {
+        Atomics.wait(net_poll_messenger, 0, -3, 5);
+        n = Atomics.load(net_poll_messenger, 0);
+        if (n >= 0) {
+          if (n === 0) net_nodata_until = now + NET_POLL_CACHE_MS;
+          return n;
+        }
+        net_nodata_until = now + NET_POLL_CACHE_MS;
+        return 0;
+      }
 
       // If still waiting, depart cleanly. If main won race, return its value.
       const old = Atomics.compareExchange(net_poll_messenger, 0, -1, -2);
-      if (old >= 0) return old;
+      if (old >= 0) {
+        if (old === 0) net_nodata_until = now + NET_POLL_CACHE_MS;
+        return old;
+      }
+      if (old === -3) {
+        Atomics.wait(net_poll_messenger, 0, -3, 5);
+        n = Atomics.load(net_poll_messenger, 0);
+        if (n >= 0) {
+          if (n === 0) net_nodata_until = now + NET_POLL_CACHE_MS;
+          return n;
+        }
+      }
+      net_nodata_until = now + NET_POLL_CACHE_MS;
       return 0;
     },
   };
