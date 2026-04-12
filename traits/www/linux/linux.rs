@@ -470,7 +470,9 @@ const BOOT_SCRIPT: &str = r#"
     const workerBlob = new Blob([workerSrc], { type: 'application/javascript' });
     const workerUrl = URL.createObjectURL(workerBlob);
 
-    const boot_cmdline = 'maxcpus=4 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
+    // Temporary stability mitigation: keep Linux on a single CPU.
+    // The current SMP path can stall during network/ifconfig operations.
+    const boot_cmdline = 'maxcpus=1 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
 
     const logLine = (text) => term.write(('\x1B[2m' + text + '\x1B[0m\n').replaceAll('\n', '\r\n'));
     const console_write = (data) => term.write(data);
