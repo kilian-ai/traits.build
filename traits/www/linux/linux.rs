@@ -491,10 +491,10 @@ const BOOT_SCRIPT: &str = r#"
         NetProxy.setTunnelURL(tunnelUrl);
     }
     
-    // Wait for tunnel readiness (3.5s timeout) and report status with error details if any
+    // Wait for tunnel readiness (5s timeout) and report status with error details if any
     if (typeof NetProxy !== 'undefined' && NetProxy.waitForTunnelReady) {
-        console.log('[linux.rs] waiting for tunnel readiness...');
-        const wasConnected = await NetProxy.waitForTunnelReady(3500);
+        console.log('[linux.rs] waiting for tunnel readiness (5 second timeout)...');
+        const wasConnected = await NetProxy.waitForTunnelReady(5000);
         console.log('[linux.rs] tunnel ready result:', wasConnected);
         const mode = (typeof NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
         const suffix = tunnelUrl ? ` (${tunnelUrl})` : '';
@@ -504,6 +504,8 @@ const BOOT_SCRIPT: &str = r#"
             console.log('[linux.rs] tunnel error message:', errMsg);
             const errDetail = errMsg ? ` — ${errMsg}` : '';
             term.write(`\x1B[33m[traits.build] NET degraded: browser emulation fallback (tunnel unavailable${errDetail})\x1B[0m\r\n`);
+        } else if (mode === 'tunnel') {
+            term.write(`\x1B[32m[traits.build] NET ready: tunnel connected to relay server\x1B[0m\r\n`);
         }
     }
 

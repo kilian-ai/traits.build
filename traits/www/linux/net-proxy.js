@@ -613,7 +613,7 @@ const NetProxy = (() => {
           else tunnelError = 'WebSocket error: ' + errStr.slice(0, 100);
           console.warn('[net-proxy] ✗ tunnel error:', tunnelError, {errorObj: e});
         };
-        // Set timeout for connection attempt — if not connected within 3s, report as failed
+        // Set timeout for connection attempt — if not connected within 5s, report as failed
         tunnelConnectTimeout = setTimeout(() => {
           if (!tunnelConnected && tunnelWs) {
             const state = tunnelWs.readyState;
@@ -624,7 +624,7 @@ const NetProxy = (() => {
             }
             console.warn('[net-proxy]', tunnelError);
           }
-        }, 3000);
+        }, 5000);
       } else {
         tunnelWs = null;
       }
