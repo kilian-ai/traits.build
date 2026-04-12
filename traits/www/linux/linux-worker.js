@@ -299,9 +299,9 @@
         max_length: max_length,
         net_recv_messenger: net_recv_messenger,
       });
-      // Bounded wait to avoid indefinite stalls if the main thread misses
-      // or cannot service a net_recv request in time.
-      Atomics.wait(net_recv_messenger, 0, -1, 50);
+      // Keep this wait very short: network callbacks may be reached while
+      // kernel-side locks are held, so long host waits can trigger stalls.
+      Atomics.wait(net_recv_messenger, 0, -1, 1);
       let n = Atomics.load(net_recv_messenger, 0);
 
       // Data delivered (or explicit 0).
@@ -331,8 +331,8 @@
         method: "net_poll",
         net_poll_messenger: net_poll_messenger,
       });
-      // Bounded wait avoids deadlock if one poll request is lost/delayed.
-      Atomics.wait(net_poll_messenger, 0, -1, 50);
+      // Keep this wait very short for the same lock-hold reason as recv.
+      Atomics.wait(net_poll_messenger, 0, -1, 1);
       let n = Atomics.load(net_poll_messenger, 0);
       if (n >= 0) return n;
 
