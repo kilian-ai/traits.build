@@ -547,6 +547,28 @@ const BOOT_SCRIPT: &str = r#"
         // Expose for programmatic testing (e.g. os.key_input("cmd\r"))
         window._linuxOS = os;
 
+        // Fork-pressure mitigation for BusyBox ash in NOMMU mode.
+        // Standalone mode runs BusyBox applets in-process when possible,
+        // reducing reliance on vfork for common commands.
+        const shellMitigationsEnabled = (() => {
+            try {
+                const v = localStorage.getItem('linux-wasm.shell-mitigations');
+                return v !== '0';
+            } catch (e) {
+                return true;
+            }
+        })();
+
+        if (shellMitigationsEnabled) {
+            setTimeout(() => {
+                try { os.key_input('set -o standalone\r'); } catch (e) {}
+            }, 250);
+            setTimeout(() => {
+                try { os.key_input('export SH_STANDALONE=1\r'); } catch (e) {}
+            }, 450);
+            term.write('\x1B[2m[traits.build] Shell mitigation: BusyBox standalone mode enabled\x1B[0m\r\n');
+        }
+
         // Periodic network observability: mode, queue depth, drops, callback timings.
         let lastNetLine = '';
         let lastMode = bootNetMode;
