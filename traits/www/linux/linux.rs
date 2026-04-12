@@ -470,6 +470,42 @@ const BOOT_SCRIPT: &str = r#"
     const workerBlob = new Blob([workerSrc], { type: 'application/javascript' });
     const workerUrl = URL.createObjectURL(workerBlob);
 
+    const resolveTunnelUrl = () => {
+        try {
+            const params = new URLSearchParams(location.search);
+            const fromQuery = params.get('linux_tunnel');
+            if (fromQuery) return fromQuery;
+        } catch (e) {}
+
+        try {
+            const fromStorage = localStorage.getItem('linux-wasm.tunnel-url') || '';
+            if (fromStorage) return fromStorage;
+        } catch (e) {}
+
+        try {
+            const host = location.host || '';
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
+                return `${proto}//${host}/linux/tunnel`;
+            }
+        } catch (e) {}
+
+        return '';
+    };
+
+    const tunnelUrl = resolveTunnelUrl();
+    if (typeof NetProxy !== 'undefined' && NetProxy.setTunnelURL && tunnelUrl) {
+        NetProxy.setTunnelURL(tunnelUrl);
+    }
+    if (typeof NetProxy !== 'undefined' && NetProxy.getMode) {
+        const mode = NetProxy.getMode();
+        const suffix = tunnelUrl ? ` (${tunnelUrl})` : '';
+        term.write(`\x1B[2m[traits.build] NET mode: ${mode}${suffix}\x1B[0m\r\n`);
+        if (mode === 'browser-fallback') {
+            term.write('\x1B[33m[traits.build] NET degraded: browser emulation fallback (tunnel unavailable)\x1B[0m\r\n');
+        }
+    }
+
     // Temporary stability mitigation: keep Linux on a single CPU.
     // The current SMP path can stall during network/ifconfig operations.
     const boot_cmdline = 'maxcpus=1 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0';
@@ -478,10 +514,36 @@ const BOOT_SCRIPT: &str = r#"
     const console_write = (data) => term.write(data);
 
     let os;
+    let netStatsTimer = null;
     try {
         os = await linux(workerUrl, vmlinux, boot_cmdline, initrd, logLine, console_write);
         // Expose for programmatic testing (e.g. os.key_input("cmd\r"))
         window._linuxOS = os;
+
+        // Periodic network observability: mode, queue depth, drops, callback timings.
+        let lastNetLine = '';
+        netStatsTimer = setInterval(() => {
+            try {
+                const proxy = (typeof NetProxy !== 'undefined' && NetProxy.getStats) ? NetProxy.getStats() : null;
+                const host = (os && os.getNetworkMetrics) ? os.getNetworkMetrics() : null;
+                if (!proxy && !host) return;
+
+                const mode = (typeof NetProxy !== 'undefined' && NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
+                const q = proxy ? proxy.queueLen : 0;
+                const qh = proxy ? proxy.queueHighWater : 0;
+                const drop = proxy ? proxy.rxDroppedPackets : 0;
+                const cbRecv = host ? host.recvAvgMs : 0;
+                const cbPoll = host ? host.pollAvgMs : 0;
+                const line = `[net] mode=${mode} q=${q}/${qh} drop=${drop} cb_recv=${cbRecv.toFixed(3)}ms cb_poll=${cbPoll.toFixed(3)}ms`;
+                if (line !== lastNetLine) {
+                    term.write(`\x1B[2m${line}\x1B[0m\r\n`);
+                    lastNetLine = line;
+                }
+            } catch (e) {
+                // Keep runtime robust even if metrics collection fails.
+            }
+        }, 5000);
+
         // Do NOT revoke workerUrl here! linux() returns immediately but
         // CPU 0 boots async and will create secondary CPUs + user tasks
         // later by calling new Worker(workerUrl). Revoke on page cleanup.
@@ -677,6 +739,7 @@ const BOOT_SCRIPT: &str = r#"
         document.removeEventListener('keydown', handleKey, true);
         document.removeEventListener('paste', handlePaste, true);
         document.removeEventListener('copy', handleCopy, true);
+        if (netStatsTimer) clearInterval(netStatsTimer);
         URL.revokeObjectURL(workerUrl);
     };
 

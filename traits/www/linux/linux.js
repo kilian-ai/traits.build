@@ -14,6 +14,21 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
   /// Pending console_read request (deferred until input arrives).
   let pendingConsoleRead = null;
 
+  /// Network bridge observability (worker ↔ main-thread callback metrics).
+  const netMetrics = {
+    recvCalls: 0,
+    recvClaimMiss: 0,
+    recvErrors: 0,
+    recvBytes: 0,
+    recvTotalMs: 0,
+    recvMaxMs: 0,
+    pollCalls: 0,
+    pollClaimMiss: 0,
+    pollErrors: 0,
+    pollTotalMs: 0,
+    pollMaxMs: 0,
+  };
+
   const text_decoder = new TextDecoder("utf-8");
   const text_encoder = new TextEncoder();
 
@@ -127,9 +142,15 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
     },
 
     net_recv: (message) => {
+      const t0 = performance.now();
+      netMetrics.recvCalls++;
+
       // Claim request only if worker is still waiting (-1).
       const old = Atomics.compareExchange(message.net_recv_messenger, 0, -1, -3);
-      if (old !== -1) return;
+      if (old !== -1) {
+        netMetrics.recvClaimMiss++;
+        return;
+      }
 
       let count = 0;
       try {
@@ -139,21 +160,33 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
           if (packet && packet.length > 0) {
             memory_u8.set(packet, message.buffer);
             count = packet.length;
+            netMetrics.recvBytes += packet.length;
           }
         }
       } catch (e) {
         // Never strand the worker in wait due to a JS-side exception.
         count = 0;
+        netMetrics.recvErrors++;
       }
 
       Atomics.store(message.net_recv_messenger, 0, count);
       Atomics.notify(message.net_recv_messenger, 0, 1);
+
+      const dt = performance.now() - t0;
+      netMetrics.recvTotalMs += dt;
+      if (dt > netMetrics.recvMaxMs) netMetrics.recvMaxMs = dt;
     },
 
     net_poll: (message) => {
+      const t0 = performance.now();
+      netMetrics.pollCalls++;
+
       // Claim request only if worker is still waiting (-1).
       const old = Atomics.compareExchange(message.net_poll_messenger, 0, -1, -3);
-      if (old !== -1) return;
+      if (old !== -1) {
+        netMetrics.pollClaimMiss++;
+        return;
+      }
 
       let count = 0;
       try {
@@ -163,10 +196,15 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
       } catch (e) {
         // Never strand the worker in wait due to a JS-side exception.
         count = 0;
+        netMetrics.pollErrors++;
       }
 
       Atomics.store(message.net_poll_messenger, 0, count);
       Atomics.notify(message.net_poll_messenger, 0, 1);
+
+      const dt = performance.now() - t0;
+      netMetrics.pollTotalMs += dt;
+      if (dt > netMetrics.pollMaxMs) netMetrics.pollMaxMs = dt;
     },
   };
 
@@ -312,6 +350,16 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
 
       // Wake any blocked console_read immediately.
       fulfillPendingConsoleRead();
+    },
+
+    getNetworkMetrics: () => {
+      const recvAvgMs = netMetrics.recvCalls > 0 ? (netMetrics.recvTotalMs / netMetrics.recvCalls) : 0;
+      const pollAvgMs = netMetrics.pollCalls > 0 ? (netMetrics.pollTotalMs / netMetrics.pollCalls) : 0;
+      return {
+        ...netMetrics,
+        recvAvgMs,
+        pollAvgMs,
+      };
     }
   };
 };

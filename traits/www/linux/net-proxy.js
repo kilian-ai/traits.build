@@ -19,17 +19,39 @@ const NetProxy = (() => {
 
   // ── Receive queue (packets waiting to be read by guest) ──
   const rxQueue = [];
+  const RX_QUEUE_MAX = 2048;
+  let queueHighWater = 0;
 
   // ── Connection tracking ──
   const connections = new Map();  // "srcPort:dstIp:dstPort" → TcpConnection
   let nextEphemeralPort = 40000;
 
   // ── Stats ──
-  let stats = { txPackets: 0, rxPackets: 0, txBytes: 0, rxBytes: 0, connections: 0 };
+  let stats = {
+    txPackets: 0,
+    rxPackets: 0,
+    txBytes: 0,
+    rxBytes: 0,
+    connections: 0,
+    rxDroppedPackets: 0,
+    txMalformedPackets: 0,
+    tunnelTxPackets: 0,
+    tunnelTxBytes: 0,
+    tunnelTxErrors: 0,
+    tunnelRxPackets: 0,
+    tunnelRxBytes: 0,
+    fallbackPackets: 0,
+    dnsQueries: 0,
+    dnsFailures: 0,
+    txHandleCalls: 0,
+    txHandleTotalMs: 0,
+    txHandleMaxMs: 0,
+  };
 
   // ── WebSocket tunnel (optional, for real TCP) ──
   let tunnelUrl = null;
   let tunnelWs = null;
+  let tunnelConnected = false;
 
   // ── IP packet helpers ──
 
@@ -203,6 +225,7 @@ const NetProxy = (() => {
   }
 
   async function resolveDns(query, srcPort, srcIp) {
+    stats.dnsQueries++;
     try {
       const resp = await fetch('https://cloudflare-dns.com/dns-query', {
         method: 'POST',
@@ -219,6 +242,7 @@ const NetProxy = (() => {
       const pkt = buildIpPacket(17, GATEWAY_IP, srcIp, udpPayload);
       enqueueRx(pkt);
     } catch (e) {
+      stats.dnsFailures++;
       console.warn('[net-proxy] DNS resolution failed:', e);
     }
   }
@@ -410,14 +434,11 @@ const NetProxy = (() => {
 
   // ── Tunnel support (WebSocket for real TCP) ──
 
-  function sendViaTunnel(ipPkt) {
+  function sendViaTunnelRaw(packet) {
     if (!tunnelWs || tunnelWs.readyState !== WebSocket.OPEN) return false;
     try {
-      tunnelWs.send(new Uint8Array([
-        ...ipPkt.dstIp,
-        (ipPkt.dstPort || 0) >> 8, (ipPkt.dstPort || 0) & 0xff,
-        ...ipPkt.payload,
-      ]));
+      const raw = packet instanceof Uint8Array ? packet : new Uint8Array(packet);
+      tunnelWs.send(raw);
       return true;
     } catch (e) {
       return false;
@@ -427,23 +448,55 @@ const NetProxy = (() => {
   // ── Packet handling ──
 
   function enqueueRx(pkt) {
+    if (rxQueue.length >= RX_QUEUE_MAX) {
+      rxQueue.shift();
+      stats.rxDroppedPackets++;
+    }
     rxQueue.push(pkt);
+    if (rxQueue.length > queueHighWater) queueHighWater = rxQueue.length;
     stats.rxPackets++;
     stats.rxBytes += pkt.length;
   }
 
   function handleTxPacket(buf) {
+    const t0 = performance.now();
+    stats.txHandleCalls++;
     stats.txPackets++;
     stats.txBytes += buf.length;
 
     const ipPkt = parseIpPacket(buf);
-    if (!ipPkt) return;
+    if (!ipPkt) {
+      stats.txMalformedPackets++;
+      const dt = performance.now() - t0;
+      stats.txHandleTotalMs += dt;
+      if (dt > stats.txHandleMaxMs) stats.txHandleMaxMs = dt;
+      return;
+    }
 
     const proto = ipPkt.protocol;
+
+    // If a tunnel is connected, prefer routing transport protocols through it.
+    // Keep ICMP local so ping-to-gateway remains available without a tunnel daemon.
+    if (tunnelConnected && (proto === 6 || proto === 17)) {
+      if (sendViaTunnelRaw(buf)) {
+        stats.tunnelTxPackets++;
+        stats.tunnelTxBytes += buf.length;
+        const dt = performance.now() - t0;
+        stats.txHandleTotalMs += dt;
+        if (dt > stats.txHandleMaxMs) stats.txHandleMaxMs = dt;
+        return;
+      }
+      stats.tunnelTxErrors++;
+      // If tunnel send fails, fall through to browser emulation path.
+    }
+    if (proto === 6 || proto === 17) stats.fallbackPackets++;
 
     // ICMP
     if (proto === 1) {
       handleIcmp(ipPkt);
+      const dt = performance.now() - t0;
+      stats.txHandleTotalMs += dt;
+      if (dt > stats.txHandleMaxMs) stats.txHandleMaxMs = dt;
       return;
     }
 
@@ -454,6 +507,9 @@ const NetProxy = (() => {
       if (udp.dstPort === 53) {
         resolveDns(udp.data, udp.srcPort, ipPkt.srcIp);
       }
+      const dt = performance.now() - t0;
+      stats.txHandleTotalMs += dt;
+      if (dt > stats.txHandleMaxMs) stats.txHandleMaxMs = dt;
       return;
     }
 
@@ -482,6 +538,10 @@ const NetProxy = (() => {
         enqueueRx(buildIpPacket(6, ipPkt.dstIp, ipPkt.srcIp, rst));
       }
     }
+
+    const dt = performance.now() - t0;
+    stats.txHandleTotalMs += dt;
+    if (dt > stats.txHandleMaxMs) stats.txHandleMaxMs = dt;
   }
 
   // ── Public API ──
@@ -504,19 +564,46 @@ const NetProxy = (() => {
 
     setTunnelURL(url) {
       tunnelUrl = url;
+      tunnelConnected = false;
       if (tunnelWs) tunnelWs.close();
       if (url) {
         tunnelWs = new WebSocket(url);
         tunnelWs.binaryType = 'arraybuffer';
+        tunnelWs.onopen = () => {
+          tunnelConnected = true;
+          console.info('[net-proxy] tunnel connected:', url);
+        };
+        tunnelWs.onclose = () => {
+          tunnelConnected = false;
+          console.info('[net-proxy] tunnel disconnected');
+        };
         tunnelWs.onmessage = (ev) => {
           const data = new Uint8Array(ev.data);
+          stats.tunnelRxPackets++;
+          stats.tunnelRxBytes += data.length;
           enqueueRx(data);
         };
-        tunnelWs.onerror = (e) => console.warn('[net-proxy] tunnel error:', e);
+        tunnelWs.onerror = (e) => {
+          tunnelConnected = false;
+          console.warn('[net-proxy] tunnel error:', e);
+        };
+      } else {
+        tunnelWs = null;
       }
     },
 
-    getStats() { return { ...stats, queueLen: rxQueue.length, connections: connections.size }; },
+    getMode() { return tunnelConnected ? 'tunnel' : 'browser-fallback'; },
+    getStats() {
+      const avgTxHandleMs = stats.txHandleCalls > 0 ? (stats.txHandleTotalMs / stats.txHandleCalls) : 0;
+      return {
+        ...stats,
+        mode: tunnelConnected ? 'tunnel' : 'browser-fallback',
+        queueLen: rxQueue.length,
+        queueHighWater,
+        connections: connections.size,
+        avgTxHandleMs,
+      };
+    },
     getConfig() { return { guestIp: GUEST_IP.join('.'), gatewayIp: GATEWAY_IP.join('.'), mtu: MTU }; },
   };
 })();
