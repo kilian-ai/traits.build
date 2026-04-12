@@ -482,15 +482,8 @@ const BOOT_SCRIPT: &str = r#"
             if (fromStorage) return fromStorage;
         } catch (e) {}
 
-        try {
-            const host = location.host || '';
-            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
-                return `${proto}//${host}/linux/tunnel`;
-            }
-        } catch (e) {}
-
-        return '';
+        // Default: use the global relay tunnel endpoint.
+        return 'wss://relay.traits.build/linux/tunnel';
     };
 
     const tunnelUrl = resolveTunnelUrl();

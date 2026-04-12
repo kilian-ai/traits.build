@@ -563,15 +563,24 @@ const NetProxy = (() => {
     },
 
     setTunnelURL(url) {
-      tunnelUrl = url;
+      let normalized = (url || '').trim();
+      if (normalized.startsWith('https://')) {
+        normalized = 'wss://' + normalized.slice('https://'.length);
+      } else if (normalized.startsWith('http://')) {
+        normalized = 'ws://' + normalized.slice('http://'.length);
+      } else if (normalized && !normalized.startsWith('ws://') && !normalized.startsWith('wss://')) {
+        normalized = 'wss://' + normalized;
+      }
+
+      tunnelUrl = normalized;
       tunnelConnected = false;
       if (tunnelWs) tunnelWs.close();
-      if (url) {
-        tunnelWs = new WebSocket(url);
+      if (normalized) {
+        tunnelWs = new WebSocket(normalized);
         tunnelWs.binaryType = 'arraybuffer';
         tunnelWs.onopen = () => {
           tunnelConnected = true;
-          console.info('[net-proxy] tunnel connected:', url);
+          console.info('[net-proxy] tunnel connected:', normalized);
         };
         tunnelWs.onclose = () => {
           tunnelConnected = false;
@@ -585,6 +594,7 @@ const NetProxy = (() => {
         };
         tunnelWs.onerror = (e) => {
           tunnelConnected = false;
+          stats.tunnelTxErrors++;
           console.warn('[net-proxy] tunnel error:', e);
         };
       } else {

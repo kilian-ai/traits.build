@@ -88,6 +88,159 @@ function json(data, status = 200) {
   });
 }
 
+// ── Linux tunnel helpers (raw IPv4 packets over WebSocket) ──────────────────
+
+function _checksum(bytes) {
+  let sum = 0;
+  for (let i = 0; i < bytes.length; i += 2) {
+    sum += ((bytes[i] << 8) | (bytes[i + 1] || 0));
+  }
+  while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+  return (~sum) & 0xffff;
+}
+
+function _parseIpPacket(buf) {
+  if (!(buf instanceof Uint8Array) || buf.length < 20) return null;
+  const version = (buf[0] >> 4) & 0xf;
+  if (version !== 4) return null;
+  const ihl = (buf[0] & 0xf) * 4;
+  const totalLen = (buf[2] << 8) | buf[3];
+  if (ihl < 20 || totalLen < ihl || totalLen > buf.length) return null;
+  const protocol = buf[9];
+  const srcIp = [buf[12], buf[13], buf[14], buf[15]];
+  const dstIp = [buf[16], buf[17], buf[18], buf[19]];
+  const id = (buf[4] << 8) | buf[5];
+  const payload = buf.slice(ihl, totalLen);
+  return { protocol, srcIp, dstIp, id, payload };
+}
+
+function _buildIpPacket(protocol, srcIp, dstIp, payload, id = 0) {
+  const totalLen = 20 + payload.length;
+  const pkt = new Uint8Array(totalLen);
+  pkt[0] = 0x45;
+  pkt[1] = 0;
+  pkt[2] = (totalLen >> 8) & 0xff;
+  pkt[3] = totalLen & 0xff;
+  pkt[4] = (id >> 8) & 0xff;
+  pkt[5] = id & 0xff;
+  pkt[6] = 0x40;
+  pkt[7] = 0;
+  pkt[8] = 64;
+  pkt[9] = protocol;
+  pkt[12] = srcIp[0]; pkt[13] = srcIp[1]; pkt[14] = srcIp[2]; pkt[15] = srcIp[3];
+  pkt[16] = dstIp[0]; pkt[17] = dstIp[1]; pkt[18] = dstIp[2]; pkt[19] = dstIp[3];
+  const cksum = _checksum(pkt.slice(0, 20));
+  pkt[10] = (cksum >> 8) & 0xff;
+  pkt[11] = cksum & 0xff;
+  pkt.set(payload, 20);
+  return pkt;
+}
+
+function _parseUdp(payload) {
+  if (payload.length < 8) return null;
+  const srcPort = (payload[0] << 8) | payload[1];
+  const dstPort = (payload[2] << 8) | payload[3];
+  const length = (payload[4] << 8) | payload[5];
+  if (length < 8 || length > payload.length) return null;
+  const data = payload.slice(8, length);
+  return { srcPort, dstPort, data };
+}
+
+function _buildUdp(srcPort, dstPort, data) {
+  const len = 8 + data.length;
+  const udp = new Uint8Array(len);
+  udp[0] = (srcPort >> 8) & 0xff;
+  udp[1] = srcPort & 0xff;
+  udp[2] = (dstPort >> 8) & 0xff;
+  udp[3] = dstPort & 0xff;
+  udp[4] = (len >> 8) & 0xff;
+  udp[5] = len & 0xff;
+  udp[6] = 0;
+  udp[7] = 0;
+  udp.set(data, 8);
+  return udp;
+}
+
+function _handleIcmpEcho(ipPkt) {
+  const p = ipPkt.payload;
+  if (p.length < 8 || p[0] !== 8) return null;
+  const reply = new Uint8Array(p);
+  reply[0] = 0;
+  reply[2] = 0;
+  reply[3] = 0;
+  const cksum = _checksum(reply);
+  reply[2] = (cksum >> 8) & 0xff;
+  reply[3] = cksum & 0xff;
+  return _buildIpPacket(1, ipPkt.dstIp, ipPkt.srcIp, reply, ipPkt.id);
+}
+
+async function _handleDnsUdp(ipPkt) {
+  const udp = _parseUdp(ipPkt.payload);
+  if (!udp || udp.dstPort !== 53 || udp.data.length === 0) return null;
+  try {
+    const resp = await fetch('https://cloudflare-dns.com/dns-query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/dns-message',
+        'Accept': 'application/dns-message',
+      },
+      body: udp.data,
+    });
+    if (!resp.ok) return null;
+    const dns = new Uint8Array(await resp.arrayBuffer());
+    const udpReply = _buildUdp(53, udp.srcPort, dns);
+    return _buildIpPacket(17, ipPkt.dstIp, ipPkt.srcIp, udpReply, ipPkt.id);
+  } catch (_) {
+    return null;
+  }
+}
+
+function _linuxTunnelWs(request) {
+  const upgrade = request.headers.get('Upgrade');
+  if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
+    return json({
+      error: 'Upgrade required',
+      hint: 'Use WebSocket at wss://relay.traits.build/linux/tunnel',
+    }, 426);
+  }
+
+  const pair = new WebSocketPair();
+  const client = pair[0];
+  const server = pair[1];
+  server.accept();
+
+  server.addEventListener('message', (evt) => {
+    const data = evt.data;
+    // Optional text ping for diagnostics.
+    if (typeof data === 'string') {
+      if (data === 'ping') server.send('pong');
+      return;
+    }
+
+    let bytes;
+    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+    else if (data && data.buffer instanceof ArrayBuffer) bytes = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.length || 0);
+    else return;
+
+    const ipPkt = _parseIpPacket(bytes);
+    if (!ipPkt) return;
+
+    if (ipPkt.protocol === 1) {
+      const reply = _handleIcmpEcho(ipPkt);
+      if (reply) server.send(reply);
+      return;
+    }
+
+    if (ipPkt.protocol === 17) {
+      _handleDnsUdp(ipPkt).then((reply) => {
+        if (reply) server.send(reply);
+      });
+    }
+  });
+
+  return new Response(null, { status: 101, webSocket: client });
+}
+
 // ── Pairing code generation ───────────────────────────────────────────────────
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // unambiguous chars
@@ -228,6 +381,10 @@ export class RelaySession {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === '/linux/tunnel') {
+      return _linuxTunnelWs(request);
+    }
 
     // CORS preflight
     if (request.method === "OPTIONS") {

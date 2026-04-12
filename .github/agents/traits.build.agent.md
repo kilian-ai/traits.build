@@ -1067,6 +1067,7 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **Terminal dispatch:** `terminal.js` uses `window._traitsSDK.call()` (3-tier cascade) and `Traits.backgroundCall()` for CLI session commands, NOT raw fetch/direct trait-specific command switches.
 - **linux-wasm initramfs networking:** prefer `ifconfig` + `route` in `patches/initramfs/init`. Do not rely on bare `ip` in early boot scripts because `/sbin` may not be on `PATH` during init.
 - **linux-wasm browser networking mode:** prefer tunnel-first proxying when available (`NetProxy.setTunnelURL(...)`), with browser emulation as fallback. Surface active mode in boot logs (`NET mode: tunnel|browser-fallback`) when changing Linux networking behavior.
+- **linux-wasm relay tunnel endpoint:** default tunnel URL is `wss://relay.traits.build/linux/tunnel` (Cloudflare Worker). Query/localStorage overrides still apply via `linux_tunnel` and `linux-wasm.tunnel-url`.
 
 ## Trait .trait.toml Template
 
