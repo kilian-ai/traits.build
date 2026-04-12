@@ -537,8 +537,9 @@ const BOOT_SCRIPT: &str = r#"
     // With maxcpus=N, we get (N-1) usable user CPUs (minus IRQ_CPU).
     // Too few CPUs → clone() returns -EBUSY ("Resource busy") when shell forks.
     // CPUs are recycled when tasks exit (release_thread clears user_cpus bitmask).
-    // maxcpus=10 gives 8 user CPUs: enough for init + shell + concurrent commands.
-    const boot_cmdline = `maxcpus=10 root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
+    // maxcpus=5 gives 4 user CPUs (0,2,3,4): enough for init + shell + commands.
+    // Higher values (e.g. 10) create 70+ Web Workers which can stall browser boot.
+    const boot_cmdline = `maxcpus=5 root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
     if (initProgram !== '/init') {
         term.write(`\x1B[2m[traits.build] INIT mode: minimal (${initProgram})\x1B[0m\r\n`);
     }
