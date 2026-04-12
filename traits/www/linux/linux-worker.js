@@ -40,6 +40,12 @@
   let net_nodata_until = 0;
   const NET_POLL_CACHE_MS = 50;
 
+  // Poll exhaustion: after many consecutive zero-polls, return 1 to fake
+  // a packet available. The driver calls recv, gets 0 bytes, and the NAPI
+  // loop exits. This breaks the infinite poll loop that hangs ifconfig.
+  let consecutive_zero_polls = 0;
+  const POLL_EXHAUST_THRESHOLD = 100;
+
   /// An exception type used to abort part of execution (useful for collapsing the call stack of user code).
   class Trap extends Error {
     constructor(kind) {
@@ -330,11 +336,9 @@
         max_length: max_length,
         net_recv_messenger: net_recv_messenger,
       });
-      // Non-blocking check: never park inside network callback paths.
-      // Under ARCH_NO_PREEMPT, blocking a Worker stalls its kernel CPU
-      // and cascades through the scheduler — use the no-data cache above
-      // to throttle instead.
-      Atomics.wait(net_recv_messenger, 0, -1, 0);
+      // Blocking wait: gives main thread time to respond. Safe now that
+      // the lock_wait deadlock is fixed (commit 9af6e3c8).
+      Atomics.wait(net_recv_messenger, 0, -1, 50);
       let n = Atomics.load(net_recv_messenger, 0);
 
       // Data delivered (or explicit 0).
@@ -376,6 +380,12 @@
       if (now < net_nodata_until) {
         Atomics.store(net_poll_messenger, 0, 0);
         Atomics.wait(net_poll_messenger, 0, 0, Math.ceil(net_nodata_until - now));
+        // Poll exhaustion: after many cached zero-returns, fake a packet
+        // to break the driver's NAPI loop (recv will return 0 bytes).
+        if (++consecutive_zero_polls >= POLL_EXHAUST_THRESHOLD) {
+          consecutive_zero_polls = 0;
+          return 1;
+        }
         return 0;
       }
 
@@ -384,13 +394,18 @@
         method: "net_poll",
         net_poll_messenger: net_poll_messenger,
       });
-      // Non-blocking check: never park inside network callback paths.
-      // The no-data cache above throttles redundant polls without
-      // blocking the Worker (which would stall the CPU under ARCH_NO_PREEMPT).
-      Atomics.wait(net_poll_messenger, 0, -1, 0);
+      // Blocking wait: gives main thread time to respond. Safe now that
+      // the lock_wait deadlock is fixed (commit 9af6e3c8). The no-data
+      // cache above throttles repeat polls between round-trips.
+      Atomics.wait(net_poll_messenger, 0, -1, 50);
       let n = Atomics.load(net_poll_messenger, 0);
       if (n >= 0) {
-        if (n === 0) net_nodata_until = now + NET_POLL_CACHE_MS;
+        if (n === 0) {
+          net_nodata_until = now + NET_POLL_CACHE_MS;
+          consecutive_zero_polls++;
+        } else {
+          consecutive_zero_polls = 0;
+        }
         return n;
       }
 
@@ -399,28 +414,33 @@
         Atomics.wait(net_poll_messenger, 0, -3, 5);
         n = Atomics.load(net_poll_messenger, 0);
         if (n >= 0) {
-          if (n === 0) net_nodata_until = now + NET_POLL_CACHE_MS;
+          if (n === 0) { net_nodata_until = now + NET_POLL_CACHE_MS; consecutive_zero_polls++; }
+          else consecutive_zero_polls = 0;
           return n;
         }
         net_nodata_until = now + NET_POLL_CACHE_MS;
+        consecutive_zero_polls++;
         return 0;
       }
 
       // If still waiting, depart cleanly. If main won race, return its value.
       const old = Atomics.compareExchange(net_poll_messenger, 0, -1, -2);
       if (old >= 0) {
-        if (old === 0) net_nodata_until = now + NET_POLL_CACHE_MS;
+        if (old === 0) { net_nodata_until = now + NET_POLL_CACHE_MS; consecutive_zero_polls++; }
+        else consecutive_zero_polls = 0;
         return old;
       }
       if (old === -3) {
         Atomics.wait(net_poll_messenger, 0, -3, 5);
         n = Atomics.load(net_poll_messenger, 0);
         if (n >= 0) {
-          if (n === 0) net_nodata_until = now + NET_POLL_CACHE_MS;
+          if (n === 0) { net_nodata_until = now + NET_POLL_CACHE_MS; consecutive_zero_polls++; }
+          else consecutive_zero_polls = 0;
           return n;
         }
       }
       net_nodata_until = now + NET_POLL_CACHE_MS;
+      consecutive_zero_polls++;
       return 0;
     },
   };
