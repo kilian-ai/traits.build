@@ -299,8 +299,30 @@
         max_length: max_length,
         net_recv_messenger: net_recv_messenger,
       });
-      Atomics.wait(net_recv_messenger, 0, -1);
-      return Atomics.load(net_recv_messenger, 0);
+      // Bounded wait to avoid indefinite stalls if the main thread misses
+      // or cannot service a net_recv request in time.
+      Atomics.wait(net_recv_messenger, 0, -1, 50);
+      let n = Atomics.load(net_recv_messenger, 0);
+
+      // Data delivered (or explicit 0).
+      if (n >= 0) return n;
+
+      // Main thread is writing packet data (-3 sentinel from CAS claim).
+      if (n === -3) {
+        Atomics.wait(net_recv_messenger, 0, -3, 5);
+        n = Atomics.load(net_recv_messenger, 0);
+        return (n >= 0) ? n : 0;
+      }
+
+      // Still waiting: mark departure so main thread won't write stale memory.
+      const old = Atomics.compareExchange(net_recv_messenger, 0, -1, -2);
+      if (old >= 0) return old;
+      if (old === -3) {
+        Atomics.wait(net_recv_messenger, 0, -3, 5);
+        n = Atomics.load(net_recv_messenger, 0);
+        return (n >= 0) ? n : 0;
+      }
+      return 0;
     },
 
     wasm_net_poll: () => {
@@ -309,8 +331,15 @@
         method: "net_poll",
         net_poll_messenger: net_poll_messenger,
       });
-      Atomics.wait(net_poll_messenger, 0, -1);
-      return Atomics.load(net_poll_messenger, 0);
+      // Bounded wait avoids deadlock if one poll request is lost/delayed.
+      Atomics.wait(net_poll_messenger, 0, -1, 50);
+      let n = Atomics.load(net_poll_messenger, 0);
+      if (n >= 0) return n;
+
+      // If still waiting, depart cleanly. If main won race, return its value.
+      const old = Atomics.compareExchange(net_poll_messenger, 0, -1, -2);
+      if (old >= 0) return old;
+      return 0;
     },
   };
 

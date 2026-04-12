@@ -127,24 +127,44 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
     },
 
     net_recv: (message) => {
-      const memory_u8 = new Uint8Array(memory.buffer);
+      // Claim request only if worker is still waiting (-1).
+      const old = Atomics.compareExchange(message.net_recv_messenger, 0, -1, -3);
+      if (old !== -1) return;
+
       let count = 0;
-      if (typeof NetProxy !== 'undefined') {
-        const packet = NetProxy.recv(message.max_length);
-        if (packet && packet.length > 0) {
-          memory_u8.set(packet, message.buffer);
-          count = packet.length;
+      try {
+        const memory_u8 = new Uint8Array(memory.buffer);
+        if (typeof NetProxy !== 'undefined') {
+          const packet = NetProxy.recv(message.max_length);
+          if (packet && packet.length > 0) {
+            memory_u8.set(packet, message.buffer);
+            count = packet.length;
+          }
         }
+      } catch (e) {
+        // Never strand the worker in wait due to a JS-side exception.
+        count = 0;
       }
+
       Atomics.store(message.net_recv_messenger, 0, count);
       Atomics.notify(message.net_recv_messenger, 0, 1);
     },
 
     net_poll: (message) => {
+      // Claim request only if worker is still waiting (-1).
+      const old = Atomics.compareExchange(message.net_poll_messenger, 0, -1, -3);
+      if (old !== -1) return;
+
       let count = 0;
-      if (typeof NetProxy !== 'undefined') {
-        count = NetProxy.poll();
+      try {
+        if (typeof NetProxy !== 'undefined') {
+          count = NetProxy.poll();
+        }
+      } catch (e) {
+        // Never strand the worker in wait due to a JS-side exception.
+        count = 0;
       }
+
       Atomics.store(message.net_poll_messenger, 0, count);
       Atomics.notify(message.net_poll_messenger, 0, 1);
     },
