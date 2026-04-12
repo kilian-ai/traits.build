@@ -267,6 +267,14 @@ function normalizeCode(code) {
 //   pollResolve     — the Mac's waiting resolve() (poller arrived first)
 //   resultResolvers — Map<id, resolve> for open phone /relay/call Promises
 
+// Legacy DO class kept for backwards compatibility with previously deployed
+// migrations that reference this class name.
+export class GameRoom {
+  async fetch() {
+    return json({ error: 'GameRoom is deprecated' }, 410);
+  }
+}
+
 export class RelaySession {
   constructor(state, env) {
     this.created = Date.now();
