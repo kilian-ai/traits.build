@@ -532,7 +532,7 @@ const BOOT_SCRIPT: &str = r#"
 
     // Temporary stability mitigation: keep Linux on a single CPU.
     // The current SMP path can stall during network/ifconfig operations.
-    const boot_cmdline = `maxcpus=1 root=/dev/ram0 rootfstype=ramfs init=${initProgram} console=hvc console=ttyS0`;
+    const boot_cmdline = `maxcpus=1 root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
     if (initProgram !== '/init') {
         term.write(`\x1B[2m[traits.build] INIT mode: minimal (${initProgram})\x1B[0m\r\n`);
     }

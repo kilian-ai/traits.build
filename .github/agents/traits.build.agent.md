@@ -1068,7 +1068,7 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **linux-wasm initramfs networking:** prefer `ifconfig` + `route` in `patches/initramfs/init`. Do not rely on bare `ip` in early boot scripts because `/sbin` may not be on `PATH` during init.
 - **linux-wasm browser networking mode:** prefer tunnel-first proxying when available (`NetProxy.setTunnelURL(...)`), with browser emulation as fallback. Surface active mode in boot logs (`NET mode: tunnel|browser-fallback`) when changing Linux networking behavior.
 - **linux-wasm relay tunnel endpoint:** default tunnel URL is `wss://relay.traits.build/linux/tunnel` (Cloudflare Worker). Query/localStorage overrides still apply via `linux_tunnel` and `linux-wasm.tunnel-url`.
-- **linux-wasm init mode:** default boot init is fork-safe (`init=/bin/sh`) to reduce early BusyBox `vfork` failures in NOMMU mode. Override via URL `linux_init=/init` or localStorage key `linux-wasm.init` when you need classic initramfs startup behavior.
+- **linux-wasm init mode:** default boot init is fork-safe (`rdinit=/bin/sh`) to reduce early BusyBox `vfork` failures in NOMMU mode. Override via URL `linux_init=/init` or localStorage key `linux-wasm.init` when you need classic initramfs startup behavior.
 
 ## Trait .trait.toml Template
 
