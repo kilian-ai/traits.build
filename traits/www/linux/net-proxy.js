@@ -582,15 +582,16 @@ const NetProxy = (() => {
       if (normalized) {
         tunnelWs = new WebSocket(normalized);
         tunnelWs.binaryType = 'arraybuffer';
+        console.log('[net-proxy] attempting tunnel connection:', normalized);
         tunnelWs.onopen = () => {
           tunnelConnected = true;
           tunnelError = null;
           if (tunnelConnectTimeout) clearTimeout(tunnelConnectTimeout);
-          console.info('[net-proxy] tunnel connected:', normalized);
+          console.info('[net-proxy] ✓ tunnel connected:', normalized);
         };
         tunnelWs.onclose = () => {
           tunnelConnected = false;
-          console.info('[net-proxy] tunnel disconnected');
+          console.info('[net-proxy] tunnel disconnected. readyState:', tunnelWs ? tunnelWs.readyState : 'null');
         };
         tunnelWs.onmessage = (ev) => {
           const data = new Uint8Array(ev.data);
@@ -601,14 +602,26 @@ const NetProxy = (() => {
         tunnelWs.onerror = (e) => {
           tunnelConnected = false;
           stats.tunnelTxErrors++;
-          // Capture detailed error message for diagnostics
-          tunnelError = (e && e.message) || String(e) || 'WebSocket error';
-          console.warn('[net-proxy] tunnel error:', tunnelError);
+          // Capture error: try to extract details from various error formats
+          const errStr = String(e);
+          const isNetErr = errStr.includes('Failed to construct') || errStr.includes('NetworkError');
+          const isCorsErr = errStr.includes('CORS') || errStr.includes('cross-origin');
+          const isTimeErr = errStr.includes('timeout') || errStr.includes('time');
+          if (isNetErr) tunnelError = 'Network error (offline or relay unreachable)';
+          else if (isCorsErr) tunnelError = 'CORS blocked (check relay origin)';
+          else if (isTimeErr) tunnelError = 'Connection timeout';
+          else tunnelError = 'WebSocket error: ' + errStr.slice(0, 100);
+          console.warn('[net-proxy] ✗ tunnel error:', tunnelError, {errorObj: e});
         };
         // Set timeout for connection attempt — if not connected within 3s, report as failed
         tunnelConnectTimeout = setTimeout(() => {
-          if (!tunnelConnected && tunnelWs && tunnelWs.readyState === WebSocket.CONNECTING) {
-            tunnelError = 'Connection timeout (relay server not responding)';
+          if (!tunnelConnected && tunnelWs) {
+            const state = tunnelWs.readyState;
+            const stateNames = {0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED'};
+            const stateName = stateNames[state] || 'UNKNOWN';
+            if (!tunnelError) {
+              tunnelError = `Connection timeout (readyState=${stateName}, relay server not responding)`;
+            }
             console.warn('[net-proxy]', tunnelError);
           }
         }, 3000);
@@ -621,15 +634,25 @@ const NetProxy = (() => {
     async waitForTunnelReady(timeout = 3500) {
       const start = Date.now();
       while (Date.now() - start < timeout) {
-        if (tunnelConnected) return true;     // Connected successfully
-        if (tunnelError) return false;        // Connection failed
+        if (tunnelConnected) {
+          console.log('[net-proxy] waitForTunnelReady: tunnel connected');
+          return true;
+        }
+        if (tunnelError) {
+          console.log('[net-proxy] waitForTunnelReady: tunnel error recorded:', tunnelError);
+          return false;
+        }
         await new Promise(r => setTimeout(r, 50));
       }
-      return tunnelConnected;  // Timeout reached; return current state
+      console.log('[net-proxy] waitForTunnelReady: timeout. tunnelConnected=', tunnelConnected, 'tunnelError=', tunnelError);
+      return tunnelConnected;
     },
 
     getMode() { return tunnelConnected ? 'tunnel' : 'browser-fallback'; },
-    getTunnelError() { return tunnelError; },  // Return connection error if any
+    getTunnelError() {
+      console.log('[net-proxy] getTunnelError called, returning:', tunnelError);
+      return tunnelError;
+    },
     getStats() {
       const avgTxHandleMs = stats.txHandleCalls > 0 ? (stats.txHandleTotalMs / stats.txHandleCalls) : 0;
       return {

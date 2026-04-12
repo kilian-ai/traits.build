@@ -493,12 +493,15 @@ const BOOT_SCRIPT: &str = r#"
     
     // Wait for tunnel readiness (3.5s timeout) and report status with error details if any
     if (typeof NetProxy !== 'undefined' && NetProxy.waitForTunnelReady) {
+        console.log('[linux.rs] waiting for tunnel readiness...');
         const wasConnected = await NetProxy.waitForTunnelReady(3500);
+        console.log('[linux.rs] tunnel ready result:', wasConnected);
         const mode = (typeof NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
         const suffix = tunnelUrl ? ` (${tunnelUrl})` : '';
         term.write(`\x1B[2m[traits.build] NET mode: ${mode}${suffix}\x1B[0m\r\n`);
         if (mode === 'browser-fallback') {
             const errMsg = (typeof NetProxy.getTunnelError) ? NetProxy.getTunnelError() : null;
+            console.log('[linux.rs] tunnel error message:', errMsg);
             const errDetail = errMsg ? ` — ${errMsg}` : '';
             term.write(`\x1B[33m[traits.build] NET degraded: browser emulation fallback (tunnel unavailable${errDetail})\x1B[0m\r\n`);
         }
