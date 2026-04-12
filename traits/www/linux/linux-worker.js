@@ -299,29 +299,17 @@
         max_length: max_length,
         net_recv_messenger: net_recv_messenger,
       });
-      // Keep this wait very short: network callbacks may be reached while
-      // kernel-side locks are held, so long host waits can trigger stalls.
-      Atomics.wait(net_recv_messenger, 0, -1, 1);
+      // Non-blocking check: do not park inside network callback paths.
+      Atomics.wait(net_recv_messenger, 0, -1, 0);
       let n = Atomics.load(net_recv_messenger, 0);
 
       // Data delivered (or explicit 0).
       if (n >= 0) return n;
 
-      // Main thread is writing packet data (-3 sentinel from CAS claim).
-      if (n === -3) {
-        Atomics.wait(net_recv_messenger, 0, -3, 5);
-        n = Atomics.load(net_recv_messenger, 0);
-        return (n >= 0) ? n : 0;
-      }
-
-      // Still waiting: mark departure so main thread won't write stale memory.
+      // Still waiting (or main in-progress): mark departure so main thread
+      // won't write stale memory.
       const old = Atomics.compareExchange(net_recv_messenger, 0, -1, -2);
       if (old >= 0) return old;
-      if (old === -3) {
-        Atomics.wait(net_recv_messenger, 0, -3, 5);
-        n = Atomics.load(net_recv_messenger, 0);
-        return (n >= 0) ? n : 0;
-      }
       return 0;
     },
 
@@ -331,8 +319,8 @@
         method: "net_poll",
         net_poll_messenger: net_poll_messenger,
       });
-      // Keep this wait very short for the same lock-hold reason as recv.
-      Atomics.wait(net_poll_messenger, 0, -1, 1);
+      // Non-blocking check: never park in poll callback.
+      Atomics.wait(net_poll_messenger, 0, -1, 0);
       let n = Atomics.load(net_poll_messenger, 0);
       if (n >= 0) return n;
 
