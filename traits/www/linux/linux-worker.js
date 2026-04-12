@@ -324,10 +324,11 @@
         max_length: max_length,
         net_recv_messenger: net_recv_messenger,
       });
-      // Brief blocking wait: gives main thread time to respond and
-      // prevents the kernel driver from busy-spinning the CPU when polling
-      // for packets (which causes RCU stalls under ARCH_NO_PREEMPT).
-      Atomics.wait(net_recv_messenger, 0, -1, 10);
+      // Non-blocking check: never park inside network callback paths.
+      // Under ARCH_NO_PREEMPT, blocking a Worker stalls its kernel CPU
+      // and cascades through the scheduler — use the no-data cache above
+      // to throttle instead.
+      Atomics.wait(net_recv_messenger, 0, -1, 0);
       let n = Atomics.load(net_recv_messenger, 0);
 
       // Data delivered (or explicit 0).
@@ -370,9 +371,10 @@
         method: "net_poll",
         net_poll_messenger: net_poll_messenger,
       });
-      // Brief blocking wait: prevents busy-spin when kernel polls
-      // repeatedly (RCU stall prevention under ARCH_NO_PREEMPT).
-      Atomics.wait(net_poll_messenger, 0, -1, 5);
+      // Non-blocking check: never park inside network callback paths.
+      // The no-data cache above throttles redundant polls without
+      // blocking the Worker (which would stall the CPU under ARCH_NO_PREEMPT).
+      Atomics.wait(net_poll_messenger, 0, -1, 0);
       let n = Atomics.load(net_poll_messenger, 0);
       if (n >= 0) {
         if (n === 0) net_nodata_until = now + NET_POLL_CACHE_MS;
