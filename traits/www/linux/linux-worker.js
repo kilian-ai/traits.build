@@ -65,6 +65,16 @@
   };
 
   const lock_wait = (lock) => {
+    // Guard: if the lock is already 1 (spurious notify from a prior scheduling
+    // race), log a warning.  This means a duplicate serialize_tasks wakeup
+    // targeted this task, leaving a stale '1' that would cause Atomics.wait
+    // to return instantly ("not-equal") and serialize_me() to return with a
+    // stale last_task pointer — likely causing EBUSY from the kernel.
+    const cur = Atomics.load(locks._memory, locks[lock]);
+    if (cur !== 0) {
+      log("WARN lock_wait: serialize lock already " + cur + " (spurious notify) — resetting before wait");
+      Atomics.store(locks._memory, locks[lock], 0);
+    }
     Atomics.wait(locks._memory, locks[lock], 0);
     Atomics.store(locks._memory, locks[lock], 0);
   };
@@ -91,12 +101,16 @@
 
     /// Creation of tasks on our end. Runs them too.
     wasm_create_and_run_task: (prev_task, new_task, name, bin_start, bin_end, data_start, table_start) => {
+      const task_name = get_cstring(memory, name);
+      log("create_and_run_task: prev=" + prev_task + " new=" + new_task + " name=" + task_name +
+          " user=" + (bin_start ? "yes" : "no"));
+
       // Tell main to create the new task, and then run it for the first time!
       port.postMessage({
         method: "create_and_run_task",
         prev_task: prev_task,
         new_task: new_task,
-        name: get_cstring(memory, name),
+        name: task_name,
 
         // For user tasks, there is user code to load first before trying to run it.
         user_executable: bin_start ? {
@@ -108,7 +122,9 @@
       });
 
       // Serialize this (old) task.
-      return serialize_me();
+      const last = serialize_me();
+      log("create_and_run_task: resumed, last_task=" + last);
+      return last;
     },
 
     /// Remove a task created by wasm_create_and_run_task().

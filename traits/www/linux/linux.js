@@ -81,25 +81,45 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
 
     create_and_run_task: (message) => {
       // ret_from_fork will make sure the task switch finishes.
+      log("[Main]: create_and_run_task: prev=" + message.prev_task +
+          " new=" + message.new_task + " name=" + message.name +
+          " tasks_alive=" + Object.keys(tasks).length);
       make_task(message.prev_task, message.new_task, message.name, message.user_executable);
     },
 
     release_task: (message) => {
       // Stop the worker, which will stop script execution. This is safe as the task should be hanging on a lock waiting
       // to be scheduled - which never happens as dead tasks don't get ever get scheduled.
+      if (!tasks[message.dead_task]) {
+        log("[Main]: WARN release_task: task " + message.dead_task + " not in tasks dict!");
+        return;
+      }
       tasks[message.dead_task].worker.terminate();
-
       delete tasks[message.dead_task];
+      log("[Main]: release_task: " + message.dead_task + " tasks_alive=" + Object.keys(tasks).length);
     },
 
     serialize_tasks: (message) => {
       // next_task was previously suspended, wake it up.
+      const entry = tasks[message.next_task];
+      if (!entry) {
+        log("[Main]: WARN serialize_tasks: next_task " + message.next_task + " not in tasks dict!");
+        return;
+      }
+
+      // Detect spurious duplicate wakeup: if lock is already 1, someone else
+      // already woke this task and the notification hasn't been consumed yet.
+      const cur = Atomics.load(entry.locks._memory, entry.locks["serialize"]);
+      if (cur !== 0) {
+        log("[Main]: WARN serialize_tasks: task " + message.next_task +
+            " lock already " + cur + " (duplicate wakeup from prev=" + message.prev_task + ")");
+      }
 
       // Tell the next task where we switched from, so that it can finish the task switch.
-      tasks[message.next_task].last_task[0] = message.prev_task;
+      entry.last_task[0] = message.prev_task;
 
       // Release the above write of last_task and wake up the task.
-      lock_notify(tasks[message.next_task].locks, "serialize");
+      lock_notify(entry.locks, "serialize");
     },
 
     console_read: (message, worker) => {

@@ -525,16 +525,20 @@ const BOOT_SCRIPT: &str = r#"
         } catch (e) {}
 
         // Default to full initramfs script which sets up /proc, /sys, networking,
-        // and drops into BusyBox init. Requires maxcpus>=2 for fork to work.
+        // and drops into BusyBox init. Requires maxcpus>=3 (2 user CPUs) for fork to work.
         return '/init';
     };
 
     const initProgram = resolveInitProgram();
 
-    // WASM kernel model: each task runs in its own Worker (pseudo-CPU).
-    // maxcpus>=2 is required for fork/clone to work (child needs a CPU).
-    // nohz_full keeps non-boot CPUs tickless to reduce overhead.
-    const boot_cmdline = `maxcpus=3 nohz_full=0,2-63 root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
+    // WASM kernel model: each user task (non-kthread) needs its own dedicated CPU.
+    // The kernel's user_task_set_affinity() in arch/wasm/kernel/process.c pins each
+    // forked user process to a unique CPU. CPU 1 is reserved as IRQ_CPU.
+    // With maxcpus=N, we get (N-1) usable user CPUs (minus IRQ_CPU).
+    // Too few CPUs → clone() returns -EBUSY ("Resource busy") when shell forks.
+    // CPUs are recycled when tasks exit (release_thread clears user_cpus bitmask).
+    // maxcpus=10 gives 8 user CPUs: enough for init + shell + concurrent commands.
+    const boot_cmdline = `maxcpus=10 root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
     if (initProgram !== '/init') {
         term.write(`\x1B[2m[traits.build] INIT mode: minimal (${initProgram})\x1B[0m\r\n`);
     }
