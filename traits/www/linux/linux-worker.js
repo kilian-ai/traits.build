@@ -246,13 +246,14 @@
         console_read_messenger: console_read_messenger,
       });
 
-      // NON-BLOCKING: Use zero timeout to check if main thread already
-      // responded. This function is called by hvc_console.c __hvc_poll()
-      // with hp->lock spinlock HELD. Blocking here would prevent any
-      // concurrent hvc_write() from making progress (infinite spin on
-      // WASM where cpu_relax is weak). khvcd will retry via
-      // schedule_timeout_interruptible() if we return 0.
-      Atomics.wait(console_read_messenger, 0, -1, 0);
+      // SHORT BLOCKING wait: give the main thread time to process the
+      // console_read message and deliver any buffered input, or store
+      // pendingConsoleRead so key_input can fulfill it via CAS.
+      // hvc_console.c __hvc_poll() holds hp->lock during this call, but
+      // wasm_process_pending_irqs() in cpu_relax() now delivers timer
+      // ticks to spinning writers, preventing RCU stalls.
+      // 50ms balances responsiveness vs lock contention (khvcd polls ~1/s).
+      Atomics.wait(console_read_messenger, 0, -1, 50);
       let n = Atomics.load(console_read_messenger, 0);
 
       // Data delivered (or explicit 0).

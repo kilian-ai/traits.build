@@ -90,7 +90,12 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
     console_read: (message, worker) => {
       const buffer = new Uint8Array(input_buffer);
       if (buffer.length > 0) {
-        // Input available — deliver immediately.
+        // Input available — claim the messenger before writing to memory.
+        // CAS from -1 (worker waiting) to -3 (we're claiming).
+        // If worker already departed (-2), skip the write to avoid
+        // corrupting reused memory at the stale buffer address.
+        const old = Atomics.compareExchange(message.console_read_messenger, 0, -1, -3);
+        if (old !== -1) return; // Worker departed, data stays in input_buffer.
         const memory_u8 = new Uint8Array(memory.buffer);
         const used = buffer.slice(0, message.count);
         memory_u8.set(used, message.buffer);
