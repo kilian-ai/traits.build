@@ -524,15 +524,17 @@ const BOOT_SCRIPT: &str = r#"
             if (fromStorage) return fromStorage;
         } catch (e) {}
 
-        // Default to a fork-safe shell init to avoid early busybox login-script fork bursts.
-        return '/bin/sh';
+        // Default to full initramfs script which sets up /proc, /sys, networking,
+        // and drops into BusyBox init. Requires maxcpus>=2 for fork to work.
+        return '/init';
     };
 
     const initProgram = resolveInitProgram();
 
-    // Temporary stability mitigation: keep Linux on a single CPU.
-    // The current SMP path can stall during network/ifconfig operations.
-    const boot_cmdline = `maxcpus=1 root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
+    // WASM kernel model: each task runs in its own Worker (pseudo-CPU).
+    // maxcpus>=2 is required for fork/clone to work (child needs a CPU).
+    // nohz_full keeps non-boot CPUs tickless to reduce overhead.
+    const boot_cmdline = `maxcpus=3 nohz_full=0,2-63 root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
     if (initProgram !== '/init') {
         term.write(`\x1B[2m[traits.build] INIT mode: minimal (${initProgram})\x1B[0m\r\n`);
     }
@@ -546,28 +548,6 @@ const BOOT_SCRIPT: &str = r#"
         os = await linux(workerUrl, vmlinux, boot_cmdline, initrd, logLine, console_write);
         // Expose for programmatic testing (e.g. os.key_input("cmd\r"))
         window._linuxOS = os;
-
-        // Fork-pressure mitigation for BusyBox ash in NOMMU mode.
-        // Standalone mode runs BusyBox applets in-process when possible,
-        // reducing reliance on vfork for common commands.
-        const shellMitigationsEnabled = (() => {
-            try {
-                const v = localStorage.getItem('linux-wasm.shell-mitigations');
-                return v !== '0';
-            } catch (e) {
-                return true;
-            }
-        })();
-
-        if (shellMitigationsEnabled) {
-            setTimeout(() => {
-                try { os.key_input('set -o standalone\r'); } catch (e) {}
-            }, 250);
-            setTimeout(() => {
-                try { os.key_input('export SH_STANDALONE=1\r'); } catch (e) {}
-            }, 450);
-            term.write('\x1B[2m[traits.build] Shell mitigation: BusyBox standalone mode enabled\x1B[0m\r\n');
-        }
 
         // Periodic network observability: mode, queue depth, drops, callback timings.
         let lastNetLine = '';

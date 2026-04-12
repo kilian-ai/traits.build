@@ -1068,8 +1068,8 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **linux-wasm initramfs networking:** prefer `ifconfig` + `route` in `patches/initramfs/init`. Do not rely on bare `ip` in early boot scripts because `/sbin` may not be on `PATH` during init.
 - **linux-wasm browser networking mode:** prefer tunnel-first proxying when available (`NetProxy.setTunnelURL(...)`), with browser emulation as fallback. Surface active mode in boot logs (`NET mode: tunnel|browser-fallback`) when changing Linux networking behavior.
 - **linux-wasm relay tunnel endpoint:** default tunnel URL is `wss://relay.traits.build/linux/tunnel` (Cloudflare Worker). Query/localStorage overrides still apply via `linux_tunnel` and `linux-wasm.tunnel-url`.
-- **linux-wasm init mode:** default boot init is fork-safe (`rdinit=/bin/sh`) to reduce early BusyBox `vfork` failures in NOMMU mode. Override via URL `linux_init=/init` or localStorage key `linux-wasm.init` when you need classic initramfs startup behavior.
-- **linux-wasm shell mitigation:** browser boot injects `set -o standalone` and `SH_STANDALONE=1` for BusyBox ash to reduce `vfork` pressure when running applets (e.g. `ifconfig`, `ping`). Disable with localStorage key `linux-wasm.shell-mitigations=0`.
+- **linux-wasm init mode:** default boot init is `/init` (full initramfs script: mounts /proc, /sys, brings up networking, then execs /sbin/init). Override via URL `linux_init=/bin/sh` or localStorage key `linux-wasm.init` for a minimal shell.
+- **linux-wasm SMP model:** the WASM kernel runs each task in its own Web Worker (pseudo-CPU). Boot cmdline uses `maxcpus=3 nohz_full=0,2-63` (matching upstream). `maxcpus=1` causes `EBUSY` on all fork/clone calls since the kernel can't schedule child tasks. BusyBox shell is HUSH (not ash), compiled without `CONFIG_FEATURE_SH_STANDALONE` or `CONFIG_FEATURE_SH_NOFORK`.
 
 ## Trait .trait.toml Template
 
