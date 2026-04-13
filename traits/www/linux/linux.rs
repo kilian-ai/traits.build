@@ -219,7 +219,7 @@ const BOOT_SCRIPT: &str = r#"
 
 (async function bootLinuxWasm() {
     const CDN = 'https://kilian-ai.github.io/linux-wasm';
-    const ASSET_REV = '62fcaab';
+    const ASSET_REV = '298df31';
     const assetUrl = (name) => `${CDN}/${name}?rev=${ASSET_REV}`;
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 
@@ -995,20 +995,31 @@ const BOOT_SCRIPT: &str = r#"
                     try { localStorage.setItem(HIST_KEY, JSON.stringify(savedHistory)); } catch(e2) {}
                 }
 
-                // ── Intercept "agent" command → run JS-side agent ──
+                // ── Intercept "agent" command → inject API key, let guest handle it ──
+                // The guest has /bin/agent.js (QuickJS LLM agent) which reads /tmp/key.
+                // We inject the API key from browser localStorage before letting the
+                // command pass through to the guest shell.
                 if (cmd === 'agent' || cmd.startsWith('agent ')) {
-                    intercepted = true;
-                    const task = cmd.slice(6).trim();
-                    // Clear shell input (Ctrl+U) so it doesn't execute
-                    os.key_input('\x15');
-                    term.write('\r\n');
-                    if (!task) {
-                        term.write('Usage: agent <task>\r\n');
-                        os.key_input('\r');
+                    const apiKey = localStorage.getItem('traits.secret.OPENAI_API_KEY');
+                    if (apiKey) {
+                        // Inject API key into guest filesystem via a background command.
+                        // Use shellExec (suppressed output) to write key, then let agent run.
+                        intercepted = true;
+                        const task = cmd.slice(6).trim();
+                        os.key_input('\x15'); // Clear current input
+                        if (!task) {
+                            term.write('\r\nUsage: agent <task>\r\n');
+                            os.key_input('\r');
+                        } else {
+                            // Write key silently, then run agent in guest
+                            const escaped = apiKey.replace(/'/g, "'\\''");
+                            os.key_input("echo '" + escaped + "' > /tmp/key; qjs /bin/agent.js " + task + '\r');
+                        }
                     } else {
-                        // Send empty Enter for clean prompt, then start agent
+                        intercepted = true;
+                        os.key_input('\x15');
+                        term.write('\r\n\x1b[31mNo API key. Set OPENAI_API_KEY in Settings (#/settings → Secrets).\x1b[0m\r\n');
                         os.key_input('\r');
-                        runJSAgent(task);
                     }
                 }
 
