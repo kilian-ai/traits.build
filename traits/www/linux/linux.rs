@@ -729,7 +729,7 @@ const BOOT_SCRIPT: &str = r#"
 
             let cmd;
             try {
-                const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+                const resp = await fetch('https://relay.traits.build/llm/proxy', {
                     method: 'POST',
                     headers: {
                         'Authorization': 'Bearer ' + apiKey,

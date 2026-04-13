@@ -476,6 +476,36 @@ export default {
       );
     }
 
+    // POST /llm/proxy — CORS proxy for OpenAI-compatible LLM APIs
+    // Browser sends Authorization + JSON body; relay forwards to OpenAI and
+    // returns the response with CORS headers.  Origin-locked to traits.build.
+    if (url.pathname === "/llm/proxy" && request.method === "POST") {
+      const origin = request.headers.get("Origin") || "";
+      if (!origin.match(/^https?:\/\/(www\.)?traits\.build$/)) {
+        return json({ error: "Origin not allowed" }, 403);
+      }
+      const auth = request.headers.get("Authorization");
+      if (!auth) return json({ error: "Missing Authorization header" }, 401);
+      const body = await request.text();
+      try {
+        const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": auth,
+          },
+          body,
+        });
+        const data = await upstream.text();
+        return new Response(data, {
+          status: upstream.status,
+          headers: { "Content-Type": "application/json", ...cors() },
+        });
+      } catch (e) {
+        return json({ error: "Upstream fetch failed: " + e.message }, 502);
+      }
+    }
+
     // GET /relay/status?code=XXXX  or  ?token=XXX
     if (url.pathname === "/relay/status" && request.method === "GET") {
       let code = url.searchParams.get("code");
