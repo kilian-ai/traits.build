@@ -219,7 +219,7 @@ const BOOT_SCRIPT: &str = r#"
 
 (async function bootLinuxWasm() {
     const CDN = 'https://kilian-ai.github.io/linux-wasm';
-    const ASSET_REV = '028eb29';
+    const ASSET_REV = '62fcaab';
     const assetUrl = (name) => `${CDN}/${name}?rev=${ASSET_REV}`;
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 
@@ -812,17 +812,18 @@ const BOOT_SCRIPT: &str = r#"
     // The Settings page stores secrets as localStorage['traits.secret.KEYNAME'].
     // If the user has stored OPENAI_API_KEY, write it to the guest filesystem
     // so agent.sh can use it without manual key entry.
+    // IMPORTANT: Use only shell builtins (echo + redirect). NO pipes, NO external
+    // commands (stty, base64, cat). Pipes create CLONE_VM fork children that corrupt
+    // the shared heap on this WASM NOMMU kernel.
     (async () => {
         const apiKey = localStorage.getItem('traits.secret.OPENAI_API_KEY');
         if (!apiKey) return;
-        // Wait for the shell prompt to appear before injecting
         await shellReadyPromise;
-        // Small delay to let the shell fully initialize
         await new Promise(r => setTimeout(r, 500));
-        // Base64-encode the key to avoid shell escaping issues, then decode in guest.
-        // Disable echo so the command (and key) don't appear in terminal output.
-        const b64 = btoa(apiKey);
-        os.key_input("stty -echo; echo " + b64 + " | base64 -d > /tmp/key; stty echo; clear\r");
+        // Shell-escape: wrap in single quotes, escape embedded single quotes
+        const escaped = apiKey.replace(/'/g, "'\\''");
+        // echo -n is a HUSH builtin; > redirect is handled by shell. Zero forks.
+        os.key_input("echo -n '" + escaped + "' > /tmp/key\r");
     })();
 
     // History is restored via JS-level ArrowUp/ArrowDown navigation above.
