@@ -698,8 +698,9 @@ const BOOT_SCRIPT: &str = r#"
 
     // ── JS Agent: main agent loop ──
     // Runs entirely in JavaScript. Uses browser fetch() for OpenAI API calls
-    // (zero forks, avoids CLONE_VM heap corruption). Only forks for executing
-    // LLM-returned shell commands via the guest kernel.
+    // (zero forks). Shell commands are restricted to builtins only (echo, for,
+    // while read, test, etc.) which do NOT fork. External commands would crash
+    // the WASM NOMMU kernel due to CLONE_VM shared-memory corruption.
     let agentAbort = false;
     async function runJSAgent(task) {
         agentRunning = true;
@@ -712,17 +713,20 @@ const BOOT_SCRIPT: &str = r#"
             return;
         }
 
-        const SYS = 'You are a shell agent inside minimal BusyBox Linux/WASM (musl, hush shell). ' +
-            'CRITICAL: This is a WASM kernel with NOMMU. fork() can intermittently crash the kernel. ' +
-            'Prefer SIMPLE commands that finish quickly. Avoid recursive scans (du -h /, find / ...). ' +
-            'Rules: 1) Reply with EXACTLY one shell command, no markdown, no explanation. ' +
+        const SYS = 'You are a shell agent inside BusyBox Linux/WASM (musl, hush shell, NOMMU). ' +
+            'CRITICAL: fork() CRASHES this kernel. You MUST use ONLY shell builtins. ' +
+            'External commands (ls, cat, grep, find, etc.) fork and will crash. ' +
+            'Rules: 1) Reply with EXACTLY one shell command (single line), no markdown, no explanation. ' +
             '2) When the task is done, reply DONE: summary. ' +
-            '3) Available: echo cat ls grep sed awk tr wc sort head tail find mkdir rm cp mv date uname du httpc vi. ' +
-            '4) NOT available: curl wget python node jq apt pip ifconfig ip addr bash sh. ' +
-            '5) For network info: cat /proc/net/dev. For memory: cat /proc/meminfo. For disk: df. ' +
-            '6) httpc usage: httpc get <url> or httpc -b -H <hdr> post <url> < body.json. ' +
-            '7) AVOID: commands with many pipes or subshells. Keep each command simple and targeted. ' +
-            '8) Do NOT use file redirects (>). Use tee instead if needed.';
+            '3) ALLOWED builtins: echo, printf, cd, pwd, read, test, [, for, while, if, case, set, unset, export, true, false. ' +
+            '4) List directory: echo /path/* (glob expansion is a builtin). ' +
+            '5) Read file: while IFS= read -r l; do echo "$l"; done < /path/to/file ' +
+            '6) Check file: test -f /path && echo exists || echo missing ' +
+            '7) Read /proc files: while IFS= read -r l; do echo "$l"; done < /proc/meminfo ' +
+            '8) Write file: Use echo "content" with output redirect: echo "text" > /path/file ' +
+            '9) Create dir: cannot mkdir (forks). Use available dirs only. ' +
+            '10) NEVER use: ls, cat, grep, find, head, tail, awk, sed, wc, sort, mkdir, rm, cp, mv, date, uname, curl, wget, du. ' +
+            '11) NEVER use $(...) or backticks — command substitution forks a subshell.';
 
         let history = '';
         const MAX = 10;
