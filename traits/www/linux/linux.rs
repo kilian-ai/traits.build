@@ -765,7 +765,8 @@ const BOOT_SCRIPT: &str = r#"
                 });
                 const data = await resp.json();
                 if (data.error) {
-                    term.write('  \x1b[31mAPI error: ' + data.error.message + '\x1b[0m\r\n');
+                    const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+                    term.write('  \x1b[31mAPI error: ' + msg + '\x1b[0m\r\n');
                     continue;
                 }
                 cmd = data.choices[0].message.content.trim();
