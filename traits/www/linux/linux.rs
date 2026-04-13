@@ -632,38 +632,49 @@ const BOOT_SCRIPT: &str = r#"
     }
 
     // ── JS Agent: execute a shell command and capture output ──
-    // Sends "cmd 2>&1; echo __EC:$?__\r" to the shell, captures all console
+    // Sends "cmd; echo __EC:$?__\r" to the shell, captures all console
     // output, and resolves when the __EC:N__ sentinel appears.
-    const EXEC_TIMEOUT = 60000;
+    // NOTE: Do NOT use 2>&1 — it triggers restore_redirects→free() crash
+    // with CLONE_VM heap corruption in BusyBox hush.
+    const EXEC_TIMEOUT = 30000;
     async function shellExec(cmd) {
         return new Promise(resolve => {
             let buffer = '';
             let resolved = false;
             agentCapture = (data) => {
                 if (resolved) return;
-                buffer += data;
+                // Ensure data is a string (console_write may receive Uint8Array)
+                const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+                buffer += text;
                 const m = buffer.match(/__EC:(\d+)__/);
                 if (m) {
                     resolved = true;
                     agentCapture = null;
                     const exitCode = parseInt(m[1], 10);
-                    // Extract output: everything before sentinel, stripped of
-                    // echoed command (first line) and ANSI control chars
-                    const beforeSentinel = buffer.slice(0, buffer.indexOf('__EC:'));
-                    const lines = beforeSentinel.replace(/\r/g, '').split('\n');
+                    // Extract output: everything between echoed command and sentinel.
+                    // Use m.index (regex match position) NOT indexOf('__EC:') because
+                    // the echoed command itself contains '__EC:$?__' which would match first.
+                    const beforeSentinel = buffer.slice(0, m.index);
+                    const clean = beforeSentinel
+                        .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')  // strip ANSI CSI
+                        .replace(/\r/g, '');
+                    const lines = clean.split('\n');
                     // First line is the echoed command, skip it
                     const output = lines.slice(1).join('\n').trim();
+                    console.log('[agent] shellExec resolved:', { cmd, exitCode, outputLen: output.length, output: output.slice(0, 200) });
                     resolve({ output, exitCode });
                 }
             };
             agentSuppressOutput = true;
-            os.key_input(cmd + ' 2>&1; echo __EC:$?__\r');
+            // No 2>&1! Avoids CLONE_VM restore_redirects crash.
+            os.key_input(cmd + '; echo __EC:$?__\r');
             setTimeout(() => {
                 if (!resolved) {
                     resolved = true;
+                    console.warn('[agent] shellExec TIMEOUT for:', cmd, 'buffer:', buffer.slice(0, 500));
                     agentCapture = null;
                     agentSuppressOutput = false;
-                    resolve({ output: '[timeout after 60s]', exitCode: -1 });
+                    resolve({ output: '[timeout after 30s]', exitCode: -1 });
                 }
             }, EXEC_TIMEOUT);
         });
@@ -697,6 +708,7 @@ const BOOT_SCRIPT: &str = r#"
         const MAX = 10;
 
         term.write('\x1b[1;32m=== Agent: ' + task + ' ===\x1b[0m\r\n');
+        console.log('[agent] Starting task:', task);
 
         for (let round = 1; round <= MAX; round++) {
             if (agentAbort) {
@@ -708,8 +720,9 @@ const BOOT_SCRIPT: &str = r#"
 
             const userMsg = round === 1
                 ? 'Task: ' + task
-                : 'Task: ' + task + '\\nHistory:\\n' + history + '\\nNext command or DONE: summary.';
+                : 'Task: ' + task + '\nHistory:\n' + history + '\nNext command or DONE: summary.';
 
+            console.log('[agent] Round', round, 'userMsg:', userMsg.slice(0, 300));
             term.write('  \x1b[2m[calling LLM...]\x1b[0m\r\n');
 
             let cmd;
@@ -736,6 +749,7 @@ const BOOT_SCRIPT: &str = r#"
                     continue;
                 }
                 cmd = data.choices[0].message.content.trim();
+                console.log('[agent] Round', round, 'LLM response:', cmd);
             } catch (err) {
                 term.write('  \x1b[31mFetch error: ' + err.message + '\x1b[0m\r\n');
                 continue;
@@ -761,8 +775,10 @@ const BOOT_SCRIPT: &str = r#"
             term.write('  \x1b[33m$ ' + cmd + '\x1b[0m\r\n');
 
             // Execute in guest shell (this is the ONLY fork per round)
+            console.log('[agent] Executing:', cmd);
             const { output, exitCode } = await shellExec(cmd);
             agentSuppressOutput = false;
+            console.log('[agent] Exec result:', { exitCode, outputLen: output.length, output: output.slice(0, 300) });
 
             // Display output
             if (output) {
@@ -779,7 +795,7 @@ const BOOT_SCRIPT: &str = r#"
 
             // Build history for next round (keep short)
             const truncOut = output.length > 500 ? output.slice(0, 500) + '...' : output;
-            history += 'Cmd: ' + cmd + '\\nExit: ' + exitCode + '\\nOut: ' + truncOut + '\\n';
+            history += 'Cmd: ' + cmd + '\nExit: ' + exitCode + '\nOut: ' + truncOut + '\n';
         }
 
         agentRunning = false;
