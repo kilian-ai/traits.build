@@ -243,6 +243,8 @@ const BOOT_SCRIPT: &str = r#"
         .slice(-HIST_MAX);
     try { localStorage.setItem(HIST_KEY, JSON.stringify(savedHistory)); } catch(e) {}
     let historyNavIndex = null;
+    let currentInput = '';  // Tracks typed characters for agent interception
+                            // (xterm buffer unreliable due to net stats output)
 
     const statusEl  = document.getElementById('linux-status');
     const statusTxt = document.getElementById('status-text');
@@ -852,6 +854,12 @@ const BOOT_SCRIPT: &str = r#"
         historyNavIndex = null;
         // Normalize CRLF from clipboard into LF for shell input.
         const normalized = String(text).replace(/\r\n/g, '\n');
+        // If paste contains newline, it may trigger Enter — clear currentInput after
+        if (normalized.includes('\n') || normalized.includes('\r')) {
+            currentInput = '';
+        } else {
+            currentInput += normalized;
+        }
         try { os.key_input(normalized); } catch(err) { console.error('[linux] paste error:', err); }
     };
 
@@ -909,6 +917,7 @@ const BOOT_SCRIPT: &str = r#"
                 if (historyNavIndex === null) historyNavIndex = savedHistory.length - 1;
                 else if (historyNavIndex > 0) historyNavIndex -= 1;
                 if (replacePromptInput(savedHistory[historyNavIndex] || '')) {
+                    currentInput = savedHistory[historyNavIndex] || '';
                     e.preventDefault();
                     e.stopPropagation();
                     return;
@@ -917,6 +926,7 @@ const BOOT_SCRIPT: &str = r#"
                 if (historyNavIndex < savedHistory.length - 1) {
                     historyNavIndex += 1;
                     if (replacePromptInput(savedHistory[historyNavIndex] || '')) {
+                        currentInput = savedHistory[historyNavIndex] || '';
                         e.preventDefault();
                         e.stopPropagation();
                         return;
@@ -924,6 +934,7 @@ const BOOT_SCRIPT: &str = r#"
                 } else {
                     historyNavIndex = null;
                     if (replacePromptInput('')) {
+                        currentInput = '';
                         e.preventDefault();
                         e.stopPropagation();
                         return;
@@ -945,47 +956,55 @@ const BOOT_SCRIPT: &str = r#"
             else if (e.key.length === 1)      seq = e.key;
         }
         if (seq !== null) {
-            // ── Track shell history on Enter ──
+            // ── Track typed input for agent interception ──
+            // Net stats lines corrupt xterm cursor position, so we can't rely on
+            // reading the buffer. Instead, maintain currentInput from keystrokes.
             if (seq === '\r') {
+                const cmd = currentInput.trim();
                 let intercepted = false;
-                try {
-                    const buf = term.buffer.active;
-                    const line = buf.getLine(buf.baseY + buf.cursorY);
-                    if (line) {
-                        const text = line.translateToString(true).trim();
-                        const m = text.match(/^.*?[#$]\s+(.+)$/);
-                        if (m && m[1].trim()) {
-                            const cmd = m[1].trim();
-                            if (cmd !== savedHistory[savedHistory.length - 1]) {
-                                savedHistory.push(cmd);
-                                if (savedHistory.length > HIST_MAX) savedHistory = savedHistory.slice(-HIST_MAX);
-                                try { localStorage.setItem(HIST_KEY, JSON.stringify(savedHistory)); } catch(e2) {}
-                            }
-                            // ── Intercept "agent" command → run JS-side agent ──
-                            if (cmd === 'agent' || cmd.startsWith('agent ')) {
-                                intercepted = true;
-                                const task = cmd.slice(6).trim();
-                                // Clear shell input (Ctrl+U) so it doesn't execute
-                                os.key_input('\x15');
-                                term.write('\r\n');
-                                if (!task) {
-                                    term.write('Usage: agent <task>\r\n');
-                                    os.key_input('\r');
-                                } else {
-                                    // Send empty Enter for clean prompt, then start agent
-                                    os.key_input('\r');
-                                    runJSAgent(task);
-                                }
-                            }
-                        }
+
+                // ── History tracking ──
+                if (cmd && cmd !== savedHistory[savedHistory.length - 1]) {
+                    savedHistory.push(cmd);
+                    if (savedHistory.length > HIST_MAX) savedHistory = savedHistory.slice(-HIST_MAX);
+                    try { localStorage.setItem(HIST_KEY, JSON.stringify(savedHistory)); } catch(e2) {}
+                }
+
+                // ── Intercept "agent" command → run JS-side agent ──
+                if (cmd === 'agent' || cmd.startsWith('agent ')) {
+                    intercepted = true;
+                    const task = cmd.slice(6).trim();
+                    // Clear shell input (Ctrl+U) so it doesn't execute
+                    os.key_input('\x15');
+                    term.write('\r\n');
+                    if (!task) {
+                        term.write('Usage: agent <task>\r\n');
+                        os.key_input('\r');
+                    } else {
+                        // Send empty Enter for clean prompt, then start agent
+                        os.key_input('\r');
+                        runJSAgent(task);
                     }
-                } catch(e2) {}
+                }
+
+                currentInput = '';
                 historyNavIndex = null;
                 if (intercepted) {
                     e.preventDefault();
                     e.stopPropagation();
                     return;
                 }
+            } else if (seq === '\x7f') {
+                // Backspace — remove last char from tracked input
+                currentInput = currentInput.slice(0, -1);
+                historyNavIndex = null;
+            } else if (seq === '\x15') {
+                // Ctrl+U — clear line
+                currentInput = '';
+            } else if (seq.length === 1 && seq.charCodeAt(0) >= 32) {
+                // Printable character — append to tracked input
+                currentInput += seq;
+                historyNavIndex = null;
             } else {
                 // Any non-Enter key input exits history-navigation mode.
                 historyNavIndex = null;
