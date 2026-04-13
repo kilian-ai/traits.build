@@ -219,7 +219,7 @@ const BOOT_SCRIPT: &str = r#"
 
 (async function bootLinuxWasm() {
     const CDN = 'https://kilian-ai.github.io/linux-wasm';
-    const ASSET_REV = 'd9edaff';
+    const ASSET_REV = 'c61fbc5';
     const assetUrl = (name) => `${CDN}/${name}?rev=${ASSET_REV}`;
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 
@@ -545,7 +545,27 @@ const BOOT_SCRIPT: &str = r#"
     }
 
     const logLine = (text) => term.write(('\x1B[2m' + text + '\x1B[0m\n').replaceAll('\n', '\r\n'));
-    const console_write = (data) => term.write(data);
+    // Track whether the first shell prompt has appeared (for secret injection)
+    let shellReady = false;
+    let shellReadyResolve = null;
+    const shellReadyPromise = new Promise(r => { shellReadyResolve = r; });
+    let consoleBuffer = '';
+
+    const console_write = (data) => {
+        term.write(data);
+        // Detect first interactive shell prompt (BusyBox prints hash-space or dollar-space)
+        if (!shellReady) {
+            consoleBuffer += data;
+            // Look for prompt at end of output — shell is ready when we see "prompt "
+            const tail = consoleBuffer.slice(-4);
+            if (tail.endsWith('$ ') || tail.endsWith('> ') || (tail.includes('#') && tail.endsWith(' '))) {
+                shellReady = true;
+                shellReadyResolve();
+            }
+            // Don't let buffer grow unbounded during boot
+            if (consoleBuffer.length > 4096) consoleBuffer = consoleBuffer.slice(-512);
+        }
+    };
 
     let os;
     let netStatsTimer = null;
@@ -787,6 +807,26 @@ const BOOT_SCRIPT: &str = r#"
     };
 
     term.focus();
+
+    // ── Inject OpenAI API key from Settings secrets into guest /tmp/key ──
+    // The Settings page stores secrets as localStorage['traits.secret.KEYNAME'].
+    // If the user has stored OPENAI_API_KEY, write it to the guest filesystem
+    // so agent.sh can use it without manual key entry.
+    (async () => {
+        const apiKey = localStorage.getItem('traits.secret.OPENAI_API_KEY');
+        if (!apiKey) return;
+        // Wait for the shell prompt to appear before injecting
+        await shellReadyPromise;
+        // Small delay to let the shell fully initialize
+        await new Promise(r => setTimeout(r, 300));
+        // Write key to /tmp/key silently: the command is typed, executed,
+        // then we clear the screen so the key isn't visible in scrollback.
+        const escaped = apiKey.replace(/'/g, "'\\''");
+        os.key_input("printf '%s' '" + escaped + "' > /tmp/key\r");
+        // Wait for the command to execute, then clear
+        await new Promise(r => setTimeout(r, 200));
+        os.key_input("clear\r");
+    })();
 
     // History is restored via JS-level ArrowUp/ArrowDown navigation above.
 
