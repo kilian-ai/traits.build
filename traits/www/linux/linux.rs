@@ -815,15 +815,25 @@ const BOOT_SCRIPT: &str = r#"
     // IMPORTANT: Use only shell builtins (echo + redirect). NO pipes, NO external
     // commands (stty, base64, cat). Pipes create CLONE_VM fork children that corrupt
     // the shared heap on this WASM NOMMU kernel.
+    // KEY INJECTION CHUNKING: Sending 200+ chars at once through the tty layer causes
+    // RCU stalls — the kernel echoes each character synchronously and blocks too long.
+    // Solution: break the key into ≤40-char chunks with delays between them.
     (async () => {
         const apiKey = localStorage.getItem('traits.secret.OPENAI_API_KEY');
         if (!apiKey) return;
         await shellReadyPromise;
-        await new Promise(r => setTimeout(r, 500));
+        // Wait for boot to fully settle (networking, kworkers, init cleanup)
+        await new Promise(r => setTimeout(r, 3000));
         // Shell-escape: wrap in single quotes, escape embedded single quotes
         const escaped = apiKey.replace(/'/g, "'\\''");
-        // echo -n is a HUSH builtin; > redirect is handled by shell. Zero forks.
-        os.key_input("echo -n '" + escaped + "' > /tmp/key\r");
+        // Chunk into ≤40-char pieces to avoid overwhelming the tty echo path
+        const CHUNK = 40;
+        for (let i = 0; i < escaped.length; i += CHUNK) {
+            const part = escaped.slice(i, i + CHUNK);
+            const op = i === 0 ? '>' : '>>';
+            os.key_input("echo -n '" + part + "' " + op + " /tmp/key\r");
+            await new Promise(r => setTimeout(r, 500));
+        }
     })();
 
     // History is restored via JS-level ArrowUp/ArrowDown navigation above.
