@@ -639,6 +639,8 @@ const BOOT_SCRIPT: &str = r#"
     // NOTE: Do NOT use 2>&1 — it triggers restore_redirects→free() crash
     // with CLONE_VM heap corruption in BusyBox hush.
     const EXEC_TIMEOUT = 30000;
+    const KERNEL_CRASH_RE = /Kernel panic|BUG!|Wasm crash|null function or function signature mismatch/;
+    const KERNEL_DEBUG_RE = /^\[(?:Runner|Main)[^\]]*\]:/;
     async function shellExec(cmd) {
         return new Promise(resolve => {
             let buffer = '';
@@ -648,6 +650,15 @@ const BOOT_SCRIPT: &str = r#"
                 // Ensure data is a string (console_write may receive Uint8Array)
                 const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
                 buffer += text;
+                // Early crash detection: abort immediately on kernel panic
+                if (KERNEL_CRASH_RE.test(buffer)) {
+                    resolved = true;
+                    agentCapture = null;
+                    agentSuppressOutput = false;
+                    console.error('[agent] Kernel crash detected during:', cmd);
+                    resolve({ output: '[kernel crashed]', exitCode: -2, crashed: true });
+                    return;
+                }
                 const m = buffer.match(/__EC:(\d+)__/);
                 if (m) {
                     resolved = true;
@@ -661,8 +672,11 @@ const BOOT_SCRIPT: &str = r#"
                         .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')  // strip ANSI CSI
                         .replace(/\r/g, '');
                     const lines = clean.split('\n');
-                    // First line is the echoed command, skip it
-                    const output = lines.slice(1).join('\n').trim();
+                    // First line is the echoed command, skip it.
+                    // Filter kernel debug lines ([Runner...]:, [Main]:) from output.
+                    const output = lines.slice(1)
+                        .filter(l => !KERNEL_DEBUG_RE.test(l.trim()))
+                        .join('\n').trim();
                     console.log('[agent] shellExec resolved:', { cmd, exitCode, outputLen: output.length, output: output.slice(0, 200) });
                     resolve({ output, exitCode });
                 }
@@ -699,12 +713,16 @@ const BOOT_SCRIPT: &str = r#"
         }
 
         const SYS = 'You are a shell agent inside minimal BusyBox Linux/WASM (musl, hush shell). ' +
+            'CRITICAL: This is a WASM kernel with NOMMU. fork() can intermittently crash the kernel. ' +
+            'Prefer SIMPLE commands that finish quickly. Avoid recursive scans (du -h /, find / ...). ' +
             'Rules: 1) Reply with EXACTLY one shell command, no markdown, no explanation. ' +
             '2) When the task is done, reply DONE: summary. ' +
             '3) Available: echo cat ls grep sed awk tr wc sort head tail find mkdir rm cp mv date uname du httpc vi. ' +
-            '4) NOT available: curl wget python node jq apt pip ifconfig ip addr. ' +
-            '5) For network info use: cat /proc/net/dev. ' +
-            '6) httpc usage: httpc get <url> or httpc -b -H <hdr> post <url> < body.json';
+            '4) NOT available: curl wget python node jq apt pip ifconfig ip addr bash sh. ' +
+            '5) For network info: cat /proc/net/dev. For memory: cat /proc/meminfo. For disk: df. ' +
+            '6) httpc usage: httpc get <url> or httpc -b -H <hdr> post <url> < body.json. ' +
+            '7) AVOID: commands with many pipes or subshells. Keep each command simple and targeted. ' +
+            '8) Do NOT use file redirects (>). Use tee instead if needed.';
 
         let history = '';
         const MAX = 10;
@@ -778,9 +796,16 @@ const BOOT_SCRIPT: &str = r#"
 
             // Execute in guest shell (this is the ONLY fork per round)
             console.log('[agent] Executing:', cmd);
-            const { output, exitCode } = await shellExec(cmd);
+            const { output, exitCode, crashed } = await shellExec(cmd);
             agentSuppressOutput = false;
-            console.log('[agent] Exec result:', { exitCode, outputLen: output.length, output: output.slice(0, 300) });
+            console.log('[agent] Exec result:', { exitCode, outputLen: output.length, crashed, output: output.slice(0, 300) });
+
+            // If kernel crashed, abort immediately — no recovery possible
+            if (crashed) {
+                term.write('  \x1b[1;31m[Kernel crashed — reboot required]\x1b[0m\r\n');
+                term.write('  \x1b[2mPress ⟳ Reboot to restart the kernel.\x1b[0m\r\n');
+                break;
+            }
 
             // Display output
             if (output) {
