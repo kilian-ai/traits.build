@@ -670,8 +670,39 @@
           user_executable_imports['GOT.func'] = got_func;
           user_executable_imports['GOT.mem'] = got_mem;
 
+          // CLONE FIX: For clone callbacks, the child gets a fresh WASM instance
+          // with its own empty __indirect_function_table. But __wasm_init_memory()
+          // (which populates the table via passive element segments) is guarded by
+          // an atomic flag in shared memory — the parent already set it to 1.
+          // So the child's table stays empty → crash on any indirect call.
+          //
+          // Fix: Save the data region, clear the flag (zero the region), instantiate
+          // (re-runs __wasm_init_memory → populates table), then restore parent's data.
+          // The table is a per-instance JS object, unaffected by the data restore.
+          let savedDataRegion = null;
+          if (should_call_clone_callback && user_executable_params.data_start > 0) {
+            const ds = user_executable_params.data_start;
+            // Save a generous region covering .data + .bss + init flag.
+            // BusyBox data section is typically < 1MB; 2MB is very safe.
+            const saveSize = Math.min(2 * 1024 * 1024, memory.buffer.byteLength - ds);
+            const mem = new Uint8Array(memory.buffer);
+            savedDataRegion = { offset: ds, data: mem.slice(ds, ds + saveSize) };
+            // Zero the region to clear the atomic init flag (location unknown,
+            // but guaranteed to be within this range). __wasm_init_memory will
+            // see flag=0 and re-initialize everything including element segments.
+            mem.fill(0, ds, ds + saveSize);
+          }
+
           return WebAssembly.instantiate(user_module, user_executable_imports).then(instance => {
             instance_ref.instance = instance;
+
+            // CLONE FIX: Restore the parent's data region. The table is already
+            // populated (per-instance JS Table, not in shared memory).
+            if (savedDataRegion) {
+              new Uint8Array(memory.buffer).set(savedDataRegion.data, savedDataRegion.offset);
+              savedDataRegion = null; // allow GC
+            }
+
             return instance;
           });
         });

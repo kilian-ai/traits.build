@@ -995,31 +995,23 @@ const BOOT_SCRIPT: &str = r#"
                     try { localStorage.setItem(HIST_KEY, JSON.stringify(savedHistory)); } catch(e2) {}
                 }
 
-                // ── Intercept "agent" command → inject API key, let guest handle it ──
-                // The guest has /bin/agent.js (QuickJS LLM agent) which reads /tmp/key.
-                // We inject the API key from browser localStorage before letting the
-                // command pass through to the guest shell.
+                // ── Intercept "agent" command → run browser-side JS agent ──
+                // Guest-side os.exec() crashes on WASM NOMMU (CLONE_VM heap corruption).
+                // Browser agent uses fetch() for LLM calls (zero forks) and shellExec()
+                // for guest commands (1 fork per round, with crash detection).
                 if (cmd === 'agent' || cmd.startsWith('agent ')) {
-                    const apiKey = localStorage.getItem('traits.secret.OPENAI_API_KEY');
-                    if (apiKey) {
-                        // Inject API key into guest filesystem via a background command.
-                        // Use shellExec (suppressed output) to write key, then let agent run.
-                        intercepted = true;
-                        const task = cmd.slice(6).trim();
-                        os.key_input('\x15'); // Clear current input
-                        if (!task) {
-                            term.write('\r\nUsage: agent <task>\r\n');
-                            os.key_input('\r');
-                        } else {
-                            // Write key silently, then run agent in guest
-                            const escaped = apiKey.replace(/'/g, "'\\''");
-                            os.key_input("echo '" + escaped + "' > /tmp/key; qjs /bin/agent.js " + task + '\r');
-                        }
-                    } else {
-                        intercepted = true;
-                        os.key_input('\x15');
-                        term.write('\r\n\x1b[31mNo API key. Set OPENAI_API_KEY in Settings (#/settings → Secrets).\x1b[0m\r\n');
+                    intercepted = true;
+                    os.key_input('\x15'); // Clear current input
+                    const task = cmd.slice(6).trim();
+                    if (!task) {
+                        term.write('\r\nUsage: agent <task>\r\n');
                         os.key_input('\r');
+                    } else if (agentRunning) {
+                        term.write('\r\n\x1b[33mAgent already running.\x1b[0m\r\n');
+                        os.key_input('\r');
+                    } else {
+                        term.write('\r\n');
+                        runJSAgent(task);
                     }
                 }
 
