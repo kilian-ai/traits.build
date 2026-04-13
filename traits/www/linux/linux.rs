@@ -219,7 +219,7 @@ const BOOT_SCRIPT: &str = r#"
 
 (async function bootLinuxWasm() {
     const CDN = 'https://kilian-ai.github.io/linux-wasm';
-    const ASSET_REV = 'c61fbc5';
+    const ASSET_REV = 'f1979b3';
     const assetUrl = (name) => `${CDN}/${name}?rev=${ASSET_REV}`;
     const COI_SW_RELOAD_KEY = 'linux-wasm-coi-v1';
 
@@ -818,14 +818,11 @@ const BOOT_SCRIPT: &str = r#"
         // Wait for the shell prompt to appear before injecting
         await shellReadyPromise;
         // Small delay to let the shell fully initialize
-        await new Promise(r => setTimeout(r, 300));
-        // Write key to /tmp/key silently: the command is typed, executed,
-        // then we clear the screen so the key isn't visible in scrollback.
-        const escaped = apiKey.replace(/'/g, "'\\''");
-        os.key_input("printf '%s' '" + escaped + "' > /tmp/key\r");
-        // Wait for the command to execute, then clear
-        await new Promise(r => setTimeout(r, 200));
-        os.key_input("clear\r");
+        await new Promise(r => setTimeout(r, 500));
+        // Base64-encode the key to avoid shell escaping issues, then decode in guest.
+        // Disable echo so the command (and key) don't appear in terminal output.
+        const b64 = btoa(apiKey);
+        os.key_input("stty -echo; echo " + b64 + " | base64 -d > /tmp/key; stty echo; clear\r");
     })();
 
     // History is restored via JS-level ArrowUp/ArrowDown navigation above.
