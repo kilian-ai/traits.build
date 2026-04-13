@@ -551,8 +551,22 @@ const BOOT_SCRIPT: &str = r#"
     const shellReadyPromise = new Promise(r => { shellReadyResolve = r; });
     let consoleBuffer = '';
 
+    // ── JS Agent state ──
+    // The agent loop runs entirely in JavaScript: fetch() for LLM API calls (no fork),
+    // shell only used to execute commands returned by the LLM.
+    // This avoids CLONE_VM heap corruption that crashes restore_redirects→free().
+    let agentCapture = null;      // function(data) callback during command capture
+    let agentRunning = false;     // true while agent loop is active
+    let agentSuppressOutput = false; // suppress shell echo during agent command exec
+
     const console_write = (data) => {
-        term.write(data);
+        // During agent command execution, suppress raw shell echo
+        // (agent displays its own formatted output)
+        if (!agentSuppressOutput) {
+            term.write(data);
+        }
+        // Agent output capture callback
+        if (agentCapture) agentCapture(data);
         // Detect first interactive shell prompt (BusyBox prints hash-space or dollar-space)
         if (!shellReady) {
             consoleBuffer += data;
@@ -617,6 +631,165 @@ const BOOT_SCRIPT: &str = r#"
         return;
     }
 
+    // ── JS Agent: execute a shell command and capture output ──
+    // Sends "cmd 2>&1; echo __EC:$?__\r" to the shell, captures all console
+    // output, and resolves when the __EC:N__ sentinel appears.
+    const EXEC_TIMEOUT = 60000;
+    async function shellExec(cmd) {
+        return new Promise(resolve => {
+            let buffer = '';
+            let resolved = false;
+            agentCapture = (data) => {
+                if (resolved) return;
+                buffer += data;
+                const m = buffer.match(/__EC:(\d+)__/);
+                if (m) {
+                    resolved = true;
+                    agentCapture = null;
+                    const exitCode = parseInt(m[1], 10);
+                    // Extract output: everything before sentinel, stripped of
+                    // echoed command (first line) and ANSI control chars
+                    const beforeSentinel = buffer.slice(0, buffer.indexOf('__EC:'));
+                    const lines = beforeSentinel.replace(/\r/g, '').split('\n');
+                    // First line is the echoed command, skip it
+                    const output = lines.slice(1).join('\n').trim();
+                    resolve({ output, exitCode });
+                }
+            };
+            agentSuppressOutput = true;
+            os.key_input(cmd + ' 2>&1; echo __EC:$?__\r');
+            setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    agentCapture = null;
+                    agentSuppressOutput = false;
+                    resolve({ output: '[timeout after 60s]', exitCode: -1 });
+                }
+            }, EXEC_TIMEOUT);
+        });
+    }
+
+    // ── JS Agent: main agent loop ──
+    // Runs entirely in JavaScript. Uses browser fetch() for OpenAI API calls
+    // (zero forks, avoids CLONE_VM heap corruption). Only forks for executing
+    // LLM-returned shell commands via the guest kernel.
+    let agentAbort = false;
+    async function runJSAgent(task) {
+        agentRunning = true;
+        agentAbort = false;
+        const apiKey = localStorage.getItem('traits.secret.OPENAI_API_KEY');
+        if (!apiKey) {
+            term.write('\x1b[31mNo API key. Set OPENAI_API_KEY in Settings (#/settings → Secrets).\x1b[0m\r\n');
+            agentRunning = false;
+            os.key_input('\r');
+            return;
+        }
+
+        const SYS = 'You are a shell agent inside minimal BusyBox Linux/WASM (musl, hush shell). ' +
+            'Rules: 1) Reply with EXACTLY one shell command, no markdown, no explanation. ' +
+            '2) When the task is done, reply DONE: summary. ' +
+            '3) Available: echo cat ls grep sed awk tr wc sort head tail find mkdir rm cp mv date uname du httpc vi. ' +
+            '4) NOT available: curl wget python node jq apt pip ifconfig ip addr. ' +
+            '5) For network info use: cat /proc/net/dev. ' +
+            '6) httpc usage: httpc get <url> or httpc -b -H <hdr> post <url> < body.json';
+
+        let history = '';
+        const MAX = 10;
+
+        term.write('\x1b[1;32m=== Agent: ' + task + ' ===\x1b[0m\r\n');
+
+        for (let round = 1; round <= MAX; round++) {
+            if (agentAbort) {
+                term.write('\x1b[33m[Agent aborted by user]\x1b[0m\r\n');
+                break;
+            }
+
+            term.write('\x1b[2m-- Round ' + round + '/' + MAX + ' --\x1b[0m\r\n');
+
+            const userMsg = round === 1
+                ? 'Task: ' + task
+                : 'Task: ' + task + '\\nHistory:\\n' + history + '\\nNext command or DONE: summary.';
+
+            term.write('  \x1b[2m[calling LLM...]\x1b[0m\r\n');
+
+            let cmd;
+            try {
+                const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + apiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'auto',
+                        messages: [
+                            { role: 'system', content: SYS },
+                            { role: 'user', content: userMsg }
+                        ],
+                        max_tokens: 200,
+                        temperature: 0
+                    })
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    term.write('  \x1b[31mAPI error: ' + data.error.message + '\x1b[0m\r\n');
+                    continue;
+                }
+                cmd = data.choices[0].message.content.trim();
+            } catch (err) {
+                term.write('  \x1b[31mFetch error: ' + err.message + '\x1b[0m\r\n');
+                continue;
+            }
+
+            // Check for DONE
+            if (/^done/i.test(cmd)) {
+                term.write('\r\n\x1b[1;32m=== ' + cmd + ' ===\x1b[0m\r\n');
+                term.write('Completed in ' + round + ' round(s).\r\n');
+                break;
+            }
+
+            // Strip markdown fences
+            cmd = cmd.replace(/^```(?:sh|bash)?\n?/, '').replace(/\n?```$/, '');
+            // Take first line only
+            cmd = cmd.split('\n')[0].trim();
+
+            if (!cmd) {
+                term.write('  \x1b[2m[empty response]\x1b[0m\r\n');
+                continue;
+            }
+
+            term.write('  \x1b[33m$ ' + cmd + '\x1b[0m\r\n');
+
+            // Execute in guest shell (this is the ONLY fork per round)
+            const { output, exitCode } = await shellExec(cmd);
+            agentSuppressOutput = false;
+
+            // Display output
+            if (output) {
+                const lines = output.split('\n');
+                const show = Math.min(lines.length, 20);
+                for (let i = 0; i < show; i++) {
+                    term.write('  \x1b[37m| ' + lines[i] + '\x1b[0m\r\n');
+                }
+                if (lines.length > 20) {
+                    term.write('  \x1b[2m| ...(' + lines.length + ' lines total)\x1b[0m\r\n');
+                }
+            }
+            term.write('  \x1b[2m[exit: ' + exitCode + ']\x1b[0m\r\n\r\n');
+
+            // Build history for next round (keep short)
+            const truncOut = output.length > 500 ? output.slice(0, 500) + '...' : output;
+            history += 'Cmd: ' + cmd + '\\nExit: ' + exitCode + '\\nOut: ' + truncOut + '\\n';
+        }
+
+        agentRunning = false;
+        agentSuppressOutput = false;
+        agentCapture = null;
+        // Get a fresh visible prompt
+        await new Promise(r => setTimeout(r, 100));
+        os.key_input('\r');
+    }
+
     // ── Keyboard input ──
     // Single handler: capture-phase document listener handles ALL input.
     // We do NOT rely on xterm's term.onData because its hidden textarea
@@ -679,6 +852,18 @@ const BOOT_SCRIPT: &str = r#"
     };
 
     const handleKey = (e) => {
+        // ── Block input during agent execution (allow Ctrl+C to abort) ──
+        if (agentRunning) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.ctrlKey && e.key === 'c') {
+                agentAbort = true;
+                agentSuppressOutput = false;
+                term.write('^C\r\n\x1b[33m[Aborting agent...]\x1b[0m\r\n');
+            }
+            return;
+        }
+
         // macOS shortcuts (Cmd+C / Cmd+V) for host clipboard integration.
         if (e.metaKey && !e.ctrlKey && !e.altKey) {
             const key = e.key.toLowerCase();
@@ -746,6 +931,7 @@ const BOOT_SCRIPT: &str = r#"
         if (seq !== null) {
             // ── Track shell history on Enter ──
             if (seq === '\r') {
+                let intercepted = false;
                 try {
                     const buf = term.buffer.active;
                     const line = buf.getLine(buf.baseY + buf.cursorY);
@@ -759,10 +945,31 @@ const BOOT_SCRIPT: &str = r#"
                                 if (savedHistory.length > HIST_MAX) savedHistory = savedHistory.slice(-HIST_MAX);
                                 try { localStorage.setItem(HIST_KEY, JSON.stringify(savedHistory)); } catch(e2) {}
                             }
+                            // ── Intercept "agent" command → run JS-side agent ──
+                            if (cmd === 'agent' || cmd.startsWith('agent ')) {
+                                intercepted = true;
+                                const task = cmd.slice(6).trim();
+                                // Clear shell input (Ctrl+U) so it doesn't execute
+                                os.key_input('\x15');
+                                term.write('\r\n');
+                                if (!task) {
+                                    term.write('Usage: agent <task>\r\n');
+                                    os.key_input('\r');
+                                } else {
+                                    // Send empty Enter for clean prompt, then start agent
+                                    os.key_input('\r');
+                                    runJSAgent(task);
+                                }
+                            }
                         }
                     }
                 } catch(e2) {}
                 historyNavIndex = null;
+                if (intercepted) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
             } else {
                 // Any non-Enter key input exits history-navigation mode.
                 historyNavIndex = null;
