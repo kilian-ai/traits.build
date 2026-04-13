@@ -23,11 +23,33 @@ extern "C" fn sigint_handler(_: libc::c_int) {
 /// with audio directly. No intermediate STT/TTS pipeline.
 ///
 /// Args: [voice?, model?, agent?, session_id?]
+///       ["token", model?, voice?] — mint ephemeral browser token
 pub fn voice(args: &[Value]) -> Value {
+    // Sub-command: mint ephemeral token for browser WebSocket auth
+    if args.first().and_then(|v| v.as_str()) == Some("token") {
+        let model = args
+            .get(1)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("gpt-realtime-mini-2025-12-15");
+        let voice_name = args
+            .get(2)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("shimmer");
+        let api_key = match resolve_api_key() {
+            Some(k) => k,
+            None => {
+                return json!({"ok": false, "error": "OpenAI API key not found. Set via: traits call sys.secrets set openai_api_key <key>"})
+            }
+        };
+        return mint_ephemeral_token(&api_key, model, voice_name);
+    }
+
     // Read persistent defaults from sys.config, then allow arg overrides
-    let default_voice = read_voice_pref("voice").unwrap_or_else(|| "cedar".into());
+    let default_voice = read_voice_pref("voice").unwrap_or_else(|| "shimmer".into());
     let default_model =
-        read_voice_pref("model").unwrap_or_else(|| "gpt-4o-mini-realtime-preview".into());
+        read_voice_pref("model").unwrap_or_else(|| "gpt-realtime-mini-2025-12-15".into());
     let default_agent = read_voice_pref("agent").unwrap_or_default();
 
     let voice_name = args
@@ -67,8 +89,8 @@ pub fn voice(args: &[Value]) -> Value {
         return json!({"ok": false, "error": "sox not found. Install: brew install sox"});
     }
 
-    // Build combined instructions via sys.voice.instruct build
-    let instructions = build_instructions_via_trait(agent, session_id.as_deref());
+    // Build combined instructions: agent context + voice-specific tuning
+    let instructions = build_instructions(agent, session_id.as_deref());
 
     match realtime_session(
         &api_key,
@@ -82,24 +104,159 @@ pub fn voice(args: &[Value]) -> Value {
     }
 }
 
-/// Delegate instruction assembly to sys.voice.instruct build (single source of truth).
-fn build_instructions_via_trait(agent: &str, session_id: Option<&str>) -> String {
-    let sid = session_id.map(|s| json!(s)).unwrap_or(Value::Null);
-    if let Some(result) = kernel_logic::platform::dispatch(
-        "sys.voice.instruct",
-        &[json!("build"), json!(agent), sid],
-    ) {
-        if let Some(s) = result.get("instructions").and_then(|v| v.as_str()) {
-            return s.to_string();
+/// Build combined instructions from agent context + memory + voice-specific tuning.
+fn build_instructions(agent: &str, session_id: Option<&str>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    // 1. Agent context — tell the model who it's acting as
+    if !agent.is_empty() {
+        parts.push(format!(
+            "You are operating as the \"{}\" coding agent on the traits.build platform. \
+             The user is a developer who may ask about code, architecture, or technical topics. \
+             Maintain awareness of this agent context in your responses.",
+            agent
+        ));
+    }
+
+    // 2. Persistent memory notes — things the model remembered from prior sessions
+    if let Some(result) = kernel_logic::platform::dispatch("sys.voice.memory", &[json!("list")]) {
+        if let Some(notes) = result.get("notes").and_then(|v| v.as_array()) {
+            let texts: Vec<&str> = notes
+                .iter()
+                .filter_map(|n| n.get("text").and_then(|v| v.as_str()))
+                .collect();
+            if !texts.is_empty() {
+                let mut mem =
+                    String::from("Your persistent memory (facts you chose to remember):\n");
+                for t in &texts {
+                    mem.push_str(&format!("- {}\n", t));
+                }
+                parts.push(mem);
+            }
         }
     }
-    // Fallback: compiled-in default
-    VOICE_INSTRUCTIONS.to_string()
+
+    // 3. Conversation history — provide recent context from the chat session
+    if let Some(sid) = session_id {
+        if let Some(result) =
+            kernel_logic::platform::dispatch("sys.chat", &[json!("get"), json!(sid)])
+        {
+            if result.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+                if let Some(messages) = result
+                    .pointer("/session/messages")
+                    .and_then(|v| v.as_array())
+                {
+                    // Include last few messages as context (not too many — voice is concise)
+                    let recent: Vec<&Value> = messages
+                        .iter()
+                        .rev()
+                        .take(6)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
+                    if !recent.is_empty() {
+                        let mut ctx =
+                            String::from("Recent conversation context (for continuity):\n");
+                        for msg in &recent {
+                            let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("?");
+                            let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                            // Truncate long messages for voice context
+                            let short = if content.len() > 200 {
+                                let mut end = 200;
+                                while !content.is_char_boundary(end) {
+                                    end -= 1;
+                                }
+                                &content[..end]
+                            } else {
+                                content
+                            };
+                            ctx.push_str(&format!("  {}: {}\n", role, short));
+                        }
+                        parts.push(ctx);
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Voice-specific tuning — custom instructions if set, else compiled-in default
+    if let Some(result) = kernel_logic::platform::dispatch("sys.voice.instruct", &[json!("get")]) {
+        if let Some(instr) = result.get("instructions").and_then(|v| v.as_str()) {
+            parts.push(instr.to_string());
+        } else {
+            parts.push(VOICE_INSTRUCTIONS.to_string());
+        }
+    } else {
+        parts.push(VOICE_INSTRUCTIONS.to_string());
+    }
+
+    parts.join("\n\n")
 }
 
 fn resolve_api_key() -> Option<String> {
     kernel_logic::platform::secret_get("openai_api_key")
         .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+}
+
+/// Mint an ephemeral API token for browser WebSocket auth.
+///
+/// OpenAI's Realtime WebSocket requires ephemeral tokens (not standard API keys)
+/// when connecting from browsers. This calls POST /v1/realtime/client_secrets
+/// using the server's API key and returns a short-lived token.
+fn mint_ephemeral_token(api_key: &str, model: &str, voice: &str) -> Value {
+    let session_config = json!({
+        "session": {
+            "type": "realtime",
+            "model": model,
+            "audio": {
+                "output": { "voice": voice }
+            }
+        }
+    });
+
+    let headers = json!({
+        "Authorization": format!("Bearer {}", api_key)
+    });
+
+    let result = kernel_logic::platform::dispatch(
+        "sys.call",
+        &[
+            json!("https://api.openai.com/v1/realtime/client_secrets"),
+            session_config,
+            Value::Null,    // auth_secret (using explicit header instead)
+            json!("POST"),
+            headers,
+        ],
+    );
+
+    match result {
+        Some(r) => {
+            let ok = r.get("ok").and_then(|v| v.as_bool()) == Some(true);
+            if ok {
+                if let Some(body) = r.get("body") {
+                    // Response: { "client_secret": { "value": "ek_...", "expires_at": ... } }
+                    if let Some(token) = body
+                        .pointer("/client_secret/value")
+                        .or_else(|| body.get("value"))
+                        .and_then(|v| v.as_str())
+                    {
+                        return json!({"ok": true, "token": token});
+                    }
+                }
+                json!({"ok": false, "error": "No token in response", "response": r.get("body")})
+            } else {
+                let err = r
+                    .get("body")
+                    .and_then(|b| b.get("error").and_then(|e| e.get("message")))
+                    .or_else(|| r.get("error"))
+                    .cloned()
+                    .unwrap_or(json!("API request failed"));
+                json!({"ok": false, "error": err})
+            }
+        }
+        None => json!({"ok": false, "error": "sys.call dispatch failed"}),
+    }
 }
 
 /// Read a voice preference from persistent config (sys.config sys.voice <key>).
@@ -198,13 +355,8 @@ fn realtime_session(
         return Err("Timeout waiting for session.created".into());
     }
 
-    // ── Configure session with tools via sys.voice.tools (single source of truth) ──
-    let tools: Vec<Value> = kernel_logic::platform::dispatch(
-        "sys.voice.tools",
-        &[json!("")],
-    )
-    .and_then(|r| r.get("tools").and_then(|v| v.as_array()).cloned())
-    .unwrap_or_default();
+    // ── Configure session with tools ──
+    let tools = build_tools();
     let tool_count = tools.len();
     let mut session_config = json!({
         "instructions": instructions,
@@ -377,7 +529,12 @@ fn realtime_session(
                         let arguments =
                             ev.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
 
-                        eprintln!("\x1b[93m⚡ {func_name}\x1b[0m");
+                        // Log tool call with pretty-printed arguments
+                        let args_display = serde_json::from_str::<Value>(arguments)
+                            .map(|v| serde_json::to_string_pretty(&v).unwrap_or_else(|_| arguments.to_string()))
+                            .unwrap_or_else(|_| arguments.to_string());
+                        eprintln!("\x1b[93m⚡ Tool call: {}\x1b[0m", func_name);
+                        eprintln!("\x1b[90m  Args: {}\x1b[0m", args_display);
 
                         if func_name == "llm_prompt_acp" {
                             // ── Background ACP dispatch — keep voice interactive ──
@@ -418,6 +575,16 @@ fn realtime_session(
                             // ── Synchronous dispatch for fast tools ──
                             let result = dispatch_tool_call(func_name, arguments);
 
+                            // Log tool result (preview truncated to 400 chars)
+                            let result_preview = if result.len() > 400 {
+                                let mut end = 400;
+                                while !result.is_char_boundary(end) { end -= 1; }
+                                format!("{}…", &result[..end])
+                            } else {
+                                result.clone()
+                            };
+                            eprintln!("\x1b[90m  Result: {}\x1b[0m", result_preview);
+
                             // Truncate very long results for voice context
                             let output = if result.len() > 2000 {
                                 let mut end = 2000;
@@ -436,7 +603,7 @@ fn realtime_session(
 
                             // If the model changed instructions, rebuild and update session
                             if func_name == "sys_voice_instruct" {
-                                let new_instructions = build_instructions_via_trait(
+                                let new_instructions = build_instructions(
                                     &read_voice_pref("agent").unwrap_or_default(),
                                     session_id,
                                 );
@@ -452,7 +619,7 @@ fn realtime_session(
 
                             // If the model added/removed a memory note, rebuild and update session
                             if func_name == "sys_voice_memory" {
-                                let new_instructions = build_instructions_via_trait(
+                                let new_instructions = build_instructions(
                                     &read_voice_pref("agent").unwrap_or_default(),
                                     session_id,
                                 );
@@ -847,7 +1014,7 @@ fn apply_live_config_change(
         }
         "agent" => {
             // Rebuild instructions with new agent and send session.update
-            let instructions = build_instructions_via_trait(value, session_id);
+            let instructions = build_instructions(value, session_id);
             let update = json!({
                 "type": "session.update",
                 "session": { "instructions": instructions }
@@ -864,11 +1031,136 @@ fn apply_live_config_change(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Tool dispatch — args assembly + trait call
-// Tool list building has moved to sys.voice.tools (WASM-callable, shared with
-// the browser WebRTC session so both always use the same exclusion list and
-// schema generation).
+// Tool registration — expose traits as Realtime API function-calling tools
 // ═══════════════════════════════════════════════════════════════════════════
+
+/// Traits to exclude from voice tool calling (internal/dangerous/interactive).
+pub const TOOL_EXCLUDE: &[&str] = &[
+    "sys.voice",
+    "sys.voice.config",
+    "sys.voice.instruct",
+    "sys.voice.memory",
+    "sys.voice.status",
+    "sys.mcp",
+    "sys.serve",
+    "sys.cli",
+    "sys.cli.native",
+    "sys.cli.wasm",
+    "sys.dylib_loader",
+    "sys.reload",
+    "sys.release",
+    "sys.secrets",
+    "kernel.main",
+    "kernel.dispatcher",
+    "kernel.globals",
+    "kernel.registry",
+    "kernel.config",
+    "kernel.plugin_api",
+    "kernel.cli",
+    "www.admin",
+    "www.admin.deploy",
+    "www.admin.fast_deploy",
+    "www.admin.scale",
+    "www.admin.destroy",
+    "www.admin.save_config",
+];
+
+/// Build OpenAI Realtime API tool definitions from the trait registry.
+fn build_tools() -> Vec<Value> {
+    let registry = match crate::globals::REGISTRY.get() {
+        Some(r) => r,
+        None => return Vec::new(),
+    };
+
+    let mut tools: Vec<Value> = Vec::new();
+    let mut entries = registry.all();
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+
+    for entry in &entries {
+        if TOOL_EXCLUDE.contains(&entry.path.as_str()) {
+            continue;
+        }
+        // Skip www.* traits (they return HTML, not useful for voice)
+        if entry.path.starts_with("www.") {
+            continue;
+        }
+        // Skip non-callable / library traits
+        if entry.kind == "library" || entry.kind == "interface" {
+            continue;
+        }
+
+        let tool_name = entry.path.replace('.', "_");
+        let schema = build_tool_schema(&entry.signature);
+
+        tools.push(json!({
+            "type": "function",
+            "name": tool_name,
+            "description": entry.description,
+            "parameters": schema
+        }));
+    }
+
+    // Always include the synthetic quit tool so the model can end the session
+    tools.push(json!({
+        "type": "function",
+        "name": "sys_voice_quit",
+        "description": "End the voice conversation. Call this when the user says goodbye, wants to stop, or asks to quit.",
+        "parameters": { "type": "object", "properties": {} }
+    }));
+
+    tools
+}
+
+/// Build JSON Schema parameters object from a trait's signature.
+fn build_tool_schema(sig: &crate::types::TraitSignature) -> Value {
+    let mut properties = Map::new();
+    let mut required: Vec<Value> = Vec::new();
+
+    for param in &sig.params {
+        let mut prop = match trait_type_to_schema(&param.param_type) {
+            Value::Object(m) => m,
+            _ => Map::new(),
+        };
+        if !param.description.is_empty() {
+            prop.insert("description".to_string(), json!(param.description));
+        }
+        properties.insert(param.name.clone(), Value::Object(prop));
+        if !param.optional {
+            required.push(json!(param.name));
+        }
+    }
+
+    let mut schema = Map::new();
+    schema.insert("type".to_string(), json!("object"));
+    schema.insert("properties".to_string(), Value::Object(properties));
+    if !required.is_empty() {
+        schema.insert("required".to_string(), Value::Array(required));
+    }
+    Value::Object(schema)
+}
+
+/// Map TraitType → JSON Schema type.
+fn trait_type_to_schema(tt: &crate::types::TraitType) -> Value {
+    match tt {
+        crate::types::TraitType::Int => json!({"type": "integer"}),
+        crate::types::TraitType::Float => json!({"type": "number"}),
+        crate::types::TraitType::String => json!({"type": "string"}),
+        crate::types::TraitType::Bool => json!({"type": "boolean"}),
+        crate::types::TraitType::Bytes => json!({"type": "string"}),
+        crate::types::TraitType::List(inner) => json!({
+            "type": "array",
+            "items": trait_type_to_schema(inner)
+        }),
+        crate::types::TraitType::Map(_k, v) => json!({
+            "type": "object",
+            "additionalProperties": trait_type_to_schema(v)
+        }),
+        crate::types::TraitType::Optional(inner) => trait_type_to_schema(inner),
+        crate::types::TraitType::Any => json!({"type": "string"}),
+        crate::types::TraitType::Handle => json!({"type": "string"}),
+        crate::types::TraitType::Null => json!({"type": "string"}),
+    }
+}
 
 /// Build ordered args array from function call arguments, matching param order.
 fn build_args_from_call(

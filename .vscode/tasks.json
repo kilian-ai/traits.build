@@ -50,6 +50,13 @@
 			"label": "build-all",
 			"type": "shell",
 			"command": "bash build.sh"
+		},
+		{
+			"label": "serve-bg",
+			"type": "shell",
+			"command": "./target/release/traits serve -p 8092",
+			"isBackground": true,
+			"problemMatcher": []
 		}
 	]
 }
