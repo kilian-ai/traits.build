@@ -578,6 +578,9 @@ const BOOT_SCRIPT: &str = r#"
     }
 
     const PERSIST_KEY = 'linux-wasm.persist.files';
+    const PERSIST_PVFS_KEY = 'traits.pvfs';
+    const PERSIST_PVFS_PREFIX = 'linux-wasm.persist';
+    const PERSIST_DIRS_META = PERSIST_PVFS_PREFIX + '/.dirs.json';
     const PERSIST_MOUNT_KEY = 'linux-wasm.persist.mounts';
     const PERSIST_AUTOSYNC_KEY = 'linux-wasm.persist.autosync';
 
@@ -633,13 +636,38 @@ const BOOT_SCRIPT: &str = r#"
         return mounts.some(m => p === m || p.startsWith(m + '/'));
     }
 
-    function persistLoad() {
+    function persistPvfsLoadAll() {
+        try {
+            const raw = localStorage.getItem(PERSIST_PVFS_KEY) || '{}';
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+        return {};
+    }
+
+    function persistPvfsSaveAll(map) {
+        try { localStorage.setItem(PERSIST_PVFS_KEY, JSON.stringify(map || {})); } catch (e) {}
+    }
+
+    function persistToPvfsPath(path) {
+        const p = persistNormalizePath(path);
+        if (!p) return '';
+        return PERSIST_PVFS_PREFIX + p;
+    }
+
+    function persistFromPvfsPath(path) {
+        const text = String(path || '');
+        const prefix = PERSIST_PVFS_PREFIX + '/';
+        if (!text.startsWith(prefix)) return '';
+        return persistNormalizePath(text.slice(PERSIST_PVFS_PREFIX.length));
+    }
+
+    function persistLoadLegacy() {
         try {
             const raw = localStorage.getItem(PERSIST_KEY) || '{}';
             const parsed = JSON.parse(raw);
             if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { files: {}, dirs: [] };
 
-            // New format: { files: { '/tmp/a': '...' }, dirs: ['/tmp/x'] }
             if (parsed.files && typeof parsed.files === 'object' && !Array.isArray(parsed.files)) {
                 const files = {};
                 for (const k of Object.keys(parsed.files)) {
@@ -652,7 +680,6 @@ const BOOT_SCRIPT: &str = r#"
                 return { files, dirs };
             }
 
-            // Legacy format: { name: content } -> migrate under default mount.
             const files = {};
             const base = persistDefaultMount();
             for (const name of Object.keys(parsed)) {
@@ -667,12 +694,53 @@ const BOOT_SCRIPT: &str = r#"
         return { files: {}, dirs: [] };
     }
 
+    function persistLoad() {
+        try {
+            const pvfs = persistPvfsLoadAll();
+            const files = {};
+            for (const k of Object.keys(pvfs)) {
+                if (k === PERSIST_DIRS_META) continue;
+                const guestPath = persistFromPvfsPath(k);
+                if (!persistIsValidPath(guestPath) || !persistPathMounted(guestPath)) continue;
+                files[guestPath] = String(pvfs[k] || '');
+            }
+            let dirs = [];
+            try {
+                const parsedDirs = JSON.parse(String(pvfs[PERSIST_DIRS_META] || '[]'));
+                if (Array.isArray(parsedDirs)) {
+                    dirs = persistNormalizeMounts(parsedDirs).filter(d => persistIsValidPath(d) && persistPathMounted(d));
+                }
+            } catch (e) {}
+            if (Object.keys(files).length || dirs.length) {
+                return { files, dirs };
+            }
+
+            const legacy = persistLoadLegacy();
+            if (Object.keys(legacy.files).length || legacy.dirs.length) {
+                persistSave(legacy);
+                try { localStorage.removeItem(PERSIST_KEY); } catch (e) {}
+                return legacy;
+            }
+        } catch (e) {}
+        return { files: {}, dirs: [] };
+    }
+
     function persistSave(state) {
         const safe = {
             files: (state && state.files && typeof state.files === 'object') ? state.files : {},
             dirs: Array.isArray(state && state.dirs) ? state.dirs : [],
         };
-        try { localStorage.setItem(PERSIST_KEY, JSON.stringify(safe)); } catch (e) {}
+        const pvfs = persistPvfsLoadAll();
+        for (const k of Object.keys(pvfs)) {
+            if (k === PERSIST_DIRS_META || k.startsWith(PERSIST_PVFS_PREFIX + '/')) delete pvfs[k];
+        }
+        for (const path of Object.keys(safe.files)) {
+            if (!persistIsValidPath(path) || !persistPathMounted(path)) continue;
+            pvfs[persistToPvfsPath(path)] = String(safe.files[path] || '');
+        }
+        const dirs = safe.dirs.filter(d => persistIsValidPath(d) && persistPathMounted(d));
+        if (dirs.length) pvfs[PERSIST_DIRS_META] = JSON.stringify(dirs);
+        persistPvfsSaveAll(pvfs);
     }
 
     function persistMountPaths() {
