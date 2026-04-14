@@ -1283,6 +1283,38 @@ const BOOT_SCRIPT: &str = r#"
             return n;
         }
 
+        function inferSourcePath(taskText) {
+            const t = String(taskText || '').toLowerCase();
+            if (t.includes('agent.js') || t.includes('model')) return '/bin/agent.js';
+            return '';
+        }
+
+        function inferTargetPath(taskText) {
+            const t = String(taskText || '').toLowerCase();
+            const m = t.match(/([a-z0-9._-]+\.js)\b/i);
+            if (m && m[1]) return '/bin/' + m[1];
+            if (t.includes('config.js') || t.includes('config')) return '/bin/config.js';
+            return '';
+        }
+
+        function repairPlaceholderPaths(cmdText, sourcePath, targetPath) {
+            let out = String(cmdText || '');
+            if (!out.includes('/path/')) return out;
+
+            if (sourcePath) {
+                out = out.replace(/\/path\/source-config\.js/g, sourcePath);
+                out = out.replace(/\/path\/source\.js/g, sourcePath);
+            }
+            if (targetPath) {
+                out = out.replace(/\/path\/config\.js/g, targetPath);
+                out = out.replace(/\/path\/target\.js/g, targetPath);
+            }
+
+            // Last resort: any remaining /path/<file>.js placeholder maps to inferred source.
+            if (sourcePath) out = out.replace(/\/path\/[^\s|;&]+\.js/g, sourcePath);
+            return out;
+        }
+
         const apiKey = await resolveApiKey();
         if (!apiKey) {
             term.write('\x1b[31mNo API key. Set OPENAI_API_KEY in Settings or write to /tmp/key.\x1b[0m\r\n');
@@ -1321,6 +1353,9 @@ const BOOT_SCRIPT: &str = r#"
         let lastCmd = '';
         let sameCmdStreak = 0;
         let agentExistsConfirmed = false;
+        const createIntent = /(create|build\s+new|new\s+\S+\.[a-z0-9]+|add\s+\S+\.[a-z0-9]+|write\s+\S+\.[a-z0-9]+)/i.test(task || '');
+        const inferredSourcePath = inferSourcePath(task);
+        const inferredTargetPath = inferTargetPath(task);
         const MAX = 10;
 
         term.write('\x1b[1;32m=== Agent: ' + task + ' ===\x1b[0m\r\n');
@@ -1394,26 +1429,39 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
-            // Check for DONE, but reject premature "missing" when task asks to create/build a new file.
+            // Check for DONE. For create-new-file tasks, auto-repair "DONE: missing" into scaffold creation.
             if (/^done/i.test(cmd)) {
                 if (/^done\s*:\s*missing/i.test(cmd)) {
-                    const createIntent = /(create|build\s+new|new\s+\S+\.[a-z0-9]+|add\s+\S+\.[a-z0-9]+|write\s+\S+\.[a-z0-9]+)/i.test(task || '');
                     const alreadyFound = /\bOut:\s*exists\b/i.test(history) || /\n\s*\|\s*exists\s*\n/i.test(history);
-                    if (createIntent || alreadyFound) {
+                    if ((createIntent || alreadyFound) && inferredTargetPath) {
+                        const autoCmd = 'echo "// auto-generated scaffold for ' + inferredTargetPath.split('/').pop() + '" > ' + inferredTargetPath;
+                        term.write('  \x1b[33m[auto-repair: source missing; creating scaffold target ' + inferredTargetPath + ']\x1b[0m\r\n');
+                        history += 'Result: AUTO-REPAIR — source missing on create task; created scaffold target at ' + inferredTargetPath + '.\n';
+                        cmd = autoCmd;
+                    } else if (createIntent || alreadyFound) {
                         term.write('  \x1b[31m[blocked: DONE: missing is invalid for this task]\x1b[0m\r\n');
                         history += 'Result: BLOCKED — task requires creating/editing a file; do not end with DONE: missing. Continue with concrete file commands.\n';
                         continue;
                     }
                 }
-                term.write('\r\n\x1b[1;32m=== ' + cmd + ' ===\x1b[0m\r\n');
-                term.write('Completed in ' + round + ' round(s).\r\n');
-                break;
+                if (/^done/i.test(cmd)) {
+                    term.write('\r\n\x1b[1;32m=== ' + cmd + ' ===\x1b[0m\r\n');
+                    term.write('Completed in ' + round + ' round(s).\r\n');
+                    break;
+                }
             }
 
             // Strip markdown fences
             cmd = cmd.replace(/^```(?:sh|bash)?\n?/, '').replace(/\n?```$/, '');
             // Take first line only
             cmd = cmd.split('\n')[0].trim();
+
+            const repairedCmd = repairPlaceholderPaths(cmd, inferredSourcePath, inferredTargetPath);
+            if (repairedCmd !== cmd) {
+                term.write('  \x1b[33m[auto-repair] ' + cmd + ' -> ' + repairedCmd + '\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: AUTO-REPAIR placeholder path -> ' + repairedCmd + '\n';
+                cmd = repairedCmd;
+            }
 
             // Debug visibility: show what the LLM suggested before validation/rewrites.
             if (cmd) {
