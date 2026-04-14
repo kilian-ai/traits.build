@@ -1672,6 +1672,34 @@ const BOOT_SCRIPT: &str = r#"
             return /(usage:|config|prompt|question|readline|std\.in|argv\.length|if\s*\(.*argv|out:\s+.*config|out:\s+.*usage)/.test(h);
         }
 
+        function hasUnbalancedQuotes(text) {
+            const s = String(text || '');
+            let single = false;
+            let double = false;
+            for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                const prev = i > 0 ? s[i - 1] : '';
+                if (ch === "'" && !double) single = !single;
+                else if (ch === '"' && !single && prev !== '\\') double = !double;
+            }
+            return single || double;
+        }
+
+        function validateShellCommand(cmdText) {
+            const cmd = String(cmdText || '');
+            const trimmed = cmd.trim();
+            if (!trimmed) return 'empty command';
+            if (/\r|\n/.test(cmd)) return 'multi-line commands are not allowed';
+            if (/\\\s*$/.test(trimmed)) return 'command ends with a shell continuation backslash';
+            if (hasUnbalancedQuotes(trimmed)) return 'command has unbalanced quotes';
+            if (/<<|`|\$\(/.test(trimmed)) return 'command uses unsupported shell quoting/substitution';
+            if (/\bsed\b[^\n]*\b[aci]\\\s*$/i.test(trimmed)) return 'busybox sed append/insert/change with trailing backslash will hang';
+            if (/\bsed\b[^\n]*['"][^'"]*[aci]\\['"]?/i.test(trimmed) && /\b[aci]\\\s*$/i.test(trimmed)) {
+                return 'busybox sed multi-line append/insert/change is unsafe here';
+            }
+            return '';
+        }
+
         function repairPlaceholderPaths(cmdText, sourcePath, targetPath) {
             let out = String(cmdText || '');
             if (!out.includes('/path/')) return out;
@@ -1722,6 +1750,7 @@ const BOOT_SCRIPT: &str = r#"
             '  ls /path                               — list directory\n' +
             '  echo "content" > /path/file             — create/overwrite file\n' +
             '  echo "content" >> /path/file            — append to file\n' +
+            '  printf "%s\\n" "line1" "line2" > /path/file — rewrite file safely\n' +
             '  sed -i \'s/old/new/\' /path/file         — edit in-place\n' +
             '  sed -i -e \'s/a/b/\' -e \'s/c/d/\' /path  — multi-edit\n' +
             '  head -n N /path/file                    — first N lines\n' +
@@ -1731,6 +1760,8 @@ const BOOT_SCRIPT: &str = r#"
             '  - ONE command per round (no ; or && chains except test -f pattern)\n' +
             '  - No pipelines (|). No 2>&1. No /proc/* or /sys/*\n' +
             '  - sed patterns must use exact text from the file, never placeholders or ellipsis\n' +
+            '  - NEVER use sed append/insert/change forms ending in a backslash (a\\, i\\, c\\); they hang this shell\n' +
+            '  - NEVER send commands with raw newlines, unmatched quotes, heredocs, backticks, or $(...)\n' +
             '  - NEVER create placeholder/dummy files as fallback when source not found\n' +
             '  - To create a new file, use echo or tee — one line at a time if needed\n' +
             '  - If output was truncated, use head/tail/sed -n to read specific line ranges\n' +
@@ -1994,6 +2025,16 @@ const BOOT_SCRIPT: &str = r#"
 
             if (!cmd) {
                 term.write('  \x1b[2m[empty response]\x1b[0m\r\n');
+                continue;
+            }
+
+            const shellValidationError = validateShellCommand(cmd);
+            if (shellValidationError) {
+                term.write('  \x1b[31m[blocked: unsafe shell command — ' + shellValidationError + ']\x1b[0m\r\n');
+                term.write('  \x1b[33m[tip: prefer single-line sed substitutions or printf "%s\\n" ... > /path/file for rewrites]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — unsafe shell command (' + shellValidationError + '). '
+                    + 'Use a single-line command with balanced quotes and no continuation backslash.\n';
+                blockedTotal += 1;
                 continue;
             }
 

@@ -883,6 +883,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - `www.linux` terminal keeps persistent command history in JS (`localStorage`) and maps ArrowUp/ArrowDown directly, instead of replaying shell-history injection commands at boot.
 - `www.linux` clipboard behavior must preserve host integration on macOS: `Cmd+C` copies selected terminal text; `Cmd+V` pastes clipboard text into guest stdin.
 - `www.linux` persist now stores file entries in PVFS (`traits.pvfs`) using exact absolute guest paths (e.g. `/tmp/foo.txt`) with no namespace prefix. Legacy prefixed keys (`linux-wasm.persist/...`) are read for migration and rewritten to direct-path keys on next save.
+- `www.linux` shell-agent commands must reject raw multi-line shell input, trailing continuation backslashes, unmatched quotes, heredocs, and BusyBox `sed` append/insert/change forms (`a\`, `i\`, `c\`). These leave hush in continuation mode and make the agent appear hung. Prefer single-line `sed s///` or `printf "%s\n" ... > file` rewrites.
 
 **Relay endpoints** (registered in `sys.serve`):
 ```
