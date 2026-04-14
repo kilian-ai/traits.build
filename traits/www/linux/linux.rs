@@ -589,11 +589,14 @@ const BOOT_SCRIPT: &str = r#"
     let agentCapture = null;      // function(data) callback during command capture
     let agentRunning = false;     // true while agent loop is active
     let agentSuppressOutput = false; // suppress shell echo during agent command exec
+    let autoFixOnErrorEnabled = true;
+    let autoFixInFlight = false;
     let shellRelayRunning = false;
     let shellRelayStop = false;
     let shellRelayCode = '';
     const SHELL_RELAY_URL = 'https://relay.traits.build';
     const SHELL_RELAY_CODE_KEY = 'linux-wasm.shell-relay.code';
+    const AUTOFIX_SENTINEL_RE = /__AFXEC:(-?\d+)__/;
 
     function parseAgentTask(cmd) {
         const trimmed = (cmd || '').trim();
@@ -609,6 +612,82 @@ const BOOT_SCRIPT: &str = r#"
             task = task.slice(1, -1).trim();
         }
         return task;
+    }
+
+    function parseTraitCall(cmd) {
+        const trimmed = (cmd || '').trim();
+        let body = null;
+        if (trimmed === 'traits-call' || trimmed === 'trait') body = '';
+        else if (trimmed.startsWith('traits-call ')) body = trimmed.slice('traits-call '.length).trim();
+        else if (trimmed.startsWith('trait ')) body = trimmed.slice('trait '.length).trim();
+        else if (trimmed.startsWith('qjs /bin/traits-call.js ')) body = trimmed.slice('qjs /bin/traits-call.js '.length).trim();
+        else if (trimmed.startsWith('/bin/traits-call.js ')) body = trimmed.slice('/bin/traits-call.js '.length).trim();
+        else return null;
+
+        if ((body.startsWith('"') && body.endsWith('"')) || (body.startsWith("'") && body.endsWith("'"))) {
+            body = body.slice(1, -1).trim();
+        }
+        return body;
+    }
+
+    async function runTraitCallCommand(cmd) {
+        const body = parseTraitCall(cmd);
+        if (body === null) return false;
+
+        if (!body) {
+            term.write('Usage: qjs /bin/traits-call.js <trait.path> [args-json]\r\n');
+            term.write('       /bin/traits-call.js <trait.path> [args-json]\r\n');
+            term.write('       traits-call <trait.path> [args-json]\r\n');
+            term.write('Examples:\r\n');
+            term.write('  qjs /bin/traits-call.js sys.version\r\n');
+            term.write('  qjs /bin/traits-call.js sys.registry ["count"]\r\n');
+            term.write('  traits-call kernel.call ["sys.version"]\r\n');
+            term.write('Note: uses <trait>@wasm first, then falls back to <trait>.\r\n');
+            return true;
+        }
+
+        const firstSpace = body.indexOf(' ');
+        const rawPath = (firstSpace === -1 ? body : body.slice(0, firstSpace)).trim();
+        const rawArgs = (firstSpace === -1 ? '' : body.slice(firstSpace + 1).trim());
+        if (!rawPath) {
+            term.write('\x1b[31m[traits-call] missing trait path\x1b[0m\r\n');
+            return true;
+        }
+
+        let args = [];
+        if (rawArgs) {
+            try {
+                const parsed = JSON.parse(rawArgs);
+                args = Array.isArray(parsed) ? parsed : [parsed];
+            } catch (e) {
+                term.write('\x1b[31m[traits-call] args must be valid JSON (prefer a JSON array)\x1b[0m\r\n');
+                return true;
+            }
+        }
+
+        const sdk = window._traitsSDK;
+        if (!sdk || typeof sdk.call !== 'function') {
+            term.write('\x1b[31m[traits-call] SDK not ready\x1b[0m\r\n');
+            return true;
+        }
+
+        const wasmPath = rawPath.includes('@wasm') ? rawPath : (rawPath + '@wasm');
+        try {
+            let result;
+            let usedPath = wasmPath;
+            try {
+                result = await sdk.call(wasmPath, args);
+            } catch (e) {
+                usedPath = rawPath;
+                result = await sdk.call(rawPath, args);
+            }
+            term.write('\x1b[2m[traits-call] ' + usedPath + '\x1b[0m\r\n');
+            const printed = (typeof result === 'string') ? result : JSON.stringify(result, null, 2);
+            term.write((printed || 'null') + '\r\n');
+        } catch (e) {
+            term.write('\x1b[31m[traits-call] ' + (e && e.message ? e.message : String(e)) + '\x1b[0m\r\n');
+        }
+        return true;
     }
 
     const PERSIST_KEY = 'linux-wasm.persist.files';
@@ -1319,8 +1398,125 @@ const BOOT_SCRIPT: &str = r#"
         return true;
     }
 
+    async function executeWithAutoFixMonitor(cmd) {
+        const rawCmd = String(cmd || '').trim();
+        if (!rawCmd || agentRunning || autoFixInFlight || !autoFixOnErrorEnabled) return false;
+        autoFixInFlight = true;
+
+        const makeTask = (failedCmd, errOut) => {
+            const clipped = String(errOut || '').slice(-6000);
+            return [
+                'A shell command failed. Fix it by running the correct command immediately.',
+                'Requirements:',
+                '- First action MUST be one concrete correction command.',
+                '- Do not explain only; execute the fix.',
+                '- Use the exact files/paths shown in error output.',
+                '',
+                'Failed command:',
+                failedCmd,
+                '',
+                'Captured shell output:',
+                clipped || '(no output)'
+            ].join('\n');
+        };
+
+        return new Promise((resolve) => {
+            let finished = false;
+            let buffer = '';
+            const previousCapture = agentCapture;
+
+            const cleanup = () => {
+                if (agentCapture === capture) agentCapture = previousCapture;
+                autoFixInFlight = false;
+            };
+
+            const done = async (exitCode, output) => {
+                if (finished) return;
+                finished = true;
+                cleanup();
+
+                if (exitCode !== 0 && !agentRunning) {
+                    term.write('\x1b[33m[auto-fix] command failed (exit ' + exitCode + '), handing off to agent...\x1b[0m\r\n');
+                    try {
+                        await runJSAgent(makeTask(rawCmd, output));
+                    } catch (e) {
+                        term.write('\x1b[31m[auto-fix] agent handoff failed: '
+                            + (e && e.message ? e.message : String(e)) + '\x1b[0m\r\n');
+                    }
+                }
+                resolve(true);
+            };
+
+            const capture = (data) => {
+                const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+                if (previousCapture) previousCapture(data);
+                buffer += text;
+                const m = buffer.match(AUTOFIX_SENTINEL_RE);
+                if (!m) return;
+
+                const exitCode = parseInt(m[1], 10);
+                const before = buffer.slice(0, m.index)
+                    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+                    .replace(/\r/g, '');
+                const lines = before.split('\n');
+                const output = lines.slice(1)
+                    .filter(l => !KERNEL_DEBUG_RE.test(String(l || '').trim()))
+                    .join('\n')
+                    .trim();
+                done(Number.isFinite(exitCode) ? exitCode : -1, output);
+            };
+
+            agentCapture = capture;
+            os.key_input(rawCmd + '; printf "\\n__AFXEC:%s__\\n" "$?"\r');
+
+            setTimeout(() => {
+                if (!finished) {
+                    cleanup();
+                    resolve(true);
+                }
+            }, 35000);
+        });
+    }
+
     let consoleFilterCarry = '';
     const KERNEL_NOISE_RE = /^\[(Main|Runner)[^\]]*\]:/;
+    const RCU_STALL_RE = /\b(?:a?grcu|rcu(?:_sched|_seched|_preempt)?)[^\n]*\b(?:stall|stnall|stnalls?)\b/i;
+    let lastStallDiagMs = 0;
+
+    function captureFreezeDiagnostics(reason, kernelLine) {
+        const now = Date.now();
+        // Avoid flooding diagnostics if the same stall line repeats quickly.
+        if (now - lastStallDiagMs < 5000) return;
+        lastStallDiagMs = now;
+        try {
+            const proxy = (typeof NetProxy !== 'undefined' && NetProxy.getStats) ? NetProxy.getStats() : null;
+            const hostNet = (os && os.getNetworkMetrics) ? os.getNetworkMetrics() : null;
+            const runtime = (os && os.getRuntimeMetrics) ? os.getRuntimeMetrics() : null;
+            const diag = {
+                ts: new Date(now).toISOString(),
+                reason: String(reason || 'unknown'),
+                kernelLine: String(kernelLine || ''),
+                mode: (typeof NetProxy !== 'undefined' && NetProxy.getMode) ? NetProxy.getMode() : 'unknown',
+                proxy,
+                hostNet,
+                runtime,
+                agentRunning: !!agentRunning,
+            };
+            if (!window._linuxFreezeDiagnostics) window._linuxFreezeDiagnostics = [];
+            window._linuxFreezeDiagnostics.push(diag);
+            if (window._linuxFreezeDiagnostics.length > 20) window._linuxFreezeDiagnostics.shift();
+            console.error('[freeze-diag]', diag);
+            term.write('\x1B[33m[freeze-diag] ' + reason + ' | mode=' + diag.mode
+                + ' cpu=' + (runtime ? runtime.cpuCount : '?')
+                + ' tasks=' + (runtime ? runtime.taskCount : '?')
+                + ' cb_age=' + (runtime ? Math.round(runtime.lastHostCallbackAgeMs) : '?') + 'ms\x1B[0m\r\n');
+            if (kernelLine) {
+                term.write('\x1B[33m[freeze-diag] kernel: ' + String(kernelLine).slice(0, 160) + '\x1B[0m\r\n');
+            }
+        } catch (e) {
+            console.warn('[freeze-diag] failed to capture diagnostics', e);
+        }
+    }
 
     function writeConsoleFiltered(data) {
         const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
@@ -1333,6 +1529,12 @@ const BOOT_SCRIPT: &str = r#"
             const line = combined.slice(0, nl + 1);
             combined = combined.slice(nl + 1);
             const trimmed = line.replace(/\r?\n$/, '');
+            if (AUTOFIX_SENTINEL_RE.test(trimmed)) {
+                continue;
+            }
+            if (RCU_STALL_RE.test(trimmed)) {
+                captureFreezeDiagnostics('kernel-rcu-stall', trimmed);
+            }
             if (KERNEL_NOISE_RE.test(trimmed)) {
                 console.log('[linux/kernel]', trimmed);
             } else {
@@ -1344,6 +1546,9 @@ const BOOT_SCRIPT: &str = r#"
         if (combined.startsWith('[')) {
             consoleFilterCarry = combined;
         } else if (combined) {
+            if (AUTOFIX_SENTINEL_RE.test(combined)) {
+                return;
+            }
             term.write(combined);
         }
     }
@@ -1385,6 +1590,7 @@ const BOOT_SCRIPT: &str = r#"
             try {
                 const proxy = (typeof NetProxy !== 'undefined' && NetProxy.getStats) ? NetProxy.getStats() : null;
                 const host = (os && os.getNetworkMetrics) ? os.getNetworkMetrics() : null;
+                const runtime = (os && os.getRuntimeMetrics) ? os.getRuntimeMetrics() : null;
                 if (!proxy && !host) return;
 
                 const mode = (typeof NetProxy !== 'undefined' && NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
@@ -1405,6 +1611,13 @@ const BOOT_SCRIPT: &str = r#"
                 if (line !== lastNetLine) {
                     console.log(line);
                     lastNetLine = line;
+                }
+
+                // Watchdog: if host callbacks stop for too long while tasks are alive,
+                // capture diagnostics before a full freeze becomes unrecoverable.
+                if (runtime && runtime.taskCount > 0 && runtime.lastHostCallbackAgeMs > 15000) {
+                    captureFreezeDiagnostics('host-callback-starvation',
+                        'last_callback=' + runtime.lastHostCallbackMethod + ' age_ms=' + Math.round(runtime.lastHostCallbackAgeMs));
                 }
             } catch (e) {
                 // Keep runtime robust even if metrics collection fails.
@@ -1685,6 +1898,44 @@ const BOOT_SCRIPT: &str = r#"
             return single || double;
         }
 
+        function hasEscapedSingleQuoteInsideSingleQuotes(text) {
+            const s = String(text || '');
+            let single = false;
+            let double = false;
+            for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                const prev = i > 0 ? s[i - 1] : '';
+                if (ch === "'" && !double) {
+                    // In POSIX shells, \' is not valid inside single quotes and can leave hush in continuation mode.
+                    if (single && prev === '\\') return true;
+                    single = !single;
+                    continue;
+                }
+                if (ch === '"' && !single && prev !== '\\') double = !double;
+            }
+            return false;
+        }
+
+        function autoRepairSedEscapedSingleQuote(cmdText) {
+            const cmd = String(cmdText || '');
+            if (!/^\s*sed\b/i.test(cmd)) return '';
+            if (!hasEscapedSingleQuoteInsideSingleQuotes(cmd)) return '';
+            const m = cmd.match(/^(\s*sed\b[^'"]*)'([^']*\\'[^']*)'([\s\S]*)$/i);
+            if (!m) return '';
+
+            const before = m[1] || '';
+            const body = m[2] || '';
+            const after = m[3] || '';
+            const normalized = body
+                .replace(/\\'/g, "'")
+                .replace(/\\/g, '\\\\')
+                .replace(/"/g, '\\"')
+                .replace(/\$/g, '\\$')
+                .replace(/`/g, '\\`');
+
+            return before + '"' + normalized + '"' + after;
+        }
+
         function validateShellCommand(cmdText) {
             const cmd = String(cmdText || '');
             const trimmed = cmd.trim();
@@ -1692,6 +1943,9 @@ const BOOT_SCRIPT: &str = r#"
             if (/\r|\n/.test(cmd)) return 'multi-line commands are not allowed';
             if (/\\\s*$/.test(trimmed)) return 'command ends with a shell continuation backslash';
             if (hasUnbalancedQuotes(trimmed)) return 'command has unbalanced quotes';
+            if (hasEscapedSingleQuoteInsideSingleQuotes(trimmed)) {
+                return "command uses \\' inside single-quoted text (invalid in BusyBox hush)";
+            }
             if (/<<|`|\$\(/.test(trimmed)) return 'command uses unsupported shell quoting/substitution';
             if (/\bsed\b[^\n]*\b[aci]\\\s*$/i.test(trimmed)) return 'busybox sed append/insert/change with trailing backslash will hang';
             if (/\bsed\b[^\n]*['"][^'"]*[aci]\\['"]?/i.test(trimmed) && /\b[aci]\\\s*$/i.test(trimmed)) {
@@ -1778,6 +2032,7 @@ const BOOT_SCRIPT: &str = r#"
                 + '- no trailing continuation backslash\n'
                 + '- no heredocs, no backticks, no $()\n'
                 + '- no sed a\\, i\\, or c\\ forms\n'
+                + '- never use \\' inside single-quoted shell strings; use double quotes when needed\n'
                 + '- prefer printf "%s\\n" ... > file for larger rewrites\n'
                 + '- prefer single-line sed -i s/// edits for small exact changes\n'
                 + '- preserve the user intent\n';
@@ -2082,6 +2337,13 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
+            const autoRepairedSedQuote = autoRepairSedEscapedSingleQuote(cmd);
+            if (autoRepairedSedQuote && autoRepairedSedQuote !== cmd) {
+                term.write('  \x1b[33m[auto-repair sed quote] ' + cmd + ' -> ' + autoRepairedSedQuote + '\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: AUTO-REPAIR sed quote escape -> ' + autoRepairedSedQuote + '\n';
+                cmd = autoRepairedSedQuote;
+            }
+
             let shellValidationError = validateShellCommand(cmd);
             if (shellValidationError) {
                 const repairedUnsafe = await rewriteUnsafeCommand(cmd, shellValidationError, task, history, inferredSourcePath, inferredTargetPath);
@@ -2172,10 +2434,10 @@ const BOOT_SCRIPT: &str = r#"
             term.write('  \x1b[2m[exit: ' + exitCode + ']\x1b[0m\r\n\r\n');
 
             // Build history for next round.
-            // Cap output per entry to 1500 chars so the model can see file contents.
-            const truncOut = output.length > 1500 ? output.slice(0, 1500) + '\n...(truncated, ' + output.split('\n').length + ' lines total)' : output;
+            // Keep full command output in model history to avoid losing file content.
+            const fullOut = output;
             const thinkEntry = think ? 'Think: ' + think + '\n' : '';
-            history += thinkEntry + 'Cmd: ' + cmd + '\nExit: ' + exitCode + '\nOut: ' + truncOut + '\n';
+            history += thinkEntry + 'Cmd: ' + cmd + '\nExit: ' + exitCode + '\nOut: ' + fullOut + '\n';
 
             // Rolling window: keep only the last 10 history entries so the
             // LLM always sees recent results instead of getting lost in a
@@ -2380,6 +2642,7 @@ const BOOT_SCRIPT: &str = r#"
                         term.write('\r\nUsage: agent <task>\r\n');
                         term.write('       qjs /bin/agent.js <task>\r\n');
                         term.write('       agent.sh <task>\r\n');
+                        term.write('       qjs /bin/traits-call.js <trait.path> [args-json]\r\n');
                         os.key_input('\r');
                     } else if (agentRunning) {
                         term.write('\r\n\x1b[33mAgent already running.\x1b[0m\r\n');
@@ -2416,6 +2679,22 @@ const BOOT_SCRIPT: &str = r#"
                     });
                 }
 
+                // ── Intercept qjs-style wasm trait call commands ──
+                if (!intercepted) {
+                    const traitCallBody = parseTraitCall(cmd);
+                    if (traitCallBody !== null) {
+                        intercepted = true;
+                        os.key_input('\x15'); // Clear current input
+                        term.write('\r\n');
+                        runTraitCallCommand(cmd).then(() => {
+                            os.key_input('\r');
+                        }).catch((err) => {
+                            term.write('\x1b[31m[traits-call] error: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
+                            os.key_input('\r');
+                        });
+                    }
+                }
+
                 // ── Intercept curl initramfs://... (local-only, no helper server) ──
                 if (!intercepted && /^curl\b/i.test(cmd) && /initramfs:\/\//i.test(cmd)) {
                     intercepted = true;
@@ -2437,6 +2716,20 @@ const BOOT_SCRIPT: &str = r#"
                 // Track file writes via redirect (echo/printf > /path).
                 if (!intercepted) {
                     persistTrackRedirect(cmd);
+                }
+
+                // Experimental mode: if a normal shell command fails (non-zero exit),
+                // auto-handoff failed command + output to runJSAgent for correction.
+                if (!intercepted && cmd && autoFixOnErrorEnabled && !agentRunning && !autoFixInFlight) {
+                    intercepted = true;
+                    os.key_input('\x15'); // Clear current input before monitored execution
+                    executeWithAutoFixMonitor(cmd).then(() => {
+                        if (!agentRunning) os.key_input('\r');
+                    }).catch((err) => {
+                        term.write('\x1b[31m[auto-fix] monitor error: '
+                            + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
+                        if (!agentRunning) os.key_input('\r');
+                    });
                 }
 
                 currentInput = '';

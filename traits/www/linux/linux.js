@@ -29,6 +29,11 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
     pollMaxMs: 0,
   };
 
+  // Scheduler/runtime heartbeat metrics for freeze diagnostics.
+  let lastHostCallbackAtMs = performance.now();
+  let lastHostCallbackMethod = 'init';
+  let hostCallbackCount = 0;
+
   const text_decoder = new TextDecoder("utf-8");
   const text_encoder = new TextEncoder();
 
@@ -301,6 +306,9 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
 
     worker.onmessage = (message_event) => {
       const data = message_event.data;
+      lastHostCallbackAtMs = performance.now();
+      lastHostCallbackMethod = data && data.method ? data.method : 'unknown';
+      hostCallbackCount++;
       message_callbacks[data.method](data, worker);
     };
 
@@ -379,6 +387,19 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
         ...netMetrics,
         recvAvgMs,
         pollAvgMs,
+      };
+    },
+
+    getRuntimeMetrics: () => {
+      const now = performance.now();
+      return {
+        cpuCount: Object.keys(cpus).length,
+        taskCount: Object.keys(tasks).length,
+        pendingConsoleRead: !!pendingConsoleRead,
+        inputBufferBytes: (input_buffer && input_buffer.byteLength) ? input_buffer.byteLength : 0,
+        hostCallbackCount,
+        lastHostCallbackMethod,
+        lastHostCallbackAgeMs: Math.max(0, now - lastHostCallbackAtMs),
       };
     }
   };
