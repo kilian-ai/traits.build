@@ -1067,6 +1067,67 @@ const BOOT_SCRIPT: &str = r#"
         term.write('[persist] unknown command: ' + sub + '\r\n');
     }
 
+    function shQuote(s) {
+        return "'" + String(s).replace(/'/g, "'\\''") + "'";
+    }
+
+    async function runInitramfsCurlCommand(cmd) {
+        const trimmed = String(cmd || '').trim();
+        if (!/^curl\b/i.test(trimmed) || !/initramfs:\/\//i.test(trimmed)) return false;
+
+        const methodMatch = trimmed.match(/(?:^|\s)-X\s+([A-Za-z]+)/);
+        const method = (methodMatch ? methodMatch[1] : 'GET').toUpperCase();
+
+        const dataMatch = trimmed.match(/(?:--data-binary|-d)\s+(?:'([\s\S]*?)'|"([\s\S]*?)"|([^\s]+))/);
+        const payload = dataMatch ? (dataMatch[1] || dataMatch[2] || dataMatch[3] || '') : '';
+
+        const urlMatch = trimmed.match(/initramfs:\/\/[^\s]+/i);
+        if (!urlMatch) {
+            term.write('[initramfs] usage: curl initramfs:///path\r\n');
+            term.write('[initramfs] write: curl -X PUT initramfs:///path --data-binary "content"\r\n');
+            return true;
+        }
+
+        const rawUrl = urlMatch[0];
+        let path = '';
+        const readQuery = rawUrl.match(/^initramfs:\/\/read\?path=(.+)$/i);
+        if (readQuery) {
+            path = decodeURIComponent(readQuery[1]);
+        } else {
+            path = rawUrl.replace(/^initramfs:\/\//i, '');
+            if (!path.startsWith('/')) path = '/' + path;
+            path = decodeURIComponent(path);
+        }
+
+        if (!path || path === '/') {
+            term.write('[initramfs] missing path\r\n');
+            return true;
+        }
+
+        if (method === 'GET') {
+            const r = await shellExec('cat ' + shQuote(path));
+            if (r.output) term.write(r.output + '\r\n');
+            if (r.exitCode !== 0) term.write('[initramfs] read failed (exit ' + r.exitCode + ')\r\n');
+            return true;
+        }
+
+        if (method === 'PUT' || method === 'POST' || method === 'PATCH') {
+            const b64 = btoa(unescape(encodeURIComponent(payload)));
+            const cmdWrite = "echo '" + b64 + "' > /tmp/.initramfs_curl && base64 -d /tmp/.initramfs_curl > " + shQuote(path) + " && rm /tmp/.initramfs_curl";
+            const r = await shellExec(cmdWrite);
+            if (r.exitCode === 0) {
+                term.write('[initramfs] wrote ' + path + ' (' + payload.length + ' bytes)\r\n');
+            } else {
+                term.write('[initramfs] write failed (exit ' + r.exitCode + ')\r\n');
+                if (r.output) term.write(r.output + '\r\n');
+            }
+            return true;
+        }
+
+        term.write('[initramfs] unsupported method: ' + method + '\r\n');
+        return true;
+    }
+
     let consoleFilterCarry = '';
     const KERNEL_NOISE_RE = /^\[(Main|Runner)[^\]]*\]:/;
 
@@ -1860,6 +1921,19 @@ const BOOT_SCRIPT: &str = r#"
                         os.key_input('\r');
                     }).catch((err) => {
                         term.write('\x1b[31m[persist] error: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
+                        os.key_input('\r');
+                    });
+                }
+
+                // ── Intercept curl initramfs://... (local-only, no helper server) ──
+                if (!intercepted && /^curl\b/i.test(cmd) && /initramfs:\/\//i.test(cmd)) {
+                    intercepted = true;
+                    os.key_input('\x15'); // Clear current input
+                    term.write('\r\n');
+                    runInitramfsCurlCommand(cmd).then(() => {
+                        os.key_input('\r');
+                    }).catch((err) => {
+                        term.write('\x1b[31m[initramfs] error: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
                         os.key_input('\r');
                     });
                 }
