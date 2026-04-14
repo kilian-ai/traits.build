@@ -1333,8 +1333,17 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
-            // Check for DONE
+            // Check for DONE, but reject premature "missing" when task asks to create/build a new file.
             if (/^done/i.test(cmd)) {
+                if (/^done\s*:\s*missing/i.test(cmd)) {
+                    const createIntent = /(create|build\s+new|new\s+\S+\.[a-z0-9]+|add\s+\S+\.[a-z0-9]+|write\s+\S+\.[a-z0-9]+)/i.test(task || '');
+                    const alreadyFound = /\bOut:\s*exists\b/i.test(history) || /\n\s*\|\s*exists\s*\n/i.test(history);
+                    if (createIntent || alreadyFound) {
+                        term.write('  \x1b[31m[blocked: DONE: missing is invalid for this task]\x1b[0m\r\n');
+                        history += 'Result: BLOCKED — task requires creating/editing a file; do not end with DONE: missing. Continue with concrete file commands.\n';
+                        continue;
+                    }
+                }
                 term.write('\r\n\x1b[1;32m=== ' + cmd + ' ===\x1b[0m\r\n');
                 term.write('Completed in ' + round + ' round(s).\r\n');
                 break;
@@ -1353,11 +1362,23 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
-            // Block pipelines to avoid vfork slot exhaustion ("Resource busy").
-            if (cmd.includes('|')) {
-                term.write('  \x1b[31m[blocked: pipeline commands exhaust process slots — split into single commands]\x1b[0m\r\n');
-                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — no pipelines. Use one command per round (cat, then sed -i).\n';
-                console.log('[agent] Blocked pipeline command:', cmd);
+            // Rewrite common low-risk pipelines and block only complex multi-pipe commands.
+            const pipeCount = (cmd.match(/\|/g) || []).length;
+            if (pipeCount > 0) {
+                const catSed = cmd.match(/^cat\s+(\S+)\s*\|\s*sed\s+(.+)$/);
+                if (catSed) {
+                    const src = catSed[1];
+                    const sedArgs = catSed[2];
+                    cmd = 'sed ' + sedArgs + ' ' + src;
+                    console.log('[agent] Rewrote cat|sed pipeline to:', cmd);
+                }
+            }
+
+            const postRewritePipeCount = (cmd.match(/\|/g) || []).length;
+            if (postRewritePipeCount > 1) {
+                term.write('  \x1b[31m[blocked: complex pipeline causes Resource busy — use simpler single-step commands]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — complex pipeline. Use simple rounds: test -f, cat file, sed -i edit, verify.\n';
+                console.log('[agent] Blocked complex pipeline command:', cmd);
                 continue;
             }
 
