@@ -619,6 +619,20 @@ const BOOT_SCRIPT: &str = r#"
         return p.startsWith('/') ? persistNormalizePath(p) : (persistDefaultMount() + '/' + p);
     }
 
+    function persistIsValidPath(path) {
+        const p = persistNormalizePath(path);
+        if (!p) return false;
+        if (/['"\\;`\r\n]/.test(p)) return false;
+        return /^\/[A-Za-z0-9._\-/+:@=]*$/.test(p);
+    }
+
+    function persistPathMounted(path) {
+        const p = persistNormalizePath(path);
+        if (!p) return false;
+        const mounts = persistMountPaths();
+        return mounts.some(m => p === m || p.startsWith(m + '/'));
+    }
+
     function persistLoad() {
         try {
             const raw = localStorage.getItem(PERSIST_KEY) || '{}';
@@ -630,11 +644,11 @@ const BOOT_SCRIPT: &str = r#"
                 const files = {};
                 for (const k of Object.keys(parsed.files)) {
                     const pk = persistNormalizePath(k);
-                    if (!pk) continue;
+                    if (!persistIsValidPath(pk) || !persistPathMounted(pk)) continue;
                     files[pk] = String(parsed.files[k] || '');
                 }
                 const dirsRaw = Array.isArray(parsed.dirs) ? parsed.dirs : [];
-                const dirs = persistNormalizeMounts(dirsRaw);
+                const dirs = persistNormalizeMounts(dirsRaw).filter(d => persistIsValidPath(d) && persistPathMounted(d));
                 return { files, dirs };
             }
 
@@ -644,7 +658,9 @@ const BOOT_SCRIPT: &str = r#"
             for (const name of Object.keys(parsed)) {
                 const rel = String(name || '').replace(/^\/+/, '');
                 if (!rel) continue;
-                files[base + '/' + rel] = String(parsed[name] || '');
+                const migrated = base + '/' + rel;
+                if (!persistIsValidPath(migrated) || !persistPathMounted(migrated)) continue;
+                files[migrated] = String(parsed[name] || '');
             }
             return { files, dirs: [] };
         } catch (e) {}
@@ -769,37 +785,15 @@ const BOOT_SCRIPT: &str = r#"
             const filesResult = await shellExec('find ' + mountArgs + ' -type f');
             if (filesResult.crashed) return;
             const filePaths = filesResult.exitCode === 0
-                ? filesResult.output.split('\n').map(f => f.trim()).filter(Boolean)
+                ? filesResult.output.split('\n').map(f => persistNormalizePath(f.trim())).filter(f => persistIsValidPath(f) && persistPathMounted(f))
                 : [];
 
             const newFiles = {};
             if (filePaths.length) {
-                // Build single command: output each file with delimiters
-                const readParts = filePaths.map(f =>
-                    "printf '\\n===PF===' ; printf '%s' '" + shellSingleQuote(f) + "' ; printf '\\n' ; cat '" + shellSingleQuote(f) + "' ; printf '\\n===PE===\\n'"
-                );
-                const readResult = await shellExec(readParts.join(' ; '));
-                if (!readResult.crashed && readResult.exitCode === 0) {
-                    const segments = readResult.output.split('===PF===');
-                    for (const seg of segments) {
-                        if (!seg.trim()) continue;
-                        const endIdx = seg.indexOf('===PE===');
-                        if (endIdx < 0) continue;
-                        const block = seg.slice(0, endIdx);
-                        const nl = block.indexOf('\n');
-                        if (nl < 0) continue;
-                        const path = persistNormalizePath(block.slice(0, nl).trim());
-                        const content = block.slice(nl + 1);
-                        // Trim trailing newline added by printf wrapper
-                        if (path) newFiles[path] = content.replace(/\n$/, '');
-                    }
-                } else {
-                    // Fall back: read files individually
-                    for (const f of filePaths) {
-                        const r = await shellExec("cat '" + shellSingleQuote(f) + "'");
-                        if (r.crashed) break;
-                        if (r.exitCode === 0) newFiles[persistNormalizePath(f)] = r.output;
-                    }
+                for (const f of filePaths) {
+                    const r = await shellExec("cat '" + shellSingleQuote(f) + "'");
+                    if (r.crashed) break;
+                    if (r.exitCode === 0) newFiles[f] = r.output;
                 }
             }
 
@@ -1106,6 +1100,8 @@ const BOOT_SCRIPT: &str = r#"
                     console.warn('[agent] shellExec TIMEOUT for:', cmd, 'buffer:', buffer.slice(0, 500));
                     agentCapture = null;
                     agentSuppressOutput = false;
+                    try { os.key_input('\x03'); } catch (e) {}
+                    try { os.key_input('\r'); } catch (e) {}
                     resolve({ output: '[timeout after 30s]', exitCode: -1 });
                 }
             }, EXEC_TIMEOUT);
@@ -1166,7 +1162,9 @@ const BOOT_SCRIPT: &str = r#"
             '7) Read /proc files: while IFS= read -r l; do echo "$l"; done < /proc/meminfo ' +
             '8) Write file: Use echo "content" with output redirect: echo "text" > /path/file ' +
             '9) Create dir: cannot mkdir (forks). Use available dirs only. ' +
-            '10) NEVER use: ls, cat, grep, find, head, tail, awk, sed, wc, sort, mkdir, rm, cp, mv, date, uname, curl, wget, du. ' +
+            '10) If a requested file is missing, reply DONE: missing and stop. Do NOT probe alternative files. ' +
+            '11) Avoid /proc/self/*, /proc/mounts, and status-like proc files; they may hang in this kernel. ' +
+            '12) NEVER use: ls, cat, grep, find, head, tail, awk, sed, wc, sort, mkdir, rm, cp, mv, date, uname, curl, wget, du. ' +
             '11) NEVER use $(...) or backticks — command substitution forks a subshell.';
 
         let history = '';
