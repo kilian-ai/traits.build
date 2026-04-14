@@ -1330,9 +1330,9 @@ const BOOT_SCRIPT: &str = r#"
             cmd = cmd.split('\n')[0].trim();
 
             // Rewrite known hanging pattern produced by LLM into a safer one-liner.
-            const whileRead = cmd.match(/^while\s+IFS=\s*read\s+-r\s+\w+;\s*do\s*echo\s+"\$\w+";\s*done\s*<\s*(\/\S+)$/);
-            if (whileRead) {
-                const p = whileRead[1];
+            const whileReadPath = cmd.match(/while\s+IFS=\s*read\s+-r\s+\w+[\s\S]*<\s*(\/\S+)\s*$/);
+            if (whileReadPath) {
+                const p = whileReadPath[1];
                 if (p.startsWith('/proc/')) {
                     cmd = "echo unsupported_proc_path";
                 } else {
@@ -1358,6 +1358,12 @@ const BOOT_SCRIPT: &str = r#"
             if (crashed) {
                 term.write('  \x1b[1;31m[Kernel crashed — reboot required]\x1b[0m\r\n');
                 term.write('  \x1b[2mPress ⟳ Reboot to restart the kernel.\x1b[0m\r\n');
+                break;
+            }
+
+            // Timeout means shell is likely wedged; stop to avoid repeated hangs.
+            if (exitCode === -1) {
+                term.write('  \x1b[33m[command timed out, stopping agent]\x1b[0m\r\n');
                 break;
             }
 
