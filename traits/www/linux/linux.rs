@@ -1614,6 +1614,16 @@ const BOOT_SCRIPT: &str = r#"
 
         const SYS = 'You are a shell agent inside BusyBox Linux/WASM (hush shell).\n' +
             'Process slots are limited. No pipelines, no $(...), no backticks, no while/for loops.\n\n' +
+            'YOU MUST TAKE THIS TASK SERIOUSLY. Failing or creating dummy placeholders is unacceptable.\n\n' +
+            'FILE SEARCH PROTOCOL:\n' +
+            '  When looking for a required source file:\n' +
+            '  1. Search in standard script locations: /bin/, /usr/bin/, /usr/local/bin/\n' +
+            '  2. Check current working directory (pwd)\n' +
+            '  3. Check root directory (/) for root-level scripts\n' +
+            '  4. Check /home/ or /root/ for user scripts\n' +
+            '  5. NEVER create a dummy/placeholder file if source is not found\n' +
+            '  6. If source does not exist, state this clearly and stop\n' +
+            '  7. Verify file contents with cat BEFORE claiming success\n\n' +
             'RESPONSE FORMAT (every round):\n' +
             'THINK: <1-2 sentences: what you learned, what you plan to do next, why>\n' +
             'CMD: <exactly one shell command>\n\n' +
@@ -1635,12 +1645,15 @@ const BOOT_SCRIPT: &str = r#"
             '  - ONE command per round (no ; or && chains except test -f pattern)\n' +
             '  - No pipelines (|). No 2>&1. No /proc/* or /sys/*\n' +
             '  - sed patterns must use exact text from the file, never placeholders or ellipsis\n' +
+            '  - NEVER create placeholder/dummy files as fallback when source not found\n' +
             '  - To create a new file, use echo or tee — one line at a time if needed\n' +
-            '  - If output was truncated, use head/tail/sed -n to read specific line ranges\n';
+            '  - If output was truncated, use head/tail/sed -n to read specific line ranges\n' +
+            '  - VERIFY REAL FILE CONTENTS with cat after successful creation\n';
 
         let history = '';
         let blockedPipelineStreak = 0;
         let blockedTotal = 0;
+        let blockedDummyFiles = 0;  // Count dummy file rejection attempts
         let lastCmd = '';
         let sameCmdStreak = 0;
         let agentExistsConfirmed = false;
@@ -1675,8 +1688,18 @@ const BOOT_SCRIPT: &str = r#"
             }
 
             if (agentExistsConfirmed) {
-                userMsg += '\nSTATE: /bin/agent.js existence is already confirmed (exists). Do NOT repeat test -f. '
-                    + 'Next step must be either: cat /bin/agent.js OR a concrete sed -i edit OR create /bin/config.js.';
+                userMsg += '\nSTATE: Source file existence is already confirmed (exists). Do NOT repeat test -f. '
+                    + 'Next step: read source with cat, then execute concrete edits or create target file.';
+            }
+
+            if (/REJECTED.*dummy placeholder/i.test(history)) {
+                userMsg += '\n\nCRITICAL: You just tried to create a dummy file. This is WRONG. You must:\n'
+                    + '1. Search standard script locations: /bin/, /usr/bin/, /usr/local/bin/, /root/, /home/\n'
+                    + '2. If file exists, read with cat and proceed with edits\n'
+                    + '3. If file does not exist, state clearly: "Source file not found at [path]"\n'
+                    + '4. Use initramfs:// protocol as last resort: curl initramfs:///bin/required-file\n'
+                    + '5. NEVER invent placeholder content. Either find the real file or admit failure.\n'
+                    + 'Search the correct paths first.';
             }
 
             console.log('[agent] Round', round, 'userMsg:', userMsg.slice(0, 300));
@@ -1787,18 +1810,38 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
+            // CRITICAL: Block dummy file fallback pattern — agent giving up and creating placeholder
+            // Pattern: create a file with placeholder content after source check failed
+            if (/(echo.*['"](#|\/\/).*['"]\s*>\s*|^\s*echo\s+"[^"]*placeholder|^\s*echo\s+"[^"]*Sample|^\s*echo\s+"\/\/\s)/.test(cmd) && /missing|not found|does not exist|cannot access/i.test(history)) {
+                blockedDummyFiles += 1;
+                term.write('  \x1b[31m[REJECTED: Do not create dummy placeholder files]\x1b[0m\r\n');
+                term.write('  \x1b[33m[Critical: Source file was not found, so you created a fake one.]\x1b[0m\r\n');
+                term.write('  \x1b[33m[This is NOT acceptable. Required files must exist in their actual locations.]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: REJECTED — Cannot create dummy placeholder files when source is missing. '
+                    + 'Search standard paths (/bin, /usr/bin, /home/, /root/) or use initramfs:// to fetch. See instructions.\n';
+                console.log('[agent] Blocked dummy file fallback:', cmd, 'after history:', history.slice(-200));
+                blockedTotal += 1;
+                if (blockedDummyFiles >= 2) {
+                    term.write('  \x1b[1;31m[STOPPING: Multiple dummy file attempts. Task cannot continue this way.]\x1b[0m\r\n');
+                    term.write('  \x1b[33m[Source files must exist. Search /bin, /usr/bin, or other standard paths.]\x1b[0m\r\n');
+                    break;
+                }
+                continue;
+            }
+
             // Block complex multi-pipe commands; they often exhaust process slots or become malformed.
             const pipeCount = countSinglePipes(cmd);
             if (pipeCount > 1) {
                 term.write('  \x1b[31m[blocked: complex pipeline causes Resource busy — use simpler single-step commands]\x1b[0m\r\n');
                 history += 'Cmd: ' + cmd + '\nResult: BLOCKED — complex pipeline. Use simple rounds: test -f, cat file, create/modify target in separate commands, verify.\n';
 
-                if (/config\.js/i.test(task || '') && /agent\.js/i.test(task || '')) {
-                    history += 'Next commands (one per round):\n'
-                        + '1) test -f /bin/agent.js && echo exists || echo missing\n'
-                        + '2) cat /bin/agent.js\n'
-                        + '3) echo "// config.js" > /bin/config.js\n'
-                        + '4) DONE: created /bin/config.js (then refine in next agent call)\n';
+                if (createIntent) {
+                    history += 'Suggested steps (one per round):\n'
+                        + '1) Check source file exists: test -f <source> && echo exists || echo missing\n'
+                        + '2) Read source: cat <source>\n'
+                        + '3) Create/modify target: echo "..." > <target> or sed -i edit\n'
+                        + '4) Verify: cat <target>\n'
+                        + '5) DONE: summary\n';
                 }
 
                 console.log('[agent] Blocked complex pipeline command:', cmd);
