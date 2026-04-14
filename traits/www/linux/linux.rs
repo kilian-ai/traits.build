@@ -1263,8 +1263,8 @@ const BOOT_SCRIPT: &str = r#"
             '7) Do NOT read /proc paths unless explicitly requested. ' +
             '8) Write file: Use echo "content" with output redirect: echo "text" > /path/file ' +
             '9) Create dir: cannot mkdir (forks). Use available dirs only. ' +
-            '10) If a requested file is missing, reply DONE: missing and stop. Do NOT probe alternative files. ' +
-            '11) Avoid /proc/self/*, /proc/mounts, and status-like proc files; they may hang in this kernel. ' +
+            '10) Always check file existence first with: test -f /path && echo exists || echo missing. Only after confirmed absent, reply DONE: missing. ' +
+            '11) Avoid /proc/* and /sys/* paths entirely; they hang on this kernel. Do not probe /proc alternatives. ' +
             '12) NEVER use: ls, cat, grep, find, head, tail, awk, sed, wc, sort, mkdir, rm, cp, mv, date, uname, curl, wget, du. ' +
             '13) NEVER use $(...) or backticks — command substitution forks a subshell.';
 
@@ -1340,16 +1340,15 @@ const BOOT_SCRIPT: &str = r#"
             // Take first line only
             cmd = cmd.split('\n')[0].trim();
 
-            // Rewrite known hanging pattern produced by LLM into a safer one-liner.
+            // Rewrite while-read on /proc/* and /sys/* paths — those hang in this NOMMU kernel.
+            // Regular file paths are allowed to use full while-read loops.
             const whileReadPath = cmd.match(/while\s+IFS=\s*read\s+-r\s+\w+[\s\S]*<\s*(\/\S+)\s*$/);
             if (whileReadPath) {
                 const p = whileReadPath[1];
-                if (p.startsWith('/proc/')) {
+                if (p.startsWith('/proc/') || p.startsWith('/sys/')) {
                     cmd = "echo unsupported_proc_path";
-                } else {
-                    cmd = "test -f '" + shellSingleQuote(p) + "' && { IFS= read -r l < '" + shellSingleQuote(p) + "' && echo \"$l\" || echo \"\"; } || echo missing";
+                    console.log('[agent] Blocked /proc|/sys while-read:', p);
                 }
-                console.log('[agent] Rewrote risky while-read command to:', cmd);
             }
 
             if (!cmd) {
