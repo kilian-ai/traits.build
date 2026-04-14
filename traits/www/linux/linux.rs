@@ -1767,6 +1767,60 @@ const BOOT_SCRIPT: &str = r#"
             '  - If output was truncated, use head/tail/sed -n to read specific line ranges\n' +
             '  - VERIFY REAL FILE CONTENTS with cat after successful creation\n';
 
+        async function rewriteUnsafeCommand(originalCmd, reason, taskText, hist, sourcePath, targetPath) {
+            const repairSystem = 'You rewrite ONE unsafe BusyBox hush shell command into ONE safe single-line command.\n'
+                + 'Return exactly one of:\n'
+                + 'CMD: <single-line safe shell command>\n'
+                + 'BLOCKED: <short reason>\n\n'
+                + 'Rules:\n'
+                + '- single line only\n'
+                + '- no raw newlines in the command\n'
+                + '- no trailing continuation backslash\n'
+                + '- no heredocs, no backticks, no $()\n'
+                + '- no sed a\\, i\\, or c\\ forms\n'
+                + '- prefer printf "%s\\n" ... > file for larger rewrites\n'
+                + '- prefer single-line sed -i s/// edits for small exact changes\n'
+                + '- preserve the user intent\n';
+            const repairUser = 'Task: ' + String(taskText || '') + '\n'
+                + 'Unsafe command: ' + String(originalCmd || '') + '\n'
+                + 'Reason blocked: ' + String(reason || '') + '\n'
+                + 'Inferred source path: ' + String(sourcePath || '') + '\n'
+                + 'Inferred target path: ' + String(targetPath || '') + '\n'
+                + 'Recent history:\n' + String(hist || '').slice(-2500);
+            try {
+                const resp = await fetch('https://relay.traits.build/llm/proxy', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + apiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        messages: [
+                            { role: 'system', content: repairSystem },
+                            { role: 'user', content: repairUser }
+                        ],
+                        max_tokens: 220,
+                        temperature: 0
+                    })
+                });
+                const data = await resp.json();
+                if (data.error) return '';
+                const text = (((data.choices || [])[0] || {}).message || {}).content || '';
+                const blocked = text.match(/BLOCKED:\s*(.+)/i);
+                if (blocked) return '';
+                const match = text.match(/CMD:\s*([^\n]+)/i);
+                if (!match || !match[1]) return '';
+                let repaired = match[1].trim().replace(/^`+/, '').replace(/`+$/, '');
+                repaired = repairPlaceholderPaths(repaired, sourcePath, targetPath);
+                if (!repaired || repaired === originalCmd) return '';
+                if (validateShellCommand(repaired)) return '';
+                return repaired;
+            } catch (e) {
+                return '';
+            }
+        }
+
         let history = '';
         let blockedPipelineStreak = 0;
         let blockedTotal = 0;
@@ -2028,7 +2082,16 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
-            const shellValidationError = validateShellCommand(cmd);
+            let shellValidationError = validateShellCommand(cmd);
+            if (shellValidationError) {
+                const repairedUnsafe = await rewriteUnsafeCommand(cmd, shellValidationError, task, history, inferredSourcePath, inferredTargetPath);
+                if (repairedUnsafe) {
+                    term.write('  \x1b[33m[auto-repair unsafe shell] ' + cmd + ' -> ' + repairedUnsafe + '\x1b[0m\r\n');
+                    history += 'Cmd: ' + cmd + '\nResult: AUTO-REPAIR unsafe shell command -> ' + repairedUnsafe + '\n';
+                    cmd = repairedUnsafe;
+                    shellValidationError = validateShellCommand(cmd);
+                }
+            }
             if (shellValidationError) {
                 term.write('  \x1b[31m[blocked: unsafe shell command — ' + shellValidationError + ']\x1b[0m\r\n');
                 term.write('  \x1b[33m[tip: prefer single-line sed substitutions or printf "%s\\n" ... > /path/file for rewrites]\x1b[0m\r\n');
