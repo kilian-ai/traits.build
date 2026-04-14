@@ -589,6 +589,11 @@ const BOOT_SCRIPT: &str = r#"
     let agentCapture = null;      // function(data) callback during command capture
     let agentRunning = false;     // true while agent loop is active
     let agentSuppressOutput = false; // suppress shell echo during agent command exec
+    let shellRelayRunning = false;
+    let shellRelayStop = false;
+    let shellRelayCode = '';
+    const SHELL_RELAY_URL = 'https://relay.traits.build';
+    const SHELL_RELAY_CODE_KEY = 'linux-wasm.shell-relay.code';
 
     function parseAgentTask(cmd) {
         const trimmed = (cmd || '').trim();
@@ -1069,6 +1074,165 @@ const BOOT_SCRIPT: &str = r#"
 
     function shQuote(s) {
         return "'" + String(s).replace(/'/g, "'\\''") + "'";
+    }
+
+    function sleepMs(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function shellRelayLoadCode() {
+        try {
+            return (localStorage.getItem(SHELL_RELAY_CODE_KEY) || '').trim().toUpperCase();
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function shellRelaySaveCode(code) {
+        try {
+            if (code) localStorage.setItem(SHELL_RELAY_CODE_KEY, code);
+            else localStorage.removeItem(SHELL_RELAY_CODE_KEY);
+        } catch (e) {}
+    }
+
+    async function shellRelayRegister(preferredCode) {
+        const body = preferredCode ? JSON.stringify({ code: preferredCode }) : '{}';
+        const resp = await fetch(SHELL_RELAY_URL + '/relay/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            signal: AbortSignal.timeout(8000),
+        });
+        if (!resp.ok) throw new Error('register failed: HTTP ' + resp.status);
+        const json = await resp.json();
+        const code = String((json && json.code) || '').toUpperCase();
+        if (!code) throw new Error('register failed: missing code');
+        return code;
+    }
+
+    async function shellRelayRespond(code, id, result, error) {
+        try {
+            await fetch(SHELL_RELAY_URL + '/relay/respond', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, id, result, error: error || null }),
+                signal: AbortSignal.timeout(8000),
+            });
+        } catch (e) {
+            console.warn('[shell-relay] respond failed:', e && e.message ? e.message : String(e));
+        }
+    }
+
+    async function shellRelayHandleRequest(code, req) {
+        const id = String(req && req.id ? req.id : '');
+        const path = String(req && req.path ? req.path : '');
+        const args = Array.isArray(req && req.args) ? req.args : [];
+        if (!id) return;
+
+        if (agentRunning) {
+            await shellRelayRespond(code, id, null, 'agent is running; try again shortly');
+            return;
+        }
+
+        if (path !== 'linux.exec') {
+            await shellRelayRespond(code, id, null, 'unsupported path: ' + path + ' (use linux.exec)');
+            return;
+        }
+
+        const cmd = String(args[0] || '').trim();
+        if (!cmd) {
+            await shellRelayRespond(code, id, null, 'missing command arg');
+            return;
+        }
+
+        term.write('\x1b[2m[shell-relay] $ ' + cmd + '\x1b[0m\r\n');
+        const r = await shellExec(cmd);
+        await shellRelayRespond(code, id, {
+            output: r && typeof r.output === 'string' ? r.output : '',
+            exitCode: r && typeof r.exitCode === 'number' ? r.exitCode : -1,
+            crashed: !!(r && r.crashed),
+        }, null);
+    }
+
+    async function shellRelayLoop(code) {
+        shellRelayRunning = true;
+        shellRelayStop = false;
+        shellRelayCode = code;
+        while (!shellRelayStop) {
+            try {
+                const resp = await fetch(SHELL_RELAY_URL + '/relay/poll?code=' + encodeURIComponent(code), {
+                    signal: AbortSignal.timeout(35000),
+                });
+
+                if (resp.status === 204) continue;
+                if (resp.status === 404 || resp.status === 410) {
+                    term.write('\x1b[33m[shell-relay] session closed; reconnect with relay on\x1b[0m\r\n');
+                    break;
+                }
+                if (!resp.ok) {
+                    await sleepMs(2000);
+                    continue;
+                }
+
+                const req = await resp.json();
+                await shellRelayHandleRequest(code, req);
+            } catch (e) {
+                await sleepMs(1500);
+            }
+        }
+        shellRelayRunning = false;
+    }
+
+    async function runShellRelayCommand(cmd) {
+        const trimmed = String(cmd || '').trim();
+        if (!/^relay\b/i.test(trimmed)) return false;
+
+        const parts = trimmed.split(/\s+/);
+        const sub = (parts[1] || 'help').toLowerCase();
+
+        if (sub === 'help') {
+            term.write('relay commands:\r\n');
+            term.write('  relay on [CODE]     connect this shell to relay\r\n');
+            term.write('  relay off           disconnect relay\r\n');
+            term.write('  relay status        show current state/code\r\n');
+            term.write('remote call example (host):\r\n');
+            term.write('  curl -s -X POST https://relay.traits.build/relay/call -H "Content-Type: application/json" -d "{\\"code\\":\\"CODE\\",\\"path\\":\\"linux.exec\\",\\"args\\":[\\"echo hi > /tmp/x\\"]}"\r\n');
+            return true;
+        }
+
+        if (sub === 'status') {
+            const code = shellRelayCode || shellRelayLoadCode();
+            term.write('[shell-relay] status=' + (shellRelayRunning ? 'on' : 'off') + (code ? (' code=' + code) : '') + '\r\n');
+            return true;
+        }
+
+        if (sub === 'off') {
+            shellRelayStop = true;
+            shellRelayRunning = false;
+            term.write('[shell-relay] disconnected\r\n');
+            return true;
+        }
+
+        if (sub === 'on') {
+            if (shellRelayRunning) {
+                term.write('[shell-relay] already connected code=' + shellRelayCode + '\r\n');
+                return true;
+            }
+            const wanted = (parts[2] || shellRelayLoadCode() || '').toUpperCase();
+            try {
+                const code = await shellRelayRegister(wanted);
+                shellRelaySaveCode(code);
+                term.write('[shell-relay] connected code=' + code + '\r\n');
+                term.write('[shell-relay] host can now call linux.exec via relay/call\r\n');
+                shellRelayLoop(code);
+            } catch (e) {
+                term.write('[shell-relay] connect failed: ' + (e && e.message ? e.message : String(e)) + '\r\n');
+            }
+            return true;
+        }
+
+        term.write('[shell-relay] unknown command: ' + sub + '\r\n');
+        return true;
     }
 
     async function runInitramfsCurlCommand(cmd) {
@@ -1925,6 +2089,19 @@ const BOOT_SCRIPT: &str = r#"
                     });
                 }
 
+                // ── Intercept relay commands (serverless remote shell control) ──
+                if (!intercepted && /^relay\b/i.test(cmd)) {
+                    intercepted = true;
+                    os.key_input('\x15'); // Clear current input
+                    term.write('\r\n');
+                    runShellRelayCommand(cmd).then(() => {
+                        os.key_input('\r');
+                    }).catch((err) => {
+                        term.write('\x1b[31m[shell-relay] error: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
+                        os.key_input('\r');
+                    });
+                }
+
                 // ── Intercept curl initramfs://... (local-only, no helper server) ──
                 if (!intercepted && /^curl\b/i.test(cmd) && /initramfs:\/\//i.test(cmd)) {
                     intercepted = true;
@@ -2002,6 +2179,8 @@ const BOOT_SCRIPT: &str = r#"
 
     // Clean up when SPA navigates away from this page
     window._pageCleanup = () => {
+        shellRelayStop = true;
+        shellRelayRunning = false;
         document.removeEventListener('keydown', handleKey, true);
         document.removeEventListener('paste', handlePaste, true);
         document.removeEventListener('copy', handleCopy, true);
