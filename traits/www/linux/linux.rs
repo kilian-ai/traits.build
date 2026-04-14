@@ -1385,6 +1385,7 @@ const BOOT_SCRIPT: &str = r#"
         let lastCmd = '';
         let sameCmdStreak = 0;
         let agentExistsConfirmed = false;
+        const catPageStart = Object.create(null);
         const createIntent = /(create|build\s+new|new\s+\S+\.[a-z0-9]+|add\s+\S+\.[a-z0-9]+|write\s+\S+\.[a-z0-9]+)/i.test(task || '');
         const inferredSourcePath = inferSourcePath(task);
         const inferredTargetPath = inferTargetPath(task);
@@ -1546,7 +1547,22 @@ const BOOT_SCRIPT: &str = r#"
 
             if (cmd === lastCmd) sameCmdStreak += 1;
             else sameCmdStreak = 0;
-            if (sameCmdStreak >= 2) {
+
+            // Repeated full-file cat reads are often a signal the model needs more context.
+            // Auto-repair into paged reads instead of hard-blocking.
+            const repeatedCat = cmd.match(/^cat\s+(\S+)$/);
+            if (repeatedCat && sameCmdStreak >= 1) {
+                const file = repeatedCat[1];
+                const start = catPageStart[file] || 1;
+                const end = start + 119;
+                const paged = "sed -n '" + start + "," + end + "p' " + file;
+                term.write('  \x1b[33m[auto-repair] repeated cat -> ' + paged + '\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: AUTO-REPAIR repeated cat into paged read: ' + paged + '\n';
+                cmd = paged;
+                catPageStart[file] = end + 1;
+            }
+
+            if (sameCmdStreak >= 4 && !repeatedCat) {
                 term.write('  \x1b[31m[blocked: repeated identical command — advance to next step]\x1b[0m\r\n');
                 history += 'Cmd: ' + cmd + '\nResult: BLOCKED — repeated command loop. Choose a different next step.\n';
                 blockedTotal += 1;
@@ -1561,10 +1577,10 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
-            // Guard malformed sed patches using ellipsis placeholders ("...") that corrupt files.
-            if (/^sed\b/i.test(cmd) && cmd.includes('...')) {
-                term.write('  \x1b[31m[blocked: sed command uses "..." placeholder — requires exact text]\x1b[0m\r\n');
-                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — sed replacement contains ellipsis placeholder. Use exact literal text from file, no ... tokens.\n';
+            // Guard malformed sed patches using ellipsis placeholders that corrupt files.
+            if (/^sed\b/i.test(cmd) && /(\.\.\.|…)/.test(cmd)) {
+                term.write('  \x1b[31m[blocked: sed command uses ellipsis placeholder — requires exact text]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — sed replacement contains ellipsis placeholder (... or …). Use exact literal text from file.\n';
                 blockedTotal += 1;
                 continue;
             }
