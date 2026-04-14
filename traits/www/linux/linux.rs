@@ -1243,6 +1243,20 @@ const BOOT_SCRIPT: &str = r#"
     async function runJSAgent(task) {
         agentRunning = true;
         agentAbort = false;
+
+        function countSinglePipes(s) {
+            let n = 0;
+            for (let i = 0; i < s.length; i++) {
+                if (s[i] !== '|') continue;
+                const prev = i > 0 ? s[i - 1] : '';
+                const next = i + 1 < s.length ? s[i + 1] : '';
+                // Ignore logical OR (||); count only standalone pipeline separators.
+                if (prev === '|' || next === '|') continue;
+                n += 1;
+            }
+            return n;
+        }
+
         const apiKey = await resolveApiKey();
         if (!apiKey) {
             term.write('\x1b[31mNo API key. Set OPENAI_API_KEY in Settings or write to /tmp/key.\x1b[0m\r\n');
@@ -1365,6 +1379,12 @@ const BOOT_SCRIPT: &str = r#"
             // Take first line only
             cmd = cmd.split('\n')[0].trim();
 
+            // Debug visibility: show what the LLM suggested before validation/rewrites.
+            if (cmd) {
+                const shown = cmd.length > 220 ? (cmd.slice(0, 220) + '...') : cmd;
+                term.write('  \x1b[2m[llm] ' + shown + '\x1b[0m\r\n');
+            }
+
             // Block while-read loops — they hang on large files; the prompt instructs LLM to use cat.
             if (/while\s+IFS=|while\s+read/.test(cmd)) {
                 term.write('  \x1b[31m[blocked: while-read loop hangs on large files — use cat instead]\x1b[0m\r\n');
@@ -1375,7 +1395,7 @@ const BOOT_SCRIPT: &str = r#"
             }
 
             // Rewrite common low-risk pipelines and block only complex multi-pipe commands.
-            const pipeCount = (cmd.match(/\|/g) || []).length;
+            const pipeCount = countSinglePipes(cmd);
             if (pipeCount > 0) {
                 const catSed = cmd.match(/^cat\s+(\S+)\s*\|\s*sed\s+(.+)$/);
                 if (catSed) {
@@ -1386,7 +1406,7 @@ const BOOT_SCRIPT: &str = r#"
                 }
             }
 
-            const postRewritePipeCount = (cmd.match(/\|/g) || []).length;
+            const postRewritePipeCount = countSinglePipes(cmd);
             if (postRewritePipeCount > 1) {
                 term.write('  \x1b[31m[blocked: complex pipeline causes Resource busy — use simpler single-step commands]\x1b[0m\r\n');
                 history += 'Cmd: ' + cmd + '\nResult: BLOCKED — complex pipeline. Use simple rounds: test -f, cat file, sed -i edit, verify.\n';
