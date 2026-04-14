@@ -882,6 +882,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - line-mode REPL normalizes newline input to carriage return before feeding `CliSession`, preventing command concatenation artifacts.
 - `www.linux` terminal keeps persistent command history in JS (`localStorage`) and maps ArrowUp/ArrowDown directly, instead of replaying shell-history injection commands at boot.
 - `www.linux` clipboard behavior must preserve host integration on macOS: `Cmd+C` copies selected terminal text; `Cmd+V` pastes clipboard text into guest stdin.
+- `www.linux` persist now stores file entries in PVFS (`traits.pvfs`) using exact absolute guest paths (e.g. `/tmp/foo.txt`) with no namespace prefix. Legacy prefixed keys (`linux-wasm.persist/...`) are read for migration and rewritten to direct-path keys on next save.
 
 **Relay endpoints** (registered in `sys.serve`):
 ```

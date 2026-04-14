@@ -614,7 +614,8 @@ const BOOT_SCRIPT: &str = r#"
     const PERSIST_KEY = 'linux-wasm.persist.files';
     const PERSIST_PVFS_KEY = 'traits.pvfs';
     const PERSIST_PVFS_PREFIX = 'linux-wasm.persist';
-    const PERSIST_DIRS_META = PERSIST_PVFS_PREFIX + '/.dirs.json';
+    const PERSIST_DIRS_META = '__linux_wasm_persist_dirs__';
+    const PERSIST_DIRS_META_LEGACY = PERSIST_PVFS_PREFIX + '/.dirs.json';
     const PERSIST_MOUNT_KEY = 'linux-wasm.persist.mounts';
     const PERSIST_AUTOSYNC_KEY = 'linux-wasm.persist.autosync';
 
@@ -686,14 +687,28 @@ const BOOT_SCRIPT: &str = r#"
     function persistToPvfsPath(path) {
         const p = persistNormalizePath(path);
         if (!p) return '';
-        return PERSIST_PVFS_PREFIX + p;
+        return p;
     }
 
     function persistFromPvfsPath(path) {
         const text = String(path || '');
+        // New format: direct absolute guest path in PVFS key
+        if (text.startsWith('/')) return persistNormalizePath(text);
+
+        // Legacy format: linux-wasm.persist/<absolute/path>
         const prefix = PERSIST_PVFS_PREFIX + '/';
         if (!text.startsWith(prefix)) return '';
         return persistNormalizePath(text.slice(PERSIST_PVFS_PREFIX.length));
+    }
+
+    function persistPvfsKeyIsGuestPath(key) {
+        const k = persistNormalizePath(key);
+        return !!(k && persistIsValidPath(k));
+    }
+
+    function persistPvfsKeyIsMountedGuestPath(key) {
+        if (!persistPvfsKeyIsGuestPath(key)) return false;
+        return persistPathMounted(key);
     }
 
     function persistLoadLegacy() {
@@ -733,14 +748,14 @@ const BOOT_SCRIPT: &str = r#"
             const pvfs = persistPvfsLoadAll();
             const files = {};
             for (const k of Object.keys(pvfs)) {
-                if (k === PERSIST_DIRS_META) continue;
+                if (k === PERSIST_DIRS_META || k === PERSIST_DIRS_META_LEGACY) continue;
                 const guestPath = persistFromPvfsPath(k);
                 if (!persistIsValidPath(guestPath) || !persistPathMounted(guestPath)) continue;
                 files[guestPath] = String(pvfs[k] || '');
             }
             let dirs = [];
             try {
-                const parsedDirs = JSON.parse(String(pvfs[PERSIST_DIRS_META] || '[]'));
+                const parsedDirs = JSON.parse(String(pvfs[PERSIST_DIRS_META] || pvfs[PERSIST_DIRS_META_LEGACY] || '[]'));
                 if (Array.isArray(parsedDirs)) {
                     dirs = persistNormalizeMounts(parsedDirs).filter(d => persistIsValidPath(d) && persistPathMounted(d));
                 }
@@ -766,7 +781,19 @@ const BOOT_SCRIPT: &str = r#"
         };
         const pvfs = persistPvfsLoadAll();
         for (const k of Object.keys(pvfs)) {
-            if (k === PERSIST_DIRS_META || k.startsWith(PERSIST_PVFS_PREFIX + '/')) delete pvfs[k];
+            // Remove linux-wasm persist payload only for mounted guest paths.
+            // Keep unrelated pvfs entries owned by other features.
+            if (k === PERSIST_DIRS_META || k === PERSIST_DIRS_META_LEGACY) {
+                delete pvfs[k];
+                continue;
+            }
+            if (k.startsWith(PERSIST_PVFS_PREFIX + '/')) {
+                delete pvfs[k];
+                continue;
+            }
+            if (persistPvfsKeyIsMountedGuestPath(k)) {
+                delete pvfs[k];
+            }
         }
         for (const path of Object.keys(safe.files)) {
             if (!persistIsValidPath(path) || !persistPathMounted(path)) continue;
@@ -1572,18 +1599,77 @@ const BOOT_SCRIPT: &str = r#"
             return n;
         }
 
+        function extractTaskFiles(taskText) {
+            const raw = String(taskText || '');
+            const re = /([a-zA-Z0-9_./-]+\.[a-zA-Z0-9_-]+)/g;
+            const out = [];
+            const seen = new Set();
+            let m;
+            while ((m = re.exec(raw)) !== null) {
+                const f = m[1];
+                if (!f || seen.has(f)) continue;
+                seen.add(f);
+                out.push(f);
+            }
+            return out;
+        }
+
+        function normalizeCandidatePath(fileName) {
+            const f = String(fileName || '').trim();
+            if (!f) return '';
+            if (f.startsWith('/')) return f;
+            return '/bin/' + f;
+        }
+
         function inferSourcePath(taskText) {
-            const t = String(taskText || '').toLowerCase();
-            if (t.includes('agent.js') || t.includes('model')) return '/bin/agent.js';
-            return '';
+            const t = String(taskText || '');
+            const files = extractTaskFiles(t);
+            if (files.length === 0) return '';
+            const m = t.match(/(?:copy|from|update|modify|edit|based on)\s+([a-zA-Z0-9_./-]+\.[a-zA-Z0-9_-]+)/i);
+            if (m && m[1]) return normalizeCandidatePath(m[1]);
+            return normalizeCandidatePath(files[0]);
         }
 
         function inferTargetPath(taskText) {
+            const t = String(taskText || '');
+            const files = extractTaskFiles(t);
+            if (files.length === 0) return '';
+            const m = t.match(/(?:create|build|write|add)\s+(?:new\s+)?([a-zA-Z0-9_./-]+\.[a-zA-Z0-9_-]+)/i);
+            if (m && m[1]) return normalizeCandidatePath(m[1]);
+            if (files.length > 1) return normalizeCandidatePath(files[files.length - 1]);
+            return normalizeCandidatePath(files[0]);
+        }
+
+        function isEditCommand(cmdText) {
+            const c = String(cmdText || '').trim();
+            return /\b(sed\s+-i|echo\b.*>|cat\b.*>|cp\b|mv\b|tee\b)\b/.test(c);
+        }
+
+        function isVerificationCommand(cmdText) {
+            const c = String(cmdText || '').trim();
+            return /^(cat|grep|head|tail|wc|test\s+-f|ls)\b/.test(c);
+        }
+
+        function referencesPath(cmdText, filePath) {
+            const c = String(cmdText || '');
+            const p = String(filePath || '');
+            if (!p) return false;
+            return c.includes(p) || c.includes(p.replace(/^\//, ''));
+        }
+
+        function hasImplementationIntent(taskText) {
             const t = String(taskText || '').toLowerCase();
-            const m = t.match(/([a-z0-9._-]+\.js)\b/i);
-            if (m && m[1]) return '/bin/' + m[1];
-            if (t.includes('config.js') || t.includes('config')) return '/bin/config.js';
-            return '';
+            return /(update|modify|edit|implement|fix|add|create|build|write|store|save)/.test(t);
+        }
+
+        function hasConfigBehaviorIntent(taskText) {
+            const t = String(taskText || '').toLowerCase();
+            return /(without\s+param|without\s+argument|no\s+param|no\s+argument|interactiv|prompt|ask|stores?\s+.*config|saves?\s+.*config)/.test(t);
+        }
+
+        function hasBehaviorEvidence(hist) {
+            const h = String(hist || '').toLowerCase();
+            return /(usage:|config|prompt|question|readline|std\.in|argv\.length|if\s*\(.*argv|out:\s+.*config|out:\s+.*usage)/.test(h);
         }
 
         function repairPlaceholderPaths(cmdText, sourcePath, targetPath) {
@@ -1657,7 +1743,14 @@ const BOOT_SCRIPT: &str = r#"
         let lastCmd = '';
         let sameCmdStreak = 0;
         let agentExistsConfirmed = false;
+        let hadSuccessfulEdit = false;
+        let hadSuccessfulVerify = false;
+        let hadSourceRead = false;
+        let hadTargetRead = false;
+        let lastEditedPath = '';
         const createIntent = /(create|build\s+new|new\s+\S+\.[a-z0-9]+|add\s+\S+\.[a-z0-9]+|write\s+\S+\.[a-z0-9]+)/i.test(task || '');
+        const implementationIntent = hasImplementationIntent(task || '');
+        const behaviorIntent = hasConfigBehaviorIntent(task || '');
         const inferredSourcePath = inferSourcePath(task);
         const inferredTargetPath = inferTargetPath(task);
         const MAX = await resolveAgentMaxRounds();
@@ -1758,12 +1851,7 @@ const BOOT_SCRIPT: &str = r#"
                 const summary = doneMatch[1].trim().split('\n')[0] || 'Task complete';
                 if (/^missing$/i.test(summary)) {
                     const alreadyFound = /\bOut:\s*exists\b/i.test(history) || /\n\s*\|\s*exists\s*\n/i.test(history);
-                    if ((createIntent || alreadyFound) && inferredTargetPath) {
-                        const autoCmd = 'echo "// auto-generated scaffold for ' + inferredTargetPath.split('/').pop() + '" > ' + inferredTargetPath;
-                        term.write('  \x1b[33m[auto-repair: source missing; creating scaffold target ' + inferredTargetPath + ']\x1b[0m\r\n');
-                        history += 'Result: AUTO-REPAIR — source missing on create task; created scaffold target at ' + inferredTargetPath + '.\n';
-                        cmd = autoCmd;
-                    } else if (createIntent || alreadyFound) {
+                    if (createIntent || alreadyFound) {
                         term.write('  \x1b[31m[blocked: DONE: missing is invalid for this task]\x1b[0m\r\n');
                         history += 'Result: BLOCKED — task requires creating/editing a file; do not end with DONE: missing. Continue with concrete file commands.\n';
                         continue;
@@ -1773,6 +1861,31 @@ const BOOT_SCRIPT: &str = r#"
                         break;
                     }
                 } else {
+                    if (implementationIntent && !hadSuccessfulEdit) {
+                        term.write('  \x1b[31m[blocked: DONE rejected — no successful edit command executed]\x1b[0m\r\n');
+                        history += 'Result: BLOCKED — DONE rejected. Execute at least one successful edit command before finishing.\n';
+                        continue;
+                    }
+                    if (implementationIntent && !hadSuccessfulVerify) {
+                        term.write('  \x1b[31m[blocked: DONE rejected — no verification command output]\x1b[0m\r\n');
+                        history += 'Result: BLOCKED — DONE rejected. Run verification command(s) and show output before finishing.\n';
+                        continue;
+                    }
+                    if (inferredSourcePath && implementationIntent && !hadSourceRead) {
+                        term.write('  \x1b[31m[blocked: DONE rejected — source file was never read]\x1b[0m\r\n');
+                        history += 'Result: BLOCKED — DONE rejected. Read the source file before claiming completion.\n';
+                        continue;
+                    }
+                    if (inferredTargetPath && createIntent && !hadTargetRead) {
+                        term.write('  \x1b[31m[blocked: DONE rejected — target file not read for verification]\x1b[0m\r\n');
+                        history += 'Result: BLOCKED — DONE rejected. Read the target file to verify actual content.\n';
+                        continue;
+                    }
+                    if (behaviorIntent && !hasBehaviorEvidence(history)) {
+                        term.write('  \x1b[31m[blocked: DONE rejected — behavior requirement not evidenced]\x1b[0m\r\n');
+                        history += 'Result: BLOCKED — DONE rejected. Provide output/code evidence for interactive/config behavior requirements.\n';
+                        continue;
+                    }
                     term.write('\r\n\x1b[1;32m=== DONE: ' + summary + ' ===\x1b[0m\r\n');
                     term.write('Completed in ' + round + ' round(s).\r\n');
                     break;
@@ -1849,16 +1962,19 @@ const BOOT_SCRIPT: &str = r#"
                 blockedTotal += 1;
                 if (blockedPipelineStreak >= 3 || blockedTotal >= 5) {
                     term.write('  \x1b[33m[stopping: repeated blocked commands; model did not adapt]\x1b[0m\r\n');
-                    term.write('  \x1b[33m[tip: try a narrower prompt like "set MODEL to gpt-5.3 in /bin/agent.js"]\x1b[0m\r\n');
+                    term.write('  \x1b[33m[tip: try a narrower prompt with explicit source path and exact desired change]\x1b[0m\r\n');
                     break;
                 }
                 continue;
             }
 
             // Prevent repeated no-op checks that stall progress.
-            if (/^test\s+-f\s+\/bin\/agent\.js\s+&&\s+echo\s+exists\s+\|\|\s+echo\s+missing$/i.test(cmd) && agentExistsConfirmed) {
-                term.write('  \x1b[31m[blocked: /bin/agent.js already confirmed exists — move to read/edit step]\x1b[0m\r\n');
-                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — repeated existence check. Next step: cat /bin/agent.js or sed -i edit.\n';
+            const sourceExistsCheck = inferredSourcePath
+                ? new RegExp('^test\\s+-f\\s+' + inferredSourcePath.replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&') + '\\s+&&\\s+echo\\s+exists\\s+\\|\\|\\s+echo\\s+missing$', 'i')
+                : null;
+            if (sourceExistsCheck && sourceExistsCheck.test(cmd) && agentExistsConfirmed) {
+                term.write('  \x1b[31m[blocked: source file already confirmed exists — move to read/edit step]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — repeated existence check. Next step: read source with cat or apply concrete edit.\n';
                 blockedTotal += 1;
                 continue;
             }
@@ -1897,6 +2013,24 @@ const BOOT_SCRIPT: &str = r#"
             agentSuppressOutput = false;
             console.log('[agent] Exec result:', { exitCode, outputLen: output.length, crashed, output: output.slice(0, 300) });
 
+            if (exitCode === 0) {
+                if (isEditCommand(cmd)) {
+                    hadSuccessfulEdit = true;
+                    if (inferredTargetPath && referencesPath(cmd, inferredTargetPath)) lastEditedPath = inferredTargetPath;
+                    else if (inferredSourcePath && referencesPath(cmd, inferredSourcePath)) lastEditedPath = inferredSourcePath;
+                }
+                if (isVerificationCommand(cmd)) hadSuccessfulVerify = true;
+                if (inferredSourcePath && isVerificationCommand(cmd) && referencesPath(cmd, inferredSourcePath)) {
+                    hadSourceRead = true;
+                }
+                if (inferredTargetPath && isVerificationCommand(cmd) && referencesPath(cmd, inferredTargetPath)) {
+                    hadTargetRead = true;
+                }
+                if (!inferredTargetPath && lastEditedPath && isVerificationCommand(cmd) && referencesPath(cmd, lastEditedPath)) {
+                    hadTargetRead = true;
+                }
+            }
+
             // If kernel crashed, abort immediately — no recovery possible
             if (crashed) {
                 term.write('  \x1b[1;31m[Kernel crashed — reboot required]\x1b[0m\r\n');
@@ -1926,8 +2060,9 @@ const BOOT_SCRIPT: &str = r#"
                     history += 'Result: Resource busy from process-slot exhaustion. Retry with one command per round and no pipes.\n';
                 }
 
-                if (/^test\s+-f\s+\/bin\/agent\.js\s+&&\s+echo\s+exists\s+\|\|\s+echo\s+missing$/i.test(cmd) && /(^|\n)exists(\n|$)/i.test(output)) {
-                    agentExistsConfirmed = true;
+                if (inferredSourcePath && /(^|\n)exists(\n|$)/i.test(output)) {
+                    const sourceExistsCheck = new RegExp('^test\\s+-f\\s+' + inferredSourcePath.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&') + '\\s+&&\\s+echo\\s+exists\\s+\\|\\|\\s+echo\\s+missing$', 'i');
+                    if (sourceExistsCheck.test(cmd)) agentExistsConfirmed = true;
                 }
             }
             term.write('  \x1b[2m[exit: ' + exitCode + ']\x1b[0m\r\n\r\n');
