@@ -892,6 +892,88 @@ POST /relay/respond            — Mac sends {code, id, result} back
 GET  /relay/status?code=XXXX   — Check if code is active
 ```
 
+---
+
+### Linux/WASM Remote Control via Relay
+
+The browser-based Linux/WASM terminal (`www.linux`) now includes a **remote shell bridge** that enables live command execution and file editing in the running guest shell from an external host without requiring a local server.
+
+**How it works:**
+
+1. **Enable relay in the browser terminal:**
+   - Type in the terminal: `relay on [CODE]` (e.g., `relay on 3ABX`)
+   - Browser enters polling mode: `GET /relay/poll?code=3ABX` every 1-2 seconds
+   - Server responds with queued commands from the relay
+
+2. **Queue commands from external host:**
+   ```bash
+   # Execute shell command in guest via relay
+   curl -s -X POST https://relay.traits.build/relay/call \
+     -H 'Content-Type: application/json' \
+     -d '{"code":"3ABX","path":"linux.exec","args":["ls -la /bin/"]}'
+   # Returns: {"result":{"output":"...", "exitCode":0, "crashed":false}}
+   
+   # Modify files live without reboot
+   curl -s -X POST https://relay.traits.build/relay/call \
+     -H 'Content-Type: application/json' \
+     -d '{"code":"3ABX","path":"linux.exec","args":["sed -i '\''s/old/new/'\'' /bin/agent.js"]}'
+   ```
+
+3. **Check relay status:**
+   ```bash
+   # Verify connection is active
+   curl -s https://relay.traits.build/relay/status?code=3ABX
+   # Returns: {"active":true,"age_seconds":347,"code":"3ABX"}
+   ```
+
+4. **Disable relay in the browser terminal:**
+   - Type: `relay off` or press Ctrl+C to abort
+
+**Use cases:**
+- Live patching: Modify scripts/configs in running Linux guest without reboot
+- Remote debugging: Execute diagnostics on a browser-based system
+- Automated testing: Queue commands from CI/CD pipeline to guest shell
+- Configuration management: Update agent parameters (`MAX_ROUNDS`, `MODEL`, etc.) via sed/echo
+
+**Technical constraints:**
+- Relay queue honors the guest's `agentRunning` flag; commands queue while agent executes
+- Command timeout: 30 seconds per request (see `EXEC_TIMEOUT` in `linux.rs`)
+- Abort mechanism: Ctrl+C in browser sends multiple SIGINT + SIGKILL signals to interrupt hung commands
+- Output limit: Last 30-40 lines of shell output returned; larger outputs use head/tail/grep
+
+**Example workflow (patching running agent):**
+```bash
+# 1. Enable relay in browser terminal
+relay on 3ABX
+
+# 2. From external host, verify agent config
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"3ABX","path":"linux.exec","args":["grep MAX_ROUNDS /bin/agent.js"]}'
+# Output: "17:const MAX_ROUNDS = 50;"
+
+# 3. Patch MAX_ROUNDS to 100
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"3ABX","path":"linux.exec","args":["sed -i '\''s/const MAX_ROUNDS = .*/const MAX_ROUNDS = 100;/'\'' /bin/agent.js"]}'
+
+# 4. Verify patch applied
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"3ABX","path":"linux.exec","args":["grep MAX_ROUNDS /bin/agent.js"]}'
+# Output: "17:const MAX_ROUNDS = 100;" ✓
+
+# 5. Disable relay
+# Type in browser: relay off
+```
+
+**Abort mechanism hardening:**
+- When a command hangs (no output for 30 seconds): shellExec timeout triggers
+- Browser automatically sends **5 SIGINT signals** + **1 SIGKILL** + **Ctrl+Z (SIGTSTP)**
+- Pressing Ctrl+C in browser terminal also sends multiple signals: **3 SIGINT + 1 SIGKILL + Ctrl+Z**
+- abortCheckInterval polls every 100ms for user interrupt (much faster than 30s timeout)
+- If abort doesn't work: press Ctrl+C multiple times or reload page (terminates all guest processes)
+
 **Architecture: Three layers, zero duplication:**
 ```
 Layer 3: Shells (thin, unique per surface)

@@ -1406,6 +1406,18 @@ const BOOT_SCRIPT: &str = r#"
         return new Promise(resolve => {
             let buffer = '';
             let resolved = false;
+            let abortCheckInterval = null;
+            
+            const finishExecution = (output, exitCode, crashed = false) => {
+                if (resolved) return;
+                resolved = true;
+                agentCapture = null;
+                agentSuppressOutput = false;
+                if (abortCheckInterval) clearInterval(abortCheckInterval);
+                console.log('[agent] shellExec finished:', { cmd, exitCode, outputLen: output.length, output: output.slice(0, 200) });
+                resolve({ output, exitCode, crashed });
+            };
+            
             agentCapture = (data) => {
                 if (resolved) return;
                 // Ensure data is a string (console_write may receive Uint8Array)
@@ -1413,18 +1425,12 @@ const BOOT_SCRIPT: &str = r#"
                 buffer += text;
                 // Early crash detection: abort immediately on kernel panic
                 if (KERNEL_CRASH_RE.test(buffer)) {
-                    resolved = true;
-                    agentCapture = null;
-                    agentSuppressOutput = false;
+                    finishExecution('[kernel crashed]', -2, true);
                     console.error('[agent] Kernel crash detected during:', cmd);
-                    resolve({ output: '[kernel crashed]', exitCode: -2, crashed: true });
                     return;
                 }
                 const m = buffer.match(/__EC:(\d+)__/);
                 if (m) {
-                    resolved = true;
-                    agentCapture = null;
-                    agentSuppressOutput = false;
                     const exitCode = parseInt(m[1], 10);
                     // Extract output: everything between echoed command and sentinel.
                     // Use m.index (regex match position) NOT indexOf('__EC:') because
@@ -1439,20 +1445,46 @@ const BOOT_SCRIPT: &str = r#"
                     const output = lines.slice(1)
                         .filter(l => !KERNEL_DEBUG_RE.test(l.trim()))
                         .join('\n').trim();
-                    console.log('[agent] shellExec resolved:', { cmd, exitCode, outputLen: output.length, output: output.slice(0, 200) });
-                    resolve({ output, exitCode });
+                    finishExecution(output, exitCode);
                 }
             };
             agentSuppressOutput = true;
             // No 2>&1! Avoids CLONE_VM restore_redirects crash.
             os.key_input(cmd + '; echo __EC:$?__\r');
+            
+            // Poll for agentAbort flag every 100ms to interrupt faster
+            abortCheckInterval = setInterval(() => {
+                if (agentAbort && !resolved) {
+                    clearInterval(abortCheckInterval);
+                    resolved = true;
+                    console.warn('[agent] shellExec ABORT triggered for:', cmd);
+                    agentCapture = null;
+                    agentSuppressOutput = false;
+                    // Send multiple Ctrl+C signals (aggressive interrupt)
+                    for (let i = 0; i < 3; i++) {
+                        try { os.key_input('\x03'); } catch (e) {}
+                    }
+                    // Also try Ctrl+Z to suspend
+                    try { os.key_input('\x1a'); } catch (e) {}
+                    // Send newline to clear any stuck input
+                    try { os.key_input('\r'); } catch (e) {}
+                    resolve({ output: '[aborted by user]', exitCode: -128 });
+                }
+            }, 100);
+            
             setTimeout(() => {
                 if (!resolved) {
+                    clearInterval(abortCheckInterval);
                     resolved = true;
                     console.warn('[agent] shellExec TIMEOUT for:', cmd, 'buffer:', buffer.slice(0, 500));
                     agentCapture = null;
                     agentSuppressOutput = false;
-                    try { os.key_input('\x03'); } catch (e) {}
+                    // Send multiple Ctrl+C signals (more aggressive than before)
+                    for (let i = 0; i < 5; i++) {
+                        try { os.key_input('\x03'); } catch (e) {}
+                    }
+                    // Try Ctrl+Z as well
+                    try { os.key_input('\x1a'); } catch (e) {}
                     try { os.key_input('\r'); } catch (e) {}
                     resolve({ output: '[timeout after 30s]', exitCode: -1 });
                 }
