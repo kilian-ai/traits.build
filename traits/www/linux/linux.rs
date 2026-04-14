@@ -1252,21 +1252,30 @@ const BOOT_SCRIPT: &str = r#"
         }
 
         const SYS = 'You are a shell agent inside BusyBox Linux/WASM (musl, hush shell, NOMMU). ' +
-            'CRITICAL: fork() CRASHES this kernel. You MUST use ONLY shell builtins. ' +
-            'External commands (ls, cat, grep, find, etc.) fork and will crash. ' +
-            'Rules: 1) Reply with EXACTLY one shell command (single line), no markdown, no explanation. ' +
-            '2) When the task is done, reply DONE: summary. ' +
-            '3) ALLOWED builtins: echo, printf, cd, pwd, read, test, [, for, while, if, case, set, unset, export, true, false. ' +
-            '4) List directory: echo /path/* (glob expansion is a builtin). ' +
-            '5) Read file safely: test -f /path && { IFS= read -r l < /path && echo "$l" || echo ""; } || echo missing ' +
-            '6) Check file: test -f /path && echo exists || echo missing ' +
-            '7) Do NOT read /proc paths unless explicitly requested. ' +
-            '8) Write file: Use echo "content" with output redirect: echo "text" > /path/file ' +
-            '9) Create dir: cannot mkdir (forks). Use available dirs only. ' +
-            '10) Always check file existence first with: test -f /path && echo exists || echo missing. Only after confirmed absent, reply DONE: missing. ' +
-            '11) Avoid /proc/* and /sys/* paths entirely; they hang on this kernel. Do not probe /proc alternatives. ' +
-            '12) NEVER use: ls, cat, grep, find, head, tail, awk, sed, wc, sort, mkdir, rm, cp, mv, date, uname, curl, wget, du. ' +
-            '13) NEVER use $(...) or backticks — command substitution forks a subshell.';
+            'CRITICAL: fork() CRASHES this kernel. Use ONLY shell builtins. ' +
+            'External commands (ls, cat, grep, find, sed, awk, etc.) fork and CRASH. ' +
+            '\n\nRules:\n' +
+            '1) Reply with EXACTLY one shell builtin command per round, no markdown, no explanation.\n' +
+            '2) When done, reply: DONE: summary\n' +
+            '3) ALLOWED builtins only: echo, printf, cd, pwd, read, test, [, for, while, if, case, set, unset, export, true, false.\n' +
+            '4) List dir: echo /path/*\n' +
+            '5) Read one line: IFS= read -r line < /path/file && echo "$line"\n' +
+            '6) Read whole file line by line: while IFS= read -r line; do echo "$line"; done < /path/file\n' +
+            '7) Check file exists: test -f /path && echo exists || echo missing\n' +
+            '8) Write whole file: printf \'%s\\n\' "line1" "line2" > /path/file  (use printf for multi-line)\n' +
+            '9) EDITING A FILE — do it in rounds:\n' +
+            '   Round A: read it line by line to see the content\n' +
+            '   Round B: write the COMPLETE new file with the change applied, using printf or echo\n' +
+            '   NEVER write a description of the task into a file. Write only valid file content.\n' +
+            '10) Avoid /proc/* and /sys/* paths — they hang on this kernel.\n' +
+            '11) NEVER use $(...) or backticks — subshell forks crash the kernel.\n' +
+            '12) NEVER use: ls, cat, grep, sed, awk, find, head, tail, wc, sort, mkdir, rm, cp, mv, date, uname, curl, wget, du.\n' +
+            '13) Check file exists before editing. Only reply DONE: missing if test -f confirms absence.\n' +
+            '\nEXAMPLE — change MODEL constant in a JS file:\n' +
+            'Round 1: test -f /bin/agent.js && echo exists || echo missing\n' +
+            'Round 2: while IFS= read -r l; do echo "$l"; done < /bin/agent.js\n' +
+            'Round 3: (write complete modified file with printf, all lines, MODEL changed)\n' +
+            'Round 4: DONE: changed MODEL to gpt-5.3';
 
         let history = '';
         const MAX = 10;
@@ -1348,6 +1357,21 @@ const BOOT_SCRIPT: &str = r#"
                 if (p.startsWith('/proc/') || p.startsWith('/sys/')) {
                     cmd = "echo unsupported_proc_path";
                     console.log('[agent] Blocked /proc|/sys while-read:', p);
+                }
+            }
+
+            // Safety: detect LLM writing its task description into a file instead of actual content.
+            // Pattern: echo "some natural language sentence" > /path  —  natural language won't contain = or " or ;
+            const descWrite = cmd.match(/^(?:echo|printf)\s+["']([^"']+)["']\s*>\s*(\S+\.js)$/);
+            if (descWrite) {
+                const content = descWrite[1];
+                const target = descWrite[2];
+                // If the content looks like natural language (no code chars) it's a bad write
+                if (!/[=(){};]/.test(content) && content.split(' ').length > 4) {
+                    term.write('  \x1b[31m[blocked: writing task description into ' + target + ' — write actual code content]\x1b[0m\r\n');
+                    history += 'Cmd: ' + cmd + '\nResult: BLOCKED — you wrote a description instead of code. Read the file first, then write its complete content with the change applied.\n';
+                    console.log('[agent] Blocked description-overwrite:', cmd);
+                    continue;
                 }
             }
 
