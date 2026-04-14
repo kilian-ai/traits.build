@@ -1355,29 +1355,31 @@ const BOOT_SCRIPT: &str = r#"
             return;
         }
 
-        const SYS = 'You are a shell agent inside BusyBox Linux/WASM (hush shell). ' +
-            'External binaries (cat, sed, grep, ls, etc.) work via vfork+exec, but process slots are limited. ' +
-            'Avoid pipelines and chained external commands.\\n\\n' +
-            'Rules:\n' +
-            '1) Reply with EXACTLY one command per round. No markdown, no explanation.\n' +
-            '2) When done, reply: DONE: summary\n' +
-            '3) Read a file: cat /path/file\n' +
-            '4) Check file exists: test -f /path && echo exists || echo missing\n' +
-            '5) List dir: ls /path  or  echo /path/*\n' +
-            '6) Edit a file in-place: sed -i \'s/old/new/\' /path/file\n' +
-            '7) Multi-pattern edit: sed -i -e \'s/foo/bar/\' -e \'s/x/y/\' /path/file\n' +
-            '8) NEVER use pipelines (|) for edits or reads. Use a single command.\\n' +
-            '9) NEVER use while/for loops to read files — use cat instead.\\n' +
-            '10) NEVER use $(...) or backticks.\\n' +
-            '11) Avoid /proc/* and /sys/* paths.\\n' +
-            '12) Always check file exists before editing. Only reply DONE: missing after test -f confirms absence.\\n' +
-            '13) For create-new-file tasks, do step-by-step rounds: check source exists, read source, create target, then edit target.\\n' +
-            '14) Never do multi-stage transforms in one command (no cat|sed|sed chains).\\n' +
-            '\nEXAMPLE — change MODEL constant in a JS file:\n' +
-            'Round 1: test -f /bin/agent.js && echo exists || echo missing\n' +
-            'Round 2: cat /bin/agent.js\n' +
-            'Round 3: sed -i \'s/const MODEL = "gpt-4o-mini"/const MODEL = "gpt-5.3"/\' /bin/agent.js\n' +
-            'Round 4: DONE: changed MODEL to gpt-5.3';
+        const SYS = 'You are a shell agent inside BusyBox Linux/WASM (hush shell).\n' +
+            'Process slots are limited. No pipelines, no $(...), no backticks, no while/for loops.\n\n' +
+            'RESPONSE FORMAT (every round):\n' +
+            'THINK: <1-2 sentences: what you learned, what you plan to do next, why>\n' +
+            'CMD: <exactly one shell command>\n\n' +
+            'When finished:\n' +
+            'THINK: <what was accomplished>\n' +
+            'DONE: <summary of changes made>\n\n' +
+            'AVAILABLE COMMANDS:\n' +
+            '  cat /path/file                         — read file\n' +
+            '  test -f /path && echo exists || echo missing  — check file\n' +
+            '  ls /path                               — list directory\n' +
+            '  echo "content" > /path/file             — create/overwrite file\n' +
+            '  echo "content" >> /path/file            — append to file\n' +
+            '  sed -i \'s/old/new/\' /path/file         — edit in-place\n' +
+            '  sed -i -e \'s/a/b/\' -e \'s/c/d/\' /path  — multi-edit\n' +
+            '  head -n N /path/file                    — first N lines\n' +
+            '  tail -n N /path/file                    — last N lines\n' +
+            '  wc -l /path/file                        — line count\n\n' +
+            'CONSTRAINTS:\n' +
+            '  - ONE command per round (no ; or && chains except test -f pattern)\n' +
+            '  - No pipelines (|). No 2>&1. No /proc/* or /sys/*\n' +
+            '  - sed patterns must use exact text from the file, never placeholders or ellipsis\n' +
+            '  - To create a new file, use echo or tee — one line at a time if needed\n' +
+            '  - If output was truncated, use head/tail/sed -n to read specific line ranges\n';
 
         let history = '';
         let blockedPipelineStreak = 0;
@@ -1424,6 +1426,7 @@ const BOOT_SCRIPT: &str = r#"
             term.write('  \x1b[2m[calling LLM...]\x1b[0m\r\n');
 
             let cmd;
+            let think = '';
             try {
                 const resp = await fetch('https://relay.traits.build/llm/proxy', {
                     method: 'POST',
@@ -1437,7 +1440,7 @@ const BOOT_SCRIPT: &str = r#"
                             { role: 'system', content: SYS },
                             { role: 'user', content: userMsg }
                         ],
-                        max_tokens: 200,
+                        max_tokens: 400,
                         temperature: 0
                     })
                 });
@@ -1453,6 +1456,13 @@ const BOOT_SCRIPT: &str = r#"
                 }
                 cmd = data.choices[0].message.content.trim();
                 console.log('[agent] Round', round, 'LLM response:', cmd);
+
+                // Extract THINK line(s) and display them
+                const thinkMatch = cmd.match(/THINK:\s*(.+)/i);
+                if (thinkMatch) {
+                    think = thinkMatch[1].trim();
+                    term.write('  \x1b[36m💭 ' + think + '\x1b[0m\r\n');
+                }
             } catch (err) {
                 term.write('  \x1b[31mFetch error: ' + err.message + '\x1b[0m\r\n');
                 if (/401|unauthorized|forbidden|incorrect api key|invalid api key/i.test(String(err && err.message ? err.message : err))) {
@@ -1462,9 +1472,11 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
-            // Check for DONE. For create-new-file tasks, auto-repair "DONE: missing" into scaffold creation.
-            if (/^done/i.test(cmd)) {
-                if (/^done\s*:\s*missing/i.test(cmd)) {
+            // Check for DONE anywhere in response (may be after THINK line).
+            const doneMatch = cmd.match(/DONE:\s*([\s\S]*)/im);
+            if (doneMatch) {
+                const summary = doneMatch[1].trim().split('\n')[0] || 'Task complete';
+                if (/^missing$/i.test(summary)) {
                     const alreadyFound = /\bOut:\s*exists\b/i.test(history) || /\n\s*\|\s*exists\s*\n/i.test(history);
                     if ((createIntent || alreadyFound) && inferredTargetPath) {
                         const autoCmd = 'echo "// auto-generated scaffold for ' + inferredTargetPath.split('/').pop() + '" > ' + inferredTargetPath;
@@ -1475,31 +1487,38 @@ const BOOT_SCRIPT: &str = r#"
                         term.write('  \x1b[31m[blocked: DONE: missing is invalid for this task]\x1b[0m\r\n');
                         history += 'Result: BLOCKED — task requires creating/editing a file; do not end with DONE: missing. Continue with concrete file commands.\n';
                         continue;
+                    } else {
+                        term.write('\r\n\x1b[1;32m=== DONE: ' + summary + ' ===\x1b[0m\r\n');
+                        term.write('Completed in ' + round + ' round(s).\r\n');
+                        break;
                     }
-                }
-                if (/^done/i.test(cmd)) {
-                    term.write('\r\n\x1b[1;32m=== ' + cmd + ' ===\x1b[0m\r\n');
+                } else {
+                    term.write('\r\n\x1b[1;32m=== DONE: ' + summary + ' ===\x1b[0m\r\n');
                     term.write('Completed in ' + round + ' round(s).\r\n');
                     break;
                 }
             }
 
-            // Strip markdown fences
-            cmd = cmd.replace(/^```(?:sh|bash)?\n?/, '').replace(/\n?```$/, '');
-            // Take first line only
-            cmd = cmd.split('\n')[0].trim();
+            // Extract CMD: line from structured response
+            {
+                const cmdMatch = cmd.match(/CMD:\s*(.+)/im);
+                if (cmdMatch) {
+                    cmd = cmdMatch[1].trim();
+                } else {
+                    // Fallback: strip markdown fences, take first non-THINK line
+                    cmd = cmd.replace(/^```(?:sh|bash)?\n?/, '').replace(/\n?```$/, '');
+                    const lines = cmd.split('\n').filter(l => !/^THINK:/i.test(l.trim()));
+                    cmd = (lines[0] || '').trim();
+                }
+            }
+            // Strip any leftover markdown fences from CMD value
+            cmd = cmd.replace(/^`+/, '').replace(/`+$/, '');
 
             const repairedCmd = repairPlaceholderPaths(cmd, inferredSourcePath, inferredTargetPath);
             if (repairedCmd !== cmd) {
                 term.write('  \x1b[33m[auto-repair] ' + cmd + ' -> ' + repairedCmd + '\x1b[0m\r\n');
                 history += 'Cmd: ' + cmd + '\nResult: AUTO-REPAIR placeholder path -> ' + repairedCmd + '\n';
                 cmd = repairedCmd;
-            }
-
-            // Debug visibility: show what the LLM suggested before validation/rewrites.
-            if (cmd) {
-                const shown = cmd.length > 220 ? (cmd.slice(0, 220) + '...') : cmd;
-                term.write('  \x1b[2m[llm] ' + shown + '\x1b[0m\r\n');
             }
 
             // Block while-read loops — they hang on large files; the prompt instructs LLM to use cat.
@@ -1594,11 +1613,11 @@ const BOOT_SCRIPT: &str = r#"
             // Display output
             if (output) {
                 const lines = output.split('\n');
-                const show = Math.min(lines.length, 20);
+                const show = Math.min(lines.length, 40);
                 for (let i = 0; i < show; i++) {
                     term.write('  \x1b[37m| ' + lines[i] + '\x1b[0m\r\n');
                 }
-                if (lines.length > 20) {
+                if (lines.length > 40) {
                     term.write('  \x1b[2m| ...(' + lines.length + ' lines total)\x1b[0m\r\n');
                 }
 
@@ -1614,14 +1633,15 @@ const BOOT_SCRIPT: &str = r#"
             term.write('  \x1b[2m[exit: ' + exitCode + ']\x1b[0m\r\n\r\n');
 
             // Build history for next round.
-            // Cap output per entry to 800 chars so the model can see file contents.
-            const truncOut = output.length > 800 ? output.slice(0, 800) + '\n...(truncated, ' + output.split('\n').length + ' lines total)' : output;
-            history += 'Cmd: ' + cmd + '\nExit: ' + exitCode + '\nOut: ' + truncOut + '\n';
+            // Cap output per entry to 1500 chars so the model can see file contents.
+            const truncOut = output.length > 1500 ? output.slice(0, 1500) + '\n...(truncated, ' + output.split('\n').length + ' lines total)' : output;
+            const thinkEntry = think ? 'Think: ' + think + '\n' : '';
+            history += thinkEntry + 'Cmd: ' + cmd + '\nExit: ' + exitCode + '\nOut: ' + truncOut + '\n';
 
             // Rolling window: keep only the last 10 history entries so the
             // LLM always sees recent results instead of getting lost in a
-            // massive context. Split on 'Cmd: ' prefix to count entries.
-            const histEntries = history.split(/(?=^Cmd: )/m);
+            // massive context. Split on 'Think: ' or 'Cmd: ' prefix to count entries.
+            const histEntries = history.split(/(?=^(?:Think|Cmd): )/m);
             if (histEntries.length > 10) {
                 history = '(earlier rounds omitted)\n' + histEntries.slice(-10).join('');
             }
