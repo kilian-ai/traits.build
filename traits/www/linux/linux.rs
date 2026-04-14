@@ -864,7 +864,7 @@ const BOOT_SCRIPT: &str = r#"
     let persistPullRunning = false;
 
     async function persistPullFromGuest(silent) {
-        if (persistPullRunning || agentRunning) return;
+        if (persistPullRunning) return;
         persistPullRunning = true;
         try {
             const mounts = persistMountPaths();
@@ -1633,13 +1633,20 @@ const BOOT_SCRIPT: &str = r#"
             history += 'Cmd: ' + cmd + '\nExit: ' + exitCode + '\nOut: ' + truncOut + '\n';
         }
 
+        // Keep agentRunning=true during persist pull so keyboard input stays blocked
+        // and shellExec sentinel detection isn't corrupted by user keystrokes.
+        agentSuppressOutput = false;
+        agentCapture = null;
+        try {
+            if (persistAutosyncEnabled()) {
+                await persistPullFromGuest(true);
+            }
+        } catch (e) {
+            console.error('[agent] persistPullFromGuest error:', e);
+        }
         agentRunning = false;
         agentSuppressOutput = false;
         agentCapture = null;
-        // Pull modified files from guest FS into persist store
-        if (persistAutosyncEnabled()) {
-            await persistPullFromGuest(true);
-        }
         // Get a fresh visible prompt
         await new Promise(r => setTimeout(r, 100));
         os.key_input('\r');
