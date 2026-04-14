@@ -1252,8 +1252,8 @@ const BOOT_SCRIPT: &str = r#"
         }
 
         const SYS = 'You are a shell agent inside BusyBox Linux/WASM (hush shell). ' +
-            'External binaries (cat, sed, grep, ls, etc.) work fine via vfork+exec. ' +
-            'Shell builtin loops (while read, for) are SLOW and hang on large files — avoid them.\n\n' +
+            'External binaries (cat, sed, grep, ls, etc.) work via vfork+exec, but process slots are limited. ' +
+            'Avoid pipelines and chained external commands.\\n\\n' +
             'Rules:\n' +
             '1) Reply with EXACTLY one command per round. No markdown, no explanation.\n' +
             '2) When done, reply: DONE: summary\n' +
@@ -1262,10 +1262,11 @@ const BOOT_SCRIPT: &str = r#"
             '5) List dir: ls /path  or  echo /path/*\n' +
             '6) Edit a file in-place: sed -i \'s/old/new/\' /path/file\n' +
             '7) Multi-pattern edit: sed -i -e \'s/foo/bar/\' -e \'s/x/y/\' /path/file\n' +
-            '8) NEVER use while/for loops to read files — use cat instead.\n' +
-            '9) NEVER use $(...) or backticks.\n' +
-            '10) Avoid /proc/* and /sys/* paths.\n' +
-            '11) Always check file exists before editing. Only reply DONE: missing after test -f confirms absence.\n' +
+            '8) NEVER use pipelines (|) for edits or reads. Use a single command.\\n' +
+            '9) NEVER use while/for loops to read files — use cat instead.\\n' +
+            '10) NEVER use $(...) or backticks.\\n' +
+            '11) Avoid /proc/* and /sys/* paths.\\n' +
+            '12) Always check file exists before editing. Only reply DONE: missing after test -f confirms absence.\\n' +
             '\nEXAMPLE — change MODEL constant in a JS file:\n' +
             'Round 1: test -f /bin/agent.js && echo exists || echo missing\n' +
             'Round 2: cat /bin/agent.js\n' +
@@ -1352,6 +1353,14 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
+            // Block pipelines to avoid vfork slot exhaustion ("Resource busy").
+            if (cmd.includes('|')) {
+                term.write('  \x1b[31m[blocked: pipeline commands exhaust process slots — split into single commands]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — no pipelines. Use one command per round (cat, then sed -i).\n';
+                console.log('[agent] Blocked pipeline command:', cmd);
+                continue;
+            }
+
             if (!cmd) {
                 term.write('  \x1b[2m[empty response]\x1b[0m\r\n');
                 continue;
@@ -1387,6 +1396,11 @@ const BOOT_SCRIPT: &str = r#"
                 }
                 if (lines.length > 20) {
                     term.write('  \x1b[2m| ...(' + lines.length + ' lines total)\x1b[0m\r\n');
+                }
+
+                if (/resource busy|vfork: Resource busy/i.test(output)) {
+                    term.write('  \x1b[33m[hint: split into single commands; avoid pipes and command chains]\x1b[0m\r\n');
+                    history += 'Result: Resource busy from process-slot exhaustion. Retry with one command per round and no pipes.\n';
                 }
             }
             term.write('  \x1b[2m[exit: ' + exitCode + ']\x1b[0m\r\n\r\n');
