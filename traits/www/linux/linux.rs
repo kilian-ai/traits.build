@@ -546,7 +546,10 @@ const BOOT_SCRIPT: &str = r#"
         term.write(`\x1B[2m[traits.build] INIT mode: minimal (${initProgram})\x1B[0m\r\n`);
     }
 
-    const logLine = (text) => term.write(('\x1B[2m' + text + '\x1B[0m\n').replaceAll('\n', '\r\n'));
+    const logLine = (text) => {
+        // Keep noisy kernel/runtime diagnostics in DevTools only.
+        console.log('[linux/log]', text);
+    };
     // Track whether the first shell prompt has appeared (for secret injection)
     let shellReady = false;
     let shellReadyResolve = null;
