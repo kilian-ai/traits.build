@@ -749,7 +749,6 @@ const BOOT_SCRIPT: &str = r#"
 
     // ── Persist pull: snapshot guest FS back to localStorage ──
     let persistPullRunning = false;
-    let persistPullTimer = null;
 
     async function persistPullFromGuest(silent) {
         if (persistPullRunning || agentRunning) return;
@@ -814,49 +813,44 @@ const BOOT_SCRIPT: &str = r#"
         }
     }
 
-    async function persistPullKnownFiles() {
-        if (persistPullRunning || agentRunning) return;
-        const state = persistLoad();
-        const knownFiles = Object.keys(state.files || {});
-        if (!knownFiles.length) return;
-        persistPullRunning = true;
-        try {
-            // Single compound command reads all known files with delimiters
-            const readParts = knownFiles.map(f =>
-                "printf '\\n===PF===' ; printf '%s' '" + shellSingleQuote(f) + "' ; printf '\\n' ; cat '" + shellSingleQuote(f) + "' ; printf '\\n===PE===\\n'"
-            );
-            const result = await shellExec(readParts.join(' ; '));
-            if (result.crashed) return;
-
-            let changed = false;
-            const segments = result.output.split('===PF===');
-            for (const seg of segments) {
-                if (!seg.trim()) continue;
-                const endIdx = seg.indexOf('===PE===');
-                if (endIdx < 0) continue;
-                const block = seg.slice(0, endIdx);
-                const nl = block.indexOf('\n');
-                if (nl < 0) continue;
-                const path = persistNormalizePath(block.slice(0, nl).trim());
-                const content = block.slice(nl + 1).replace(/\n$/, '');
-                if (path && state.files[path] !== content) {
-                    state.files[path] = content;
-                    changed = true;
-                }
-            }
-            if (changed) persistSave(state);
-        } finally {
-            persistPullRunning = false;
+    // Track file writes by intercepting redirect patterns in user commands.
+    // Parses echo/printf > /path commands and saves content to persist state.
+    function persistTrackRedirect(cmd) {
+        const text = String(cmd || '').trim();
+        // Match: ... > /path or ... >> /path (avoid heredoc << and stderr 2>)
+        const redir = text.match(/(?:^|[^<>2])\s*(>{1,2})\s*(\/\S+)\s*$/);
+        if (!redir) return;
+        const isAppend = redir[1] === '>>';
+        const target = persistResolvePath(redir[2]);
+        if (!target) return;
+        // Only track files under mounted paths
+        const mounts = persistMountPaths();
+        if (!mounts.some(m => target.startsWith(m + '/') || target === m)) return;
+        // Extract content from simple echo/printf patterns
+        const beforeRedir = text.slice(0, text.lastIndexOf(redir[1])).trim();
+        let content = null;
+        // echo 'content' or echo "content"
+        const echoQ = beforeRedir.match(/^echo\s+['"]([\s\S]*)['"]\s*$/);
+        if (echoQ) content = echoQ[1];
+        // echo content (unquoted)
+        if (content === null) {
+            const echoU = beforeRedir.match(/^echo\s+([\s\S]+)$/);
+            if (echoU) content = echoU[1].trim();
         }
-    }
-
-    function persistStartPullTimer() {
-        if (persistPullTimer) return;
-        persistPullTimer = setInterval(() => { persistPullKnownFiles(); }, 1000);
-    }
-
-    function persistStopPullTimer() {
-        if (persistPullTimer) { clearInterval(persistPullTimer); persistPullTimer = null; }
+        // printf '%s' 'content'
+        if (content === null) {
+            const pf = beforeRedir.match(/^printf\s+'%s'\s+'([\s\S]*)'/)
+                     || beforeRedir.match(/^printf\s+'%s'\s+"([\s\S]*)"/);
+            if (pf) content = pf[1];
+        }
+        if (content === null) return;
+        const state = persistLoad();
+        if (isAppend) {
+            state.files[target] = (state.files[target] || '') + content;
+        } else {
+            state.files[target] = content;
+        }
+        persistSave(state);
     }
 
     async function runPersistCommand(cmd) {
@@ -957,7 +951,6 @@ const BOOT_SCRIPT: &str = r#"
                 return;
             }
             persistSetAutosync(val === 'on');
-            if (val === 'on') persistStartPullTimer(); else persistStopPullTimer();
             term.write('[persist] autosync=' + val + '\r\n');
             return;
         }
@@ -1085,6 +1078,7 @@ const BOOT_SCRIPT: &str = r#"
                 if (m) {
                     resolved = true;
                     agentCapture = null;
+                    agentSuppressOutput = false;
                     const exitCode = parseInt(m[1], 10);
                     // Extract output: everything between echoed command and sentinel.
                     // Use m.index (regex match position) NOT indexOf('__EC:') because
@@ -1280,6 +1274,10 @@ const BOOT_SCRIPT: &str = r#"
         agentRunning = false;
         agentSuppressOutput = false;
         agentCapture = null;
+        // Pull modified files from guest FS into persist store
+        if (persistAutosyncEnabled()) {
+            await persistPullFromGuest(true);
+        }
         // Get a fresh visible prompt
         await new Promise(r => setTimeout(r, 100));
         os.key_input('\r');
@@ -1488,6 +1486,11 @@ const BOOT_SCRIPT: &str = r#"
                     persistTrackMkdir(cmd);
                 }
 
+                // Track file writes via redirect (echo/printf > /path).
+                if (!intercepted) {
+                    persistTrackRedirect(cmd);
+                }
+
                 currentInput = '';
                 historyNavIndex = null;
                 if (intercepted) {
@@ -1546,7 +1549,6 @@ const BOOT_SCRIPT: &str = r#"
         document.removeEventListener('paste', handlePaste, true);
         document.removeEventListener('copy', handleCopy, true);
         if (netStatsTimer) clearInterval(netStatsTimer);
-        persistStopPullTimer();
         URL.revokeObjectURL(workerUrl);
     };
 
@@ -1567,8 +1569,6 @@ const BOOT_SCRIPT: &str = r#"
             term.write('\x1b[2m[persist] autosync enabled\x1b[0m\r\n');
             persistSyncToGuest(true).then(() => {
                 term.write('\x1b[2m[persist] autosync complete\x1b[0m\r\n');
-                // Start periodic pull (guest FS -> localStorage) every 1s
-                persistStartPullTimer();
             }).catch((err) => {
                 term.write('\x1b[33m[persist] autosync failed: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
             });
