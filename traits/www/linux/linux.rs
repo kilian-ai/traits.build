@@ -1255,9 +1255,9 @@ const BOOT_SCRIPT: &str = r#"
             '2) When the task is done, reply DONE: summary. ' +
             '3) ALLOWED builtins: echo, printf, cd, pwd, read, test, [, for, while, if, case, set, unset, export, true, false. ' +
             '4) List directory: echo /path/* (glob expansion is a builtin). ' +
-            '5) Read file: while IFS= read -r l; do echo "$l"; done < /path/to/file ' +
+            '5) Read file safely: test -f /path && { IFS= read -r l < /path && echo "$l" || echo ""; } || echo missing ' +
             '6) Check file: test -f /path && echo exists || echo missing ' +
-            '7) Read /proc files: while IFS= read -r l; do echo "$l"; done < /proc/meminfo ' +
+            '7) Do NOT read /proc paths unless explicitly requested. ' +
             '8) Write file: Use echo "content" with output redirect: echo "text" > /path/file ' +
             '9) Create dir: cannot mkdir (forks). Use available dirs only. ' +
             '10) If a requested file is missing, reply DONE: missing and stop. Do NOT probe alternative files. ' +
@@ -1328,6 +1328,18 @@ const BOOT_SCRIPT: &str = r#"
             cmd = cmd.replace(/^```(?:sh|bash)?\n?/, '').replace(/\n?```$/, '');
             // Take first line only
             cmd = cmd.split('\n')[0].trim();
+
+            // Rewrite known hanging pattern produced by LLM into a safer one-liner.
+            const whileRead = cmd.match(/^while\s+IFS=\s*read\s+-r\s+\w+;\s*do\s*echo\s+"\$\w+";\s*done\s*<\s*(\/\S+)$/);
+            if (whileRead) {
+                const p = whileRead[1];
+                if (p.startsWith('/proc/')) {
+                    cmd = "echo unsupported_proc_path";
+                } else {
+                    cmd = "test -f '" + shellSingleQuote(p) + "' && { IFS= read -r l < '" + shellSingleQuote(p) + "' && echo \"$l\" || echo \"\"; } || echo missing";
+                }
+                console.log('[agent] Rewrote risky while-read command to:', cmd);
+            }
 
             if (!cmd) {
                 term.write('  \x1b[2m[empty response]\x1b[0m\r\n');
