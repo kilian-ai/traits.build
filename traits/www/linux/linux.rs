@@ -1385,7 +1385,6 @@ const BOOT_SCRIPT: &str = r#"
         let lastCmd = '';
         let sameCmdStreak = 0;
         let agentExistsConfirmed = false;
-        const catPageStart = Object.create(null);
         const createIntent = /(create|build\s+new|new\s+\S+\.[a-z0-9]+|add\s+\S+\.[a-z0-9]+|write\s+\S+\.[a-z0-9]+)/i.test(task || '');
         const inferredSourcePath = inferSourcePath(task);
         const inferredTargetPath = inferTargetPath(task);
@@ -1548,23 +1547,9 @@ const BOOT_SCRIPT: &str = r#"
             if (cmd === lastCmd) sameCmdStreak += 1;
             else sameCmdStreak = 0;
 
-            // Repeated full-file cat reads are often a signal the model needs more context.
-            // Auto-repair into paged reads instead of hard-blocking.
-            const repeatedCat = cmd.match(/^cat\s+(\S+)$/);
-            if (repeatedCat && sameCmdStreak >= 1) {
-                const file = repeatedCat[1];
-                const start = catPageStart[file] || 1;
-                const end = start + 119;
-                const paged = "sed -n '" + start + "," + end + "p' " + file;
-                term.write('  \x1b[33m[auto-repair] repeated cat -> ' + paged + '\x1b[0m\r\n');
-                history += 'Cmd: ' + cmd + '\nResult: AUTO-REPAIR repeated cat into paged read: ' + paged + '\n';
-                cmd = paged;
-                catPageStart[file] = end + 1;
-            }
-
-            if (sameCmdStreak >= 4 && !repeatedCat) {
+            if (sameCmdStreak >= 3) {
                 term.write('  \x1b[31m[blocked: repeated identical command — advance to next step]\x1b[0m\r\n');
-                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — repeated command loop. Choose a different next step.\n';
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — you already ran this command (output is in history above). Move to the next step.\n';
                 blockedTotal += 1;
                 continue;
             }
@@ -1628,9 +1613,18 @@ const BOOT_SCRIPT: &str = r#"
             }
             term.write('  \x1b[2m[exit: ' + exitCode + ']\x1b[0m\r\n\r\n');
 
-            // Build history for next round (keep short)
-            const truncOut = output.length > 500 ? output.slice(0, 500) + '...' : output;
+            // Build history for next round.
+            // Cap output per entry to 800 chars so the model can see file contents.
+            const truncOut = output.length > 800 ? output.slice(0, 800) + '\n...(truncated, ' + output.split('\n').length + ' lines total)' : output;
             history += 'Cmd: ' + cmd + '\nExit: ' + exitCode + '\nOut: ' + truncOut + '\n';
+
+            // Rolling window: keep only the last 10 history entries so the
+            // LLM always sees recent results instead of getting lost in a
+            // massive context. Split on 'Cmd: ' prefix to count entries.
+            const histEntries = history.split(/(?=^Cmd: )/m);
+            if (histEntries.length > 10) {
+                history = '(earlier rounds omitted)\n' + histEntries.slice(-10).join('');
+            }
         }
 
         // Keep agentRunning=true during persist pull so keyboard input stays blocked
