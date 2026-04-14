@@ -602,14 +602,18 @@ const NetProxy = (() => {
         tunnelWs.onerror = (e) => {
           tunnelConnected = false;
           stats.tunnelTxErrors++;
-          // Capture error: try to extract details from various error formats
-          const errStr = String(e);
+          // WebSocket onerror gives a bare Event (no message) on connection refusal.
+          // Try message/reason fields first; fall back to a helpful generic message.
+          const msg = (e && (e.message || e.reason)) ? String(e.message || e.reason) : '';
+          const errStr = msg || String(e);
+          const isPlainEvent = !msg && (errStr === '[object Event]' || errStr === '[object ErrorEvent]');
           const isNetErr = errStr.includes('Failed to construct') || errStr.includes('NetworkError');
           const isCorsErr = errStr.includes('CORS') || errStr.includes('cross-origin');
           const isTimeErr = errStr.includes('timeout') || errStr.includes('time');
           if (isNetErr) tunnelError = 'Network error (offline or relay unreachable)';
           else if (isCorsErr) tunnelError = 'CORS blocked (check relay origin)';
           else if (isTimeErr) tunnelError = 'Connection timeout';
+          else if (isPlainEvent) tunnelError = 'Connection refused (relay unreachable or endpoint missing)';
           else tunnelError = 'WebSocket error: ' + errStr.slice(0, 100);
           console.warn('[net-proxy] ✗ tunnel error:', tunnelError, {errorObj: e});
         };
