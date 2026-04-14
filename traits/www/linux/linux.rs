@@ -1038,17 +1038,47 @@ const BOOT_SCRIPT: &str = r#"
         term.write('[persist] unknown command: ' + sub + '\r\n');
     }
 
+    let consoleFilterCarry = '';
+    const KERNEL_NOISE_RE = /^\[(Main|Runner)[^\]]*\]:/;
+
+    function writeConsoleFiltered(data) {
+        const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+        let combined = consoleFilterCarry + text;
+        consoleFilterCarry = '';
+
+        while (true) {
+            const nl = combined.indexOf('\n');
+            if (nl < 0) break;
+            const line = combined.slice(0, nl + 1);
+            combined = combined.slice(nl + 1);
+            const trimmed = line.replace(/\r?\n$/, '');
+            if (KERNEL_NOISE_RE.test(trimmed)) {
+                console.log('[linux/kernel]', trimmed);
+            } else {
+                term.write(line);
+            }
+        }
+
+        // Keep possible partial kernel debug lines buffered until newline.
+        if (combined.startsWith('[')) {
+            consoleFilterCarry = combined;
+        } else if (combined) {
+            term.write(combined);
+        }
+    }
+
     const console_write = (data) => {
         // During agent command execution, suppress raw shell echo
         // (agent displays its own formatted output)
         if (!agentSuppressOutput) {
-            term.write(data);
+            writeConsoleFiltered(data);
         }
         // Agent output capture callback
         if (agentCapture) agentCapture(data);
         // Detect first interactive shell prompt (BusyBox prints hash-space or dollar-space)
         if (!shellReady) {
-            consoleBuffer += data;
+            const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+            consoleBuffer += text;
             // Look for prompt at end of output — shell is ready when we see "prompt "
             const tail = consoleBuffer.slice(-4);
             if (tail.endsWith('$ ') || tail.endsWith('> ') || (tail.includes('#') && tail.endsWith(' '))) {
@@ -1079,9 +1109,9 @@ const BOOT_SCRIPT: &str = r#"
                 const mode = (typeof NetProxy !== 'undefined' && NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
                 if (mode !== lastMode) {
                     if (lastMode === 'browser-fallback' && mode === 'tunnel') {
-                        term.write('\x1B[32m[traits.build] NET upgraded: tunnel connected after boot\x1B[0m\r\n');
+                        console.log('[net] upgraded: browser-fallback -> tunnel');
                     } else {
-                        term.write(`\x1B[2m[traits.build] NET mode changed: ${lastMode} -> ${mode}\x1B[0m\r\n`);
+                        console.log(`[net] mode changed: ${lastMode} -> ${mode}`);
                     }
                     lastMode = mode;
                 }
@@ -1092,7 +1122,7 @@ const BOOT_SCRIPT: &str = r#"
                 const cbPoll = host ? host.pollAvgMs : 0;
                 const line = `[net] mode=${mode} q=${q}/${qh} drop=${drop} cb_recv=${cbRecv.toFixed(3)}ms cb_poll=${cbPoll.toFixed(3)}ms`;
                 if (line !== lastNetLine) {
-                    term.write(`\x1B[2m${line}\x1B[0m\r\n`);
+                    console.log(line);
                     lastNetLine = line;
                 }
             } catch (e) {
@@ -1233,7 +1263,7 @@ const BOOT_SCRIPT: &str = r#"
             '10) If a requested file is missing, reply DONE: missing and stop. Do NOT probe alternative files. ' +
             '11) Avoid /proc/self/*, /proc/mounts, and status-like proc files; they may hang in this kernel. ' +
             '12) NEVER use: ls, cat, grep, find, head, tail, awk, sed, wc, sort, mkdir, rm, cp, mv, date, uname, curl, wget, du. ' +
-            '11) NEVER use $(...) or backticks — command substitution forks a subshell.';
+            '13) NEVER use $(...) or backticks — command substitution forks a subshell.';
 
         let history = '';
         const MAX = 10;
