@@ -2032,7 +2032,7 @@ const BOOT_SCRIPT: &str = r#"
                 + '- no trailing continuation backslash\n'
                 + '- no heredocs, no backticks, no $()\n'
                 + '- no sed a\\, i\\, or c\\ forms\n'
-                + '- never use \\' inside single-quoted shell strings; use double quotes when needed\n'
+                + "- never use \\' inside single-quoted shell strings; use double quotes when needed\n"
                 + '- prefer printf "%s\\n" ... > file for larger rewrites\n'
                 + '- prefer single-line sed -i s/// edits for small exact changes\n'
                 + '- preserve the user intent\n';
