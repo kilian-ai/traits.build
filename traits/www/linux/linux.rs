@@ -1251,30 +1251,25 @@ const BOOT_SCRIPT: &str = r#"
             return;
         }
 
-        const SYS = 'You are a shell agent inside BusyBox Linux/WASM (musl, hush shell, NOMMU). ' +
-            'CRITICAL: fork() CRASHES this kernel. Use ONLY shell builtins. ' +
-            'External commands (ls, cat, grep, find, sed, awk, etc.) fork and CRASH. ' +
-            '\n\nRules:\n' +
-            '1) Reply with EXACTLY one shell builtin command per round, no markdown, no explanation.\n' +
+        const SYS = 'You are a shell agent inside BusyBox Linux/WASM (hush shell). ' +
+            'External binaries (cat, sed, grep, ls, etc.) work fine via vfork+exec. ' +
+            'Shell builtin loops (while read, for) are SLOW and hang on large files — avoid them.\n\n' +
+            'Rules:\n' +
+            '1) Reply with EXACTLY one command per round. No markdown, no explanation.\n' +
             '2) When done, reply: DONE: summary\n' +
-            '3) ALLOWED builtins only: echo, printf, cd, pwd, read, test, [, for, while, if, case, set, unset, export, true, false.\n' +
-            '4) List dir: echo /path/*\n' +
-            '5) Read one line: IFS= read -r line < /path/file && echo "$line"\n' +
-            '6) Read whole file line by line: while IFS= read -r line; do echo "$line"; done < /path/file\n' +
-            '7) Check file exists: test -f /path && echo exists || echo missing\n' +
-            '8) Write whole file: printf \'%s\\n\' "line1" "line2" > /path/file  (use printf for multi-line)\n' +
-            '9) EDITING A FILE — do it in rounds:\n' +
-            '   Round A: read it line by line to see the content\n' +
-            '   Round B: write the COMPLETE new file with the change applied, using printf or echo\n' +
-            '   NEVER write a description of the task into a file. Write only valid file content.\n' +
-            '10) Avoid /proc/* and /sys/* paths — they hang on this kernel.\n' +
-            '11) NEVER use $(...) or backticks — subshell forks crash the kernel.\n' +
-            '12) NEVER use: ls, cat, grep, sed, awk, find, head, tail, wc, sort, mkdir, rm, cp, mv, date, uname, curl, wget, du.\n' +
-            '13) Check file exists before editing. Only reply DONE: missing if test -f confirms absence.\n' +
+            '3) Read a file: cat /path/file\n' +
+            '4) Check file exists: test -f /path && echo exists || echo missing\n' +
+            '5) List dir: ls /path  or  echo /path/*\n' +
+            '6) Edit a file in-place: sed -i \'s/old/new/\' /path/file\n' +
+            '7) Multi-pattern edit: sed -i -e \'s/foo/bar/\' -e \'s/x/y/\' /path/file\n' +
+            '8) NEVER use while/for loops to read files — use cat instead.\n' +
+            '9) NEVER use $(...) or backticks.\n' +
+            '10) Avoid /proc/* and /sys/* paths.\n' +
+            '11) Always check file exists before editing. Only reply DONE: missing after test -f confirms absence.\n' +
             '\nEXAMPLE — change MODEL constant in a JS file:\n' +
             'Round 1: test -f /bin/agent.js && echo exists || echo missing\n' +
-            'Round 2: while IFS= read -r l; do echo "$l"; done < /bin/agent.js\n' +
-            'Round 3: (write complete modified file with printf, all lines, MODEL changed)\n' +
+            'Round 2: cat /bin/agent.js\n' +
+            'Round 3: sed -i \'s/const MODEL = "gpt-4o-mini"/const MODEL = "gpt-5.3"/\' /bin/agent.js\n' +
             'Round 4: DONE: changed MODEL to gpt-5.3';
 
         let history = '';
@@ -1349,30 +1344,12 @@ const BOOT_SCRIPT: &str = r#"
             // Take first line only
             cmd = cmd.split('\n')[0].trim();
 
-            // Rewrite while-read on /proc/* and /sys/* paths — those hang in this NOMMU kernel.
-            // Regular file paths are allowed to use full while-read loops.
-            const whileReadPath = cmd.match(/while\s+IFS=\s*read\s+-r\s+\w+[\s\S]*<\s*(\/\S+)\s*$/);
-            if (whileReadPath) {
-                const p = whileReadPath[1];
-                if (p.startsWith('/proc/') || p.startsWith('/sys/')) {
-                    cmd = "echo unsupported_proc_path";
-                    console.log('[agent] Blocked /proc|/sys while-read:', p);
-                }
-            }
-
-            // Safety: detect LLM writing its task description into a file instead of actual content.
-            // Pattern: echo "some natural language sentence" > /path  —  natural language won't contain = or " or ;
-            const descWrite = cmd.match(/^(?:echo|printf)\s+["']([^"']+)["']\s*>\s*(\S+\.js)$/);
-            if (descWrite) {
-                const content = descWrite[1];
-                const target = descWrite[2];
-                // If the content looks like natural language (no code chars) it's a bad write
-                if (!/[=(){};]/.test(content) && content.split(' ').length > 4) {
-                    term.write('  \x1b[31m[blocked: writing task description into ' + target + ' — write actual code content]\x1b[0m\r\n');
-                    history += 'Cmd: ' + cmd + '\nResult: BLOCKED — you wrote a description instead of code. Read the file first, then write its complete content with the change applied.\n';
-                    console.log('[agent] Blocked description-overwrite:', cmd);
-                    continue;
-                }
+            // Block while-read loops — they hang on large files; the prompt instructs LLM to use cat.
+            if (/while\s+IFS=|while\s+read/.test(cmd)) {
+                term.write('  \x1b[31m[blocked: while-read loop hangs on large files — use cat instead]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — while-read loops hang. Use: cat /path/file\n';
+                console.log('[agent] Blocked while-read loop:', cmd);
+                continue;
             }
 
             if (!cmd) {
