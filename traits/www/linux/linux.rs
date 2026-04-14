@@ -1124,12 +1124,37 @@ const BOOT_SCRIPT: &str = r#"
     // while read, test, etc.) which do NOT fork. External commands would crash
     // the WASM NOMMU kernel due to CLONE_VM shared-memory corruption.
     let agentAbort = false;
+
+    // Resolve API key: /tmp/key in guest (via persist state or shellExec) takes
+    // priority over localStorage secret, so `echo 'sk-...' > /tmp/key` just works.
+    async function resolveApiKey() {
+        // 1. Check persist store for /tmp/key (instant, no fork)
+        const state = persistLoad();
+        const persistKey = (state.files && state.files['/tmp/key']) ? state.files['/tmp/key'].trim() : '';
+        if (persistKey && persistKey.startsWith('sk-')) return persistKey;
+
+        // 2. Read /tmp/key from guest via shellExec (one fork)
+        try {
+            const r = await shellExec("cat /tmp/key");
+            const guestKey = (r && r.exitCode === 0 && r.output) ? r.output.trim() : '';
+            if (guestKey && guestKey.startsWith('sk-')) {
+                // Save to persist so next check is instant
+                state.files['/tmp/key'] = guestKey;
+                persistSave(state);
+                return guestKey;
+            }
+        } catch (e) {}
+
+        // 3. Fall back to localStorage secret
+        return (localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim() || null;
+    }
+
     async function runJSAgent(task) {
         agentRunning = true;
         agentAbort = false;
-        const apiKey = localStorage.getItem('traits.secret.OPENAI_API_KEY');
+        const apiKey = await resolveApiKey();
         if (!apiKey) {
-            term.write('\x1b[31mNo API key. Set OPENAI_API_KEY in Settings (#/settings → Secrets).\x1b[0m\r\n');
+            term.write('\x1b[31mNo API key. Set OPENAI_API_KEY in Settings or write to /tmp/key.\x1b[0m\r\n');
             agentRunning = false;
             os.key_input('\r');
             return;
