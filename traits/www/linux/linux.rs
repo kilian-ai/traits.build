@@ -1318,6 +1318,9 @@ const BOOT_SCRIPT: &str = r#"
         let history = '';
         let blockedPipelineStreak = 0;
         let blockedTotal = 0;
+        let lastCmd = '';
+        let sameCmdStreak = 0;
+        let agentExistsConfirmed = false;
         const MAX = 10;
 
         term.write('\x1b[1;32m=== Agent: ' + task + ' ===\x1b[0m\r\n');
@@ -1342,6 +1345,11 @@ const BOOT_SCRIPT: &str = r#"
                     + 'sed -i \'s/old/new/\' /path/file ; '
                     + 'echo "text" > /path/file ; '
                     + 'DONE: summary';
+            }
+
+            if (agentExistsConfirmed) {
+                userMsg += '\nSTATE: /bin/agent.js existence is already confirmed (exists). Do NOT repeat test -f. '
+                    + 'Next step must be either: cat /bin/agent.js OR a concrete sed -i edit OR create /bin/config.js.';
             }
 
             console.log('[agent] Round', round, 'userMsg:', userMsg.slice(0, 300));
@@ -1447,6 +1455,24 @@ const BOOT_SCRIPT: &str = r#"
                 continue;
             }
 
+            // Prevent repeated no-op checks that stall progress.
+            if (/^test\s+-f\s+\/bin\/agent\.js\s+&&\s+echo\s+exists\s+\|\|\s+echo\s+missing$/i.test(cmd) && agentExistsConfirmed) {
+                term.write('  \x1b[31m[blocked: /bin/agent.js already confirmed exists — move to read/edit step]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — repeated existence check. Next step: cat /bin/agent.js or sed -i edit.\n';
+                blockedTotal += 1;
+                continue;
+            }
+
+            if (cmd === lastCmd) sameCmdStreak += 1;
+            else sameCmdStreak = 0;
+            if (sameCmdStreak >= 2) {
+                term.write('  \x1b[31m[blocked: repeated identical command — advance to next step]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — repeated command loop. Choose a different next step.\n';
+                blockedTotal += 1;
+                continue;
+            }
+            lastCmd = cmd;
+
             blockedPipelineStreak = 0;
 
             if (!cmd) {
@@ -1489,6 +1515,10 @@ const BOOT_SCRIPT: &str = r#"
                 if (/resource busy|vfork: Resource busy/i.test(output)) {
                     term.write('  \x1b[33m[hint: split into single commands; avoid pipes and command chains]\x1b[0m\r\n');
                     history += 'Result: Resource busy from process-slot exhaustion. Retry with one command per round and no pipes.\n';
+                }
+
+                if (/^test\s+-f\s+\/bin\/agent\.js\s+&&\s+echo\s+exists\s+\|\|\s+echo\s+missing$/i.test(cmd) && /(^|\n)exists(\n|$)/i.test(output)) {
+                    agentExistsConfirmed = true;
                 }
             }
             term.write('  \x1b[2m[exit: ' + exitCode + ']\x1b[0m\r\n\r\n');
