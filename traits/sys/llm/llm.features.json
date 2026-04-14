@@ -1,4 +1,6 @@
 {
+  "skip": true,
+  "skip_reason": "Contains live provider coverage. Excluded from default test_runner '*' runs; run manually when validating sys.llm against OpenAI.",
   "features": [
     {
       "name": "missing prompt returns error",

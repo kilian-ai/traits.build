@@ -1,5 +1,7 @@
 {
   "trait": "sys.chat_learnings",
+  "skip": true,
+  "skip_reason": "Uses a live LLM model during command tests. Excluded from default test_runner '*' runs.",
   "features": [
     {
       "name": "Appends learnings from new comments",

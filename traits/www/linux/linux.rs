@@ -561,6 +561,428 @@ const BOOT_SCRIPT: &str = r#"
     let agentRunning = false;     // true while agent loop is active
     let agentSuppressOutput = false; // suppress shell echo during agent command exec
 
+    function parseAgentTask(cmd) {
+        const trimmed = (cmd || '').trim();
+        let task = null;
+        if (trimmed === 'agent') task = '';
+        else if (trimmed.startsWith('agent ')) task = trimmed.slice(6).trim();
+        else if (trimmed.startsWith('qjs /bin/agent.js ')) task = trimmed.slice('qjs /bin/agent.js '.length).trim();
+        else if (trimmed.startsWith('/bin/agent.sh ')) task = trimmed.slice('/bin/agent.sh '.length).trim();
+        else if (trimmed.startsWith('agent.sh ')) task = trimmed.slice('agent.sh '.length).trim();
+        else return null;
+
+        if ((task.startsWith('"') && task.endsWith('"')) || (task.startsWith("'") && task.endsWith("'"))) {
+            task = task.slice(1, -1).trim();
+        }
+        return task;
+    }
+
+    const PERSIST_KEY = 'linux-wasm.persist.files';
+    const PERSIST_MOUNT_KEY = 'linux-wasm.persist.mounts';
+    const PERSIST_AUTOSYNC_KEY = 'linux-wasm.persist.autosync';
+
+    function persistInitDefaults() {
+        try {
+            if (!localStorage.getItem(PERSIST_MOUNT_KEY)) {
+                localStorage.setItem(PERSIST_MOUNT_KEY, '/tmp,/home');
+            }
+            if (!localStorage.getItem(PERSIST_AUTOSYNC_KEY)) {
+                localStorage.setItem(PERSIST_AUTOSYNC_KEY, '1');
+            }
+        } catch (e) {}
+    }
+
+    function persistNormalizePath(path) {
+        const p = String(path || '').trim();
+        if (!p) return '';
+        return p.startsWith('/') ? p : ('/' + p);
+    }
+
+    function persistNormalizeMounts(parts) {
+        const out = [];
+        for (const raw of (parts || [])) {
+            const p = persistNormalizePath(raw);
+            if (!p) continue;
+            if (!out.includes(p)) out.push(p);
+        }
+        return out;
+    }
+
+    function persistDefaultMount() {
+        const m = persistMountPaths();
+        return m[0] || '/tmp';
+    }
+
+    function persistResolvePath(path) {
+        const p = String(path || '').trim();
+        if (!p) return '';
+        return p.startsWith('/') ? persistNormalizePath(p) : (persistDefaultMount() + '/' + p);
+    }
+
+    function persistLoad() {
+        try {
+            const raw = localStorage.getItem(PERSIST_KEY) || '{}';
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { files: {}, dirs: [] };
+
+            // New format: { files: { '/tmp/a': '...' }, dirs: ['/tmp/x'] }
+            if (parsed.files && typeof parsed.files === 'object' && !Array.isArray(parsed.files)) {
+                const files = {};
+                for (const k of Object.keys(parsed.files)) {
+                    const pk = persistNormalizePath(k);
+                    if (!pk) continue;
+                    files[pk] = String(parsed.files[k] || '');
+                }
+                const dirsRaw = Array.isArray(parsed.dirs) ? parsed.dirs : [];
+                const dirs = persistNormalizeMounts(dirsRaw);
+                return { files, dirs };
+            }
+
+            // Legacy format: { name: content } -> migrate under default mount.
+            const files = {};
+            const base = persistDefaultMount();
+            for (const name of Object.keys(parsed)) {
+                const rel = String(name || '').replace(/^\/+/, '');
+                if (!rel) continue;
+                files[base + '/' + rel] = String(parsed[name] || '');
+            }
+            return { files, dirs: [] };
+        } catch (e) {}
+        return { files: {}, dirs: [] };
+    }
+
+    function persistSave(state) {
+        const safe = {
+            files: (state && state.files && typeof state.files === 'object') ? state.files : {},
+            dirs: Array.isArray(state && state.dirs) ? state.dirs : [],
+        };
+        try { localStorage.setItem(PERSIST_KEY, JSON.stringify(safe)); } catch (e) {}
+    }
+
+    function persistMountPaths() {
+        try {
+            const raw = (localStorage.getItem(PERSIST_MOUNT_KEY) || '/tmp,/home').trim();
+            const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+            const mounts = persistNormalizeMounts(parts);
+            return mounts.length ? mounts : ['/tmp', '/home'];
+        } catch (e) {
+            return ['/tmp', '/home'];
+        }
+    }
+
+    function persistSetMountPaths(paths) {
+        const mounts = persistNormalizeMounts(paths);
+        const finalMounts = mounts.length ? mounts : ['/tmp', '/home'];
+        try { localStorage.setItem(PERSIST_MOUNT_KEY, finalMounts.join(',')); } catch (e) {}
+    }
+
+    function persistAutosyncEnabled() {
+        try { return (localStorage.getItem(PERSIST_AUTOSYNC_KEY) || '') === '1'; } catch (e) { return false; }
+    }
+
+    function persistSetAutosync(enabled) {
+        try { localStorage.setItem(PERSIST_AUTOSYNC_KEY, enabled ? '1' : '0'); } catch (e) {}
+    }
+
+    persistInitDefaults();
+
+    function shellSingleQuote(s) {
+        return String(s).replace(/'/g, "'\\''");
+    }
+
+    function persistTrackMkdir(cmd) {
+        const text = String(cmd || '').trim();
+        if (!text.startsWith('mkdir')) return;
+        const tokens = text.split(/\s+/).slice(1);
+        const paths = [];
+        for (const t of tokens) {
+            if (!t) continue;
+            if (t.startsWith('-')) continue;
+            const p = persistResolvePath(t);
+            if (!p) continue;
+            paths.push(p);
+        }
+        if (!paths.length) return;
+        const state = persistLoad();
+        for (const d of paths) {
+            if (!state.dirs.includes(d)) state.dirs.push(d);
+        }
+        persistSave(state);
+    }
+
+    async function persistSyncToGuest(silent) {
+        const state = persistLoad();
+        const mounts = persistMountPaths();
+        const dirs = Array.isArray(state.dirs) ? state.dirs.slice().sort() : [];
+        const names = Object.keys(state.files || {}).sort();
+        if (!silent) {
+            term.write('\x1b[2m[persist] sync -> ' + mounts.join(', ') + ' (' + names.length + ' file(s), ' + dirs.length + ' dir(s))\x1b[0m\r\n');
+        }
+
+        // Ensure persisted directories exist first.
+        for (const dir of dirs) {
+            const cmd = "mkdir -p '" + shellSingleQuote(dir) + "'";
+            const { exitCode, crashed } = await shellExec(cmd);
+            if (crashed) {
+                term.write('\x1b[31m[persist] kernel crashed while creating ' + dir + '\x1b[0m\r\n');
+                return;
+            }
+            if (exitCode !== 0 && !silent) {
+                term.write('\x1b[33m[persist] mkdir failed: ' + dir + ' (exit ' + exitCode + ')\x1b[0m\r\n');
+            }
+        }
+
+        for (const target of names) {
+            const content = String(state.files[target] || '');
+            const cmd = "printf '%s' '" + shellSingleQuote(content) + "' > '" + shellSingleQuote(target) + "'";
+            const { exitCode, crashed } = await shellExec(cmd);
+            if (crashed) {
+                term.write('\x1b[31m[persist] kernel crashed while syncing ' + target + '\x1b[0m\r\n');
+                return;
+            }
+            if (exitCode !== 0) {
+                term.write('\x1b[33m[persist] failed: ' + target + ' (exit ' + exitCode + ')\x1b[0m\r\n');
+            }
+        }
+        if (!silent) term.write('\x1b[32m[persist] sync done\x1b[0m\r\n');
+    }
+
+    // ── Persist pull: snapshot guest FS back to localStorage ──
+    let persistPullRunning = false;
+    let persistPullTimer = null;
+
+    async function persistPullFromGuest(silent) {
+        if (persistPullRunning || agentRunning) return;
+        persistPullRunning = true;
+        try {
+            const mounts = persistMountPaths();
+            const mountArgs = mounts.map(m => "'" + shellSingleQuote(m) + "'").join(' ');
+
+            // Discover dirs
+            const dirsResult = await shellExec('find ' + mountArgs + ' -type d');
+            if (dirsResult.crashed) return;
+            const mountSet = new Set(mounts);
+            const dirs = dirsResult.exitCode === 0
+                ? dirsResult.output.split('\n').map(d => persistNormalizePath(d.trim())).filter(d => d && !mountSet.has(d))
+                : [];
+
+            // Discover files + read contents in one compound command
+            const filesResult = await shellExec('find ' + mountArgs + ' -type f');
+            if (filesResult.crashed) return;
+            const filePaths = filesResult.exitCode === 0
+                ? filesResult.output.split('\n').map(f => f.trim()).filter(Boolean)
+                : [];
+
+            const newFiles = {};
+            if (filePaths.length) {
+                // Build single command: output each file with delimiters
+                const readParts = filePaths.map(f =>
+                    "printf '\\n===PF===' ; printf '%s' '" + shellSingleQuote(f) + "' ; printf '\\n' ; cat '" + shellSingleQuote(f) + "' ; printf '\\n===PE===\\n'"
+                );
+                const readResult = await shellExec(readParts.join(' ; '));
+                if (!readResult.crashed && readResult.exitCode === 0) {
+                    const segments = readResult.output.split('===PF===');
+                    for (const seg of segments) {
+                        if (!seg.trim()) continue;
+                        const endIdx = seg.indexOf('===PE===');
+                        if (endIdx < 0) continue;
+                        const block = seg.slice(0, endIdx);
+                        const nl = block.indexOf('\n');
+                        if (nl < 0) continue;
+                        const path = persistNormalizePath(block.slice(0, nl).trim());
+                        const content = block.slice(nl + 1);
+                        // Trim trailing newline added by printf wrapper
+                        if (path) newFiles[path] = content.replace(/\n$/, '');
+                    }
+                } else {
+                    // Fall back: read files individually
+                    for (const f of filePaths) {
+                        const r = await shellExec("cat '" + shellSingleQuote(f) + "'");
+                        if (r.crashed) break;
+                        if (r.exitCode === 0) newFiles[persistNormalizePath(f)] = r.output;
+                    }
+                }
+            }
+
+            const state = { files: newFiles, dirs };
+            persistSave(state);
+            if (!silent) {
+                term.write('[persist] pull: ' + Object.keys(newFiles).length + ' file(s), ' + dirs.length + ' dir(s)\r\n');
+            }
+        } finally {
+            persistPullRunning = false;
+        }
+    }
+
+    async function persistPullKnownFiles() {
+        if (persistPullRunning || agentRunning) return;
+        const state = persistLoad();
+        const knownFiles = Object.keys(state.files || {});
+        if (!knownFiles.length) return;
+        persistPullRunning = true;
+        try {
+            // Single compound command reads all known files with delimiters
+            const readParts = knownFiles.map(f =>
+                "printf '\\n===PF===' ; printf '%s' '" + shellSingleQuote(f) + "' ; printf '\\n' ; cat '" + shellSingleQuote(f) + "' ; printf '\\n===PE===\\n'"
+            );
+            const result = await shellExec(readParts.join(' ; '));
+            if (result.crashed) return;
+
+            let changed = false;
+            const segments = result.output.split('===PF===');
+            for (const seg of segments) {
+                if (!seg.trim()) continue;
+                const endIdx = seg.indexOf('===PE===');
+                if (endIdx < 0) continue;
+                const block = seg.slice(0, endIdx);
+                const nl = block.indexOf('\n');
+                if (nl < 0) continue;
+                const path = persistNormalizePath(block.slice(0, nl).trim());
+                const content = block.slice(nl + 1).replace(/\n$/, '');
+                if (path && state.files[path] !== content) {
+                    state.files[path] = content;
+                    changed = true;
+                }
+            }
+            if (changed) persistSave(state);
+        } finally {
+            persistPullRunning = false;
+        }
+    }
+
+    function persistStartPullTimer() {
+        if (persistPullTimer) return;
+        persistPullTimer = setInterval(() => { persistPullKnownFiles(); }, 1000);
+    }
+
+    function persistStopPullTimer() {
+        if (persistPullTimer) { clearInterval(persistPullTimer); persistPullTimer = null; }
+    }
+
+    async function runPersistCommand(cmd) {
+        const trimmed = (cmd || '').trim();
+        const body = trimmed === 'persist' ? 'help' : trimmed.slice('persist'.length).trim();
+        const parts = body ? body.split(/\s+/) : ['help'];
+        const sub = (parts[0] || 'help').toLowerCase();
+        const state = persistLoad();
+
+        if (sub === 'help') {
+            term.write('persist commands:\r\n');
+            term.write('  persist ls\r\n');
+            term.write('  persist get <path>\r\n');
+            term.write('  persist put <path> <content...>\r\n');
+            term.write('  persist rm <path>\r\n');
+            term.write('  persist pull              scan guest FS -> localStorage\r\n');
+            term.write('  persist mount [path1 path2 ...]\r\n');
+            term.write('  persist sync              localStorage -> guest FS\r\n');
+            term.write('  persist autosync on|off|status\r\n');
+            term.write('  persist secret <path> [SECRET_KEY]\r\n');
+            return;
+        }
+
+        if (sub === 'ls') {
+            const names = Object.keys(state.files || {}).sort();
+            const dirs = Array.isArray(state.dirs) ? state.dirs.slice().sort() : [];
+            term.write('[persist] mounts=' + persistMountPaths().join(', ') + '\r\n');
+            if (!names.length) term.write('[persist] (empty)\r\n');
+            if (dirs.length) {
+                term.write('[persist] dirs:\r\n');
+                for (const d of dirs) term.write('  ' + d + '\r\n');
+            }
+            if (names.length) {
+                term.write('[persist] files:\r\n');
+                for (const n of names) term.write('  ' + n + ' (' + String(state.files[n] || '').length + ' bytes)\r\n');
+            }
+            return;
+        }
+
+        if (sub === 'get') {
+            const p = persistResolvePath(parts[1] || '');
+            if (!p) { term.write('usage: persist get <path>\r\n'); return; }
+            if (!(p in (state.files || {}))) { term.write('[persist] missing: ' + p + '\r\n'); return; }
+            term.write(String(state.files[p] || '') + '\r\n');
+            return;
+        }
+
+        if (sub === 'put') {
+            const p = persistResolvePath(parts[1] || '');
+            if (!p) { term.write('usage: persist put <path> <content...>\r\n'); return; }
+            const content = body.split(/\s+/).slice(2).join(' ');
+            state.files[p] = content;
+            persistSave(state);
+            term.write('[persist] saved: ' + p + ' (' + content.length + ' bytes)\r\n');
+            return;
+        }
+
+        if (sub === 'rm') {
+            const p = persistResolvePath(parts[1] || '');
+            if (!p) { term.write('usage: persist rm <path>\r\n'); return; }
+            const existed = Object.prototype.hasOwnProperty.call(state.files || {}, p);
+            if (existed) delete state.files[p];
+            state.dirs = (state.dirs || []).filter(d => d !== p);
+            persistSave(state);
+            term.write(existed ? ('[persist] removed: ' + p + '\r\n') : ('[persist] missing: ' + p + '\r\n'));
+            return;
+        }
+
+        if (sub === 'mount') {
+            const paths = parts.slice(1);
+            if (!paths.length) {
+                term.write('[persist] mounts=' + persistMountPaths().join(', ') + '\r\n');
+                return;
+            }
+            persistSetMountPaths(paths);
+            term.write('[persist] mounts set to ' + persistMountPaths().join(', ') + '\r\n');
+            return;
+        }
+
+        if (sub === 'pull') {
+            await persistPullFromGuest(false);
+            return;
+        }
+
+        if (sub === 'sync') {
+            await persistSyncToGuest(false);
+            return;
+        }
+
+        if (sub === 'autosync') {
+            const val = (parts[1] || 'status').toLowerCase();
+            if (val === 'status') {
+                term.write('[persist] autosync=' + (persistAutosyncEnabled() ? 'on' : 'off') + '\r\n');
+                return;
+            }
+            if (val !== 'on' && val !== 'off') {
+                term.write('usage: persist autosync on|off|status\r\n');
+                return;
+            }
+            persistSetAutosync(val === 'on');
+            if (val === 'on') persistStartPullTimer(); else persistStopPullTimer();
+            term.write('[persist] autosync=' + val + '\r\n');
+            return;
+        }
+
+        if (sub === 'secret') {
+            const p = persistResolvePath(parts[1] || '');
+            const key = parts[2] || 'OPENAI_API_KEY';
+            if (!p) {
+                term.write('usage: persist secret <path> [SECRET_KEY]\r\n');
+                return;
+            }
+            const v = localStorage.getItem('traits.secret.' + key) || localStorage.getItem('traits.secret.' + key.toUpperCase()) || '';
+            if (!v) {
+                term.write('[persist] secret not found: ' + key + '\r\n');
+                return;
+            }
+            state.files[p] = v;
+            persistSave(state);
+            term.write('[persist] saved secret into ' + p + ' (' + v.length + ' bytes)\r\n');
+            return;
+        }
+
+        term.write('[persist] unknown command: ' + sub + '\r\n');
+    }
+
     const console_write = (data) => {
         // During agent command execution, suppress raw shell echo
         // (agent displays its own formatted output)
@@ -1004,12 +1426,15 @@ const BOOT_SCRIPT: &str = r#"
                 // Guest-side os.exec() crashes on WASM NOMMU (CLONE_VM heap corruption).
                 // Browser agent uses fetch() for LLM calls (zero forks) and shellExec()
                 // for guest commands (1 fork per round, with crash detection).
-                if (cmd === 'agent' || cmd.startsWith('agent ')) {
+                const agentTask = parseAgentTask(cmd);
+                if (agentTask !== null) {
                     intercepted = true;
                     os.key_input('\x15'); // Clear current input
-                    const task = cmd.slice(6).trim();
+                    const task = agentTask;
                     if (!task) {
                         term.write('\r\nUsage: agent <task>\r\n');
+                        term.write('       qjs /bin/agent.js <task>\r\n');
+                        term.write('       agent.sh <task>\r\n');
                         os.key_input('\r');
                     } else if (agentRunning) {
                         term.write('\r\n\x1b[33mAgent already running.\x1b[0m\r\n');
@@ -1018,6 +1443,24 @@ const BOOT_SCRIPT: &str = r#"
                         term.write('\r\n');
                         runJSAgent(task);
                     }
+                }
+
+                // ── Intercept "persist" commands (localStorage-backed pseudo mount) ──
+                if (!intercepted && cmd.startsWith('persist')) {
+                    intercepted = true;
+                    os.key_input('\x15'); // Clear current input
+                    term.write('\r\n');
+                    runPersistCommand(cmd).then(() => {
+                        os.key_input('\r');
+                    }).catch((err) => {
+                        term.write('\x1b[31m[persist] error: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
+                        os.key_input('\r');
+                    });
+                }
+
+                // Track mkdir-created directories so they persist across refresh.
+                if (!intercepted && cmd.startsWith('mkdir')) {
+                    persistTrackMkdir(cmd);
                 }
 
                 currentInput = '';
@@ -1078,6 +1521,7 @@ const BOOT_SCRIPT: &str = r#"
         document.removeEventListener('paste', handlePaste, true);
         document.removeEventListener('copy', handleCopy, true);
         if (netStatsTimer) clearInterval(netStatsTimer);
+        persistStopPullTimer();
         URL.revokeObjectURL(workerUrl);
     };
 
@@ -1090,6 +1534,21 @@ const BOOT_SCRIPT: &str = r#"
     // access out of bounds) which crashed the shell subprocess.
 
     // History is restored via JS-level ArrowUp/ArrowDown navigation above.
+
+    // Optional boot-time sync of persist files into guest path.
+    // Enable with: persist autosync on
+    shellReadyPromise.then(() => {
+        if (persistAutosyncEnabled()) {
+            term.write('\x1b[2m[persist] autosync enabled\x1b[0m\r\n');
+            persistSyncToGuest(true).then(() => {
+                term.write('\x1b[2m[persist] autosync complete\x1b[0m\r\n');
+                // Start periodic pull (guest FS -> localStorage) every 1s
+                persistStartPullTimer();
+            }).catch((err) => {
+                term.write('\x1b[33m[persist] autosync failed: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
+            });
+        }
+    });
 
     // Refit on resize
     window.addEventListener('resize', () => {

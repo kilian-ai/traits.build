@@ -1,12 +1,17 @@
-[
-  {
-    "trait": "llm.prompt.openai.ws",
-    "description": "Streaming OpenAI-compatible inference — sentinel in WASM, REST on native",
-    "examples": [
-      {
-        "args": ["Say hi"],
-        "expect": { "type": "contains", "value": "ok" }
-      }
-    ]
-  }
-]
+{
+  "trait": "llm.prompt.openai.ws",
+  "skip": true,
+  "skip_reason": "Live OpenAI streaming test. Excluded from default test_runner '*' runs; run manually when validating WS behavior.",
+  "features": [
+    {
+      "name": "Streaming OpenAI-compatible inference",
+      "description": "Streaming OpenAI-compatible inference — sentinel in WASM, REST on native",
+      "examples": [
+        {
+          "args": ["Say hi"],
+          "expect": { "type": "contains", "value": "ok" }
+        }
+      ]
+    }
+  ]
+}

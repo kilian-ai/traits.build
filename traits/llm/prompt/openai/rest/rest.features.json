@@ -1,5 +1,7 @@
 {
   "trait": "llm.prompt.openai.rest",
+  "skip": true,
+  "skip_reason": "Live OpenAI REST provider test. Excluded from default test_runner '*' runs; run manually when validating provider behavior.",
   "features": [
     {
       "name": "REST provider returns text completions",

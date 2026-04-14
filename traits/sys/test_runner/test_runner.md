@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Discover `.features.json` files for traits matching a pattern, run example-based tests (via internal dispatch) and shell command tests, and report structured pass/fail results. Supports both trait-registry and filesystem discovery modes.
+Discover `.features.json` files for traits matching a pattern, run example-based tests (via internal dispatch) and shell command tests, and report structured pass/fail results. Supports both trait-registry and filesystem discovery modes, plus top-level suite metadata such as `skip` and `skip_reason`.
 
 ## Exports
 
@@ -11,7 +11,7 @@ Discover `.features.json` files for traits matching a pattern, run example-based
 * `discover_traits(pattern)` — find traits with features.json via registry lookup
 * `discover_fs_features(pattern)` — find features.json from filesystem paths/globs
 * `collect_features_recursive(dir, glob_part, out)` — recursive directory walker for features.json
-* `load_features(path)` — parse features array from a .features.json file
+* `load_features(path)` — parse features array and suite metadata from a .features.json file
 * `run_example_tests(trait_path, features, params, verbose)` — run examples via internal dispatch
 * `run_command_tests(features, verbose)` — run shell command tests
 * `input_to_args(input, params)` — convert example input to positional args
@@ -108,7 +108,7 @@ writes:
 2. Extract verbose from args[1] (default false)
 3. Route discovery: if pattern contains '/' or starts with '.', use discover_fs_features; otherwise discover_traits
 4. If no traits found, return error
-5. For each trait: load features.json, skip if empty
+5. For each trait: load features.json, honor top-level `skip`, skip if empty
 6. Run example tests (internal dispatch) and command tests (shell)
 7. Count passed/failed for both types
 8. Build per-trait result with ok, examples, commands counts
@@ -118,6 +118,7 @@ writes:
 ### Edge Cases
 
 * Empty pattern defaults to "*"
+* A `.features.json` file with top-level `skip: true` is counted as skipped and omitted from execution
 * Traits with no features or no tests/examples increment skipped counter
 * ok is true only when total_failed == 0
 

@@ -1,5 +1,7 @@
 {
   "trait": "llm.voice.speak",
+  "skip": true,
+  "skip_reason": "Live TTS examples are billable and slow. Excluded from default test_runner '*' runs.",
   "features": [
     {
       "name": "Text-to-speech synthesis",

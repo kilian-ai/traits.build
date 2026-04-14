@@ -1,5 +1,7 @@
 {
   "trait": "llm.prompt.openai",
+  "skip": true,
+  "skip_reason": "Live OpenAI integration test. Excluded from default test_runner '*' runs; run manually when validating provider behavior.",
   "features": [
     {
       "name": "Chat completion with prompt",

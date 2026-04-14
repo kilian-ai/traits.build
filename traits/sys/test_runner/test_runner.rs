@@ -43,6 +43,14 @@ struct DiscoveredTrait {
     path: String,
     features: Vec<Value>,
     param_names: Vec<String>,
+    skip: bool,
+    skip_reason: Option<String>,
+}
+
+struct ParsedFeatures {
+    features: Vec<Value>,
+    skip: bool,
+    skip_reason: Option<String>,
 }
 
 fn test_runner_inner(args: &[Value]) -> Value {
@@ -68,6 +76,17 @@ fn test_runner_inner(args: &[Value]) -> Value {
     let mut total_skipped = 0u32;
 
     for dt in &traits {
+        if dt.skip {
+            total_skipped += 1;
+            all_results.push(json!({
+                "trait": dt.path,
+                "ok": true,
+                "skipped": true,
+                "reason": dt.skip_reason.clone().unwrap_or_else(|| "suite skipped by metadata".to_string()),
+            }));
+            continue;
+        }
+
         if dt.features.is_empty() {
             total_skipped += 1;
             continue;
@@ -192,7 +211,7 @@ fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
             continue;
         };
 
-        let features = match load_features_from_file(&features_path) {
+        let parsed = match load_features_from_file(&features_path) {
             Some(f) => f,
             None => continue,
         };
@@ -203,8 +222,10 @@ fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
 
         results.push(DiscoveredTrait {
             path: entry.path.clone(),
-            features,
+            features: parsed.features,
             param_names,
+            skip: parsed.skip,
+            skip_reason: parsed.skip_reason,
         });
     }
     results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -227,7 +248,7 @@ fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
         if !ns_filter.is_empty() && ns_filter != "*" && ns != ns_filter { continue; }
         if name_filter != "*" && name != name_filter { continue; }
 
-        let features = match parse_features_json(features_json) {
+        let parsed = match parse_features_json(features_json) {
             Some(f) => f,
             None => continue,
         };
@@ -242,8 +263,10 @@ fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
 
         results.push(DiscoveredTrait {
             path: trait_path.to_string(),
-            features,
+            features: parsed.features,
             param_names,
+            skip: parsed.skip,
+            skip_reason: parsed.skip_reason,
         });
     }
     results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -255,14 +278,26 @@ fn discover_traits(pattern: &str) -> Vec<DiscoveredTrait> {
 // ═════════════════════════════════════════════════════════════
 
 #[cfg(not(target_arch = "wasm32"))]
-fn load_features_from_file(path: &std::path::Path) -> Option<Vec<Value>> {
+fn load_features_from_file(path: &std::path::Path) -> Option<ParsedFeatures> {
     let text = fs::read_to_string(path).ok()?;
     parse_features_json(&text)
 }
 
-fn parse_features_json(json_str: &str) -> Option<Vec<Value>> {
+fn parse_features_json(json_str: &str) -> Option<ParsedFeatures> {
     let parsed: Value = serde_json::from_str(json_str).ok()?;
-    parsed.get("features").and_then(|f| f.as_array()).cloned()
+    match parsed {
+        Value::Object(obj) => Some(ParsedFeatures {
+            features: obj.get("features").and_then(|f| f.as_array()).cloned().unwrap_or_default(),
+            skip: obj.get("skip").and_then(|v| v.as_bool()).unwrap_or(false),
+            skip_reason: obj.get("skip_reason").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        }),
+        Value::Array(arr) => Some(ParsedFeatures {
+            features: arr,
+            skip: false,
+            skip_reason: None,
+        }),
+        _ => None,
+    }
 }
 
 // ═════════════════════════════════════════════════════════════
@@ -297,7 +332,7 @@ fn discover_fs_features(pattern: &str) -> Vec<DiscoveredTrait> {
 
     files.sort();
     files.iter().filter_map(|fp| {
-        let features = load_features_from_file(fp)?;
+        let parsed = load_features_from_file(fp)?;
         let fname = fp.file_stem()?.to_string_lossy().to_string();
         let label = fname.strip_suffix(".features").unwrap_or(&fname);
         let dir_name = fp.parent()
@@ -307,8 +342,10 @@ fn discover_fs_features(pattern: &str) -> Vec<DiscoveredTrait> {
         let display = if dir_name.is_empty() { label.to_string() } else { format!("{}/{}", dir_name, label) };
         Some(DiscoveredTrait {
             path: display,
-            features,
+            features: parsed.features,
             param_names: vec![],
+            skip: parsed.skip,
+            skip_reason: parsed.skip_reason,
         })
     }).collect()
 }
