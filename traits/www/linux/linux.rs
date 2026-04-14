@@ -533,15 +533,41 @@ const BOOT_SCRIPT: &str = r#"
 
     const initProgram = resolveInitProgram();
 
+    const resolveMaxCpus = () => {
+        const HARD_MAX = 10; // Above this, worker startup becomes unstable on many browsers.
+        const DEFAULT = HARD_MAX;
+
+        const clamp = (n) => {
+            if (!Number.isFinite(n)) return DEFAULT;
+            return Math.max(3, Math.min(HARD_MAX, Math.floor(n)));
+        };
+
+        try {
+            const params = new URLSearchParams(location.search);
+            const fromQuery = params.get('linux_cpus');
+            if (fromQuery) return clamp(Number(fromQuery));
+        } catch (e) {}
+
+        try {
+            const fromStorage = localStorage.getItem('linux-wasm.maxcpus') || '';
+            if (fromStorage) return clamp(Number(fromStorage));
+        } catch (e) {}
+
+        return DEFAULT;
+    };
+
+    const maxCpus = resolveMaxCpus();
+
     // WASM kernel model: each user task (non-kthread) needs its own dedicated CPU.
     // The kernel's user_task_set_affinity() in arch/wasm/kernel/process.c pins each
     // forked user process to a unique CPU. CPU 1 is reserved as IRQ_CPU.
     // With maxcpus=N, we get (N-1) usable user CPUs (minus IRQ_CPU).
     // Too few CPUs → clone() returns -EBUSY ("Resource busy") when shell forks.
     // CPUs are recycled when tasks exit (release_thread clears user_cpus bitmask).
-    // maxcpus=5 gives 4 user CPUs (0,2,3,4): enough for init + shell + commands.
-    // Higher values (e.g. 10) create 70+ Web Workers which can stall browser boot.
-    const boot_cmdline = `maxcpus=5 root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
+    // maxcpus=10 gives 8 user CPUs (0,2..9): highest stable setting in this runtime.
+    // Override with ?linux_cpus=N or localStorage['linux-wasm.maxcpus'].
+    const boot_cmdline = `maxcpus=${maxCpus} root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
+    term.write(`\x1B[2m[traits.build] CPU mode: maxcpus=${maxCpus}\x1B[0m\r\n`);
     if (initProgram !== '/init') {
         term.write(`\x1B[2m[traits.build] INIT mode: minimal (${initProgram})\x1B[0m\r\n`);
     }
