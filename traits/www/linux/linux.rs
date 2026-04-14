@@ -1274,6 +1274,8 @@ const BOOT_SCRIPT: &str = r#"
             'Round 4: DONE: changed MODEL to gpt-5.3';
 
         let history = '';
+        let blockedPipelineStreak = 0;
+        let blockedTotal = 0;
         const MAX = 10;
 
         term.write('\x1b[1;32m=== Agent: ' + task + ' ===\x1b[0m\r\n');
@@ -1287,9 +1289,18 @@ const BOOT_SCRIPT: &str = r#"
 
             term.write('\x1b[2m-- Round ' + round + '/' + MAX + ' --\x1b[0m\r\n');
 
-            const userMsg = round === 1
+            let userMsg = round === 1
                 ? 'Task: ' + task
                 : 'Task: ' + task + '\nHistory:\n' + history + '\nNext command or DONE: summary.';
+
+            if (blockedPipelineStreak >= 2) {
+                userMsg += '\nCRITICAL FORMAT: next command must be exactly one of these forms: '
+                    + 'test -f /path && echo exists || echo missing ; '
+                    + 'cat /path/file ; '
+                    + 'sed -i \'s/old/new/\' /path/file ; '
+                    + 'echo "text" > /path/file ; '
+                    + 'DONE: summary';
+            }
 
             console.log('[agent] Round', round, 'userMsg:', userMsg.slice(0, 300));
             term.write('  \x1b[2m[calling LLM...]\x1b[0m\r\n');
@@ -1359,6 +1370,7 @@ const BOOT_SCRIPT: &str = r#"
                 term.write('  \x1b[31m[blocked: while-read loop hangs on large files — use cat instead]\x1b[0m\r\n');
                 history += 'Cmd: ' + cmd + '\nResult: BLOCKED — while-read loops hang. Use: cat /path/file\n';
                 console.log('[agent] Blocked while-read loop:', cmd);
+                blockedTotal += 1;
                 continue;
             }
 
@@ -1379,8 +1391,17 @@ const BOOT_SCRIPT: &str = r#"
                 term.write('  \x1b[31m[blocked: complex pipeline causes Resource busy — use simpler single-step commands]\x1b[0m\r\n');
                 history += 'Cmd: ' + cmd + '\nResult: BLOCKED — complex pipeline. Use simple rounds: test -f, cat file, sed -i edit, verify.\n';
                 console.log('[agent] Blocked complex pipeline command:', cmd);
+                blockedPipelineStreak += 1;
+                blockedTotal += 1;
+                if (blockedPipelineStreak >= 3 || blockedTotal >= 5) {
+                    term.write('  \x1b[33m[stopping: repeated blocked commands; model did not adapt]\x1b[0m\r\n');
+                    term.write('  \x1b[33m[tip: try a narrower prompt like "set MODEL to gpt-5.3 in /bin/agent.js"]\x1b[0m\r\n');
+                    break;
+                }
                 continue;
             }
+
+            blockedPipelineStreak = 0;
 
             if (!cmd) {
                 term.write('  \x1b[2m[empty response]\x1b[0m\r\n');
