@@ -1266,6 +1266,38 @@ const BOOT_SCRIPT: &str = r#"
         return (localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim() || null;
     }
 
+    async function resolveAgentMaxRounds() {
+        const clamp = (n) => {
+            if (!Number.isFinite(n)) return 10;
+            return Math.max(1, Math.min(100, Math.floor(n)));
+        };
+
+        // 1) URL override for quick testing: ?agent_rounds=50
+        try {
+            const params = new URLSearchParams(location.search);
+            const q = params.get('agent_rounds');
+            if (q) return clamp(Number(q));
+        } catch (e) {}
+
+        // 2) Persistent override: localStorage['linux-wasm.agent-rounds']
+        try {
+            const s = localStorage.getItem('linux-wasm.agent-rounds') || '';
+            if (s) return clamp(Number(s));
+        } catch (e) {}
+
+        // 3) Guest-side config: read /bin/agent.js const MAX_ROUNDS = N;
+        try {
+            const r = await shellExec('cat /bin/agent.js');
+            if (r && r.exitCode === 0 && r.output) {
+                const m = String(r.output).match(/const\s+MAX_ROUNDS\s*=\s*(\d+)\s*;/);
+                if (m && m[1]) return clamp(Number(m[1]));
+            }
+        } catch (e) {}
+
+        // 4) Default for web agent loop
+        return 10;
+    }
+
     async function runJSAgent(task) {
         agentRunning = true;
         agentAbort = false;
@@ -1356,9 +1388,10 @@ const BOOT_SCRIPT: &str = r#"
         const createIntent = /(create|build\s+new|new\s+\S+\.[a-z0-9]+|add\s+\S+\.[a-z0-9]+|write\s+\S+\.[a-z0-9]+)/i.test(task || '');
         const inferredSourcePath = inferSourcePath(task);
         const inferredTargetPath = inferTargetPath(task);
-        const MAX = 10;
+        const MAX = await resolveAgentMaxRounds();
 
         term.write('\x1b[1;32m=== Agent: ' + task + ' ===\x1b[0m\r\n');
+        term.write('\x1b[2m[agent] max rounds: ' + MAX + '\x1b[0m\r\n');
         console.log('[agent] Starting task:', task);
 
         for (let round = 1; round <= MAX; round++) {
@@ -1525,6 +1558,14 @@ const BOOT_SCRIPT: &str = r#"
 
             if (!cmd) {
                 term.write('  \x1b[2m[empty response]\x1b[0m\r\n');
+                continue;
+            }
+
+            // Guard malformed sed patches using ellipsis placeholders ("...") that corrupt files.
+            if (/^sed\b/i.test(cmd) && cmd.includes('...')) {
+                term.write('  \x1b[31m[blocked: sed command uses "..." placeholder — requires exact text]\x1b[0m\r\n');
+                history += 'Cmd: ' + cmd + '\nResult: BLOCKED — sed replacement contains ellipsis placeholder. Use exact literal text from file, no ... tokens.\n';
+                blockedTotal += 1;
                 continue;
             }
 
