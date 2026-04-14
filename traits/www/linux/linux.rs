@@ -1311,12 +1311,20 @@ const BOOT_SCRIPT: &str = r#"
                 if (data.error) {
                     const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
                     term.write('  \x1b[31mAPI error: ' + msg + '\x1b[0m\r\n');
+                    if (/incorrect api key|invalid api key|unauthorized|401/i.test(String(msg))) {
+                        term.write('  \x1b[33m[stopping: authentication error]\x1b[0m\r\n');
+                        break;
+                    }
                     continue;
                 }
                 cmd = data.choices[0].message.content.trim();
                 console.log('[agent] Round', round, 'LLM response:', cmd);
             } catch (err) {
                 term.write('  \x1b[31mFetch error: ' + err.message + '\x1b[0m\r\n');
+                if (/401|unauthorized|forbidden|incorrect api key|invalid api key/i.test(String(err && err.message ? err.message : err))) {
+                    term.write('  \x1b[33m[stopping: authentication error]\x1b[0m\r\n');
+                    break;
+                }
                 continue;
             }
 
