@@ -285,7 +285,19 @@ impl PersistingVfs {
         for (rel_path, content, mtime) in BUILTIN_DOCS {
             vfs.seed_with_mtime(rel_path, *content, *mtime);
         }
-        // Restore user layer from localStorage so prior session files are visible.
+        // Restore from the persistent mirror first so Worker mode (no window/localStorage)
+        // still picks up state seeded by pvfs_load from terminal.js.
+        ensure_pvfs();
+        let persisted = PERSISTENT_VFS.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .map(|p| p.dump())
+                .unwrap_or_default()
+        });
+        if !persisted.is_empty() {
+            vfs.load(&persisted);
+        }
+        // Fallback for main-thread mode where localStorage is directly readable.
         if let Some(json) = ls_get("traits.pvfs") {
             vfs.load(&json);
         }
@@ -294,7 +306,15 @@ impl PersistingVfs {
 
     #[inline]
     fn auto_save(&self) {
-        ls_set("traits.pvfs", &self.inner.dump());
+        let json = self.inner.dump();
+        // Keep the in-memory persistent mirror aligned with the active CLI session VFS.
+        ensure_pvfs();
+        PERSISTENT_VFS.with(|cell| {
+            if let Some(vfs) = cell.borrow_mut().as_mut() {
+                vfs.load(&json);
+            }
+        });
+        ls_set("traits.pvfs", &json);
     }
 }
 
@@ -723,6 +743,15 @@ pub fn pvfs_refresh() {
 /// persistence (Workers can't access localStorage directly).
 #[wasm_bindgen]
 pub fn pvfs_dump() -> String {
+    // Prefer the active CLI session VFS when available (terminal Worker path).
+    let session_dump = CLI_SESSION.with(|cell| {
+        let mut opt = cell.borrow_mut();
+        opt.as_mut().map(|session| session.vfs_dump())
+    });
+    if let Some(json) = session_dump {
+        return json;
+    }
+
     ensure_pvfs();
     PERSISTENT_VFS.with(|cell| {
         cell.borrow().as_ref().map(|vfs| vfs.dump()).unwrap_or_else(|| "{}".to_string())
@@ -734,6 +763,14 @@ pub fn pvfs_dump() -> String {
 /// (Workers can't access localStorage directly, so the main thread sends the data).
 #[wasm_bindgen]
 pub fn pvfs_load(json: &str) {
+    // If a CLI session already exists, load directly into that session VFS too.
+    CLI_SESSION.with(|cell| {
+        let mut opt = cell.borrow_mut();
+        if let Some(session) = opt.as_mut() {
+            session.vfs_load(json);
+        }
+    });
+
     ensure_pvfs();
     PERSISTENT_VFS.with(|cell| {
         if let Some(vfs) = cell.borrow_mut().as_mut() {
