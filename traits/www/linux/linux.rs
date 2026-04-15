@@ -505,30 +505,41 @@ const BOOT_SCRIPT: &str = r#"
     };
 
     const tunnelUrl = resolveTunnelUrl();
-    if (typeof NetProxy !== 'undefined' && NetProxy.setTunnelURL && tunnelUrl) {
-        NetProxy.setTunnelURL(tunnelUrl);
-    }
     
     let bootNetMode = 'unknown';
+    let tunnelReady = null;
 
-    // Wait for tunnel readiness (5s timeout) and report status with error details if any
-    if (typeof NetProxy !== 'undefined' && NetProxy.waitForTunnelReady) {
-        console.log('[linux.rs] waiting for tunnel readiness (5 second timeout)...');
-        const wasConnected = await NetProxy.waitForTunnelReady(5000);
-        console.log('[linux.rs] tunnel ready result:', wasConnected);
-        const mode = (typeof NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
-        bootNetMode = mode;
-        const suffix = tunnelUrl ? ` (${tunnelUrl})` : '';
-        term.write(`\x1B[2m[traits.build] NET mode: ${mode}${suffix}\x1B[0m\r\n`);
-        if (mode === 'browser-fallback') {
-            const errMsg = (typeof NetProxy.getTunnelError) ? NetProxy.getTunnelError() : null;
-            console.log('[linux.rs] tunnel error message:', errMsg);
-            const errDetail = errMsg ? ` — ${errMsg}` : '';
-            term.write(`\x1B[33m[traits.build] NET degraded: browser emulation fallback (tunnel unavailable${errDetail})\x1B[0m\r\n`);
-        } else if (mode === 'tunnel') {
-            term.write(`\x1B[32m[traits.build] NET ready: tunnel connected to relay server\x1B[0m\r\n`);
+    // DEFER tunnel initialization until after SMP bring-up completes.
+    // During kernel secondary CPU initialization, relay polling interferes with interrupt
+    // handlers, causing context tracking violations and kernel panics.
+    // We'll enable tunnel polling after the shell prompt appears (shellReady = true).
+    function deferTunnelSetup() {
+        if (!tunnelUrl) return;
+        console.log('[linux.rs] deferred tunnel: setting up relay tunnel...');
+        if (typeof NetProxy !== 'undefined' && NetProxy.setTunnelURL && tunnelUrl) {
+            NetProxy.setTunnelURL(tunnelUrl);
+        }
+        if (typeof NetProxy !== 'undefined' && NetProxy.waitForTunnelReady) {
+            NetProxy.waitForTunnelReady(5000).then(() => {
+                const mode = (typeof NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
+                const suffix = tunnelUrl ? ` (${tunnelUrl})` : '';
+                console.log('[linux.rs] deferred tunnel ready: mode=' + mode);
+                if (mode === 'browser-fallback') {
+                    const errMsg = (typeof NetProxy.getTunnelError) ? NetProxy.getTunnelError() : null;
+                    console.log('[linux.rs] tunnel error (fallback):', errMsg);
+                } else if (mode === 'tunnel') {
+                    console.info('[linux.rs] relay tunnel connected');
+                }
+                tunnelReady = mode;
+            }).catch(e => {
+                console.warn('[linux.rs] deferred tunnel setup failed:', e);
+                tunnelReady = 'browser-fallback';
+            });
         }
     }
+    
+    // Boot with browser emulation first; enable relay tunnel after SMP is ready.
+    term.write(`\x1B[2m[traits.build] NET mode: browser-fallback (relay deferred until after boot)\x1B[0m\r\n`);
 
     const resolveInitProgram = () => {
         try {
@@ -1617,6 +1628,10 @@ const BOOT_SCRIPT: &str = r#"
             if (tail.endsWith('$ ') || tail.endsWith('> ') || (tail.includes('#') && tail.endsWith(' '))) {
                 shellReady = true;
                 shellReadyResolve();
+                // Now safe to enable relay tunnel (SMP bring-up is complete)
+                if (typeof deferTunnelSetup === 'function') {
+                    deferTunnelSetup();
+                }
             }
             // Don't let buffer grow unbounded during boot
             if (consoleBuffer.length > 4096) consoleBuffer = consoleBuffer.slice(-512);

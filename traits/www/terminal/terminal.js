@@ -15,7 +15,8 @@ const PROMPT = '\x1b[32mtraits \x1b[0m';
 
 const LS_SCROLLBACK = 'traits.terminal.scrollback';
 const LS_HISTORY    = 'traits.terminal.history';
-const LS_VFS        = 'traits.terminal.vfs';
+const LS_PVFS       = 'traits.pvfs';
+const LS_VFS_LEGACY = 'traits.terminal.vfs';
 
 let Terminal, FitAddon, WebLinksAddon, SerializeAddon;
 
@@ -94,13 +95,20 @@ export async function createTerminal(mountEl, opts = {}) {
             }).catch(() => {});
             backgroundCall('vfs_dump').then(res => {
                 if (res?.ok && typeof res.result === 'string') {
-                    try { localStorage.setItem(LS_VFS, res.result); } catch (_) {}
+                    try {
+                        localStorage.setItem(LS_PVFS, res.result);
+                        // Keep writing legacy key for one transition cycle.
+                        localStorage.setItem(LS_VFS_LEGACY, res.result);
+                    } catch (_) {}
                 }
             }).catch(() => {});
         }
     };
     window.addEventListener('pagehide', saveState);
     window.addEventListener('hashchange', saveState);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') saveState();
+    });
 
     // ── Collapse/expand ──
     if (opts.header && opts.container) {
@@ -754,7 +762,13 @@ export async function createTerminal(mountEl, opts = {}) {
     if (savedHistory && backgroundCall) {
         try { await backgroundCall('cli_set_history', { history_json: savedHistory }); } catch (_) {}
     }
-    const savedVfs = localStorage.getItem(LS_VFS);
+    let savedVfs = localStorage.getItem(LS_PVFS);
+    if (!savedVfs) {
+        savedVfs = localStorage.getItem(LS_VFS_LEGACY);
+        if (savedVfs) {
+            try { localStorage.setItem(LS_PVFS, savedVfs); } catch (_) {}
+        }
+    }
     if (savedVfs && backgroundCall) {
         try { await backgroundCall('vfs_load', { json: savedVfs }); } catch (_) {}
     }

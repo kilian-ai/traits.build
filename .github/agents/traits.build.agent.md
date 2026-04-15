@@ -1157,6 +1157,7 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **GitHub Pages deploy:** just `git push origin main` — root `index.html` is auto-served.
 - **Two admin pages exist:** `www.admin` (server-rendered) and `www.admin.spa` (browser-only SPA).
 - **Terminal dispatch:** `terminal.js` uses `window._traitsSDK.call()` (3-tier cascade) and `Traits.backgroundCall()` for CLI session commands, NOT raw fetch/direct trait-specific command switches.
+- **Terminal PVFS persistence:** CLI-visible filesystem state must persist to `localStorage['traits.pvfs']` (not `traits.terminal.vfs`). Keep worker/main-thread sync aligned so files touched by shell commands (`ls`, `cd`, `mkdir`, `cat`, redirects) survive reloads.
 - **linux-wasm initramfs networking:** prefer `ifconfig` + `route` in `patches/initramfs/init`. Do not rely on bare `ip` in early boot scripts because `/sbin` may not be on `PATH` during init.
 - **linux-wasm browser networking mode:** prefer tunnel-first proxying when available (`NetProxy.setTunnelURL(...)`), with browser emulation as fallback. Surface active mode in boot logs (`NET mode: tunnel|browser-fallback`) when changing Linux networking behavior.
 - **linux-wasm relay tunnel endpoint:** default tunnel URL is `wss://relay.traits.build/linux/tunnel` (Cloudflare Worker). Query/localStorage overrides still apply via `linux_tunnel` and `linux-wasm.tunnel-url`.

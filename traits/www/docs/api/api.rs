@@ -55,6 +55,31 @@ const HTML: &str = r##"<!DOCTYPE html>
     font-size: 0.92rem;
   }
   .playground-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .pvfs-note {
+    margin: 1rem;
+    padding: 0.9rem 1.1rem;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    background: #161b22;
+  }
+  .pvfs-note h3 {
+    margin: 0 0 0.35rem 0;
+    font-size: 0.95rem;
+    color: #f0f6fc;
+  }
+  .pvfs-note p {
+    margin: 0;
+    color: #8b949e;
+    font-size: 0.88rem;
+    line-height: 1.45;
+  }
+  .pvfs-note code {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 0.08rem 0.35rem;
+    color: #f0f6fc;
+  }
   .playground-btn {
     padding: 0.65rem 0.9rem;
     border-radius: 8px;
@@ -121,6 +146,14 @@ const HTML: &str = r##"<!DOCTYPE html>
     <button id="btnOpenPlaygroundTerm" class="playground-btn primary" type="button">Open Terminal</button>
     <button id="btnGoApi" class="playground-btn" type="button">Stay in API Docs</button>
   </div>
+</div>
+<div class="pvfs-note">
+  <h3>Terminal persistent filesystem</h3>
+  <p>
+    The embedded terminal persists shell-visible files and directories to localStorage key
+    <code>traits.pvfs</code>. Content created or changed via commands such as <code>ls</code>, <code>cd</code>,
+    <code>mkdir</code>, <code>cat</code>, and <code>echo &gt; file</code> is synced automatically and restored on reload.
+  </p>
 </div>
 <div id="loading">Loading API documentation…</div>
 <div id="redoc" data-trait="sys.openapi" data-handler="initRedoc"></div>
