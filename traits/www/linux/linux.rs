@@ -1871,7 +1871,30 @@ const BOOT_SCRIPT: &str = r#"
         } catch (e) {}
 
         // 4) Default for web agent loop
-        return 10;
+        return 100;  // Changed from 10 to 100
+    }
+
+    // Load session memory: retrieves past session history from localStorage (rolling window)
+    function loadSessionMemory() {
+        try {
+            const sessions = JSON.parse(localStorage.getItem('linux-wasm.agent-sessions') || '[]');
+            // Keep last 5 sessions, trim each to last 1000 chars
+            const recent = sessions.slice(-5).map(s => (s && s.slice ? s.slice(-1000) : '')).filter(s => s);
+            return recent.join('\n---SESSION BOUNDARY---\n');
+        } catch (e) {
+            return '';
+        }
+    }
+
+    // Save current session to memory
+    function saveSessionMemory(sessionHistory) {
+        try {
+            const sessions = JSON.parse(localStorage.getItem('linux-wasm.agent-sessions') || '[]');
+            sessions.push(sessionHistory);
+            // Keep last 10 sessions max
+            if (sessions.length > 10) sessions.shift();
+            localStorage.setItem('linux-wasm.agent-sessions', JSON.stringify(sessions));
+        } catch (e) {}
     }
 
     async function runJSAgent(task) {
@@ -2137,7 +2160,7 @@ const BOOT_SCRIPT: &str = r#"
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: 'gpt-4o-mini',
+                        model: 'gpt-5.4',
                         messages: [
                             { role: 'system', content: repairSystem },
                             { role: 'user', content: repairUser }
@@ -2164,6 +2187,13 @@ const BOOT_SCRIPT: &str = r#"
         }
 
         let history = '';
+        // Load and inject past session memory into rolling window
+        const sessionMemory = loadSessionMemory();
+        if (sessionMemory) {
+            term.write('\x1b[2m[agent] loaded ' + (localStorage.getItem('linux-wasm.agent-sessions') || '[]').length + ' past session(s)\x1b[0m\r\n');
+            history = '[PAST SESSIONS]\n' + sessionMemory + '\n[END PAST SESSIONS]\n';
+        }
+        
         let blockedPipelineStreak = 0;
         let blockedTotal = 0;
         let blockedDummyFiles = 0;  // Count dummy file rejection attempts
@@ -2183,7 +2213,7 @@ const BOOT_SCRIPT: &str = r#"
         const MAX = await resolveAgentMaxRounds();
 
         term.write('\x1b[1;32m=== Agent: ' + task + ' ===\x1b[0m\r\n');
-        term.write('\x1b[2m[agent] max rounds: ' + MAX + '\x1b[0m\r\n');
+        term.write('\x1b[2m[agent] max rounds: ' + MAX + ' | model: gpt5.4\x1b[0m\r\n');
         console.log('[agent] Starting task:', task);
 
         for (let round = 1; round <= MAX; round++) {
@@ -2194,9 +2224,11 @@ const BOOT_SCRIPT: &str = r#"
 
             term.write('\x1b[2m-- Round ' + round + '/' + MAX + ' --\x1b[0m\r\n');
 
+            // Inject rolling window of history + past sessions (keep last 3000 chars max)
+            const historyWindow = (history + userMsgHistory).slice(-3000);
             let userMsg = round === 1
-                ? 'Task: ' + task
-                : 'Task: ' + task + '\nHistory:\n' + history + '\nNext command or DONE: summary.';
+                ? 'Task: ' + task + (sessionMemory ? '\n\n[Context from ' + JSON.parse(localStorage.getItem('linux-wasm.agent-sessions') || '[]').length + ' past session(s) available in history]' : '')
+                : 'Task: ' + task + '\nHistory:\n' + historyWindow + '\nNext command or DONE: summary.';
 
             if (blockedPipelineStreak >= 2) {
                 userMsg += '\nCRITICAL FORMAT: next command must be exactly one of these forms: '
@@ -2235,7 +2267,7 @@ const BOOT_SCRIPT: &str = r#"
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: 'gpt-4o-mini',
+                        model: 'gpt-5.4',
                         messages: [
                             { role: 'system', content: SYS },
                             { role: 'user', content: userMsg }
@@ -2546,6 +2578,10 @@ const BOOT_SCRIPT: &str = r#"
         } catch (e) {
             console.error('[agent] persistPullFromGuest error:', e);
         }
+        
+        // Save this session to memory before finishing
+        saveSessionMemory(history);
+        
         agentRunning = false;
         agentSuppressOutput = false;
         agentCapture = null;

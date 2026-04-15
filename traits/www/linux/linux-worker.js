@@ -86,8 +86,15 @@
     // Previous code reset the lock to 0 before waiting when it was already
     // 1 — this caused Atomics.wait to block forever (value matches 0),
     // deadlocking boot and ifconfig.
-    Atomics.wait(locks._memory, locks[lock], 0);
+    //
+    // FIX (Apr 15, 2026): Added 500ms timeout to prevent main-thread starvation deadlock.
+    // If main thread is stuck, worker wakes up after 500ms and proceeds.
+    const result = Atomics.wait(locks._memory, locks[lock], 0, 500);
     Atomics.store(locks._memory, locks[lock], 0);
+    // Result: "ok" (woken), "not-equal" (pre-notified), or "timed-out" (timeout expired)
+    if (result === "timed-out") {
+      console.warn('[worker] lock_wait timeout on "' + lock + '" — main thread may be stalled');
+    }
   };
 
   const serialize_me = () => {
