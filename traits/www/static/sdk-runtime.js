@@ -1108,6 +1108,11 @@ class Traits {
                     case 'vfs_load':
                         if (wasm.vfs_load) wasm.vfs_load(task.json || '{}');
                         return { ok: true, id, result: true, dispatch: 'direct' };
+                    case 'pvfs_dump':
+                        return { ok: true, id, result: wasm.pvfs_dump ? wasm.pvfs_dump() : '{}', dispatch: 'direct' };
+                    case 'pvfs_load':
+                        if (wasm.pvfs_load) wasm.pvfs_load(task.json || '{}');
+                        return { ok: true, id, result: true, dispatch: 'direct' };
                     case 'vfs_read':
                         return { ok: true, id, result: wasm.vfs_read ? wasm.vfs_read(task.path || '') : '', dispatch: 'direct' };
                     case 'vfs_write':

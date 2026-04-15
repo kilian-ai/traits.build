@@ -93,7 +93,7 @@ export async function createTerminal(mountEl, opts = {}) {
                     try { localStorage.setItem(LS_HISTORY, res.result); } catch (_) {}
                 }
             }).catch(() => {});
-            backgroundCall('vfs_dump').then(res => {
+            backgroundCall('pvfs_dump').then(res => {
                 if (res?.ok && typeof res.result === 'string') {
                     try {
                         localStorage.setItem(LS_PVFS, res.result);
@@ -770,7 +770,7 @@ export async function createTerminal(mountEl, opts = {}) {
         }
     }
     if (savedVfs && backgroundCall) {
-        try { await backgroundCall('vfs_load', { json: savedVfs }); } catch (_) {}
+        try { await backgroundCall('pvfs_load', { json: savedVfs }); } catch (_) {}
     }
 
     // ── Restore scrollback or show welcome ──
