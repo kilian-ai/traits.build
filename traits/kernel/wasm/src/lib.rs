@@ -265,29 +265,70 @@ pub fn init() -> Result<JsValue, JsValue> {
     })).unwrap().into())
 }
 
-/// Build a `LayeredVfs` seeded from the embedded WASM binary assets.
+/// A `Vfs` wrapper that auto-persists to `localStorage['traits.pvfs']` after
+/// every mutation. Used as the CLI session VFS so that files created via shell
+/// commands (`vi`, `mkdir`, `>` redirect) survive page refreshes immediately —
+/// no unload event needed.
+struct PersistingVfs {
+    inner: kernel_logic::vfs::LayeredVfs,
+}
+
+impl PersistingVfs {
+    fn new() -> Self {
+        let mut vfs = kernel_logic::vfs::LayeredVfs::new();
+        for (_path, rel_path, toml) in BUILTIN_TRAIT_DEFS {
+            vfs.seed(rel_path, *toml);
+        }
+        for (_path, rel_path, feat) in BUILTIN_FEATURES {
+            vfs.seed(rel_path, *feat);
+        }
+        for (rel_path, content) in BUILTIN_DOCS {
+            vfs.seed(rel_path, *content);
+        }
+        // Restore user layer from localStorage so prior session files are visible.
+        if let Some(json) = ls_get("traits.pvfs") {
+            vfs.load(&json);
+        }
+        Self { inner: vfs }
+    }
+
+    #[inline]
+    fn auto_save(&self) {
+        ls_set("traits.pvfs", &self.inner.dump());
+    }
+}
+
+impl kernel_logic::vfs::Vfs for PersistingVfs {
+    fn read(&self, path: &str) -> Option<String> { self.inner.read(path) }
+    fn write(&mut self, path: &str, content: &str) { self.inner.write(path, content); self.auto_save(); }
+    fn append(&mut self, path: &str, content: &str) { self.inner.append(path, content); self.auto_save(); }
+    fn delete(&mut self, path: &str) -> bool {
+        let r = self.inner.delete(path);
+        if r { self.auto_save(); }
+        r
+    }
+    fn mkdir(&mut self, path: &str) -> bool {
+        let r = self.inner.mkdir(path);
+        if r { self.auto_save(); }
+        r
+    }
+    fn list(&self) -> Vec<String> { self.inner.list() }
+    fn list_dirs(&self) -> Vec<String> { self.inner.list_dirs() }
+    fn is_dir(&self, path: &str) -> bool { self.inner.is_dir(path) }
+    fn exists(&self, path: &str) -> bool { self.inner.exists(path) }
+    fn dump(&self) -> String { self.inner.dump() }
+    fn load(&mut self, json: &str) { self.inner.load(json); self.auto_save(); }
+}
+
+/// Build a `PersistingVfs` seeded from the embedded WASM binary assets.
 ///
-/// Every `.trait.toml` and `.features.json` that was bundled via `include_str!`
-/// in `wasm_builtin_traits.rs` is mounted as a read-only builtin file.
+/// Restores user-created files from `localStorage['traits.pvfs']` so they
+/// survive page refreshes. Mutations are saved to localStorage immediately so
+/// no unload/pagehide handler is needed for persistence.
+///
 /// Called via `Platform::make_vfs` each time a `CliSession` is created.
-///
-/// Terminal usage after `init()` + `vfs_load()`:
-///   ls                                            → directory tree
-///   ls traits/sys/                                → files in sys namespace
-///   cat traits/sys/checksum/checksum.trait.toml
-///   cat traits/sys/checksum/checksum.features.json
 fn make_wasm_vfs() -> Box<dyn kernel_logic::vfs::Vfs> {
-    let mut vfs = kernel_logic::vfs::LayeredVfs::new();
-    for (_path, rel_path, toml) in BUILTIN_TRAIT_DEFS {
-        vfs.seed(rel_path, *toml);
-    }
-    for (_path, rel_path, feat) in BUILTIN_FEATURES {
-        vfs.seed(rel_path, *feat);
-    }
-    for (rel_path, content) in BUILTIN_DOCS {
-        vfs.seed(rel_path, *content);
-    }
-    Box::new(vfs)
+    Box::new(PersistingVfs::new())
 }
 
 // ────────────────── WASM process status ──────────────────
