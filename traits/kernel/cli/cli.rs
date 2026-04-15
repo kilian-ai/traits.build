@@ -335,7 +335,7 @@ impl CliSession {
                         let final_byte = bytes[i];
                         i += 1;
                         let param = &data[param_start..param_end];
-                        let word_motion = param.contains(";3") || param.contains(";9");
+                        let word_motion = param.contains(";3") || param.contains(";5") || param.contains(";9");
                         let key = match final_byte {
                             b'A' => Some(KeyEvent::Up),
                             b'B' => Some(KeyEvent::Down),

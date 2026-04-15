@@ -63,6 +63,9 @@ export async function createTerminal(mountEl, opts = {}) {
         fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', 'Menlo', monospace",
         lineHeight: 1.3,
         scrollback: 5000,
+        // Ensure macOS Option key emits Meta/Alt escape sequences (
+        // so word-wise navigation like Opt+Arrow can be parsed by the CLI).
+        macOptionIsMeta: true,
         theme: {
             background: '#0d1117',
             foreground: '#c9d1d9',
@@ -85,6 +88,18 @@ export async function createTerminal(mountEl, opts = {}) {
     if (serializeAddon) term.loadAddon(serializeAddon);
     term.loadAddon(new WebLinksAddon());
     term.open(mountEl);
+    // Keep focus/navigation keys inside terminal input stream.
+    term.attachCustomKeyEventHandler((ev) => {
+        const key = ev.key || '';
+        const isTab = key === 'Tab';
+        const isWordArrow = (ev.altKey || ev.metaKey) && (key === 'ArrowLeft' || key === 'ArrowRight');
+        if (isTab || isWordArrow) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            return true;
+        }
+        return true;
+    });
     fitAddon.fit();
 
     // ── Persist scrollback + history to localStorage ──
