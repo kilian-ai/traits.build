@@ -472,16 +472,32 @@ const BOOT_SCRIPT: &str = r#"
     const workerBlob = new Blob([workerSrc], { type: 'application/javascript' });
     const workerUrl = URL.createObjectURL(workerBlob);
 
+    const normalizeTunnelUrl = (raw) => {
+        const v = String(raw || '').trim();
+        if (!v) return '';
+        // Migrate legacy relay worker hosts to the canonical custom-domain endpoint.
+        if (v.includes('traits-relay.kiliannc.workers.dev')) {
+            return 'wss://relay.traits.build/linux/tunnel';
+        }
+        return v;
+    };
+
     const resolveTunnelUrl = () => {
         try {
             const params = new URLSearchParams(location.search);
             const fromQuery = params.get('linux_tunnel');
-            if (fromQuery) return fromQuery;
+            if (fromQuery) return normalizeTunnelUrl(fromQuery);
         } catch (e) {}
 
         try {
             const fromStorage = localStorage.getItem('linux-wasm.tunnel-url') || '';
-            if (fromStorage) return fromStorage;
+            if (fromStorage) {
+                const normalized = normalizeTunnelUrl(fromStorage);
+                if (normalized && normalized !== fromStorage) {
+                    try { localStorage.setItem('linux-wasm.tunnel-url', normalized); } catch (_) {}
+                }
+                return normalized;
+            }
         } catch (e) {}
 
         // Default: use the global relay tunnel endpoint.
