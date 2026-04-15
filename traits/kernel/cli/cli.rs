@@ -140,6 +140,8 @@ pub const VOICE_SENTINEL_START: &str = "\x1b[VOICE]";
 pub const VOICE_SENTINEL_END: &str = "\x1b[/VOICE]";
 
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
+const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
+const MAX_HISTORY_ENTRIES: usize = 500;
 
 struct ChatState {
     agent: String,
@@ -169,7 +171,7 @@ pub struct CliSession {
 
 impl CliSession {
     pub fn new() -> Self {
-        Self {
+        let mut session = Self {
             line_buffer: String::new(),
             cursor_pos: 0,
             history: Vec::new(),
@@ -184,7 +186,9 @@ impl CliSession {
             //   Uninitialised → MemVfs fallback (tests, early init).
             vfs: RefCell::new(kernel_logic::platform::make_vfs()),
             cwd: "/".to_string(),
-        }
+        };
+        session.load_history_from_vfs();
+        session
     }
 
     /// Swap the shell parser.  Future: `session.set_shell(Box::new(MvdanShell::new()))`.
@@ -195,6 +199,7 @@ impl CliSession {
     /// Swap the VFS backend.  Future: bind to Origin Private FS or a real FS.
     pub fn set_vfs(&mut self, vfs: impl Vfs + 'static) {
         self.vfs = RefCell::new(Box::new(vfs));
+        self.load_history_from_vfs();
     }
 
     /// Serialise the VFS to JSON (for localStorage persistence).
@@ -233,8 +238,52 @@ impl CliSession {
 
     /// Restore command history (e.g. from localStorage on WASM startup).
     pub fn set_history(&mut self, history: Vec<String>) {
-        self.hist_idx = history.len() as isize;
-        self.history = history;
+        self.history = history
+            .into_iter()
+            .filter(|s| !s.trim().is_empty())
+            .collect();
+        self.trim_history();
+        self.hist_idx = self.history.len() as isize;
+        self.persist_history_to_vfs();
+    }
+
+    fn trim_history(&mut self) {
+        if self.history.len() > MAX_HISTORY_ENTRIES {
+            let drop_n = self.history.len() - MAX_HISTORY_ENTRIES;
+            self.history.drain(0..drop_n);
+        }
+    }
+
+    fn push_history(&mut self, entry: String) {
+        if entry.trim().is_empty() {
+            return;
+        }
+        self.history.push(entry);
+        self.trim_history();
+        self.hist_idx = self.history.len() as isize;
+        self.persist_history_to_vfs();
+    }
+
+    fn persist_history_to_vfs(&self) {
+        if let Ok(json) = serde_json::to_string(&self.history) {
+            self.vfs.borrow_mut().write(HISTORY_VFS_PATH, &json);
+        }
+    }
+
+    fn load_history_from_vfs(&mut self) {
+        let from_vfs = self
+            .vfs
+            .borrow()
+            .read(HISTORY_VFS_PATH)
+            .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok());
+        if let Some(history) = from_vfs {
+            self.history = history
+                .into_iter()
+                .filter(|s| !s.trim().is_empty())
+                .collect();
+            self.trim_history();
+            self.hist_idx = self.history.len() as isize;
+        }
     }
 
     /// Return the welcome banner + initial prompt.
@@ -432,8 +481,7 @@ impl CliSession {
                         .cloned();
                     if let Some(path) = path {
                         let resolved = resolve_path(&path, backend);
-                        self.history.push(input);
-                        self.hist_idx = self.history.len() as isize;
+                        self.push_history(input);
                         out.push_str(&self.start_interactive(&resolved, backend));
                         return out;
                     }
@@ -443,15 +491,13 @@ impl CliSession {
                 if parts.first().map(|s| s.to_lowercase()).as_deref() == Some("chat") {
                     let agent = parts.get(1).map(|s| s.as_str()).unwrap_or("opencode");
                     let model = parts.get(2).map(|s| s.as_str()).unwrap_or("");
-                    self.history.push(input);
-                    self.hist_idx = self.history.len() as isize;
+                    self.push_history(input);
                     out.push_str(&self.start_chat(agent, model, None));
                     return out;
                 }
 
                 // Normal execution
-                self.history.push(input.clone());
-                self.hist_idx = self.history.len() as isize;
+                self.push_history(input.clone());
 
                 let result = exec_line(&input, backend, &*self.shell, &self.vfs, &mut self.cwd);
                 if result.contains(CLEAR_SENTINEL) {
@@ -1355,8 +1401,7 @@ impl CliSession {
                 }
 
                 // Regular message — persist to disk and dispatch via ACP
-                self.history.push(input.clone());
-                self.hist_idx = self.history.len() as isize;
+                self.push_history(input.clone());
 
                 let (agent, model, cwd, session_id) = {
                     let c = self.chat.as_mut().unwrap();
