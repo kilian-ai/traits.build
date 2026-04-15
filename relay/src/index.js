@@ -88,6 +88,71 @@ function json(data, status = 200) {
   });
 }
 
+// ── Tunnel instrumentation (best-effort, isolate-local) ─────────────────────
+
+const RELAY_BUILD = '2026-04-15-tunnel-debug-1';
+const TUNNEL_EVENT_LIMIT = 200;
+
+const tunnelStats = {
+  boot_iso: new Date().toISOString(),
+  open_requests: 0,
+  open_accepted: 0,
+  upgrade_rejected: 0,
+  active_connections: 0,
+  closes: 0,
+  errors: 0,
+  message_events: 0,
+  text_pings: 0,
+  binary_packets: 0,
+  parse_dropped: 0,
+  icmp_packets: 0,
+  udp_packets: 0,
+  dns_queries: 0,
+  dns_replies: 0,
+  dns_failures: 0,
+};
+
+const tunnelConnections = new Map(); // connId -> { started, bytes_rx, packets_rx, colo }
+const tunnelEvents = [];
+
+function safeError(err) {
+  const e = err || {};
+  const stack = String(e.stack || '').split('\n').slice(0, 3).join(' | ');
+  return {
+    name: String(e.name || 'Error'),
+    message: String(e.message || e || 'unknown error'),
+    stack,
+  };
+}
+
+function logTunnelEvent(type, fields = {}) {
+  const evt = { ts: new Date().toISOString(), type, ...fields };
+  tunnelEvents.push(evt);
+  if (tunnelEvents.length > TUNNEL_EVENT_LIMIT) tunnelEvents.shift();
+  try {
+    console.log('[linux-tunnel]', JSON.stringify(evt));
+  } catch (_) {
+    console.log('[linux-tunnel]', type);
+  }
+}
+
+function tunnelDebugSnapshot() {
+  return {
+    relay_build: RELAY_BUILD,
+    stats: { ...tunnelStats, active_connections: tunnelConnections.size },
+    active: Array.from(tunnelConnections.entries()).map(([id, c]) => ({
+      id,
+      started: c.started,
+      age_ms: Date.now() - c.started,
+      bytes_rx: c.bytes_rx,
+      packets_rx: c.packets_rx,
+      colo: c.colo,
+      ua: c.ua,
+    })),
+    recent_events: tunnelEvents.slice(-40),
+  };
+}
+
 // ── Linux tunnel helpers (raw IPv4 packets over WebSocket) ──────────────────
 
 function _checksum(bytes) {
@@ -196,8 +261,21 @@ async function _handleDnsUdp(ipPkt) {
 }
 
 function _linuxTunnelWs(request) {
+  const reqId = crypto.randomUUID().slice(0, 8);
+  const cf = request.cf || {};
+  const colo = String(cf.colo || 'unknown');
+  const ua = String(request.headers.get('user-agent') || '');
+  tunnelStats.open_requests += 1;
+  logTunnelEvent('open_request', { req_id: reqId, colo, ua: ua.slice(0, 120) });
+
   const upgrade = request.headers.get('Upgrade');
   if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
+    tunnelStats.upgrade_rejected += 1;
+    logTunnelEvent('upgrade_rejected', {
+      req_id: reqId,
+      upgrade: String(upgrade || ''),
+      url: request.url,
+    });
     return json({
       error: 'Upgrade required',
       hint: 'Use WebSocket at wss://relay.traits.build/linux/tunnel',
@@ -207,35 +285,103 @@ function _linuxTunnelWs(request) {
   const pair = new WebSocketPair();
   const client = pair[0];
   const server = pair[1];
-  server.accept();
+  try {
+    server.accept();
+  } catch (e) {
+    tunnelStats.errors += 1;
+    logTunnelEvent('accept_error', { req_id: reqId, error: safeError(e) });
+    throw e;
+  }
+
+  tunnelStats.open_accepted += 1;
+  tunnelConnections.set(reqId, {
+    started: Date.now(),
+    bytes_rx: 0,
+    packets_rx: 0,
+    colo,
+    ua: ua.slice(0, 120),
+  });
+  logTunnelEvent('ws_open', { req_id: reqId, colo });
 
   server.addEventListener('message', (evt) => {
-    const data = evt.data;
-    // Optional text ping for diagnostics.
-    if (typeof data === 'string') {
-      if (data === 'ping') server.send('pong');
-      return;
-    }
+    try {
+      tunnelStats.message_events += 1;
+      const data = evt.data;
+      // Optional text ping for diagnostics.
+      if (typeof data === 'string') {
+        if (data === 'ping') {
+          tunnelStats.text_pings += 1;
+          server.send('pong');
+        }
+        return;
+      }
 
-    let bytes;
-    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
-    else if (data && data.buffer instanceof ArrayBuffer) bytes = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.length || 0);
-    else return;
+      let bytes;
+      if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+      else if (data && data.buffer instanceof ArrayBuffer) bytes = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.length || 0);
+      else {
+        tunnelStats.parse_dropped += 1;
+        logTunnelEvent('drop_non_binary', { req_id: reqId });
+        return;
+      }
 
-    const ipPkt = _parseIpPacket(bytes);
-    if (!ipPkt) return;
+      tunnelStats.binary_packets += 1;
+      const c = tunnelConnections.get(reqId);
+      if (c) {
+        c.bytes_rx += bytes.length;
+        c.packets_rx += 1;
+      }
 
-    if (ipPkt.protocol === 1) {
-      const reply = _handleIcmpEcho(ipPkt);
-      if (reply) server.send(reply);
-      return;
-    }
+      const ipPkt = _parseIpPacket(bytes);
+      if (!ipPkt) {
+        tunnelStats.parse_dropped += 1;
+        return;
+      }
 
-    if (ipPkt.protocol === 17) {
-      _handleDnsUdp(ipPkt).then((reply) => {
+      if (ipPkt.protocol === 1) {
+        tunnelStats.icmp_packets += 1;
+        const reply = _handleIcmpEcho(ipPkt);
         if (reply) server.send(reply);
-      });
+        return;
+      }
+
+      if (ipPkt.protocol === 17) {
+        tunnelStats.udp_packets += 1;
+        tunnelStats.dns_queries += 1;
+        _handleDnsUdp(ipPkt)
+          .then((reply) => {
+            if (reply) {
+              tunnelStats.dns_replies += 1;
+              server.send(reply);
+            } else {
+              tunnelStats.dns_failures += 1;
+            }
+          })
+          .catch((e) => {
+            tunnelStats.dns_failures += 1;
+            logTunnelEvent('dns_error', { req_id: reqId, error: safeError(e) });
+          });
+      }
+    } catch (e) {
+      tunnelStats.errors += 1;
+      logTunnelEvent('message_error', { req_id: reqId, error: safeError(e) });
     }
+  });
+
+  server.addEventListener('close', (evt) => {
+    tunnelStats.closes += 1;
+    tunnelConnections.delete(reqId);
+    logTunnelEvent('ws_close', {
+      req_id: reqId,
+      code: evt && typeof evt.code === 'number' ? evt.code : null,
+      reason: evt && evt.reason ? String(evt.reason).slice(0, 120) : '',
+      clean: !!(evt && evt.wasClean),
+    });
+  });
+
+  server.addEventListener('error', (evt) => {
+    tunnelStats.errors += 1;
+    logTunnelEvent('ws_error', { req_id: reqId, error: safeError(evt) });
   });
 
   return new Response(null, { status: 101, webSocket: client });
@@ -272,6 +418,14 @@ function normalizeCode(code) {
 export class GameRoom {
   async fetch() {
     return json({ error: 'GameRoom is deprecated' }, 410);
+  }
+}
+
+// Legacy DO class kept for backwards compatibility with deployed migration
+// histories that still reference GameRoomV2.
+export class GameRoomV2 {
+  async fetch() {
+    return json({ error: 'GameRoomV2 is deprecated' }, 410);
   }
 }
 
@@ -389,6 +543,10 @@ export class RelaySession {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === '/linux/tunnel/debug' && request.method === 'GET') {
+      return json(tunnelDebugSnapshot());
+    }
 
     if (url.pathname === '/linux/tunnel') {
       return _linuxTunnelWs(request);

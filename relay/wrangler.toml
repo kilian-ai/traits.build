@@ -18,3 +18,8 @@ new_sqlite_classes = ["RelaySession"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = []
+
+# Keep v3 marker to match deployed migration history.
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = []
