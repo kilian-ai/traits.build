@@ -717,6 +717,24 @@ const NetProxy = (() => {
       console.log('[net-proxy] getTunnelError called, returning:', tunnelError);
       return tunnelError;
     },
+    
+    // Force immediate fallback to browser mode, disconnecting tunnel and disabling reconnection
+    forceBrowserFallback() {
+      console.warn('[net-proxy] forceBrowserFallback() called — closing tunnel and switching to browser emulation');
+      tunnelConnected = false;
+      tunnelError = 'Forced fallback to browser emulation mode due to stalled tunnel';
+      tunnelFailoverTried = true;  // Prevent automatic recovery attempts
+      if (tunnelConnectTimeout) clearTimeout(tunnelConnectTimeout);
+      if (tunnelWs) {
+        try {
+          tunnelWs.close();
+        } catch (e) {
+          console.warn('[net-proxy] error closing WebSocket:', e);
+        }
+        tunnelWs = null;
+      }
+    },
+    
     getStats() {
       const avgTxHandleMs = stats.txHandleCalls > 0 ? (stats.txHandleTotalMs / stats.txHandleCalls) : 0;
       return {

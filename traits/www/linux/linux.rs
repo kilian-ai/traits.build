@@ -1625,6 +1625,7 @@ const BOOT_SCRIPT: &str = r#"
 
     let os;
     let netStatsTimer = null;
+    let tunnelStallStart = null;  // Track when tunnel stops receiving packets
     try {
         os = await linux(workerUrl, vmlinux, boot_cmdline, initrd, logLine, console_write);
         // Expose for programmatic testing (e.g. os.key_input("cmd\r"))
@@ -1648,16 +1649,47 @@ const BOOT_SCRIPT: &str = r#"
                         console.log(`[net] mode changed: ${lastMode} -> ${mode}`);
                     }
                     lastMode = mode;
+                    tunnelStallStart = null;  // Reset stall timer on mode change
                 }
                 const q = proxy ? proxy.queueLen : 0;
                 const qh = proxy ? proxy.queueHighWater : 0;
                 const drop = proxy ? proxy.rxDroppedPackets : 0;
+                const rxPkts = proxy ? proxy.rxPackets : 0;
+                const txPkts = proxy ? proxy.txPackets : 0;
                 const cbRecv = host ? host.recvAvgMs : 0;
                 const cbPoll = host ? host.pollAvgMs : 0;
-                const line = `[net] mode=${mode} q=${q}/${qh} drop=${drop} cb_recv=${cbRecv.toFixed(3)}ms cb_poll=${cbPoll.toFixed(3)}ms`;
+                const line = `[net] mode=${mode} q=${q}/${qh} drop=${drop} rx=${rxPkts} tx=${txPkts} cb_recv=${cbRecv.toFixed(3)}ms cb_poll=${cbPoll.toFixed(3)}ms`;
                 if (line !== lastNetLine) {
                     console.log(line);
                     lastNetLine = line;
+                }
+
+                // Tunnel stall detection: if tunnel mode but no RX packets while TX is happening,
+                // force fallback to browser mode to unblock the kernel's network driver from polling
+                // endlessly and starving host callbacks.
+                if (mode === 'tunnel' && txPkts > 0 && rxPkts === 0) {
+                    if (!tunnelStallStart) {
+                        tunnelStallStart = Date.now();
+                        console.warn('[net] ⚠️  tunnel stall detected: TX=' + txPkts + ' RX=' + rxPkts);
+                    } else {
+                        const stallDurationMs = Date.now() - tunnelStallStart;
+                        if (stallDurationMs > 3000) {  // 3 second threshold
+                            console.error('[net] ❌ tunnel unresponsive for ' + stallDurationMs + 'ms, forcing fallback to browser mode');
+                            term.write('\x1B[31m[traits.build] NET timeout: relay tunnel unresponsive, switching to browser emulation\x1B[0m\r\n');
+                            if (typeof NetProxy !== 'undefined' && NetProxy.forceBrowserFallback) {
+                                try {
+                                    NetProxy.forceBrowserFallback();
+                                    tunnelStallStart = null;
+                                    console.log('[net] forced fallback initiated');
+                                } catch (e) {
+                                    console.error('[net] failureForcing fallback:', e);
+                                }
+                            }
+                        }
+                    }
+                } else if (tunnelStallStart && (rxPkts > 0 || mode !== 'tunnel')) {
+                    // Tunnel recovered or mode changed, reset stall tracking
+                    tunnelStallStart = null;
                 }
 
                 // Watchdog: if host callbacks stop for too long while tasks are alive,
