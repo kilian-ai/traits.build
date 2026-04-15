@@ -1501,40 +1501,83 @@ impl CliSession {
     // ── Tab completion (normal mode) ──
 
     fn tab_complete_normal(&mut self, backend: &dyn CliBackend) -> String {
-        let parts: Vec<&str> = self.line_buffer.split_whitespace().collect();
-        let prefix = if parts.len() <= 1 {
-            parts.first().copied().unwrap_or("")
-        } else if matches!(
-            parts[0].to_lowercase().as_str(),
-            "call" | "info" | "c" | "i"
-        ) {
-            parts.last().copied().unwrap_or("")
-        } else {
-            return String::new();
-        };
+        let before_cursor = &self.line_buffer[..self.cursor_pos];
+        let after_cursor = &self.line_buffer[self.cursor_pos..];
+        let parts = parse_command(before_cursor);
+        let ends_space = before_cursor.ends_with(' ');
 
-        let completion_pool: Vec<String> = if parts.len() <= 1 {
-            let mut set: HashSet<String> = shell_builtin_commands().into_iter().collect();
-            for p in backend.all_paths() {
-                set.insert(p);
+        enum CompletionKind {
+            Command,
+            TraitPath,
+            VfsPath,
+        }
+
+        let (kind, prefix) = if parts.is_empty() {
+            (CompletionKind::Command, String::new())
+        } else if parts.len() == 1 && !ends_space {
+            (CompletionKind::Command, parts[0].clone())
+        } else {
+            let cmd = parts[0].to_lowercase();
+            let token_prefix = if ends_space {
+                String::new()
+            } else {
+                parts.last().cloned().unwrap_or_default()
+            };
+
+            if matches!(cmd.as_str(), "call" | "info" | "c" | "i") {
+                (CompletionKind::TraitPath, token_prefix)
+            } else if should_complete_vfs_paths(&cmd, &parts, ends_space) {
+                (CompletionKind::VfsPath, token_prefix)
+            } else {
+                return String::new();
             }
-            let mut vals: Vec<String> = set.into_iter().collect();
-            vals.sort();
-            vals
-        } else {
-            backend.all_paths()
         };
 
-        let (matches, common) = tab_completions(prefix, &completion_pool);
+        let completion_pool: Vec<String> = match kind {
+            CompletionKind::Command => {
+                let mut set: HashSet<String> = shell_builtin_commands().into_iter().collect();
+                for p in backend.all_paths() {
+                    set.insert(p);
+                }
+                let mut vals: Vec<String> = set.into_iter().collect();
+                vals.sort();
+                vals
+            }
+            CompletionKind::TraitPath => backend.all_paths(),
+            CompletionKind::VfsPath => vfs_completion_pool(&self.vfs, &self.cwd),
+        };
+
+        let (matches, common) = tab_completions(&prefix, &completion_pool);
+
+        let rebuild_before = |candidate: &str, add_trailing_space: bool| -> String {
+            let mut line = if matches!(kind, CompletionKind::Command) && parts.len() <= 1 && !ends_space {
+                candidate.to_string()
+            } else if ends_space {
+                format!("{}{}", before_cursor, candidate)
+            } else {
+                let mut before_parts = parts.clone();
+                if !before_parts.is_empty() {
+                    before_parts.pop();
+                }
+                if before_parts.is_empty() {
+                    candidate.to_string()
+                } else {
+                    format!("{} {}", before_parts.join(" "), candidate)
+                }
+            };
+
+            if add_trailing_space {
+                line.push(' ');
+            }
+            line
+        };
 
         if matches.len() == 1 {
-            if parts.len() <= 1 {
-                self.line_buffer = format!("{} ", matches[0]);
-            } else {
-                let before: Vec<&str> = parts[..parts.len() - 1].to_vec();
-                self.line_buffer = format!("{} {} ", before.join(" "), matches[0]);
-            }
-            self.cursor_pos = self.line_buffer.len();
+            let only = &matches[0];
+            let add_space = !only.ends_with('/');
+            let new_before = rebuild_before(only, add_space);
+            self.line_buffer = format!("{}{}", new_before, after_cursor);
+            self.cursor_pos = new_before.len();
             self.refresh_line()
         } else if matches.len() > 1 && matches.len() <= 40 {
             let mut out = String::from("\r\n");
@@ -1547,13 +1590,9 @@ impl CliSession {
                 out.push_str("\r\n");
             }
             if common.len() > prefix.len() {
-                if parts.len() <= 1 {
-                    self.line_buffer = common;
-                } else {
-                    let before: Vec<&str> = parts[..parts.len() - 1].to_vec();
-                    self.line_buffer = format!("{} {}", before.join(" "), common);
-                }
-                self.cursor_pos = self.line_buffer.len();
+                let new_before = rebuild_before(&common, false);
+                self.line_buffer = format!("{}{}", new_before, after_cursor);
+                self.cursor_pos = new_before.len();
             }
             out.push_str(&self.refresh_line());
             out
@@ -3453,6 +3492,78 @@ fn shell_builtin_commands() -> Vec<String> {
     .iter()
     .map(|s| s.to_string())
     .collect()
+}
+
+fn should_complete_vfs_paths(cmd: &str, parts: &[String], ends_space: bool) -> bool {
+    let arg_index = if parts.is_empty() {
+        0
+    } else if ends_space {
+        parts.len().saturating_sub(1)
+    } else {
+        parts.len().saturating_sub(2)
+    };
+
+    match cmd {
+        // first-arg path commands
+        "ls" | "cd" | "find" | "mkdir" | "rm" | "stat" | "vi" | "ee" => arg_index == 0,
+        // read/write commands where additional args can still be file paths
+        "cat" | "head" | "tail" | "grep" | "wc" | "sed" => arg_index <= 1,
+        // write/tee complete only destination path (first arg), not content payload
+        "write" | "tee" => arg_index == 0,
+        _ => false,
+    }
+}
+
+fn vfs_completion_pool(vfs: &RefCell<Box<dyn Vfs>>, cwd: &str) -> Vec<String> {
+    let mut set: HashSet<String> = HashSet::new();
+
+    for d in vfs.borrow().list_dirs() {
+        let abs = if d.starts_with('/') { d.clone() } else { format!("/{d}") };
+        set.insert(format!("{}/", abs.trim_end_matches('/')));
+
+        let rel = to_relative_path(cwd, &d);
+        if !rel.is_empty() && rel != "." {
+            set.insert(format!("{}/", rel.trim_end_matches('/')));
+        }
+    }
+
+    for f in vfs.borrow().list() {
+        let abs = if f.starts_with('/') { f.clone() } else { format!("/{f}") };
+        set.insert(abs);
+
+        let rel = to_relative_path(cwd, &f);
+        if !rel.is_empty() && rel != "." {
+            set.insert(rel);
+        }
+    }
+
+    let mut vals: Vec<String> = set.into_iter().collect();
+    vals.sort();
+    vals
+}
+
+fn to_relative_path(cwd: &str, abs_path: &str) -> String {
+    let abs = if abs_path.starts_with('/') {
+        abs_path.to_string()
+    } else {
+        format!("/{}", abs_path.trim_start_matches('/'))
+    };
+    let cwd_norm = resolve_vfs_path("/", cwd);
+    let prefix = if cwd_norm == "/" {
+        "/".to_string()
+    } else {
+        format!("{}/", cwd_norm.trim_end_matches('/'))
+    };
+
+    if cwd_norm == "/" {
+        abs.trim_start_matches('/').to_string()
+    } else if abs == cwd_norm {
+        ".".to_string()
+    } else if abs.starts_with(&prefix) {
+        abs[prefix.len()..].to_string()
+    } else {
+        abs.trim_start_matches('/').to_string()
+    }
 }
 
 fn is_word_char(c: char) -> bool {
