@@ -45,6 +45,15 @@
                     "contains": ["cmd < file", "cmd1 | cmd2"]
                 }
             ]
+        },
+        {
+            "name": "help lists cwd and directory commands",
+            "examples": [
+                {
+                    "input": ["help"],
+                    "contains": ["pwd", "cd", "mkdir", "Change current directory"]
+                }
+            ]
         }
     ]
 }

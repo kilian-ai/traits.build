@@ -137,6 +137,7 @@ cmd1 | cmd2 | cmd3
 The portable terminal session includes shell-compatible builtins aimed at agent workflows:
 
 - `echo`, `pwd`
+- `cd`, `mkdir`
 - `cat`, `head`, `tail`
 - `grep` (`-i`, `-n`, `-v`)
 - `wc` (`-l`, `-w`, `-c`)
@@ -144,6 +145,10 @@ The portable terminal session includes shell-compatible builtins aimed at agent 
 - `test` and `[ ... ]`
 - `find` (supports `-name`, `-type`, `-maxdepth`)
 - `curl` (mapped to `sys.call`)
+
+`cd` now updates per-session working directory state, and path-taking commands resolve relative paths against that `cwd`.
+
+`mkdir` supports plain mode and `-p` parent creation in the CLI VFS.
 
 `vi` and `ee` are currently compatibility stubs that show file content and guide users to write via redirection or `write`.
 
