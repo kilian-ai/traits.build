@@ -9,6 +9,9 @@
 const _sharedDefaults = (typeof window !== 'undefined' && window.TerminalShared && window.TerminalShared.defaults)
     ? window.TerminalShared.defaults
     : null;
+const _sharedAdapters = (typeof window !== 'undefined' && window.TerminalSharedAdapters)
+    ? window.TerminalSharedAdapters
+    : null;
 
 const _sentinels = _sharedDefaults?.sentinels || {};
 const CLEAR_SENTINEL = _sentinels.clear || '\x1b[CLEAR]';
@@ -89,32 +92,32 @@ export async function createTerminal(mountEl, opts = {}) {
     let backgroundCall = null;
     let activeSdk = window._traitsSDK || null;
 
-    const saveState = () => {
+    const persistence = _sharedAdapters?.createPersistenceAdapter
+        ? _sharedAdapters.createPersistenceAdapter({
+            keys: {
+                scrollback: LS_SCROLLBACK,
+                history: LS_HISTORY,
+                pvfs: LS_PVFS,
+                legacyVfs: LS_VFS_LEGACY,
+            },
+            serializeAddon,
+            getBackgroundCall: () => backgroundCall,
+        })
+        : null;
+    const saveState = persistence?.saveState || (() => {
         if (serializeAddon) {
             try { localStorage.setItem(LS_SCROLLBACK, serializeAddon.serialize()); } catch (_) {}
         }
-        if (backgroundCall) {
-            backgroundCall('cli_get_history').then(res => {
-                if (res?.ok && typeof res.result === 'string') {
-                    try { localStorage.setItem(LS_HISTORY, res.result); } catch (_) {}
-                }
-            }).catch(() => {});
-            backgroundCall('pvfs_dump').then(res => {
-                if (res?.ok && typeof res.result === 'string') {
-                    try {
-                        localStorage.setItem(LS_PVFS, res.result);
-                        // Keep writing legacy key for one transition cycle.
-                        localStorage.setItem(LS_VFS_LEGACY, res.result);
-                    } catch (_) {}
-                }
-            }).catch(() => {});
-        }
-    };
-    window.addEventListener('pagehide', saveState);
-    window.addEventListener('hashchange', saveState);
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') saveState();
     });
+    if (persistence?.attachAutoSaveHandlers) {
+        persistence.attachAutoSaveHandlers();
+    } else {
+        window.addEventListener('pagehide', saveState);
+        window.addEventListener('hashchange', saveState);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') saveState();
+        });
+    }
 
     // ── Collapse/expand ──
     if (opts.header && opts.container) {
@@ -146,49 +149,57 @@ export async function createTerminal(mountEl, opts = {}) {
 
     // ── Load background runtime (preferred: SDK adapter; fallback: direct WASM) ──
     try {
-        if (activeSdk && typeof activeSdk.backgroundCall === 'function') {
-            await activeSdk.initWorkerPool();
-            backgroundCall = (cmd, payload = {}) => activeSdk.backgroundCall(cmd, payload);
-            const status = activeSdk.status || {};
-            setStatus('WASM worker', 'ready');
-            // Register terminal as a service for sys.ps
-            if (window.TraitsWasm && window.TraitsWasm.register_task) {
-                try { window.TraitsWasm.register_task('terminal', 'Terminal', 'service', Date.now(), 'xterm.js CLI session'); } catch(e) {}
-            }
-            if (opts.onReady) opts.onReady({ wasm: null, traitCount: status.traits || 0, wasmCount: status.callable || 0, background: true });
+        if (_sharedAdapters?.initTraitsTransport) {
+            const init = await _sharedAdapters.initTraitsTransport({
+                activeSdk,
+                setStatus,
+                onReady: opts.onReady,
+            });
+            activeSdk = init.activeSdk || activeSdk;
+            backgroundCall = init.backgroundCall || backgroundCall;
+            wasm = init.wasm || wasm;
         } else {
-            // Fallback: attach WASM to a local SDK instance and route through sdk.background.direct.
-            if (window.TraitsWasm && window.TraitsWasm.cli_input) {
-                wasm = window.TraitsWasm;
-                const count = wasm.is_registered ? JSON.parse(wasm.callable_traits()).length : 0;
-                setStatus('WASM (SPA)', 'ready');
-                if (opts.onReady) opts.onReady({ wasm, traitCount: 0, wasmCount: count, background: false });
+            if (activeSdk && typeof activeSdk.backgroundCall === 'function') {
+                await activeSdk.initWorkerPool();
+                backgroundCall = (cmd, payload = {}) => activeSdk.backgroundCall(cmd, payload);
+                const status = activeSdk.status || {};
+                setStatus('WASM worker', 'ready');
+                if (window.TraitsWasm && window.TraitsWasm.register_task) {
+                    try { window.TraitsWasm.register_task('terminal', 'Terminal', 'service', Date.now(), 'xterm.js CLI session'); } catch(e) {}
+                }
+                if (opts.onReady) opts.onReady({ wasm: null, traitCount: status.traits || 0, wasmCount: status.callable || 0, background: true });
             } else {
-                const wasmJsUrl = '/wasm/traits_wasm.js';
-                const wasmBinUrl = '/wasm/traits_wasm_bg.wasm';
-                const mod = await import(wasmJsUrl);
-                await mod.default(wasmBinUrl);
-                const initResult = JSON.parse(mod.init());
-                wasm = mod;
-                const count = initResult.traits_registered || 0;
-                const wasmCount = initResult.wasm_callable || 0;
-                setStatus(`${count} traits (${wasmCount} WASM)`, 'ready');
-                if (opts.onReady) opts.onReady({ wasm, traitCount: count, wasmCount, background: false });
-            }
+                if (window.TraitsWasm && window.TraitsWasm.cli_input) {
+                    wasm = window.TraitsWasm;
+                    const count = wasm.is_registered ? JSON.parse(wasm.callable_traits()).length : 0;
+                    setStatus('WASM (SPA)', 'ready');
+                    if (opts.onReady) opts.onReady({ wasm, traitCount: 0, wasmCount: count, background: false });
+                } else {
+                    const wasmJsUrl = '/wasm/traits_wasm.js';
+                    const wasmBinUrl = '/wasm/traits_wasm_bg.wasm';
+                    const mod = await import(wasmJsUrl);
+                    await mod.default(wasmBinUrl);
+                    const initResult = JSON.parse(mod.init());
+                    wasm = mod;
+                    const count = initResult.traits_registered || 0;
+                    const wasmCount = initResult.wasm_callable || 0;
+                    setStatus(`${count} traits (${wasmCount} WASM)`, 'ready');
+                    if (opts.onReady) opts.onReady({ wasm, traitCount: count, wasmCount, background: false });
+                }
 
-            if (window.Traits) {
-                activeSdk = new window.Traits({
-                    useWasm: false,
-                    useHelper: false,
-                    server: '',
-                });
-                activeSdk.attachWasm(wasm);
-                activeSdk.setBackgroundBinding('sdk.background.direct');
-                backgroundCall = (cmd, payload = {}) => activeSdk.backgroundCall(cmd, payload, { impl: 'sdk.background.direct' });
-            }
-            // Register terminal as a service for sys.ps (fallback path)
-            if (wasm && wasm.register_task) {
-                try { wasm.register_task('terminal', 'Terminal', 'service', Date.now(), 'xterm.js CLI session'); } catch(e) {}
+                if (window.Traits) {
+                    activeSdk = new window.Traits({
+                        useWasm: false,
+                        useHelper: false,
+                        server: '',
+                    });
+                    activeSdk.attachWasm(wasm);
+                    activeSdk.setBackgroundBinding('sdk.background.direct');
+                    backgroundCall = (cmd, payload = {}) => activeSdk.backgroundCall(cmd, payload, { impl: 'sdk.background.direct' });
+                }
+                if (wasm && wasm.register_task) {
+                    try { wasm.register_task('terminal', 'Terminal', 'service', Date.now(), 'xterm.js CLI session'); } catch(e) {}
+                }
             }
         }
     } catch (e) {
@@ -764,19 +775,23 @@ export async function createTerminal(mountEl, opts = {}) {
     });
 
     // ── Restore history + VFS into WASM session ──
-    const savedHistory = localStorage.getItem(LS_HISTORY);
-    if (savedHistory && backgroundCall) {
-        try { await backgroundCall('cli_set_history', { history_json: savedHistory }); } catch (_) {}
-    }
-    let savedVfs = localStorage.getItem(LS_PVFS);
-    if (!savedVfs) {
-        savedVfs = localStorage.getItem(LS_VFS_LEGACY);
-        if (savedVfs) {
-            try { localStorage.setItem(LS_PVFS, savedVfs); } catch (_) {}
+    if (persistence?.restoreSession) {
+        await persistence.restoreSession();
+    } else {
+        const savedHistory = localStorage.getItem(LS_HISTORY);
+        if (savedHistory && backgroundCall) {
+            try { await backgroundCall('cli_set_history', { history_json: savedHistory }); } catch (_) {}
         }
-    }
-    if (savedVfs && backgroundCall) {
-        try { await backgroundCall('pvfs_load', { json: savedVfs }); } catch (_) {}
+        let savedVfs = localStorage.getItem(LS_PVFS);
+        if (!savedVfs) {
+            savedVfs = localStorage.getItem(LS_VFS_LEGACY);
+            if (savedVfs) {
+                try { localStorage.setItem(LS_PVFS, savedVfs); } catch (_) {}
+            }
+        }
+        if (savedVfs && backgroundCall) {
+            try { await backgroundCall('pvfs_load', { json: savedVfs }); } catch (_) {}
+        }
     }
 
     // ── Restore scrollback or show welcome ──
