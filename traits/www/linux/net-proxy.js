@@ -54,6 +54,15 @@ const NetProxy = (() => {
   let tunnelConnected = false;
   let tunnelError = null;  // Error message if connection failed
   let tunnelConnectTimeout = null;  // Timeout ID for connection wait
+  let tunnelFailoverTried = false;
+
+  function fallbackTunnelUrl(url) {
+    if (!url) return null;
+    if (url.startsWith('wss://relay.traits.build/linux/tunnel')) {
+      return 'wss://traits-relay.kiliannc.workers.dev/linux/tunnel';
+    }
+    return null;
+  }
 
   // ── IP packet helpers ──
 
@@ -577,6 +586,7 @@ const NetProxy = (() => {
       tunnelUrl = normalized;
       tunnelConnected = false;
       tunnelError = null;  // Clear previous errors
+      tunnelFailoverTried = false;
       if (tunnelConnectTimeout) clearTimeout(tunnelConnectTimeout);
       if (tunnelWs) tunnelWs.close();
       if (normalized) {
@@ -616,6 +626,56 @@ const NetProxy = (() => {
           else if (isPlainEvent) tunnelError = 'Connection refused (relay unreachable or endpoint missing)';
           else tunnelError = 'WebSocket error: ' + errStr.slice(0, 100);
           console.warn('[net-proxy] ✗ tunnel error:', tunnelError, {errorObj: e});
+
+          const fallback = fallbackTunnelUrl(normalized);
+          if (!tunnelFailoverTried && fallback) {
+            tunnelFailoverTried = true;
+            tunnelError = `Retrying via fallback relay (${fallback})`;
+            console.warn('[net-proxy] retrying tunnel via fallback relay:', fallback);
+            setTimeout(() => {
+              tunnelConnected = false;
+              tunnelError = null;
+              if (tunnelConnectTimeout) clearTimeout(tunnelConnectTimeout);
+              if (tunnelWs) tunnelWs.close();
+              tunnelWs = new WebSocket(fallback);
+              tunnelWs.binaryType = 'arraybuffer';
+              console.log('[net-proxy] attempting tunnel connection:', fallback);
+              tunnelWs.onopen = () => {
+                tunnelConnected = true;
+                tunnelError = null;
+                if (tunnelConnectTimeout) clearTimeout(tunnelConnectTimeout);
+                console.info('[net-proxy] ✓ tunnel connected (fallback):', fallback);
+              };
+              tunnelWs.onclose = () => {
+                tunnelConnected = false;
+                console.info('[net-proxy] fallback tunnel disconnected. readyState:', tunnelWs ? tunnelWs.readyState : 'null');
+              };
+              tunnelWs.onmessage = (ev) => {
+                const data = new Uint8Array(ev.data);
+                stats.tunnelRxPackets++;
+                stats.tunnelRxBytes += data.length;
+                enqueueRx(data);
+              };
+              tunnelWs.onerror = (fallbackErr) => {
+                tunnelConnected = false;
+                stats.tunnelTxErrors++;
+                const fallbackMsg = (fallbackErr && (fallbackErr.message || fallbackErr.reason)) ? String(fallbackErr.message || fallbackErr.reason) : String(fallbackErr);
+                tunnelError = 'Fallback relay failed: ' + fallbackMsg.slice(0, 100);
+                console.warn('[net-proxy] ✗ fallback tunnel error:', tunnelError, {errorObj: fallbackErr});
+              };
+              tunnelConnectTimeout = setTimeout(() => {
+                if (!tunnelConnected && tunnelWs) {
+                  const state = tunnelWs.readyState;
+                  const stateNames = {0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED'};
+                  const stateName = stateNames[state] || 'UNKNOWN';
+                  if (!tunnelError) {
+                    tunnelError = `Fallback relay timeout (readyState=${stateName}, relay server not responding)`;
+                  }
+                  console.warn('[net-proxy]', tunnelError);
+                }
+              }, 5000);
+            }, 50);
+          }
         };
         // Set timeout for connection attempt — if not connected within 5s, report as failed
         tunnelConnectTimeout = setTimeout(() => {
