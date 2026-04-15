@@ -6,6 +6,17 @@ use std::collections::HashMap;
 #[path = "../../../scripts/cli_formatters_codegen.rs"]
 mod cli_formatters_codegen;
 
+/// Get the real on-disk mtime of a file as Unix seconds.
+/// Returns 0 if the metadata is unavailable.
+fn file_mtime(path: &Path) -> u64 {
+    fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// Rust reserved keywords that need `r#` prefix when used as identifiers.
 const RUST_KEYWORDS: &[&str] = &[
     "abstract", "as", "async", "await", "become", "box", "break", "const",
@@ -99,27 +110,30 @@ fn main() {
 
     // ── Generate wasm_builtin_traits.rs (TOML definitions for registry) ──
     let mut bt = String::new();
-    bt.push_str("pub const BUILTIN_TRAIT_DEFS: &[(&str, &str, &str)] = &[\n");
+    // Tuple: (trait_path, vfs_rel_path, content, mtime_unix)
+    bt.push_str("pub const BUILTIN_TRAIT_DEFS: &[(&str, &str, &str, u64)] = &[\n");
     for (path, rel_path) in &entries {
         let toml_abs = root_dir.join(rel_path);
+        let mtime = file_mtime(&toml_abs);
         bt.push_str(&format!(
-            "    ({:?}, {:?}, include_str!({:?})),\n",
-            path, rel_path, toml_abs.to_string_lossy()
+            "    ({:?}, {:?}, include_str!({:?}), {}),\n",
+            path, rel_path, toml_abs.to_string_lossy(), mtime
         ));
     }
     bt.push_str("];\n");
 
     // ── Generate BUILTIN_FEATURES ──
-    // Tuple: (trait_path, vfs_rel_path, content)
+    // Tuple: (trait_path, vfs_rel_path, content, mtime_unix)
     // vfs_rel_path is the natural file path used as the VFS key in LayeredVfs.
-    bt.push_str("\npub const BUILTIN_FEATURES: &[(&str, &str, &str)] = &[\n");
+    bt.push_str("\npub const BUILTIN_FEATURES: &[(&str, &str, &str, u64)] = &[\n");
     for (path, rel_path) in &entries {
         let features_rel = rel_path.replace(".trait.toml", ".features.json");
         let features_abs = root_dir.join(&features_rel);
         if features_abs.exists() {
+            let mtime = file_mtime(&features_abs);
             bt.push_str(&format!(
-                "    ({:?}, {:?}, include_str!({:?})),\n",
-                path, features_rel, features_abs.to_string_lossy()
+                "    ({:?}, {:?}, include_str!({:?}), {}),\n",
+                path, features_rel, features_abs.to_string_lossy(), mtime
             ));
         }
     }
@@ -127,8 +141,8 @@ fn main() {
 
     // ── Generate BUILTIN_DOCS ──
     // Embeds docs/*.md files + trait-specific .md files for browser VFS.
-    // Tuple: (vfs_rel_path, content)
-    bt.push_str("\npub const BUILTIN_DOCS: &[(&str, &str)] = &[\n");
+    // Tuple: (vfs_rel_path, content, mtime_unix)
+    bt.push_str("\npub const BUILTIN_DOCS: &[(&str, &str, u64)] = &[\n");
     let docs_dir = root_dir.join("docs");
     if docs_dir.is_dir() {
         let mut doc_paths: Vec<PathBuf> = Vec::new();
@@ -137,9 +151,10 @@ fn main() {
         for doc_path in &doc_paths {
             if let Ok(rel) = doc_path.strip_prefix(root_dir) {
                 let rel_str = rel.to_string_lossy().to_string();
+                let mtime = file_mtime(doc_path);
                 bt.push_str(&format!(
-                    "    ({:?}, include_str!({:?})),\n",
-                    rel_str, doc_path.to_string_lossy()
+                    "    ({:?}, include_str!({:?}), {}),\n",
+                    rel_str, doc_path.to_string_lossy(), mtime
                 ));
             }
         }
@@ -153,9 +168,10 @@ fn main() {
         for md_path in &trait_md_paths {
             if let Ok(rel) = md_path.strip_prefix(root_dir) {
                 let rel_str = rel.to_string_lossy().to_string();
+                let mtime = file_mtime(md_path);
                 bt.push_str(&format!(
-                    "    ({:?}, include_str!({:?})),\n",
-                    rel_str, md_path.to_string_lossy()
+                    "    ({:?}, include_str!({:?}), {}),\n",
+                    rel_str, md_path.to_string_lossy(), mtime
                 ));
             }
         }

@@ -10,6 +10,8 @@
 //!     `dump()`.
 //!   - *User layer* (read-write) — ephemeral writes from `cat`/`write`/`>>`/`rm`.
 //!     Serialised to/from JSON for localStorage persistence on WASM.
+//!     Each user-layer file carries `created` and `modified` timestamps
+//!     (Unix seconds) so user edits are never overwritten by older deploy files.
 //!
 //! The active implementation is selected via `Platform::make_vfs` so the CLI
 //! session automatically gets the right backend without any conditional
@@ -17,13 +19,53 @@
 
 use std::collections::{HashMap, HashSet};
 
+// ── Timestamp helpers (compile-once, not a heavy dep) ─────────────────────────
+
+/// Current Unix timestamp in seconds.
+/// Falls back to 0 in environments where time is not available.
+fn now_unix() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        // js_sys::Date::now() returns milliseconds since epoch as f64
+        (js_sys::Date::now() / 1000.0) as u64
+    }
+}
+
+// ── Per-file metadata ─────────────────────────────────────────────────────────
+
+/// A file entry in the user layer, carrying content + timestamps.
+#[derive(Clone, Debug)]
+pub struct FileEntry {
+    pub content: String,
+    /// Unix seconds when the file was first created in this session.
+    pub created: u64,
+    /// Unix seconds of the last write/append to this file.
+    pub modified: u64,
+}
+
+impl FileEntry {
+    fn new(content: impl Into<String>) -> Self {
+        let t = now_unix();
+        Self { content: content.into(), created: t, modified: t }
+    }
+
+    fn with_timestamps(content: impl Into<String>, created: u64, modified: u64) -> Self {
+        Self { content: content.into(), created, modified }
+    }
+}
+
 // ── Vfs trait ─────────────────────────────────────────────────────────────────
 
 /// Virtual filesystem interface used by the CLI session and exec_line builtins.
 ///
 /// All paths are normalised (leading `/` stripped) before storage/lookup.
-/// Sub-directory semantics are left to richer implementations; both built-in
-/// implementations treat paths as flat keys.
 pub trait Vfs {
     fn read(&self, path: &str) -> Option<String>;
     fn write(&mut self, path: &str, content: &str);
@@ -34,6 +76,9 @@ pub trait Vfs {
     fn list_dirs(&self) -> Vec<String>;
     fn is_dir(&self, path: &str) -> bool;
     fn exists(&self, path: &str) -> bool;
+    /// Return `(created_unix, modified_unix)` for a file, or `None` if it doesn't exist
+    /// or timestamps are not tracked by this implementation.
+    fn stat(&self, path: &str) -> Option<(u64, u64)> { let _ = path; None }
     /// Serialise writable state to a JSON string for persistence (e.g. localStorage).
     fn dump(&self) -> String;
     /// Restore writable state from a JSON string produced by `dump`.
@@ -69,6 +114,16 @@ fn parent_dirs(path: &str) -> Vec<String> {
 }
 
 fn infer_dirs_from_files(files: &HashMap<String, String>) -> HashSet<String> {
+    let mut dirs = HashSet::new();
+    for key in files.keys() {
+        for d in parent_dirs(key) {
+            dirs.insert(d);
+        }
+    }
+    dirs
+}
+
+fn infer_dirs_from_files_entries(files: &HashMap<String, FileEntry>) -> HashSet<String> {
     let mut dirs = HashSet::new();
     for key in files.keys() {
         for d in parent_dirs(key) {
@@ -188,13 +243,19 @@ impl Vfs for MemVfs {
 /// `dump`/`load` only touch the user layer — builtins are always reconstructed
 /// at init time from the binary (WASM) or the real filesystem (native) so they
 /// add zero bytes to localStorage or any other persistence store.
+///
+/// Each user-layer file stores `created` + `modified` Unix timestamps.
+/// `seed_with_mtime` uses the builtin's mtime to decide whether to overwrite
+/// a user-layer file: builtin wins only if its mtime is strictly newer.
 pub struct LayeredVfs {
     /// Read-only files seeded at init.  Owned strings so both WASM
     /// (`&'static str` converted) and native (`fs::read_to_string`) can seed.
     builtins: HashMap<String, String>,
+    /// Real on-disk mtime (Unix seconds) for each builtin, embedded at build time.
+    builtin_mtimes: HashMap<String, u64>,
     builtin_dirs: HashSet<String>,
-    /// Ephemeral writes from the terminal session.
-    user: HashMap<String, String>,
+    /// Ephemeral writes from the terminal session, with timestamps.
+    user: HashMap<String, FileEntry>,
     user_dirs: HashSet<String>,
 }
 
@@ -202,16 +263,24 @@ impl LayeredVfs {
     pub fn new() -> Self {
         Self {
             builtins: HashMap::new(),
+            builtin_mtimes: HashMap::new(),
             builtin_dirs: HashSet::new(),
             user: HashMap::new(),
             user_dirs: HashSet::new(),
         }
     }
 
-    /// Seed a builtin (read-only) file.  Overwrites any previous entry with the
-    /// same path.  The content is cloned so callers may pass `&'static str` or
-    /// a freshly-read `String` transparently.
+    /// Seed a builtin (read-only) file without a known mtime (mtime = 0).
     pub fn seed(&mut self, path: &str, content: impl Into<String>) {
+        self.seed_with_mtime(path, content, 0);
+    }
+
+    /// Seed a builtin (read-only) file with its real on-disk mtime.
+    ///
+    /// If the user layer already has this path, it is **only overwritten when
+    /// `builtin_mtime > user.modified`** (i.e. the deploy file is newer than
+    /// the user's last edit).  A mtime of `0` means "unknown / always keep user".
+    pub fn seed_with_mtime(&mut self, path: &str, content: impl Into<String>, builtin_mtime: u64) {
         let k = normalize_owned(path);
         if k.is_empty() {
             return;
@@ -219,7 +288,21 @@ impl LayeredVfs {
         for d in parent_dirs(&k) {
             self.builtin_dirs.insert(d);
         }
-        self.builtins.insert(k, content.into());
+        let content_str = content.into();
+        // Decide whether to promote a newer builtin into the user layer.
+        if builtin_mtime > 0 {
+            if let Some(user_entry) = self.user.get_mut(&k) {
+                if builtin_mtime > user_entry.modified {
+                    // Deploy file is newer — overwrite user layer, preserve created time.
+                    let created = user_entry.created;
+                    *user_entry = FileEntry::with_timestamps(&content_str, created, builtin_mtime);
+                }
+                // else: user edit is newer — keep it, don't touch user layer.
+            }
+            // (If no user entry exists, the builtin layer itself serves the read.)
+        }
+        self.builtin_mtimes.insert(k.clone(), builtin_mtime);
+        self.builtins.insert(k, content_str);
     }
 }
 
@@ -230,7 +313,7 @@ impl Default for LayeredVfs {
 impl Vfs for LayeredVfs {
     fn read(&self, path: &str) -> Option<String> {
         let k = normalize(path);
-        self.user.get(k).cloned()
+        self.user.get(k).map(|e| e.content.clone())
             .or_else(|| self.builtins.get(k).cloned())
     }
 
@@ -239,7 +322,9 @@ impl Vfs for LayeredVfs {
         for d in parent_dirs(&k) {
             self.user_dirs.insert(d);
         }
-        self.user.insert(k, content.to_string());
+        let now = now_unix();
+        self.user.entry(k).and_modify(|e| { e.content = content.to_string(); e.modified = now; })
+            .or_insert_with(|| FileEntry::new(content));
     }
 
     fn append(&mut self, path: &str, content: &str) {
@@ -247,10 +332,13 @@ impl Vfs for LayeredVfs {
         for d in parent_dirs(&k) {
             self.user_dirs.insert(d);
         }
-        let base = self.user.get(&k).cloned()
+        let base = self.user.get(&k).map(|e| e.content.clone())
             .or_else(|| self.builtins.get(&k).cloned())
             .unwrap_or_default();
-        self.user.insert(k, base + content);
+        let new_content = base + content;
+        let now = now_unix();
+        self.user.entry(k).and_modify(|e| { e.content = new_content.clone(); e.modified = now; })
+            .or_insert_with(|| FileEntry::new(new_content));
     }
 
     fn delete(&mut self, path: &str) -> bool {
@@ -269,7 +357,7 @@ impl Vfs for LayeredVfs {
     }
 
     fn list(&self) -> Vec<String> {
-        let mut keys: std::collections::HashSet<String> =
+        let mut keys: HashSet<String> =
             self.user.keys().chain(self.builtins.keys()).cloned().collect();
         let mut v: Vec<String> = keys.drain().collect();
         v.sort();
@@ -279,8 +367,8 @@ impl Vfs for LayeredVfs {
     fn list_dirs(&self) -> Vec<String> {
         let mut dirs: HashSet<String> = self.builtin_dirs.clone();
         dirs.extend(self.user_dirs.clone());
+        dirs.extend(infer_dirs_from_files_entries(&self.user));
         dirs.extend(infer_dirs_from_files(&self.builtins));
-        dirs.extend(infer_dirs_from_files(&self.user));
         let mut v: Vec<String> = dirs.into_iter().collect();
         v.sort();
         v
@@ -293,7 +381,7 @@ impl Vfs for LayeredVfs {
         }
         if self.user_dirs.contains(&k)
             || self.builtin_dirs.contains(&k)
-            || infer_dirs_from_files(&self.user).contains(&k)
+            || infer_dirs_from_files_entries(&self.user).contains(&k)
             || infer_dirs_from_files(&self.builtins).contains(&k)
         {
             return true;
@@ -308,10 +396,22 @@ impl Vfs for LayeredVfs {
         self.user.contains_key(k) || self.builtins.contains_key(k) || self.is_dir(path)
     }
 
+    fn stat(&self, path: &str) -> Option<(u64, u64)> {
+        let k = normalize(path);
+        self.user.get(k).map(|e| (e.created, e.modified))
+    }
+
     /// Only the user layer is serialised.  Builtins are reconstructed at init.
     fn dump(&self) -> String {
+        let files: HashMap<&str, serde_json::Value> = self.user.iter().map(|(k, e)| {
+            (k.as_str(), serde_json::json!({
+                "content": e.content,
+                "created": e.created,
+                "modified": e.modified,
+            }))
+        }).collect();
         serde_json::json!({
-            "files": self.user,
+            "files": files,
             "dirs": self.user_dirs,
         })
         .to_string()
@@ -320,17 +420,43 @@ impl Vfs for LayeredVfs {
     /// Only the user layer is restored.  Builtins remain intact.
     fn load(&mut self, json: &str) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
-            if let Some(files) = v.get("files") {
-                self.user = serde_json::from_value(files.clone()).unwrap_or_default();
+            if let Some(files_val) = v.get("files").and_then(|f| f.as_object()) {
+                self.user.clear();
+                for (k, entry_val) in files_val {
+                    let entry = if let (Some(content), created, modified) = (
+                        entry_val.get("content").and_then(|c| c.as_str()),
+                        entry_val.get("created").and_then(|t| t.as_u64()).unwrap_or(0),
+                        entry_val.get("modified").and_then(|t| t.as_u64()).unwrap_or(0),
+                    ) {
+                        FileEntry::with_timestamps(content, created, modified)
+                    } else if let Some(s) = entry_val.as_str() {
+                        // Legacy format: plain string value
+                        FileEntry::new(s)
+                    } else {
+                        continue;
+                    };
+                    self.user.insert(k.clone(), entry);
+                }
                 self.user_dirs = v
                     .get("dirs")
                     .and_then(|d| serde_json::from_value(d.clone()).ok())
                     .unwrap_or_default();
                 return;
             }
+            // Legacy format: files was a plain string map
+            if let Some(files_val) = v.get("files") {
+                if let Ok(m) = serde_json::from_value::<HashMap<String, String>>(files_val.clone()) {
+                    self.user = m.into_iter().map(|(k, c)| (k, FileEntry::new(c))).collect();
+                    self.user_dirs = v.get("dirs")
+                        .and_then(|d| serde_json::from_value(d.clone()).ok())
+                        .unwrap_or_default();
+                    return;
+                }
+            }
         }
+        // Legacy v0: bare flat map of path→content
         if let Ok(m) = serde_json::from_str::<HashMap<String, String>>(json) {
-            self.user = m;
+            self.user = m.into_iter().map(|(k, c)| (k, FileEntry::new(c))).collect();
             self.user_dirs.clear();
         }
     }

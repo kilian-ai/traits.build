@@ -34,9 +34,9 @@ impl WasmRegistry {
     }
 
     /// Load from the build.rs-generated BUILTIN_TRAIT_DEFS array.
-    /// Each entry is (trait_path, rel_path, toml_content).
-    pub fn load_builtins(&mut self, defs: &[(&str, &str, &str)]) {
-        for (path, _rel, toml_content) in defs {
+    /// Each entry is (trait_path, rel_path, toml_content, mtime_unix).
+    pub fn load_builtins(&mut self, defs: &[(&str, &str, &str, u64)]) {
+        for (path, _rel, toml_content, _mtime) in defs {
             let toml: TraitToml = match toml::from_str(toml_content) {
                 Ok(t) => t,
                 Err(_) => continue,

@@ -91,14 +91,14 @@ fn ensure_pvfs() {
         if cell.borrow().is_none() {
             let mut vfs = kernel_logic::vfs::LayeredVfs::new();
             // Seed builtins (same as CliSession VFS)
-            for (_path, rel_path, toml) in BUILTIN_TRAIT_DEFS {
-                vfs.seed(rel_path, *toml);
+            for (_path, rel_path, toml, mtime) in BUILTIN_TRAIT_DEFS {
+                vfs.seed_with_mtime(rel_path, *toml, *mtime);
             }
-            for (_path, rel_path, feat) in BUILTIN_FEATURES {
-                vfs.seed(rel_path, *feat);
+            for (_path, rel_path, feat, mtime) in BUILTIN_FEATURES {
+                vfs.seed_with_mtime(rel_path, *feat, *mtime);
             }
-            for (rel_path, content) in BUILTIN_DOCS {
-                vfs.seed(rel_path, *content);
+            for (rel_path, content, mtime) in BUILTIN_DOCS {
+                vfs.seed_with_mtime(rel_path, *content, *mtime);
             }
             // Restore user layer from localStorage
             if let Some(json) = ls_get("traits.pvfs") {
@@ -276,14 +276,14 @@ struct PersistingVfs {
 impl PersistingVfs {
     fn new() -> Self {
         let mut vfs = kernel_logic::vfs::LayeredVfs::new();
-        for (_path, rel_path, toml) in BUILTIN_TRAIT_DEFS {
-            vfs.seed(rel_path, *toml);
+        for (_path, rel_path, toml, mtime) in BUILTIN_TRAIT_DEFS {
+            vfs.seed_with_mtime(rel_path, *toml, *mtime);
         }
-        for (_path, rel_path, feat) in BUILTIN_FEATURES {
-            vfs.seed(rel_path, *feat);
+        for (_path, rel_path, feat, mtime) in BUILTIN_FEATURES {
+            vfs.seed_with_mtime(rel_path, *feat, *mtime);
         }
-        for (rel_path, content) in BUILTIN_DOCS {
-            vfs.seed(rel_path, *content);
+        for (rel_path, content, mtime) in BUILTIN_DOCS {
+            vfs.seed_with_mtime(rel_path, *content, *mtime);
         }
         // Restore user layer from localStorage so prior session files are visible.
         if let Some(json) = ls_get("traits.pvfs") {

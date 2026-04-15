@@ -6,6 +6,15 @@ use sha2::{Sha256, Digest};
 #[path = "scripts/cli_formatters_codegen.rs"]
 mod cli_formatters_codegen;
 
+fn file_mtime(path: &Path) -> u64 {
+    fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 // Shared SHA-256 helpers (canonical copy at root, mirrored in sys/checksum/)
 include!("sha256.rs");
 
@@ -111,11 +120,14 @@ fn main() {
     let mut output = String::new();
     output.push_str("pub const BUILTIN_TRAIT_DEFS: &[BuiltinTraitDef] = &[\n");
     for (path, rel_path) in entries {
+        let abs_path = manifest_dir.join(&rel_path);
+        let mtime = file_mtime(&abs_path);
         output.push_str(&format!(
-            "    BuiltinTraitDef {{ path: {:?}, rel_path: {:?}, toml: include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{}\")) }},\n",
+            "    BuiltinTraitDef {{ path: {:?}, rel_path: {:?}, toml: include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{rel}\")), mtime: {m} }},\n",
             path,
             rel_path,
-            rel_path
+            rel = rel_path,
+            m = mtime
         ));
     }
     output.push_str("];\n");

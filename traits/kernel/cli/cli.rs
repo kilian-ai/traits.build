@@ -1825,6 +1825,7 @@ fn execute_leaf_command(
         "find" => find_command(&args, vfs, cwd),
         "curl" => curl_command(&args, backend, vfs, cwd),
         "vi" | "ee" => editor_stub_command(&cmd_name, &args, stdin_input, vfs, cwd),
+        "stat" => stat_command(&args, vfs, cwd),
 
         "mkdir" => mkdir_command(&args, vfs, cwd),
 
@@ -2620,6 +2621,60 @@ fn editor_stub_command(
     )
 }
 
+fn stat_command(args: &[String], vfs: &RefCell<Box<dyn Vfs>>, cwd: &str) -> String {
+    if args.is_empty() {
+        return format!("{RED}Usage: stat <file>{RESET}");
+    }
+    let path = resolve_vfs_path(cwd, &args[0]);
+    let vfs_ref = vfs.borrow();
+    if !vfs_ref.exists(&path) {
+        return format!("{RED}stat: {}: no such file or directory{RESET}", args[0]);
+    }
+    if vfs_ref.is_dir(&path) {
+        return format!("  {BOLD}{path}{RESET}  (directory)");
+    }
+    let size = vfs_ref.read(&path).map(|c| c.len()).unwrap_or(0);
+    match vfs_ref.stat(&path) {
+        Some((created, modified)) => {
+            let fmt_ts = |ts: u64| -> String {
+                if ts == 0 { return "unknown".to_string(); }
+                // 2026-04-15T14:23:01Z style
+                let secs = ts % 60;
+                let mins = (ts / 60) % 60;
+                let hours = (ts / 3600) % 24;
+                let days = ts / 86400;
+                // Approximate calendar date from days since epoch (good 1970-2100)
+                let ymd = days_to_ymd(days);
+                format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", ymd.0, ymd.1, ymd.2, hours, mins, secs)
+            };
+            format!(
+                "  File: {BOLD}{path}{RESET}\n  Size: {} bytes\n  Created:  {}\n  Modified: {}",
+                size, fmt_ts(created), fmt_ts(modified)
+            )
+        }
+        None => {
+            // File exists in builtin layer (no user timestamps)
+            format!("  File: {BOLD}{path}{RESET}\n  Size: {} bytes\n  Origin: builtin (deploy file)", size)
+        }
+    }
+}
+
+/// Convert days since Unix epoch to (year, month, day).
+/// Uses the Gregorian proleptic calendar algorithm.
+fn days_to_ymd(days: u64) -> (u32, u32, u32) {
+    let z = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as u32, m as u32, d as u32)
+}
+
 fn mkdir_command(args: &[String], vfs: &RefCell<Box<dyn Vfs>>, cwd: &str) -> String {
     if args.is_empty() {
         return format!("{RED}Usage: mkdir [-p] <dir...>{RESET}");
@@ -2982,6 +3037,9 @@ fn format_help() -> String {
     ));
     s.push_str(&format!(
         "  {GREEN}rm{RESET} {GRAY}<file>{RESET}               Delete a VFS file\r\n"
+    ));
+    s.push_str(&format!(
+        "  {GREEN}stat{RESET} {GRAY}<file>{RESET}             Show file metadata: size, created, modified timestamps\r\n"
     ));
     s.push_str(&format!(
         "  {GRAY}cmd args > file{RESET}            Redirect output to a VFS file\r\n"

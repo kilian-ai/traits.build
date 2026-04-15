@@ -11,6 +11,9 @@ pub struct BuiltinTraitDef {
     pub path: &'static str,
     pub rel_path: &'static str,
     pub toml: &'static str,
+    /// Real on-disk mtime of the .trait.toml at build time (Unix seconds).
+    /// Used to decide whether a deploy file is newer than a user's VFS edit.
+    pub mtime: u64,
 }
 
 // ── TOML deserialization structs ──
