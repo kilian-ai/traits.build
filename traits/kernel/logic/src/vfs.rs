@@ -164,7 +164,37 @@ impl Vfs for MemVfs {
     }
 
     fn delete(&mut self, path: &str) -> bool {
-        self.files.remove(normalize(path)).is_some()
+        let k = normalize_owned(path);
+        if k.is_empty() {
+            return false;
+        }
+
+        let mut removed = self.files.remove(&k).is_some();
+        let prefix = format!("{}/", k);
+
+        // Remove all files under this directory path.
+        let file_children: Vec<String> = self
+            .files
+            .keys()
+            .filter(|p| p.starts_with(&prefix))
+            .cloned()
+            .collect();
+        for child in file_children {
+            removed = self.files.remove(&child).is_some() || removed;
+        }
+
+        // Remove explicit directory entries for this subtree.
+        let dir_children: Vec<String> = self
+            .dirs
+            .iter()
+            .filter(|d| *d == &k || d.starts_with(&prefix))
+            .cloned()
+            .collect();
+        for d in dir_children {
+            removed = self.dirs.remove(&d) || removed;
+        }
+
+        removed
     }
 
     fn mkdir(&mut self, path: &str) -> bool {
@@ -342,7 +372,37 @@ impl Vfs for LayeredVfs {
     }
 
     fn delete(&mut self, path: &str) -> bool {
-        self.user.remove(normalize(path)).is_some()
+        let k = normalize_owned(path);
+        if k.is_empty() {
+            return false;
+        }
+
+        let mut removed = self.user.remove(&k).is_some();
+        let prefix = format!("{}/", k);
+
+        // Remove all user-layer files under this directory path.
+        let user_children: Vec<String> = self
+            .user
+            .keys()
+            .filter(|p| p.starts_with(&prefix))
+            .cloned()
+            .collect();
+        for child in user_children {
+            removed = self.user.remove(&child).is_some() || removed;
+        }
+
+        // Remove explicit user directories for this subtree.
+        let dir_children: Vec<String> = self
+            .user_dirs
+            .iter()
+            .filter(|d| *d == &k || d.starts_with(&prefix))
+            .cloned()
+            .collect();
+        for d in dir_children {
+            removed = self.user_dirs.remove(&d) || removed;
+        }
+
+        removed
     }
 
     fn mkdir(&mut self, path: &str) -> bool {

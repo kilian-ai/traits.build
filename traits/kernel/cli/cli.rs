@@ -1841,13 +1841,13 @@ fn execute_leaf_command(
         }
         "rm" => {
             if args.is_empty() {
-                format!("{RED}Usage: rm <file>{RESET}")
+                format!("{RED}Usage: rm <path>{RESET}")
             } else {
                 let full = resolve_vfs_path(cwd, &args[0]);
                 if vfs.borrow_mut().delete(&full) {
                     format!("{GRAY}removed {}{RESET}", full)
                 } else {
-                    format!("{RED}rm: {}: no such file{RESET}", args[0])
+                    format!("{RED}rm: {}: no such path{RESET}", args[0])
                 }
             }
         }
@@ -3036,7 +3036,7 @@ fn format_help() -> String {
         "  {GREEN}write{RESET} {GRAY}<file> <content>{RESET}  Write text to a VFS file\r\n"
     ));
     s.push_str(&format!(
-        "  {GREEN}rm{RESET} {GRAY}<file>{RESET}               Delete a VFS file\r\n"
+        "  {GREEN}rm{RESET} {GRAY}<path>{RESET}               Delete a VFS file or directory (recursive)\r\n"
     ));
     s.push_str(&format!(
         "  {GREEN}stat{RESET} {GRAY}<file>{RESET}             Show file metadata: size, created, modified timestamps\r\n"

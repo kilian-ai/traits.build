@@ -1274,24 +1274,193 @@ const BOOT_SCRIPT: &str = r#"
             return;
         }
 
-        if (path !== 'linux.exec') {
-            await shellRelayRespond(code, id, null, 'unsupported path: ' + path + ' (use linux.exec)');
+        if (path === 'linux.exec') {
+            const cmd = String(args[0] || '').trim();
+            if (!cmd) {
+                await shellRelayRespond(code, id, null, 'missing command arg');
+                return;
+            }
+
+            term.write('\x1b[2m[shell-relay] $ ' + cmd + '\x1b[0m\r\n');
+            const r = await shellExec(cmd);
+            await shellRelayRespond(code, id, {
+                output: r && typeof r.output === 'string' ? r.output : '',
+                exitCode: r && typeof r.exitCode === 'number' ? r.exitCode : -1,
+                crashed: !!(r && r.crashed),
+            }, null);
             return;
         }
 
-        const cmd = String(args[0] || '').trim();
-        if (!cmd) {
-            await shellRelayRespond(code, id, null, 'missing command arg');
+        if (path === 'linux.vfs.list') {
+            const requested = persistResolvePath(String(args[0] || '/'));
+            if (!requested || !persistIsValidPath(requested) || !persistPathMounted(requested)) {
+                await shellRelayRespond(code, id, null, 'invalid or unmounted path');
+                return;
+            }
+
+            const state = persistLoad();
+            const dirs = Array.isArray(state.dirs) ? state.dirs.slice() : [];
+            const files = (state.files && typeof state.files === 'object') ? Object.keys(state.files) : [];
+            const prefix = requested === '/' ? '/' : (requested + '/');
+
+            const outDirs = [];
+            const outFiles = [];
+
+            for (const d of dirs) {
+                if (d === requested || d.startsWith(prefix)) outDirs.push(d);
+            }
+            for (const f of files) {
+                if (f === requested || f.startsWith(prefix)) {
+                    const content = String(state.files[f] || '');
+                    outFiles.push({ path: f, bytes: content.length });
+                }
+            }
+
+            outDirs.sort();
+            outFiles.sort((a, b) => a.path.localeCompare(b.path));
+
+            await shellRelayRespond(code, id, {
+                path: requested,
+                mounts: persistMountPaths(),
+                dirs: outDirs,
+                files: outFiles,
+            }, null);
             return;
         }
 
-        term.write('\x1b[2m[shell-relay] $ ' + cmd + '\x1b[0m\r\n');
-        const r = await shellExec(cmd);
-        await shellRelayRespond(code, id, {
-            output: r && typeof r.output === 'string' ? r.output : '',
-            exitCode: r && typeof r.exitCode === 'number' ? r.exitCode : -1,
-            crashed: !!(r && r.crashed),
-        }, null);
+        if (path === 'linux.vfs.read') {
+            const requested = persistResolvePath(String(args[0] || ''));
+            if (!requested || !persistIsValidPath(requested) || !persistPathMounted(requested)) {
+                await shellRelayRespond(code, id, null, 'invalid or unmounted path');
+                return;
+            }
+
+            const state = persistLoad();
+            if (Object.prototype.hasOwnProperty.call(state.files || {}, requested)) {
+                const content = String(state.files[requested] || '');
+                await shellRelayRespond(code, id, {
+                    path: requested,
+                    content,
+                    bytes: content.length,
+                    source: 'persist',
+                }, null);
+                return;
+            }
+
+            const r = await shellExec('cat ' + shQuote(requested));
+            if (r.crashed || r.exitCode !== 0) {
+                await shellRelayRespond(code, id, null, 'read failed: exit ' + r.exitCode + (r.crashed ? ' (kernel crashed)' : ''));
+                return;
+            }
+            const content = String(r.output || '');
+            state.files[requested] = content;
+            persistSave(state);
+            await shellRelayRespond(code, id, {
+                path: requested,
+                content,
+                bytes: content.length,
+                source: 'guest',
+            }, null);
+            return;
+        }
+
+        if (path === 'linux.vfs.write') {
+            const requested = persistResolvePath(String(args[0] || ''));
+            if (!requested || !persistIsValidPath(requested) || !persistPathMounted(requested)) {
+                await shellRelayRespond(code, id, null, 'invalid or unmounted path');
+                return;
+            }
+
+            const content = String(args.length > 1 ? args[1] : '');
+            const mode = String(args[2] || 'truncate').toLowerCase();
+            if (mode !== 'truncate' && mode !== 'append') {
+                await shellRelayRespond(code, id, null, 'invalid mode (use truncate or append)');
+                return;
+            }
+
+            const state = persistLoad();
+            if (mode === 'append') state.files[requested] = String(state.files[requested] || '') + content;
+            else state.files[requested] = content;
+            persistSave(state);
+
+            const op = mode === 'append' ? '>>' : '>';
+            const cmd = "printf '%s' " + shQuote(content) + ' ' + op + ' ' + shQuote(requested);
+            const r = await shellExec(cmd);
+
+            await shellRelayRespond(code, id, {
+                path: requested,
+                bytes: content.length,
+                mode,
+                guest: {
+                    exitCode: r && typeof r.exitCode === 'number' ? r.exitCode : -1,
+                    crashed: !!(r && r.crashed),
+                },
+            }, null);
+            return;
+        }
+
+        if (path === 'linux.vfs.mkdir') {
+            const requested = persistResolvePath(String(args[0] || ''));
+            if (!requested || !persistIsValidPath(requested) || !persistPathMounted(requested)) {
+                await shellRelayRespond(code, id, null, 'invalid or unmounted path');
+                return;
+            }
+
+            const state = persistLoad();
+            if (!state.dirs.includes(requested)) state.dirs.push(requested);
+            persistSave(state);
+
+            const r = await shellExec('mkdir -p ' + shQuote(requested));
+            await shellRelayRespond(code, id, {
+                path: requested,
+                guest: {
+                    exitCode: r && typeof r.exitCode === 'number' ? r.exitCode : -1,
+                    crashed: !!(r && r.crashed),
+                },
+            }, null);
+            return;
+        }
+
+        if (path === 'linux.vfs.delete') {
+            const requested = persistResolvePath(String(args[0] || ''));
+            if (!requested || !persistIsValidPath(requested) || !persistPathMounted(requested)) {
+                await shellRelayRespond(code, id, null, 'invalid or unmounted path');
+                return;
+            }
+
+            const state = persistLoad();
+            const prefix = requested + '/';
+            let removedFiles = 0;
+            let removedDirs = 0;
+
+            for (const key of Object.keys(state.files || {})) {
+                if (key === requested || key.startsWith(prefix)) {
+                    delete state.files[key];
+                    removedFiles += 1;
+                }
+            }
+            state.dirs = (state.dirs || []).filter((d) => {
+                const remove = d === requested || d.startsWith(prefix);
+                if (remove) removedDirs += 1;
+                return !remove;
+            });
+            persistSave(state);
+
+            const r = await shellExec('rm -rf ' + shQuote(requested));
+            await shellRelayRespond(code, id, {
+                path: requested,
+                removedFiles,
+                removedDirs,
+                guest: {
+                    exitCode: r && typeof r.exitCode === 'number' ? r.exitCode : -1,
+                    crashed: !!(r && r.crashed),
+                },
+            }, null);
+            return;
+        }
+
+        await shellRelayRespond(code, id, null,
+            'unsupported path: ' + path + ' (use linux.exec or linux.vfs.list/read/write/mkdir/delete)');
     }
 
     async function shellRelayLoop(code) {
@@ -1337,6 +1506,8 @@ const BOOT_SCRIPT: &str = r#"
             term.write('  relay status        show current state/code\r\n');
             term.write('remote call example (host):\r\n');
             term.write('  curl -s -X POST https://relay.traits.build/relay/call -H "Content-Type: application/json" -d "{\\"code\\":\\"CODE\\",\\"path\\":\\"linux.exec\\",\\"args\\":[\\"echo hi > /tmp/x\\"]}"\r\n');
+            term.write('  curl -s -X POST https://relay.traits.build/relay/call -H "Content-Type: application/json" -d "{\\"code\\":\\"CODE\\",\\"path\\":\\"linux.vfs.read\\",\\"args\\":[\\"/tmp/x\\"]}"\r\n');
+            term.write('  curl -s -X POST https://relay.traits.build/relay/call -H "Content-Type: application/json" -d "{\\"code\\":\\"CODE\\",\\"path\\":\\"linux.vfs.write\\",\\"args\\":[\\"/tmp/x\\",\\"hello\\n\\",\\"truncate\\"]}"\r\n');
             return true;
         }
 

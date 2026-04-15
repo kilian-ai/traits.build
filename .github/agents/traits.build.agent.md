@@ -929,6 +929,105 @@ The browser-based Linux/WASM terminal (`www.linux`) now includes a **remote shel
      -d '{"code":"3ABX","path":"linux.exec","args":["sed -i '\''s/old/new/'\'' /bin/agent.js"]}'
    ```
 
+### Linux Relay API (Shell + VFS)
+
+This API is designed for agents and host scripts calling the browser Linux session through relay. Calls are synchronous request/response over `POST /relay/call` and use a paired code (or signed token).
+
+**Endpoint:**
+- `POST https://relay.traits.build/relay/call`
+
+**Request body shape:**
+```json
+{
+  "code": "3ABX",
+  "path": "linux.exec",
+  "args": ["echo hello > /tmp/demo.txt"]
+}
+```
+
+**Success response shape:**
+```json
+{
+  "result": { ... },
+  "error": null
+}
+```
+
+**Error response shape:**
+```json
+{
+  "result": null,
+  "error": "message"
+}
+```
+
+**Supported `path` values:**
+
+1. `linux.exec`
+   - Args: `[command]`
+   - Returns: `{ output, exitCode, crashed }`
+   - Use for shell commands and diagnostics.
+
+2. `linux.vfs.list`
+   - Args: `[path?]` (defaults to `/`)
+   - Path must be valid and inside persisted mounts (`/tmp`, `/home` by default).
+   - Returns: `{ path, mounts, dirs, files }`
+     - `dirs`: string[]
+     - `files`: `{ path, bytes }[]`
+
+3. `linux.vfs.read`
+   - Args: `[path]`
+   - Returns: `{ path, content, bytes, source }`
+     - `source`: `persist` when served from PVFS cache, `guest` when read from live guest FS.
+
+4. `linux.vfs.write`
+   - Args: `[path, content, mode?]`
+   - `mode`: `truncate` (default) or `append`
+   - Returns: `{ path, bytes, mode, guest: { exitCode, crashed } }`
+
+5. `linux.vfs.mkdir`
+   - Args: `[path]`
+   - Returns: `{ path, guest: { exitCode, crashed } }`
+
+6. `linux.vfs.delete`
+   - Args: `[path]`
+   - Removes file or subtree from persisted VFS and guest FS.
+   - Returns: `{ path, removedFiles, removedDirs, guest: { exitCode, crashed } }`
+
+**Working curl examples:**
+```bash
+# 1) Write file
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"3ABX","path":"linux.vfs.write","args":["/tmp/demo.txt","hello from relay\\n","truncate"]}'
+
+# 2) Read file
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"3ABX","path":"linux.vfs.read","args":["/tmp/demo.txt"]}'
+
+# 3) List under /tmp
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"3ABX","path":"linux.vfs.list","args":["/tmp"]}'
+
+# 4) Execute shell command
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"3ABX","path":"linux.exec","args":["cat /tmp/demo.txt"]}'
+
+# 5) Delete file
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"3ABX","path":"linux.vfs.delete","args":["/tmp/demo.txt"]}'
+```
+
+**Guardrails and constraints:**
+- Calls are rejected while the Linux shell agent is running (`agentRunning`).
+- Paths are validated and must stay within configured persist mounts.
+- For secrets or large payloads, prefer writing via controlled flows and chunking content.
+- Browser relay must be enabled first with `relay on [CODE]` in Linux terminal.
+
 3. **Check relay status:**
    ```bash
    # Verify connection is active
