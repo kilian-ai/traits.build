@@ -1,7 +1,7 @@
 use regex::Regex;
 use serde_json::{json, Value};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub mod shell;
@@ -59,6 +59,8 @@ pub enum KeyEvent {
     Down,
     Left,
     Right,
+    WordLeft,
+    WordRight,
     Backspace,
     Delete,
     Home,
@@ -283,16 +285,17 @@ impl CliSession {
                     if i < bytes.len() {
                         let final_byte = bytes[i];
                         i += 1;
+                        let param = &data[param_start..param_end];
+                        let word_motion = param.contains(";3") || param.contains(";9");
                         let key = match final_byte {
                             b'A' => Some(KeyEvent::Up),
                             b'B' => Some(KeyEvent::Down),
-                            b'C' => Some(KeyEvent::Right),
-                            b'D' => Some(KeyEvent::Left),
+                            b'C' => Some(if word_motion { KeyEvent::WordRight } else { KeyEvent::Right }),
+                            b'D' => Some(if word_motion { KeyEvent::WordLeft } else { KeyEvent::Left }),
                             b'H' => Some(KeyEvent::Home),
                             b'F' => Some(KeyEvent::End),
                             b'~' => {
                                 // Tilde-terminated: check param digit
-                                let param = &data[param_start..param_end];
                                 match param {
                                     "3" => Some(KeyEvent::Delete),
                                     "1" => Some(KeyEvent::Home),
@@ -307,6 +310,19 @@ impl CliSession {
                         }
                     }
                 } else {
+                    // Meta/Alt sequences commonly sent by terminals.
+                    if i + 1 < bytes.len() {
+                        let key = match bytes[i + 1] {
+                            b'b' | b'B' => Some(KeyEvent::WordLeft),
+                            b'f' | b'F' => Some(KeyEvent::WordRight),
+                            _ => None,
+                        };
+                        if let Some(k) = key {
+                            i += 2;
+                            output.push_str(&self.handle_key(k, backend));
+                            continue;
+                        }
+                    }
                     i += 1; // lone ESC
                 }
                 continue;
@@ -1452,8 +1468,19 @@ impl CliSession {
             return String::new();
         };
 
-        let all_paths = backend.all_paths();
-        let (matches, common) = tab_completions(prefix, &all_paths);
+        let completion_pool: Vec<String> = if parts.len() <= 1 {
+            let mut set: HashSet<String> = shell_builtin_commands().into_iter().collect();
+            for p in backend.all_paths() {
+                set.insert(p);
+            }
+            let mut vals: Vec<String> = set.into_iter().collect();
+            vals.sort();
+            vals
+        } else {
+            backend.all_paths()
+        };
+
+        let (matches, common) = tab_completions(prefix, &completion_pool);
 
         if matches.len() == 1 {
             if parts.len() <= 1 {
@@ -1515,6 +1542,24 @@ impl CliSession {
                 if self.cursor_pos < self.line_buffer.len() {
                     self.cursor_pos += 1;
                     "\x1b[C".to_string()
+                } else {
+                    String::new()
+                }
+            }
+            KeyEvent::WordLeft => {
+                let new_pos = cursor_word_left(&self.line_buffer, self.cursor_pos);
+                if new_pos != self.cursor_pos {
+                    self.cursor_pos = new_pos;
+                    self.refresh_line()
+                } else {
+                    String::new()
+                }
+            }
+            KeyEvent::WordRight => {
+                let new_pos = cursor_word_right(&self.line_buffer, self.cursor_pos);
+                if new_pos != self.cursor_pos {
+                    self.cursor_pos = new_pos;
+                    self.refresh_line()
                 } else {
                     String::new()
                 }
@@ -3059,7 +3104,7 @@ fn format_help() -> String {
     s.push_str("\r\n");
     s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Shortcuts{RESET}\r\n"));
     s.push_str(&format!(
-        "  {CYAN}Tab{RESET}          Auto-complete trait paths\r\n"
+        "  {CYAN}Tab{RESET}          Auto-complete commands and trait paths\r\n"
     ));
     s.push_str(&format!(
         "  {CYAN}↑ / ↓{RESET}        Navigate command history\r\n"
@@ -3076,6 +3121,9 @@ fn format_help() -> String {
     ));
     s.push_str(&format!(
         "  {CYAN}Ctrl+A/E{RESET}     Jump to start/end of line\r\n"
+    ));
+    s.push_str(&format!(
+        "  {CYAN}Opt+←/→{RESET}      Jump word-by-word (also Alt+B / Alt+F)\r\n"
     ));
     s.push_str("\r\n");
     s.push_str(&format!("{BOLD}{BRIGHT_WHITE}Interactive mode{RESET}\r\n"));
@@ -3349,6 +3397,84 @@ pub fn tab_completions(prefix: &str, all_paths: &[String]) -> (Vec<String>, Stri
     }
 
     (matches, common)
+}
+
+fn shell_builtin_commands() -> Vec<String> {
+    [
+        "help", "h", "?", "list", "info", "i", "call", "c", "search", "s", "version", "v", "clear", "cls",
+        "echo", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "sed", "test", "[", "find", "curl",
+        "vi", "ee", "stat", "mkdir", "write", "tee", "rm", "ls", "cd", "chat",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+fn prev_char_boundary(s: &str, mut pos: usize) -> usize {
+    if pos == 0 {
+        return 0;
+    }
+    pos -= 1;
+    while pos > 0 && !s.is_char_boundary(pos) {
+        pos -= 1;
+    }
+    pos
+}
+
+fn cursor_word_left(s: &str, pos: usize) -> usize {
+    let mut cur = pos.min(s.len());
+    while cur > 0 && !s.is_char_boundary(cur) {
+        cur -= 1;
+    }
+
+    while cur > 0 {
+        let p = prev_char_boundary(s, cur);
+        let ch = s[p..].chars().next().unwrap_or(' ');
+        if is_word_char(ch) {
+            break;
+        }
+        cur = p;
+    }
+
+    while cur > 0 {
+        let p = prev_char_boundary(s, cur);
+        let ch = s[p..].chars().next().unwrap_or(' ');
+        if !is_word_char(ch) {
+            break;
+        }
+        cur = p;
+    }
+
+    cur
+}
+
+fn cursor_word_right(s: &str, pos: usize) -> usize {
+    let mut cur = pos.min(s.len());
+    while cur < s.len() && !s.is_char_boundary(cur) {
+        cur += 1;
+    }
+
+    while cur < s.len() {
+        let ch = s[cur..].chars().next().unwrap_or(' ');
+        if is_word_char(ch) {
+            break;
+        }
+        cur += ch.len_utf8();
+    }
+
+    while cur < s.len() {
+        let ch = s[cur..].chars().next().unwrap_or(' ');
+        if !is_word_char(ch) {
+            break;
+        }
+        cur += ch.len_utf8();
+    }
+
+    cur
 }
 
 /// Get interactive mode parameter info for a trait.
