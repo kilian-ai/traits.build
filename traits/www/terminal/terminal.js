@@ -6,17 +6,23 @@
 // JS just pipes xterm.js data ↔ wasm.cli_input().
 // ═══════════════════════════════════════════
 
-const CLEAR_SENTINEL = '\x1b[CLEAR]';
-const REST_RE = /\x1b\[REST\]([\s\S]*?)\x1b\[\/REST\]/;
-const WEBLLM_RE = /\x1b\[WEBLLM\]([\s\S]*?)\x1b\[\/WEBLLM\]/;
-const VOICE_RE = /\x1b\[VOICE\]([\s\S]*?)\x1b\[\/VOICE\]/;
-// Source of truth: kernel/cli/cli.rs PROMPT constant. Must stay in sync.
-const PROMPT = '\x1b[32mtraits \x1b[0m';
+const _sharedDefaults = (typeof window !== 'undefined' && window.TerminalShared && window.TerminalShared.defaults)
+    ? window.TerminalShared.defaults
+    : null;
 
-const LS_SCROLLBACK = 'traits.terminal.scrollback';
-const LS_HISTORY    = 'traits.terminal.history';
-const LS_PVFS       = 'traits.pvfs';
-const LS_VFS_LEGACY = 'traits.terminal.vfs';
+const _sentinels = _sharedDefaults?.sentinels || {};
+const CLEAR_SENTINEL = _sentinels.clear || '\x1b[CLEAR]';
+const REST_RE = new RegExp(`${(_sentinels.restOpen || '\\x1b\\[REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.restClose || '\\x1b\\[/REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+const WEBLLM_RE = new RegExp(`${(_sentinels.webllmOpen || '\\x1b\\[WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.webllmClose || '\\x1b\\[/WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+const VOICE_RE = new RegExp(`${(_sentinels.voiceOpen || '\\x1b\\[VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.voiceClose || '\\x1b\\[/VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+// Source of truth: kernel/cli/cli.rs PROMPT constant. Must stay in sync.
+const PROMPT = _sharedDefaults?.prompt || '\x1b[32mtraits \x1b[0m';
+
+const _keys = _sharedDefaults?.storageKeys || {};
+const LS_SCROLLBACK = _keys.scrollback || 'traits.terminal.scrollback';
+const LS_HISTORY    = _keys.history || 'traits.terminal.history';
+const LS_PVFS       = _keys.pvfs || 'traits.pvfs';
+const LS_VFS_LEGACY = _keys.legacyVfs || 'traits.terminal.vfs';
 
 let Terminal, FitAddon, WebLinksAddon, SerializeAddon;
 

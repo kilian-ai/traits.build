@@ -10,6 +10,33 @@
   style.textContent = "/* \u2500\u2500 Shared Terminal Panel \u2500\u2500 */\n.terminal-wrap {\n    position: fixed;\n    bottom: 0;\n    left: 0;\n    right: 0;\n    z-index: 9999;\n    background: #0d1117;\n    border-top: 1px solid #30363d;\n}\n.terminal-header {\n    display: flex;\n    align-items: center;\n    gap: 1rem;\n    padding: 0.4rem 1rem;\n    background: #161b22;\n    cursor: pointer;\n    user-select: none;\n}\n.terminal-toggle {\n    background: none;\n    border: none;\n    color: #8b949e;\n    font-size: 0.85rem;\n    font-weight: 600;\n    cursor: pointer;\n    padding: 0;\n}\n.terminal-hint {\n    font-size: 0.75rem;\n    color: #484f58;\n}\n.terminal-status {\n    font-size: 0.7rem;\n    color: #484f58;\n    margin-left: auto;\n}\n.terminal-status.ready { color: #3fb950; }\n.terminal-status.loading { color: #d29922; }\n.terminal-status.error { color: #f85149; }\n.terminal-container {\n    height: 300px;\n    padding: 4px;\n    overflow: hidden;\n}\n.terminal-container.collapsed {\n    height: 0;\n    padding: 0;\n    overflow: hidden;\n}\n.xterm-mount {\n    height: 100%;\n}\n";
   document.head.appendChild(style);
 })();
+// Shared terminal surface for traits.build and sibling SPAs.
+// Keep this file dependency-free so it can be concatenated into classic scripts.
+(function() {
+  if (typeof window === 'undefined') return;
+
+  const defaults = {
+    sentinels: {
+      clear: '\\x1b[CLEAR]',
+      restOpen: '\\x1b[REST]',
+      restClose: '\\x1b[/REST]',
+      webllmOpen: '\\x1b[WEBLLM]',
+      webllmClose: '\\x1b[/WEBLLM]',
+      voiceOpen: '\\x1b[VOICE]',
+      voiceClose: '\\x1b[/VOICE]'
+    },
+    prompt: '\\x1b[32mtraits \\x1b[0m',
+    storageKeys: {
+      scrollback: 'traits.terminal.scrollback',
+      history: 'traits.terminal.history',
+      pvfs: 'traits.pvfs',
+      legacyVfs: 'traits.terminal.vfs'
+    }
+  };
+
+  window.TerminalShared = window.TerminalShared || {};
+  window.TerminalShared.defaults = defaults;
+})();
 // ═══════════════════════════════════════════
 // ── Shared WASM-powered Terminal ──
 // Thin display layer: all line editing, history,
@@ -18,17 +45,23 @@
 // JS just pipes xterm.js data ↔ wasm.cli_input().
 // ═══════════════════════════════════════════
 
-const CLEAR_SENTINEL = '\x1b[CLEAR]';
-const REST_RE = /\x1b\[REST\]([\s\S]*?)\x1b\[\/REST\]/;
-const WEBLLM_RE = /\x1b\[WEBLLM\]([\s\S]*?)\x1b\[\/WEBLLM\]/;
-const VOICE_RE = /\x1b\[VOICE\]([\s\S]*?)\x1b\[\/VOICE\]/;
-// Source of truth: kernel/cli/cli.rs PROMPT constant. Must stay in sync.
-const PROMPT = '\x1b[32mtraits \x1b[0m';
+const _sharedDefaults = (typeof window !== 'undefined' && window.TerminalShared && window.TerminalShared.defaults)
+    ? window.TerminalShared.defaults
+    : null;
 
-const LS_SCROLLBACK = 'traits.terminal.scrollback';
-const LS_HISTORY    = 'traits.terminal.history';
-const LS_PVFS       = 'traits.pvfs';
-const LS_VFS_LEGACY = 'traits.terminal.vfs';
+const _sentinels = _sharedDefaults?.sentinels || {};
+const CLEAR_SENTINEL = _sentinels.clear || '\x1b[CLEAR]';
+const REST_RE = new RegExp(`${(_sentinels.restOpen || '\\x1b\\[REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.restClose || '\\x1b\\[/REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+const WEBLLM_RE = new RegExp(`${(_sentinels.webllmOpen || '\\x1b\\[WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.webllmClose || '\\x1b\\[/WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+const VOICE_RE = new RegExp(`${(_sentinels.voiceOpen || '\\x1b\\[VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.voiceClose || '\\x1b\\[/VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+// Source of truth: kernel/cli/cli.rs PROMPT constant. Must stay in sync.
+const PROMPT = _sharedDefaults?.prompt || '\x1b[32mtraits \x1b[0m';
+
+const _keys = _sharedDefaults?.storageKeys || {};
+const LS_SCROLLBACK = _keys.scrollback || 'traits.terminal.scrollback';
+const LS_HISTORY    = _keys.history || 'traits.terminal.history';
+const LS_PVFS       = _keys.pvfs || 'traits.pvfs';
+const LS_VFS_LEGACY = _keys.legacyVfs || 'traits.terminal.vfs';
 
 let Terminal, FitAddon, WebLinksAddon, SerializeAddon;
 

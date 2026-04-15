@@ -288,6 +288,7 @@ copy_dylib() {
 
 # ── Generate terminal-runtime.js (classic script for file:// mode) ──
 TERMINAL_SRC="traits/www/terminal/terminal.js"
+TERMINAL_SHARED="traits/www/terminal/shared/terminal.shared.js"
 TERMINAL_CSS="traits/www/terminal/terminal.css"
 TERMINAL_RUNTIME="traits/www/static/terminal-runtime.js"
 if [[ -f "$TERMINAL_SRC" ]]; then
@@ -316,6 +317,10 @@ print(json.dumps(css) + ';')
   document.head.appendChild(style);
 })();
 CSSJS2
+        # Shared terminal boundary (host-agnostic defaults/hooks)
+        if [[ -f "$TERMINAL_SHARED" ]]; then
+            cat "$TERMINAL_SHARED"
+        fi
         # Terminal JS with export stripped
         sed 's/^export async function/async function/' "$TERMINAL_SRC"
         echo 'if (typeof window !== "undefined") window.createTerminal = createTerminal;'
