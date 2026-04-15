@@ -505,8 +505,15 @@ const BOOT_SCRIPT: &str = r#"
     };
 
     const tunnelUrl = resolveTunnelUrl();
-    
-    let bootNetMode = 'unknown';
+
+    // Defensive boot guard: stale SPA state can keep an old relay socket alive
+    // across route transitions. Force fallback before kernel boot so no tunnel
+    // traffic runs during SMP bring-up.
+    if (typeof NetProxy !== 'undefined' && NetProxy.forceBrowserFallback) {
+        try { NetProxy.forceBrowserFallback(); } catch (_) {}
+    }
+
+    let bootNetMode = 'browser-fallback';
     let tunnelReady = null;
 
     // DEFER tunnel initialization until after SMP bring-up completes.
@@ -539,7 +546,7 @@ const BOOT_SCRIPT: &str = r#"
     }
     
     // Boot with browser emulation first; enable relay tunnel after SMP is ready.
-    term.write(`\x1B[2m[traits.build] NET mode: browser-fallback (relay deferred until after boot)\x1B[0m\r\n`);
+    term.write(`\x1B[2m[traits.build] NET mode: browser-fallback (relay hard-deferred until after shell-ready)\x1B[0m\r\n`);
 
     const resolveInitProgram = () => {
         try {

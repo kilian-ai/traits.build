@@ -21,6 +21,8 @@
 pub struct ShellCommand {
     /// Argv-style token list after word-splitting and quote removal.
     pub args: Vec<String>,
+    /// Optional input-redirection source (`< file`).
+    pub stdin_from: Option<String>,
     /// Optional output-redirection target.
     pub redirect: Option<Redirect>,
     /// Future: piped next command.
@@ -77,7 +79,7 @@ pub struct DefaultShell;
 impl Shell for DefaultShell {
     fn parse(&self, line: &str) -> ShellCommand {
         // POSIX word split (handles "", '', \ escaping)
-        let mut args = match shell_words::split(line) {
+        let args = match shell_words::split(line) {
             Ok(parts) => parts,
             Err(_) => {
                 // Unclosed quote etc. — fall back to whitespace split
@@ -85,17 +87,37 @@ impl Shell for DefaultShell {
             }
         };
 
-        let redirect = extract_redirect(&mut args);
-
-        ShellCommand {
-            args,
-            redirect,
-            pipe_next: None,
-        }
+        parse_pipeline(&args)
     }
 }
 
 // ── Redirect extraction ──────────────────────────────────────────────────────
+
+fn parse_pipeline(tokens: &[String]) -> ShellCommand {
+    if let Some(pipe_idx) = tokens.iter().position(|t| t == "|") {
+        let left = parse_segment(&tokens[..pipe_idx]);
+        let right = parse_pipeline(&tokens[pipe_idx + 1..]);
+        ShellCommand {
+            args: left.args,
+            stdin_from: left.stdin_from,
+            redirect: left.redirect,
+            pipe_next: Some(Box::new(right)),
+        }
+    } else {
+        parse_segment(tokens)
+    }
+}
+
+fn parse_segment(tokens: &[String]) -> ShellCommand {
+    let mut args = tokens.to_vec();
+    let (stdin_from, redirect) = extract_redirects(&mut args);
+    ShellCommand {
+        args,
+        stdin_from,
+        redirect,
+        pipe_next: None,
+    }
+}
 
 /// Scan `args` for the first `>` / `>>` token (with or without a space before
 /// the filename) and remove it from `args`, returning the `Redirect`.
@@ -105,7 +127,9 @@ impl Shell for DefaultShell {
 ///   cmd arg > file         (tokens: ["cmd","arg",">","file"])
 ///   cmd arg >>file         (tokens: ["cmd","arg",">>file"])
 ///   cmd arg >file          (tokens: ["cmd","arg",">file"])
-fn extract_redirect(args: &mut Vec<String>) -> Option<Redirect> {
+fn extract_redirects(args: &mut Vec<String>) -> (Option<String>, Option<Redirect>) {
+    let mut stdin_from: Option<String> = None;
+    let mut redirect: Option<Redirect> = None;
     let mut i = 0;
     while i < args.len() {
         // ">> file" or "> file" as separate tokens
@@ -113,23 +137,40 @@ fn extract_redirect(args: &mut Vec<String>) -> Option<Redirect> {
             let append = args[i] == ">>";
             let file = args[i + 1].clone();
             args.drain(i..=i + 1);
-            return Some(Redirect { file, append });
+            redirect = Some(Redirect { file, append });
+            continue;
+        }
+        // "< file" as separate tokens
+        if args[i] == "<" && i + 1 < args.len() {
+            let file = args[i + 1].clone();
+            args.drain(i..=i + 1);
+            stdin_from = Some(file);
+            continue;
         }
         // ">>file" or ">file" attached
         if args[i].starts_with(">>") && args[i].len() > 2 {
             let file = args[i][2..].to_string();
             args.remove(i);
-            return Some(Redirect { file, append: true });
+            redirect = Some(Redirect { file, append: true });
+            continue;
         }
         if args[i].starts_with('>') && args[i].len() > 1 {
             let file = args[i][1..].to_string();
             args.remove(i);
-            return Some(Redirect {
+            redirect = Some(Redirect {
                 file,
                 append: false,
             });
+            continue;
+        }
+        // "<file" attached
+        if args[i].starts_with('<') && args[i].len() > 1 {
+            let file = args[i][1..].to_string();
+            args.remove(i);
+            stdin_from = Some(file);
+            continue;
         }
         i += 1;
     }
-    None
+    (stdin_from, redirect)
 }

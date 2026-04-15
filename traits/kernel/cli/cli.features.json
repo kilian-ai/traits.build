@@ -27,6 +27,24 @@
                     "contains": ["traits.build"]
                 }
             ]
+        },
+        {
+            "name": "help lists unix-like semantic tools",
+            "examples": [
+                {
+                    "input": ["help"],
+                    "contains": ["Unix-like tools", "head", "tail", "grep", "sed", "find", "curl"]
+                }
+            ]
+        },
+        {
+            "name": "help lists pipe and stdin redirection",
+            "examples": [
+                {
+                    "input": ["help"],
+                    "contains": ["cmd < file", "cmd1 | cmd2"]
+                }
+            ]
         }
     ]
 }

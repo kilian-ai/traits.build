@@ -123,6 +123,30 @@ The CLI supports stdin piping:
 echo "hello" | traits checksum hash
 ```
 
+Inside the browser terminal (`kernel.cli` session), the shared shell parser also supports:
+
+```bash
+cmd < input.txt
+cmd > output.txt
+cmd >> output.txt
+cmd1 | cmd2 | cmd3
+```
+
+## Semantic userland tools in `kernel.cli`
+
+The portable terminal session includes shell-compatible builtins aimed at agent workflows:
+
+- `echo`, `pwd`
+- `cat`, `head`, `tail`
+- `grep` (`-i`, `-n`, `-v`)
+- `wc` (`-l`, `-w`, `-c`)
+- `sed` (currently `s/pattern/replacement/[g]` subset)
+- `test` and `[ ... ]`
+- `find` (supports `-name`, `-type`, `-maxdepth`)
+- `curl` (mapped to `sys.call`)
+
+`vi` and `ee` are currently compatibility stubs that show file content and guide users to write via redirection or `write`.
+
 ## Portable CLI backend interfaces
 
 The shared CLI core in `traits/kernel/cli/cli.rs` now uses three backend interfaces:
