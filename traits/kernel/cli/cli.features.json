@@ -54,6 +54,15 @@
                     "contains": ["pwd", "cd", "mkdir", "Change current directory"]
                 }
             ]
+        },
+        {
+            "name": "help lists logical chaining and enhanced userland flags",
+            "examples": [
+                {
+                    "input": ["help"],
+                    "contains": ["cmd1 && cmd2", "cmd1 || cmd2", "sed", "-mindepth", "vi/ee"]
+                }
+            ]
         }
     ]
 }

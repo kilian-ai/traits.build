@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -1599,11 +1600,149 @@ pub fn exec_line(
         return String::new();
     }
 
-    let mut parsed = shell.parse(trimmed);
-    if parsed.args.is_empty() {
+    let segments = split_logical_chain(trimmed);
+    if segments.is_empty() {
         return String::new();
     }
-    execute_shell_command(&mut parsed, None, backend, vfs, cwd)
+
+    let mut outputs = Vec::new();
+    let mut last_success = true;
+    let mut has_last = false;
+
+    for (seg, gate) in segments {
+        if let Some(op) = gate {
+            if !has_last {
+                continue;
+            }
+            match op {
+                LogicalOp::And if !last_success => continue,
+                LogicalOp::Or if last_success => continue,
+                _ => {}
+            }
+        }
+
+        let mut parsed = shell.parse(&seg);
+        if parsed.args.is_empty() {
+            continue;
+        }
+
+        let output = execute_shell_command(&mut parsed, None, backend, vfs, cwd);
+        last_success = infer_command_success(&parsed, &output);
+        has_last = true;
+        if !output.is_empty() {
+            outputs.push(output);
+        }
+    }
+
+    outputs.join("\n")
+}
+
+#[derive(Clone, Copy)]
+enum LogicalOp {
+    And,
+    Or,
+}
+
+fn split_logical_chain(line: &str) -> Vec<(String, Option<LogicalOp>)> {
+    let bytes = line.as_bytes();
+    if bytes.is_empty() {
+        return vec![];
+    }
+
+    let mut parts: Vec<(String, Option<LogicalOp>)> = Vec::new();
+    let mut start = 0usize;
+    let mut gate_for_segment: Option<LogicalOp> = None;
+    let mut i = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+
+    while i + 1 < bytes.len() {
+        let b = bytes[i];
+
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
+
+        if let Some(q) = quote {
+            if b == b'\\' {
+                escaped = true;
+                i += 1;
+                continue;
+            }
+            if b == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+
+        if b == b'\'' || b == b'"' {
+            quote = Some(b);
+            i += 1;
+            continue;
+        }
+        if b == b'\\' {
+            escaped = true;
+            i += 1;
+            continue;
+        }
+
+        let op = if b == b'&' && bytes[i + 1] == b'&' {
+            Some(LogicalOp::And)
+        } else if b == b'|' && bytes[i + 1] == b'|' {
+            Some(LogicalOp::Or)
+        } else {
+            None
+        };
+
+        if let Some(found) = op {
+            let seg = line[start..i].trim();
+            if !seg.is_empty() {
+                parts.push((seg.to_string(), gate_for_segment));
+                gate_for_segment = Some(found);
+            }
+            start = i + 2;
+            i += 2;
+            continue;
+        }
+
+        i += 1;
+    }
+
+    let tail = line[start..].trim();
+    if !tail.is_empty() {
+        parts.push((tail.to_string(), gate_for_segment));
+    }
+    parts
+}
+
+fn infer_command_success(parsed: &ShellCommand, output: &str) -> bool {
+    let leaf = last_pipeline_command(parsed);
+    let name = leaf.cmd().to_lowercase();
+    match name.as_str() {
+        "true" => true,
+        "false" => false,
+        "test" => eval_test_expr(leaf.rest()),
+        "[" => {
+            let args = leaf.rest();
+            if args.last().map(|s| s.as_str()) != Some("]") {
+                false
+            } else {
+                eval_test_expr(&args[..args.len().saturating_sub(1)])
+            }
+        }
+        _ => !output.contains(RED),
+    }
+}
+
+fn last_pipeline_command(cmd: &ShellCommand) -> &ShellCommand {
+    let mut cur = cmd;
+    while let Some(next) = cur.pipe_next.as_ref() {
+        cur = next;
+    }
+    cur
 }
 
 fn execute_shell_command(
@@ -1685,7 +1824,7 @@ fn execute_leaf_command(
         "[" => bracket_test_command(&args),
         "find" => find_command(&args, vfs, cwd),
         "curl" => curl_command(&args, backend, vfs, cwd),
-        "vi" | "ee" => editor_stub_command(&cmd_name, &args, vfs, cwd),
+        "vi" | "ee" => editor_stub_command(&cmd_name, &args, stdin_input, vfs, cwd),
 
         "mkdir" => mkdir_command(&args, vfs, cwd),
 
@@ -2033,31 +2172,82 @@ fn sed_command(
     cwd: &str,
 ) -> String {
     if args.is_empty() {
-        return format!("{RED}Usage: sed 's/pattern/repl/[g]' [file]{RESET}");
+        return format!("{RED}Usage: sed [-i] 's/pattern/repl/[gi]' [file]{RESET}");
     }
-    let script = args[0].as_str();
-    let text = if args.len() > 1 {
-        let full = resolve_vfs_path(cwd, &args[1]);
+
+    let mut in_place = false;
+    let mut idx = 0usize;
+    while idx < args.len() && args[idx].starts_with('-') {
+        match args[idx].as_str() {
+            "-i" => {
+                in_place = true;
+                idx += 1;
+            }
+            _ => break,
+        }
+    }
+    if idx >= args.len() {
+        return format!("{RED}Usage: sed [-i] 's/pattern/repl/[gi]' [file]{RESET}");
+    }
+
+    let script = args[idx].as_str();
+    idx += 1;
+
+    let file_arg = if idx < args.len() {
+        Some(args[idx].clone())
+    } else {
+        None
+    };
+    if in_place && file_arg.is_none() {
+        return format!("{RED}sed: -i requires a file path{RESET}");
+    }
+
+    let text = if let Some(path) = file_arg.as_ref() {
+        let full = resolve_vfs_path(cwd, path);
         match vfs.borrow().read(&full) {
             Some(content) => content,
-            None => return format!("{RED}sed: {}: no such file{RESET}", args[1]),
+            None => return format!("{RED}sed: {}: no such file{RESET}", path),
         }
     } else {
         stdin_input.unwrap_or_default()
     };
 
-    let Some((pattern, replacement, global)) = parse_sed_substitute(script) else {
-        return format!("{RED}sed: only s/pattern/replacement/[g] is supported{RESET}");
+    let Some((pattern, replacement, flags)) = parse_sed_substitute(script) else {
+        return format!("{RED}sed: only s/pattern/replacement/[gi] is supported{RESET}");
     };
 
-    if global {
-        text.replace(&pattern, &replacement)
+    let global = flags.contains('g');
+    let case_insensitive = flags.contains('i');
+    let pattern_expr = if case_insensitive {
+        format!("(?i){pattern}")
     } else {
-        text.replacen(&pattern, &replacement, 1)
+        pattern.clone()
+    };
+    let re = match Regex::new(&pattern_expr) {
+        Ok(v) => v,
+        Err(e) => return format!("{RED}sed: invalid regex: {e}{RESET}"),
+    };
+
+    let rendered = if global {
+        re.replace_all(&text, replacement.as_str()).to_string()
+    } else {
+        re.replace(&text, replacement.as_str()).to_string()
+    };
+
+    if in_place {
+        if let Some(path) = file_arg {
+            let full = resolve_vfs_path(cwd, &path);
+            vfs.borrow_mut().write(&full, &rendered);
+            format!("{GRAY}updated {}{RESET}", full)
+        } else {
+            String::new()
+        }
+    } else {
+        rendered
     }
 }
 
-fn parse_sed_substitute(script: &str) -> Option<(String, String, bool)> {
+fn parse_sed_substitute(script: &str) -> Option<(String, String, String)> {
     let mut chars = script.chars();
     if chars.next()? != 's' {
         return None;
@@ -2091,8 +2281,12 @@ fn parse_sed_substitute(script: &str) -> Option<(String, String, bool)> {
     if parts.len() < 2 {
         return None;
     }
-    let flags = if parts.len() >= 3 { parts[2].clone() } else { String::new() };
-    Some((parts[0].clone(), parts[1].clone(), flags.contains('g')))
+    let flags = if parts.len() >= 3 {
+        parts[2].clone()
+    } else {
+        String::new()
+    };
+    Some((parts[0].clone(), parts[1].clone(), flags))
 }
 
 fn test_command(args: &[String]) -> String {
@@ -2151,6 +2345,7 @@ fn find_command(args: &[String], vfs: &RefCell<Box<dyn Vfs>>, cwd: &str) -> Stri
     let mut start = ".".to_string();
     let mut name_pattern: Option<String> = None;
     let mut type_filter: Option<char> = None;
+    let mut min_depth: usize = 0;
     let mut max_depth: Option<usize> = None;
     let mut i = 0;
     while i < args.len() {
@@ -2161,6 +2356,10 @@ fn find_command(args: &[String], vfs: &RefCell<Box<dyn Vfs>>, cwd: &str) -> Stri
             }
             "-type" if i + 1 < args.len() => {
                 type_filter = args[i + 1].chars().next();
+                i += 2;
+            }
+            "-mindepth" if i + 1 < args.len() => {
+                min_depth = args[i + 1].parse::<usize>().unwrap_or(0);
                 i += 2;
             }
             "-maxdepth" if i + 1 < args.len() => {
@@ -2175,65 +2374,72 @@ fn find_command(args: &[String], vfs: &RefCell<Box<dyn Vfs>>, cwd: &str) -> Stri
         }
     }
 
+    if let Some(t) = type_filter {
+        if t != 'f' && t != 'd' {
+            return format!("{RED}find: unsupported -type '{}', expected 'f' or 'd'{RESET}", t);
+        }
+    }
+
     let start_abs = resolve_vfs_path(cwd, &start);
-    let start = start_abs.trim_start_matches('/').to_string();
+    let start_norm = start_abs.trim_start_matches('/').to_string();
     let files = vfs.borrow().list();
     let dirs: std::collections::BTreeSet<String> = vfs.borrow().list_dirs().into_iter().collect();
 
+    let mut entries: Vec<(String, bool)> = Vec::new();
+    for d in &dirs {
+        entries.push((d.trim_start_matches('/').to_string(), true));
+    }
+    for f in &files {
+        entries.push((f.trim_start_matches('/').to_string(), false));
+    }
+
     let mut out = Vec::new();
-    for path in files {
-        let norm = path.trim_start_matches('/').to_string();
-        if !start.is_empty() && start != "." && !norm.starts_with(&start) {
+    for (norm, is_dir) in entries {
+        if !start_norm.is_empty()
+            && norm != start_norm
+            && !norm.starts_with(&format!("{}/", start_norm))
+        {
+            continue;
+        }
+
+        let depth = if start_norm.is_empty() {
+            norm.matches('/').count() + 1
+        } else if norm == start_norm {
+            0
+        } else {
+            let rel = norm
+                .strip_prefix(&(start_norm.clone() + "/"))
+                .unwrap_or(norm.as_str());
+            rel.matches('/').count() + 1
+        };
+
+        if depth < min_depth {
             continue;
         }
         if let Some(md) = max_depth {
-            let rel = if start.is_empty() || start == "." {
-                norm.as_str()
-            } else {
-                norm.strip_prefix(&start).unwrap_or(&norm).trim_start_matches('/')
-            };
-            let depth = if rel.is_empty() { 0 } else { rel.matches('/').count() + 1 };
             if depth > md {
                 continue;
             }
         }
-        if matches!(type_filter, Some('d')) {
+
+        if matches!(type_filter, Some('d')) && !is_dir {
             continue;
         }
+        if matches!(type_filter, Some('f')) && is_dir {
+            continue;
+        }
+
         if let Some(ref pat) = name_pattern {
             let base = norm.rsplit('/').next().unwrap_or(&norm);
             if !wildcard_match(pat, base) {
                 continue;
             }
         }
+
         out.push(format!("/{}", norm));
     }
-    if matches!(type_filter, Some('d')) {
-        for dir in dirs {
-            if !start.is_empty() && start != "." && !dir.starts_with(&start) {
-                continue;
-            }
-            if let Some(md) = max_depth {
-                let rel = if start.is_empty() || start == "." {
-                    dir.as_str()
-                } else {
-                    dir.strip_prefix(&start).unwrap_or(&dir).trim_start_matches('/')
-                };
-                let depth = if rel.is_empty() { 0 } else { rel.matches('/').count() + 1 };
-                if depth > md {
-                    continue;
-                }
-            }
-            if let Some(ref pat) = name_pattern {
-                let base = dir.rsplit('/').next().unwrap_or(&dir);
-                if !wildcard_match(pat, base) {
-                    continue;
-                }
-            }
-            out.push(format!("/{}", dir));
-        }
-    }
     out.sort();
+    out.dedup();
     out.join("\n")
 }
 
@@ -2340,18 +2546,77 @@ fn curl_command(
     }
 }
 
-fn editor_stub_command(editor: &str, args: &[String], vfs: &RefCell<Box<dyn Vfs>>, cwd: &str) -> String {
+fn editor_stub_command(
+    editor: &str,
+    args: &[String],
+    stdin_input: Option<String>,
+    vfs: &RefCell<Box<dyn Vfs>>,
+    cwd: &str,
+) -> String {
     if args.is_empty() {
-        return format!("{RED}Usage: {} <file>{RESET}", editor);
+        return format!("{RED}Usage: {} [-a] <file> [content...]{RESET}", editor);
     }
-    let path = resolve_vfs_path(cwd, &args[0]);
+
+    let mut append = false;
+    let mut idx = 0usize;
+    while idx < args.len() && args[idx].starts_with('-') {
+        match args[idx].as_str() {
+            "-a" | "--append" => append = true,
+            _ => return format!("{RED}{}: unsupported option {}{RESET}", editor, args[idx]),
+        }
+        idx += 1;
+    }
+
+    if idx >= args.len() {
+        return format!("{RED}Usage: {} [-a] <file> [content...]{RESET}", editor);
+    }
+
+    let path = resolve_vfs_path(cwd, &args[idx]);
+    idx += 1;
+
+    let content_from_args = if idx < args.len() {
+        Some(args[idx..].join(" "))
+    } else {
+        None
+    };
+    let content_from_stdin = stdin_input.filter(|s| !s.is_empty());
+
+    if let Some(content) = content_from_stdin.or(content_from_args) {
+        if append {
+            vfs.borrow_mut().append(&path, &content);
+            vfs.borrow_mut().append(&path, "\n");
+            return format!("{GRAY}appended {} bytes to {}{RESET}", content.len(), path);
+        }
+        vfs.borrow_mut().write(&path, &content);
+        return format!("{GRAY}saved {} bytes to {}{RESET}", content.len(), path);
+    }
+
     let body = vfs.borrow().read(&path).unwrap_or_default();
+    if body.is_empty() {
+        return format!(
+            "{YELLOW}{editor}: {} (empty){RESET}\r\n{GRAY}Pipe content to save: echo \"text\" | {editor} {}{RESET}",
+            path,
+            path
+        );
+    }
+
+    let mut numbered = String::new();
+    for (n, line) in body.lines().enumerate() {
+        numbered.push_str(&format!("{GRAY}{:>4} |{RESET} {}\r\n", n + 1, line));
+    }
+    if numbered.ends_with("\r\n") {
+        numbered.truncate(numbered.len() - 2);
+    }
+
     format!(
-        "{YELLOW}{} is not interactive yet.{RESET}\r\n{GRAY}Use write {} <content> or redirection (command > {}) to update this file.{RESET}\r\n{}",
+        "{YELLOW}{} preview mode{RESET} {GRAY}({}){RESET}\r\n{GRAY}Use: {} -a {} <text>  or  echo \"...\" | {} {}{RESET}\r\n{}",
         editor,
         path,
+        editor,
         path,
-        body
+        editor,
+        path,
+        numbered
     )
 }
 
@@ -2688,11 +2953,13 @@ fn format_help() -> String {
     s.push_str(&format!("  {GREEN}tail{RESET} {GRAY}[-n N] [file]{RESET}       Last N lines\r\n"));
     s.push_str(&format!("  {GREEN}grep{RESET} {GRAY}[-inv] <pat> [file]{RESET} Search lines\r\n"));
     s.push_str(&format!("  {GREEN}wc{RESET} {GRAY}[-lwc] [file]{RESET}         Count lines/words/bytes\r\n"));
-    s.push_str(&format!("  {GREEN}sed{RESET} {GRAY}'s/a/b/g' [file]{RESET}      Regex substitute\r\n"));
+    s.push_str(&format!("  {GREEN}sed{RESET} {GRAY}[-i] 's/a/b/[gi]' [file]{RESET} Regex substitute (optional in-place)\r\n"));
     s.push_str(&format!("  {GREEN}test{RESET}/{GREEN}[ ... ]{RESET}              Shell-style test expressions\r\n"));
-    s.push_str(&format!("  {GREEN}find{RESET} {GRAY}[path] [-name P] ...{RESET} VFS file search\r\n"));
+    s.push_str(&format!("  {GREEN}find{RESET} {GRAY}[path] [-name P] [-type f|d] [-mindepth N] [-maxdepth N]{RESET}\r\n"));
     s.push_str(&format!("  {GREEN}curl{RESET} {GRAY}[opts] <url>{RESET}         HTTP calls via sys.call\r\n"));
-    s.push_str(&format!("  {GREEN}vi{RESET}/{GREEN}ee{RESET} {GRAY}<file>{RESET}            Editor-compatible stubs\r\n"));
+    s.push_str(&format!("  {GREEN}vi{RESET}/{GREEN}ee{RESET} {GRAY}[-a] <file> [text]{RESET}  Save/append text or preview file\r\n"));
+    s.push_str(&format!("  {GRAY}cmd1 && cmd2{RESET}              Run cmd2 only if cmd1 succeeded\r\n"));
+    s.push_str(&format!("  {GRAY}cmd1 || cmd2{RESET}              Run cmd2 only if cmd1 failed\r\n"));
     s.push_str("\r\n");
     s.push_str(&format!(
         "{BOLD}{BRIGHT_WHITE}Virtual filesystem{RESET}\r\n"
@@ -3164,6 +3431,63 @@ mod tests {
         let plain = strip_ansi(&out);
         assert!(plain.contains("No such file or directory"));
         assert!(!vfs.borrow().is_dir("/one/two"));
+    }
+
+    #[test]
+    fn logical_and_or_short_circuit() {
+        let backend = MockBackend;
+        let shell = DefaultShell;
+        let vfs = test_vfs();
+        let mut cwd = "/".to_string();
+
+        let out = exec_line("false && write blocked.txt nope", &backend, &shell, &vfs, &mut cwd);
+        assert!(strip_ansi(&out).trim().is_empty());
+        assert!(vfs.borrow().read("/blocked.txt").is_none());
+
+        let out = exec_line("false || write allowed.txt yup", &backend, &shell, &vfs, &mut cwd);
+        assert!(strip_ansi(&out).contains("wrote"));
+        assert_eq!(vfs.borrow().read("/allowed.txt").as_deref(), Some("yup"));
+    }
+
+    #[test]
+    fn vi_and_ee_can_save_and_append() {
+        let backend = MockBackend;
+        let shell = DefaultShell;
+        let vfs = test_vfs();
+        let mut cwd = "/".to_string();
+
+        let out = exec_line("echo first | vi notes.txt", &backend, &shell, &vfs, &mut cwd);
+        assert!(strip_ansi(&out).contains("saved"));
+        assert_eq!(vfs.borrow().read("/notes.txt").as_deref(), Some("first"));
+
+        let out = exec_line("ee -a notes.txt second", &backend, &shell, &vfs, &mut cwd);
+        assert!(strip_ansi(&out).contains("appended"));
+        let body = vfs.borrow().read("/notes.txt").unwrap_or_default();
+        assert!(body.starts_with("first"));
+        assert!(body.contains("second"));
+    }
+
+    #[test]
+    fn find_supports_type_and_mindepth() {
+        let backend = MockBackend;
+        let shell = DefaultShell;
+        let vfs = test_vfs();
+        let mut cwd = "/".to_string();
+
+        let _ = exec_line("mkdir -p a/b", &backend, &shell, &vfs, &mut cwd);
+        let _ = exec_line("write a/root.txt r", &backend, &shell, &vfs, &mut cwd);
+        let _ = exec_line("write a/b/leaf.txt l", &backend, &shell, &vfs, &mut cwd);
+
+        let out = exec_line("find a -type d -mindepth 1", &backend, &shell, &vfs, &mut cwd);
+        let plain = strip_ansi(&out);
+        let lines: Vec<&str> = plain.lines().collect();
+        assert!(lines.iter().any(|l| *l == "/a/b"));
+        assert!(!lines.iter().any(|l| *l == "/a"));
+
+        let out = exec_line("find a -type f -maxdepth 1", &backend, &shell, &vfs, &mut cwd);
+        let plain = strip_ansi(&out);
+        assert!(plain.contains("/a/root.txt"));
+        assert!(!plain.contains("/a/b/leaf.txt"));
     }
 }
 

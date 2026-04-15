@@ -130,6 +130,8 @@ cmd < input.txt
 cmd > output.txt
 cmd >> output.txt
 cmd1 | cmd2 | cmd3
+cmd1 && cmd2
+cmd1 || cmd2
 ```
 
 ## Semantic userland tools in `kernel.cli`
@@ -141,16 +143,17 @@ The portable terminal session includes shell-compatible builtins aimed at agent 
 - `cat`, `head`, `tail`
 - `grep` (`-i`, `-n`, `-v`)
 - `wc` (`-l`, `-w`, `-c`)
-- `sed` (currently `s/pattern/replacement/[g]` subset)
+- `sed` (`s/pattern/replacement/[gi]` with optional `-i` in-place write)
 - `test` and `[ ... ]`
-- `find` (supports `-name`, `-type`, `-maxdepth`)
+- `find` (supports `-name`, `-type`, `-mindepth`, `-maxdepth`)
 - `curl` (mapped to `sys.call`)
+- `vi` and `ee` (preview file, or write/append via args/stdin)
 
 `cd` now updates per-session working directory state, and path-taking commands resolve relative paths against that `cwd`.
 
 `mkdir` supports plain mode and `-p` parent creation in the CLI VFS.
 
-`vi` and `ee` are currently compatibility stubs that show file content and guide users to write via redirection or `write`.
+`vi` and `ee` are lightweight practical modes: preview with line numbers by default, write with `vi <file> <text>`, append with `-a`, or pipe content (`echo "text" | vi notes.txt`).
 
 ## Portable CLI backend interfaces
 

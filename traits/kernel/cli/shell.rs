@@ -3,7 +3,7 @@
 // This module defines the `Shell` trait — the single seam that separates
 // line-parsing from the rest of the CLI kernel.  Today's implementation
 // (`DefaultShell`) uses `shell-words` for POSIX-correct word splitting and
-// handles `>` / `>>` redirection.
+// handles redirection and pipelines.
 //
 // When a full shell interpreter is available (e.g. a POSIX engine compiled
 // to WASM), swap it in at the `CliSession` level:
@@ -15,8 +15,7 @@
 
 /// A parsed command ready for execution.
 ///
-/// `pipe_next` is reserved for future pipeline support — today it is always
-/// `None`.  Callers must handle it gracefully (ignore or warn "unsupported").
+/// `pipe_next` holds pipeline continuation when present.
 #[derive(Debug)]
 pub struct ShellCommand {
     /// Argv-style token list after word-splitting and quote removal.
@@ -25,7 +24,7 @@ pub struct ShellCommand {
     pub stdin_from: Option<String>,
     /// Optional output-redirection target.
     pub redirect: Option<Redirect>,
-    /// Future: piped next command.
+    /// Piped next command (`cmd1 | cmd2`).
     pub pipe_next: Option<Box<ShellCommand>>,
 }
 
@@ -71,9 +70,8 @@ pub trait Shell {
 /// Default implementation: POSIX word-splitting via `shell-words` plus
 /// recognition of `>` / `>>` redirection operators.
 ///
-/// This is intentionally minimal — it does not evaluate variables, glob-
-/// expand paths, or support pipelines.  Those are all left to future
-/// implementations of the `Shell` trait.
+/// This is intentionally minimal — it does not evaluate variables or glob-
+/// expand paths. Logical chaining (`&&`, `||`) is handled in `exec_line`.
 pub struct DefaultShell;
 
 impl Shell for DefaultShell {
