@@ -889,6 +889,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - `www.linux` DONE guard now accepts source verification by filename basename across directories (for example inferred `/bin/foo.js` vs actual `/home/foo.js`) so successful `cat` reads are not falsely rejected as "source file was never read".
 - `www.linux` now captures freeze diagnostics when kernel output matches RCU-stall signatures and when host callback starvation is detected. Snapshots are stored in `window._linuxFreezeDiagnostics` and include NetProxy stats, host callback timing, task/cpu counts, mode, and kernel line context.
 - Relay worker now exposes `GET /linux/tunnel/debug` with isolate-local tunnel counters, active connection metadata, and recent lifecycle events (`ws_open`, `ws_close`, `ws_error`, parse/dns failures) to diagnose intermittent WebSocket tunnel drops.
+- Relay Cloudflare worker is isolated as `traits-build-relay` (account-pinned in `relay/wrangler.toml`) to reduce accidental cross-project overwrites from other repos using generic worker names.
 
 **Relay endpoints** (registered in `sys.serve`):
 ```
