@@ -1844,7 +1844,7 @@ const BOOT_SCRIPT: &str = r#"
 
     async function resolveAgentMaxRounds() {
         const clamp = (n) => {
-            if (!Number.isFinite(n)) return 10;
+            if (!Number.isFinite(n)) return 100;
             return Math.max(1, Math.min(100, Math.floor(n)));
         };
 
@@ -1861,17 +1861,19 @@ const BOOT_SCRIPT: &str = r#"
             if (s) return clamp(Number(s));
         } catch (e) {}
 
-        // 3) Guest-side config: read /bin/agent.js const MAX_ROUNDS = N;
-        try {
-            const r = await shellExec('cat /bin/agent.js');
-            if (r && r.exitCode === 0 && r.output) {
-                const m = String(r.output).match(/const\s+MAX_ROUNDS\s*=\s*(\d+)\s*;/);
-                if (m && m[1]) return clamp(Number(m[1]));
-            }
-        } catch (e) {}
+        // 3) Default for web agent loop.
+        // Do NOT read /bin/agent.js here: that file lives inside the guest initramfs
+        // and can be stale relative to the browser-side JS agent implementation.
+        return 100;
+    }
 
-        // 4) Default for web agent loop
-        return 100;  // Changed from 10 to 100
+    function getSessionMemoryCount() {
+        try {
+            const sessions = JSON.parse(localStorage.getItem('linux-wasm.agent-sessions') || '[]');
+            return Array.isArray(sessions) ? sessions.length : 0;
+        } catch (e) {
+            return 0;
+        }
     }
 
     // Load session memory: retrieves past session history from localStorage (rolling window)
@@ -2190,7 +2192,7 @@ const BOOT_SCRIPT: &str = r#"
         // Load and inject past session memory into rolling window
         const sessionMemory = loadSessionMemory();
         if (sessionMemory) {
-            term.write('\x1b[2m[agent] loaded ' + (localStorage.getItem('linux-wasm.agent-sessions') || '[]').length + ' past session(s)\x1b[0m\r\n');
+            term.write('\x1b[2m[agent] loaded ' + getSessionMemoryCount() + ' past session(s)\x1b[0m\r\n');
             history = '[PAST SESSIONS]\n' + sessionMemory + '\n[END PAST SESSIONS]\n';
         }
         
