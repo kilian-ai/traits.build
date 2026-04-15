@@ -891,6 +891,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - Relay worker now exposes `GET /linux/tunnel/debug` with isolate-local tunnel counters, active connection metadata, and recent lifecycle events (`ws_open`, `ws_close`, `ws_error`, parse/dns failures) to diagnose intermittent WebSocket tunnel drops.
 - Relay Cloudflare worker is isolated as `traits-build-relay` (account-pinned in `relay/wrangler.toml`) to reduce accidental cross-project overwrites from other repos using generic worker names.
 - `www.linux` now normalizes legacy tunnel URL overrides (`wss://traits-relay.kiliannc.workers.dev/linux/tunnel`) to `wss://relay.traits.build/linux/tunnel` and rewrites stale localStorage values on boot.
+- `www.linux` command auto-fix monitor is now default-off to avoid appending sentinel wrappers to every interactive shell command. Use `autofix on|off|status` in the Linux terminal to control it.
 
 **Relay endpoints** (registered in `sys.serve`):
 ```

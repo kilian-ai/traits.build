@@ -605,7 +605,7 @@ const BOOT_SCRIPT: &str = r#"
     let agentCapture = null;      // function(data) callback during command capture
     let agentRunning = false;     // true while agent loop is active
     let agentSuppressOutput = false; // suppress shell echo during agent command exec
-    let autoFixOnErrorEnabled = true;
+    let autoFixOnErrorEnabled = false;
     let autoFixInFlight = false;
     let shellRelayRunning = false;
     let shellRelayStop = false;
@@ -1354,6 +1354,37 @@ const BOOT_SCRIPT: &str = r#"
         }
 
         term.write('[shell-relay] unknown command: ' + sub + '\r\n');
+        return true;
+    }
+
+    async function runAutoFixCommand(cmd) {
+        const trimmed = String(cmd || '').trim();
+        if (!/^autofix\b/i.test(trimmed)) return false;
+
+        const parts = trimmed.split(/\s+/);
+        const sub = (parts[1] || 'status').toLowerCase();
+
+        if (sub === 'on') {
+            autoFixOnErrorEnabled = true;
+            term.write('[auto-fix] on (failed commands will be wrapped with exit sentinel and may hand off to agent)\r\n');
+            return true;
+        }
+
+        if (sub === 'off') {
+            autoFixOnErrorEnabled = false;
+            term.write('[auto-fix] off (commands run directly)\r\n');
+            return true;
+        }
+
+        if (sub === 'status') {
+            term.write('[auto-fix] status=' + (autoFixOnErrorEnabled ? 'on' : 'off') + '\r\n');
+            return true;
+        }
+
+        term.write('[auto-fix] commands:\r\n');
+        term.write('  autofix status\r\n');
+        term.write('  autofix on\r\n');
+        term.write('  autofix off\r\n');
         return true;
     }
 
@@ -2699,6 +2730,19 @@ const BOOT_SCRIPT: &str = r#"
                         os.key_input('\r');
                     }).catch((err) => {
                         term.write('\x1b[31m[shell-relay] error: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
+                        os.key_input('\r');
+                    });
+                }
+
+                // ── Intercept autofix commands (toggle failed-command monitor) ──
+                if (!intercepted && /^autofix\b/i.test(cmd)) {
+                    intercepted = true;
+                    os.key_input('\x15'); // Clear current input
+                    term.write('\r\n');
+                    runAutoFixCommand(cmd).then(() => {
+                        os.key_input('\r');
+                    }).catch((err) => {
+                        term.write('\x1b[31m[auto-fix] error: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
                         os.key_input('\r');
                     });
                 }
