@@ -551,7 +551,7 @@ const BOOT_SCRIPT: &str = r#"
 
     const resolveMaxCpus = () => {
         const HARD_MAX = 100;
-        const DEFAULT = HARD_MAX;
+        const DEFAULT = 10;
 
         const clamp = (n) => {
             if (!Number.isFinite(n)) return DEFAULT;
@@ -580,7 +580,7 @@ const BOOT_SCRIPT: &str = r#"
     // With maxcpus=N, we get (N-1) usable user CPUs (minus IRQ_CPU).
     // Too few CPUs → clone() returns -EBUSY ("Resource busy") when shell forks.
     // CPUs are recycled when tasks exit (release_thread clears user_cpus bitmask).
-    // maxcpus=100 gives many pseudo-CPUs for heavy fork workloads.
+    // maxcpus=10 gives 8 user CPUs (0,2..9): highest stable setting in this runtime.
     // Override with ?linux_cpus=N or localStorage['linux-wasm.maxcpus'].
     const boot_cmdline = `maxcpus=${maxCpus} root=/dev/ram0 rootfstype=ramfs rdinit=${initProgram} console=hvc console=ttyS0`;
     term.write(`\x1B[2m[traits.build] CPU mode: maxcpus=${maxCpus}\x1B[0m\r\n`);
