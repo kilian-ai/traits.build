@@ -63,6 +63,15 @@
                     "contains": ["cmd1 && cmd2", "cmd1 || cmd2", "sed", "-mindepth", "vi/ee"]
                 }
             ]
+        },
+        {
+            "name": "rm recursively deletes directories",
+            "examples": [
+                {
+                    "input": ["mkdir -p e2e_rm_recursive/sub && write e2e_rm_recursive/sub/file.txt hello && rm e2e_rm_recursive && ls e2e_rm_recursive"],
+                    "contains": ["no such path"]
+                }
+            ]
         }
     ]
 }
