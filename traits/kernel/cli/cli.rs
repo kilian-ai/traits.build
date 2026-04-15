@@ -1580,7 +1580,9 @@ impl CliSession {
             self.cursor_pos = new_before.len();
             self.refresh_line()
         } else if matches.len() > 1 && matches.len() <= 40 {
-            let mut out = String::from("\r\n");
+            // Save cursor, print suggestions below current line, then restore.
+            // This avoids creating an extra prompt line under the suggestions.
+            let mut out = String::from("\x1b7\r\n");
             let max_len = matches.iter().map(|m| m.len()).max().unwrap_or(0) + 2;
             let per_row = (80 / max_len).max(1);
             for chunk in matches.chunks(per_row) {
@@ -1589,12 +1591,14 @@ impl CliSession {
                 }
                 out.push_str("\r\n");
             }
+            // Restore to the original input line before optional redraw.
+            out.push_str("\x1b8");
             if common.len() > prefix.len() {
                 let new_before = rebuild_before(&common, false);
                 self.line_buffer = format!("{}{}", new_before, after_cursor);
                 self.cursor_pos = new_before.len();
+                out.push_str(&self.refresh_line());
             }
-            out.push_str(&self.refresh_line());
             out
         } else {
             String::new()
