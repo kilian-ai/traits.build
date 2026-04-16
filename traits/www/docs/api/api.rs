@@ -19,6 +19,8 @@ const HTML: &str = r##"<!DOCTYPE html>
 <style>
   /* Terminal panel styles (inlined to avoid /static/ 404 on SPA) */
   .terminal-wrap { position:fixed; bottom:0; left:0; right:0; z-index:9999; background:#0d1117; border-top:1px solid #30363d; }
+  .terminal-resize-handle { height:5px; cursor:ns-resize; background:transparent; border-top:2px solid #30363d; transition:border-color 0.15s; }
+  .terminal-resize-handle:hover, .terminal-resize-handle.dragging { border-top-color:#f97316; }
   .terminal-header { display:flex; align-items:center; gap:1rem; padding:0.4rem 1rem; background:#161b22; cursor:pointer; user-select:none; }
   .terminal-toggle { background:none; border:none; color:#8b949e; font-size:0.85rem; font-weight:600; cursor:pointer; padding:0; }
   .terminal-hint { font-size:0.75rem; color:#484f58; }
@@ -245,6 +247,7 @@ document.getElementById('redoc').addEventListener('trait:error', function() {
 </script>
 
 <div class="terminal-wrap" id="termWrap" style="display:none">
+  <div class="terminal-resize-handle" id="termResizeHandle"></div>
   <div class="terminal-header" id="termHeader">
     <button id="btnToggleTerm" class="terminal-toggle">▼ Terminal</button>
     <span class="terminal-hint">WASM-powered traits CLI — try "list" or "call sys.checksum hash hello"</span>
@@ -302,6 +305,63 @@ document.getElementById('redoc').addEventListener('trait:error', function() {
       }
     } catch(e) {}
   });
+  // ── Resize handle ──
+  (function() {
+    var handle = document.getElementById('termResizeHandle');
+    var container = document.getElementById('termContainer');
+    if (!handle || !container) return;
+    var startY, startH;
+    var MIN_H = 80, MAX_H = Math.floor(window.innerHeight * 0.85);
+    function updateBodyPad() {
+      var wrap = document.getElementById('termWrap');
+      if (wrap) document.body.style.paddingBottom = wrap.offsetHeight + 'px';
+    }
+    handle.addEventListener('mousedown', function(e) {
+      if (container.classList.contains('collapsed')) return;
+      e.preventDefault();
+      startY = e.clientY;
+      startH = container.offsetHeight;
+      handle.classList.add('dragging');
+      document.body.style.userSelect = 'none';
+      function onMove(e) {
+        var delta = startY - e.clientY; // drag up = bigger
+        var newH = Math.min(MAX_H, Math.max(MIN_H, startH + delta));
+        container.style.height = newH + 'px';
+        updateBodyPad();
+        if (terminalInstance && terminalInstance.term) terminalInstance.term.resize && terminalInstance.term.fit && terminalInstance.term.fit();
+      }
+      function onUp() {
+        handle.classList.remove('dragging');
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (terminalInstance && terminalInstance.fitAddon) terminalInstance.fitAddon.fit();
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+    // Touch support
+    handle.addEventListener('touchstart', function(e) {
+      if (container.classList.contains('collapsed')) return;
+      startY = e.touches[0].clientY;
+      startH = container.offsetHeight;
+      handle.classList.add('dragging');
+      function onMove(e) {
+        var delta = startY - e.touches[0].clientY;
+        var newH = Math.min(MAX_H, Math.max(MIN_H, startH + delta));
+        container.style.height = newH + 'px';
+        updateBodyPad();
+      }
+      function onUp() {
+        handle.classList.remove('dragging');
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onUp);
+        if (terminalInstance && terminalInstance.fitAddon) terminalInstance.fitAddon.fit();
+      }
+      document.addEventListener('touchmove', onMove, { passive: true });
+      document.addEventListener('touchend', onUp);
+    }, { passive: true });
+  })();
 })();
 </script>
 </body>
