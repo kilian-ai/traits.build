@@ -27,7 +27,6 @@ const HTML: &str = r##"<!DOCTYPE html>
   .terminal-container { height:300px; padding:4px; overflow:hidden; }
   .terminal-container.collapsed { height:0; padding:0; overflow:hidden; }
   .xterm-mount { height:100%; }
-</style>
   body {
     margin: 0; padding: 0; background: #0d1117; color: #c9d1d9;
     font-family: system-ui, -apple-system, sans-serif;
