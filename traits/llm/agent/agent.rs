@@ -45,8 +45,7 @@ pub fn agent(args: &[Value]) -> Value {
     let model = args.get(3)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-     //   .unwrap_or("gpt-4o-mini")
-        .unwrap_or("gpt-5.3-codex")
+        .unwrap_or("gpt-4o-mini")
         .to_string();
 
     let max_steps = args.get(4)
