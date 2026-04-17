@@ -1,5 +1,13 @@
 use serde_json::Value;
 
+const RESET: &str = "\x1b[0m";
+const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
+const GREEN: &str = "\x1b[32m";
+const YELLOW: &str = "\x1b[33m";
+const MAGENTA: &str = "\x1b[35m";
+const CYAN: &str = "\x1b[36m";
+
 /// CLI formatter for llm.agent — shows the agent's final response text,
 /// token usage, compaction stats, and tool call summary.
 pub fn format_cli(result: &Value) -> String {
@@ -13,8 +21,9 @@ pub fn format_cli(result: &Value) -> String {
     // Final response text
     if let Some(response) = result.get("response").and_then(|v| v.as_str()) {
         if !response.is_empty() {
-            out.push_str(response);
-            if !response.ends_with('\n') {
+            let rendered = render_markdown_for_terminal(response);
+            out.push_str(&rendered);
+            if !rendered.ends_with('\n') {
                 out.push('\n');
             }
         }
@@ -53,6 +62,96 @@ pub fn format_cli(result: &Value) -> String {
                 let status = if ok { "✓" } else { "✗" };
                 out.push_str(&format!("  {} {}\n", status, name));
             }
+        }
+    }
+
+    out
+}
+
+fn render_markdown_for_terminal(text: &str) -> String {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut out = String::new();
+    let mut in_code = false;
+    let mut fence_lang = String::new();
+
+    for raw_line in normalized.lines() {
+        let line = raw_line.trim_end();
+        let trimmed = line.trim_start();
+
+        if trimmed.starts_with("```") {
+            if !in_code {
+                in_code = true;
+                fence_lang = trimmed.trim_start_matches("```").trim().to_string();
+                if !fence_lang.is_empty() {
+                    out.push_str(&format!("{MAGENTA}{BOLD}{} code:{RESET}\n", fence_lang));
+                }
+            } else {
+                in_code = false;
+                fence_lang.clear();
+                out.push('\n');
+            }
+            continue;
+        }
+
+        if in_code {
+            out.push_str(&format!("{DIM}  {}{RESET}\n", line));
+            continue;
+        }
+
+        if trimmed.is_empty() {
+            out.push('\n');
+            continue;
+        }
+
+        if trimmed.starts_with("# ") {
+            out.push_str(&format!("{CYAN}{BOLD}{}{RESET}\n", &trimmed[2..]));
+            continue;
+        }
+        if trimmed.starts_with("## ") {
+            out.push_str(&format!("{CYAN}{BOLD}{}{RESET}\n", &trimmed[3..]));
+            continue;
+        }
+
+        let list_line = if let Some(rest) = trimmed.strip_prefix("- ") {
+            format!("{GREEN}*{RESET} {}", render_inline_code(rest))
+        } else {
+            render_inline_code(trimmed)
+        };
+        out.push_str(&list_line);
+        out.push('\n');
+    }
+
+    out.trim_end_matches('\n').to_string()
+}
+
+fn render_inline_code(line: &str) -> String {
+    let mut out = String::new();
+    let mut in_code = false;
+    let mut buf = String::new();
+
+    for ch in line.chars() {
+        if ch == '`' {
+            if in_code {
+                out.push_str(&format!("{YELLOW}{}{RESET}", buf));
+                buf.clear();
+                in_code = false;
+            } else {
+                if !buf.is_empty() {
+                    out.push_str(&buf);
+                    buf.clear();
+                }
+                in_code = true;
+            }
+            continue;
+        }
+        buf.push(ch);
+    }
+
+    if !buf.is_empty() {
+        if in_code {
+            out.push_str(&format!("{YELLOW}`{}{RESET}", buf));
+        } else {
+            out.push_str(&buf);
         }
     }
 

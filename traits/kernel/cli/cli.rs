@@ -2142,7 +2142,97 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         .and_then(|v| v.as_str())
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(render_markdown_for_terminal)
+}
+
+fn render_markdown_for_terminal(text: &str) -> String {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut out = String::new();
+    let mut in_code = false;
+    let mut fence_lang = String::new();
+
+    for raw_line in normalized.lines() {
+        let line = raw_line.trim_end();
+        let trimmed = line.trim_start();
+
+        if trimmed.starts_with("```") {
+            if !in_code {
+                in_code = true;
+                fence_lang = trimmed.trim_start_matches("```").trim().to_string();
+                if !fence_lang.is_empty() {
+                    out.push_str(&format!("{MAGENTA}{BOLD}{} code:{RESET}\n", fence_lang));
+                }
+            } else {
+                in_code = false;
+                fence_lang.clear();
+                out.push('\n');
+            }
+            continue;
+        }
+
+        if in_code {
+            out.push_str(&format!("{DIM}  {}{RESET}\n", line));
+            continue;
+        }
+
+        if trimmed.is_empty() {
+            out.push('\n');
+            continue;
+        }
+
+        if trimmed.starts_with("# ") {
+            out.push_str(&format!("{CYAN}{BOLD}{}{RESET}\n", &trimmed[2..]));
+            continue;
+        }
+        if trimmed.starts_with("## ") {
+            out.push_str(&format!("{CYAN}{BOLD}{}{RESET}\n", &trimmed[3..]));
+            continue;
+        }
+
+        let list_line = if let Some(rest) = trimmed.strip_prefix("- ") {
+            format!("{GREEN}*{RESET} {}", render_inline_code(rest))
+        } else {
+            render_inline_code(trimmed)
+        };
+        out.push_str(&list_line);
+        out.push('\n');
+    }
+
+    out.trim_end_matches('\n').to_string()
+}
+
+fn render_inline_code(line: &str) -> String {
+    let mut out = String::new();
+    let mut in_code = false;
+    let mut buf = String::new();
+
+    for ch in line.chars() {
+        if ch == '`' {
+            if in_code {
+                out.push_str(&format!("{YELLOW}{}{RESET}", buf));
+                buf.clear();
+                in_code = false;
+            } else {
+                if !buf.is_empty() {
+                    out.push_str(&buf);
+                    buf.clear();
+                }
+                in_code = true;
+            }
+            continue;
+        }
+        buf.push(ch);
+    }
+
+    if !buf.is_empty() {
+        if in_code {
+            out.push_str(&format!("{YELLOW}`{}{RESET}", buf));
+        } else {
+            out.push_str(&buf);
+        }
+    }
+
+    out
 }
 
 fn cat_command(
