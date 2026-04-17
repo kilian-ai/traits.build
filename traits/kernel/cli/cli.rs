@@ -2042,7 +2042,28 @@ fn execute_leaf_command(
     let args = cmd.args[1..].to_vec();
 
     match cmd_name.as_str() {
-        "echo" => args.join(" "),
+        "echo" => {
+            if args.first().map(|a| a.as_str()) == Some("-e") {
+                interpret_escape_sequences(&args[1..].join(" "))
+            } else {
+                args.join(" ")
+            }
+        }
+        "printf" => {
+            if args.is_empty() {
+                String::new()
+            } else {
+                let fmt = interpret_escape_sequences(&args[0]);
+                // Simple printf: replace first %s with each subsequent arg
+                let mut result = fmt;
+                for arg in &args[1..] {
+                    if let Some(pos) = result.find("%s") {
+                        result = format!("{}{}{}", &result[..pos], arg, &result[pos + 2..]);
+                    }
+                }
+                result
+            }
+        }
         "pwd" => cwd.clone(),
         "true" => String::new(),
         "false" => String::new(),
@@ -3032,7 +3053,14 @@ fn lua_command(
     if is_file {
         // Read script from VFS and execute
         match vfs.borrow().read(&path_candidate) {
-            Some(code) => {
+            Some(raw_code) => {
+                // If VFS content has no real newlines but contains literal \n sequences,
+                // unescape them — common when files are created via echo without -e flag
+                let code = if !raw_code.contains('\n') && raw_code.contains("\\n") {
+                    raw_code.replace("\\n", "\n").replace("\\t", "\t")
+                } else {
+                    raw_code
+                };
                 let input = if args.len() > 1 {
                     // Try parsing remaining args as JSON, otherwise pass as string
                     let rest = args[1..].join(" ");
@@ -3338,6 +3366,27 @@ fn parent_dir(path: &str) -> String {
     } else {
         "/".to_string()
     }
+}
+
+fn interpret_escape_sequences(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some('r') => out.push('\r'),
+                Some('\\') => out.push('\\'),
+                Some('0') => out.push('\0'),
+                Some(other) => { out.push('\\'); out.push(other); }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn resolve_vfs_path(cwd: &str, path: &str) -> String {
@@ -3949,7 +3998,7 @@ pub fn tab_completions(prefix: &str, all_paths: &[String]) -> (Vec<String>, Stri
 fn shell_builtin_commands() -> Vec<String> {
     [
         "help", "h", "?", "list", "info", "i", "call", "c", "search", "s", "version", "v", "clear", "cls",
-        "echo", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "sed", "test", "[", "find", "curl", "lua",
+        "echo", "printf", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "sed", "test", "[", "find", "curl", "lua",
         "vi", "ee", "stat", "mkdir", "write", "tee", "rm", "ls", "cd", "chat",
     ]
     .iter()
