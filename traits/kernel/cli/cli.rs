@@ -2038,6 +2038,16 @@ fn execute_leaf_command(
         }
     }
 
+    // Allow users to type `traits <cmd> ...` inside the interactive terminal.
+    // Treat `traits` as a no-op prefix so habitual CLI usage does not trigger
+    // unknown-command LLM fallback.
+    if cmd.args.first().map(|s| s.eq_ignore_ascii_case("traits")).unwrap_or(false) {
+        if cmd.args.len() == 1 {
+            return format_help();
+        }
+        cmd.args.remove(0);
+    }
+
     let cmd_name = cmd.args[0].to_lowercase();
     let args = cmd.args[1..].to_vec();
 
@@ -4343,6 +4353,19 @@ mod tests {
         let plain = strip_ansi(&out);
         assert!(plain.contains("/a/root.txt"));
         assert!(!plain.contains("/a/b/leaf.txt"));
+    }
+
+    #[test]
+    fn traits_prefix_executes_builtin_command() {
+        let backend = MockBackend;
+        let shell = DefaultShell;
+        let vfs = test_vfs();
+        let mut cwd = "/".to_string();
+
+        let _ = exec_line("write test.txt hello", &backend, &shell, &vfs, &mut cwd);
+        let out = exec_line("traits cat test.txt", &backend, &shell, &vfs, &mut cwd);
+        let plain = strip_ansi(&out);
+        assert_eq!(plain.trim(), "hello");
     }
 }
 
