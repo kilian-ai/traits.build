@@ -1,7 +1,7 @@
 [trait]
 description = "Execute a shell command and return stdout, stderr, and exit code (native process on host, CLI session engine on WASM)"
-version = "v260417.014205"
-checksum = "2279827d7b684b03357993044ec35d6c2e7e8ae137e33ba617e888987da8337e"
+version = "v260417.154721"
+checksum = "3c133ec51e14d8565a5b438ed1c7582051dbb952dfc7ff83e5488e6df2e361c7"
 author = "system"
 tags = ["sys", "shell", "exec", "command"]
 

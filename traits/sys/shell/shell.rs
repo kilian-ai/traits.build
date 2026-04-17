@@ -6,6 +6,8 @@ use std::process::Command;
 use std::cell::RefCell;
 #[cfg(target_arch = "wasm32")]
 use crate::wasm_traits::cli::{CliCallBackend, CliExamplesBackend, CliHistoryBackend, CliSession};
+#[cfg(target_arch = "wasm32")]
+use web_sys;
 
 /// sys.shell — execute a shell command and return its output.
 ///
@@ -111,10 +113,25 @@ fn shell_wasm(args: &[Value]) -> Value {
         let session = slot.as_mut().unwrap();
         let backend = WasmShellBackend;
 
+        // Keep this dedicated shell session aligned with the shared persisted VFS.
+        // Without this, sys.shell edits can appear in tool output but not in the
+        // primary terminal session.
+        if let Some(json) = shell_ls_get("traits.pvfs") {
+            session.vfs_load(&json);
+        }
+
         if let Some(dir) = cwd {
             let _ = session.feed(&format!("cd {}\r", dir), &backend);
         }
-        session.feed(&format!("{}\r", command), &backend)
+        let output = session.feed(&format!("{}\r", command), &backend);
+
+        // Persist back so cli_input() in the primary terminal can refresh from it.
+        let dump = session.vfs_dump();
+        if !dump.is_empty() {
+            shell_ls_set("traits.pvfs", &dump);
+        }
+
+        output
     });
     let cleaned = clean_cli_output(&raw);
 
@@ -131,6 +148,18 @@ fn shell_wasm(args: &[Value]) -> Value {
         "stderr": "",
         "note": "WASM shell executed via kernel.cli session engine",
     })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn shell_ls_get(key: &str) -> Option<String> {
+    web_sys::window()?.local_storage().ok()??.get_item(key).ok()?
+}
+
+#[cfg(target_arch = "wasm32")]
+fn shell_ls_set(key: &str, value: &str) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok()).flatten() {
+        let _ = storage.set_item(key, value);
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
