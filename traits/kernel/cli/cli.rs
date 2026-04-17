@@ -142,7 +142,7 @@ pub const VOICE_SENTINEL_END: &str = "\x1b[/VOICE]";
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
 const MAX_HISTORY_ENTRIES: usize = 500;
-const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.vfs, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. Prefer real inspection with sys.shell (ls/find/cat) before claiming something does not exist. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
+const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. For filesystem changes, prefer sys.shell commands (mkdir/ls/cat/find/echo redirection) so results are visible in the active terminal session. Use sys.vfs only when explicitly requested as a storage API. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
 
 struct ChatState {
     agent: String,
@@ -2136,8 +2136,8 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
     let call_args = vec![
         json!(prompt),
         json!(UNKNOWN_CMD_AGENT_SYSTEM),
-        // Empty tools string => llm.agent default toolset (includes sys.vfs + registry helpers).
-        json!(""),
+        // Prefer session-visible tooling in unknown-command fallback.
+        json!("sys.shell,sys.list,sys.registry,kernel.call,sys.call"),
         json!("gpt-4o-mini"),
         json!(12),
         json!("openai_api_key"),
@@ -2157,7 +2157,7 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         let strict_args = vec![
             json!(strict_prompt),
             json!(UNKNOWN_CMD_AGENT_SYSTEM),
-            json!(""),
+            json!("sys.shell,sys.list,sys.registry,kernel.call,sys.call"),
             json!("gpt-4o-mini"),
             json!(14),
             json!("openai_api_key"),
@@ -2231,7 +2231,47 @@ fn format_unknown_agent_activity(out: &Value) -> String {
         line.push_str(&format!(" tools:{}", tools.join(",")));
     }
     line.push_str(RESET);
-    line
+
+    let mut details = String::new();
+    for (idx, tc) in tool_calls.iter().enumerate() {
+        let name = tc
+            .get("trait")
+            .or_else(|| tc.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
+        let args = tc.get("args").cloned().unwrap_or(Value::Null);
+        let args_str = serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
+        let args_short = truncate_for_trace(&args_str, 180);
+        let result = tc.get("result").cloned().unwrap_or(Value::Null);
+        let ok = result.get("ok").and_then(|v| v.as_bool());
+        let status = match ok {
+            Some(true) => format!("{GREEN}ok{RESET}"),
+            Some(false) => format!("{RED}err{RESET}"),
+            None => format!("{YELLOW}?{RESET}"),
+        };
+        let err = result
+            .get("error")
+            .and_then(|v| v.as_str())
+            .map(|s| truncate_for_trace(s, 120));
+        details.push_str(&format!(
+            "\r\n{GRAY}[tool {}]{RESET} {} {} args={}{}",
+            idx + 1,
+            name,
+            status,
+            args_short,
+            err.map(|e| format!(" error={}", e)).unwrap_or_default()
+        ));
+    }
+
+    format!("{}{}", line, details)
+}
+
+fn truncate_for_trace(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max])
+    }
 }
 
 fn render_markdown_for_terminal(text: &str) -> String {
