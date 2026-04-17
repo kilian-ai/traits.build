@@ -2134,7 +2134,30 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         json!("cli-unknown-command"),
     ];
 
-    let out = backend.call("llm.agent", &call_args).ok()?;
+    let mut out = backend.call("llm.agent", &call_args).ok()?;
+    // If the first pass did not use tools for a prompt that clearly needs workspace/state
+    // inspection, retry with a strict tool-first prompt so "can you read docs"-style
+    // requests always attempt sys.vfs/sys.list/sys.registry before answering.
+    if should_force_tool_retry(user_input) && !llm_response_used_tools(&out) {
+        let strict_prompt = format!(
+            "user input in terminal: {}\n\nYou MUST call at least one tool before final answer. For docs/files requests, first inspect workspace state with tools (for example sys.vfs list/read, sys.list, sys.registry). Then answer based on actual tool results.",
+            user_input
+        );
+        let strict_args = vec![
+            json!(strict_prompt),
+            json!(UNKNOWN_CMD_AGENT_SYSTEM),
+            json!(""),
+            json!("gpt-4o-mini"),
+            json!(14),
+            json!("openai_api_key"),
+            json!("full"),
+            json!("cli-unknown-command"),
+        ];
+        if let Ok(retry_out) = backend.call("llm.agent", &strict_args) {
+            out = retry_out;
+        }
+    }
+
     if !out.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
         return None;
     }
@@ -2144,6 +2167,24 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .map(render_markdown_for_terminal)
+}
+
+fn llm_response_used_tools(out: &Value) -> bool {
+    out.get("tool_calls")
+        .and_then(|v| v.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false)
+}
+
+fn should_force_tool_retry(user_input: &str) -> bool {
+    let s = user_input.to_lowercase();
+    let has_subject = ["doc", "docs", "file", "files", "directory", "folder", "trait", "traits", "workspace"]
+        .iter()
+        .any(|k| s.contains(k));
+    let has_action = ["read", "show", "see", "list", "find", "what", "which", "where", "open"]
+        .iter()
+        .any(|k| s.contains(k));
+    has_subject || has_action
 }
 
 fn render_markdown_for_terminal(text: &str) -> String {
