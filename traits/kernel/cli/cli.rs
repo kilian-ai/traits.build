@@ -2043,11 +2043,14 @@ fn execute_leaf_command(
 
     match cmd_name.as_str() {
         "echo" => {
-            if args.first().map(|a| a.as_str()) == Some("-e") {
-                interpret_escape_sequences(&args[1..].join(" "))
-            } else {
-                args.join(" ")
-            }
+            // Always interpret escape sequences (\n, \t, etc.) — this is a semantic
+            // shell, not POSIX. -e flag accepted for compatibility but is a no-op.
+            // -n suppresses trailing newline (handled by redirect layer, not here).
+            let filtered: Vec<&str> = args.iter()
+                .map(|a| a.as_str())
+                .filter(|a| *a != "-e" && *a != "-n")
+                .collect();
+            interpret_escape_sequences(&filtered.join(" "))
         }
         "printf" => {
             if args.is_empty() {
