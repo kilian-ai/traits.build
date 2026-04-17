@@ -458,6 +458,64 @@ async function createTerminal(mountEl, opts = {}) {
                         }
                         // Non-streaming path (fallback)
                         term.write('\r\x1b[K'); // Clear progress line
+                        if (p === 'llm.agent' && res.ok && res.result && typeof res.result === 'object') {
+                            const agent = res.result;
+                            const toolCalls = Array.isArray(agent.tool_calls) ? agent.tool_calls : [];
+                            const truncate = (s, max = 1200) => {
+                                const text = String(s || '');
+                                return text.length <= max ? text : (text.slice(0, max) + '…');
+                            };
+                            const extractToolOutput = (toolResult) => {
+                                if (!toolResult || typeof toolResult !== 'object') return '';
+                                if (typeof toolResult.stdout === 'string' && toolResult.stdout.trim()) return toolResult.stdout;
+                                if (typeof toolResult.content === 'string' && toolResult.content.trim()) return toolResult.content;
+                                if (typeof toolResult.result === 'string' && toolResult.result.trim()) return toolResult.result;
+                                if (toolResult.result && typeof toolResult.result === 'object') {
+                                    try { return JSON.stringify(toolResult.result, null, 2); } catch (_) {}
+                                }
+                                try { return JSON.stringify(toolResult, null, 2); } catch (_) { return String(toolResult); }
+                            };
+                            const typeOut = async (text) => {
+                                const src = String(text || '');
+                                const parts = src.split(/(\s+)/).filter(Boolean);
+                                for (const part of parts) {
+                                    term.write(part.replace(/\n/g, '\r\n'));
+                                    // Progressive output in WASM terminal even without SSE.
+                                    await new Promise(r => setTimeout(r, 6));
+                                }
+                            };
+
+                            // Tool call trace in chronological order.
+                            for (let i = 0; i < toolCalls.length; i++) {
+                                const tc = toolCalls[i] || {};
+                                const name = tc.trait || tc.name || 'tool';
+                                const ok = tc.result && typeof tc.result === 'object' && typeof tc.result.ok === 'boolean'
+                                    ? tc.result.ok : null;
+                                const status = ok === true ? '\x1b[32mok\x1b[0m' : (ok === false ? '\x1b[31merr\x1b[0m' : '\x1b[33m?\x1b[0m');
+                                const argsText = truncate(JSON.stringify(tc.args ?? {}), 220);
+                                term.write(`\x1b[90m[tool ${i + 1}]\x1b[0m ${name} ${status} args=${argsText}\r\n`);
+
+                                const outputText = truncate(extractToolOutput(tc.result), 1200);
+                                if (outputText && outputText.trim()) {
+                                    term.write(`\x1b[90m[tool ${i + 1} output]\x1b[0m\r\n`);
+                                    term.write(outputText.replace(/\n/g, '\r\n'));
+                                    if (!outputText.endsWith('\n')) term.write('\r\n');
+                                }
+                            }
+
+                            const responseText = typeof agent.response === 'string' ? agent.response : '';
+                            if (responseText) {
+                                await typeOut(responseText);
+                                if (!responseText.endsWith('\n')) term.write('\r\n');
+                            }
+
+                            const compacted = Number(agent.compacted_messages || 0);
+                            const steps = Number(agent.step_count || 0);
+                            term.write(`\x1b[90m[activity] steps:${steps} tool_calls:${toolCalls.length} compacted:${compacted}\x1b[0m\r\n`);
+                            storeChatResponse(responseText);
+                            term.write(returnPrompt);
+                            return;
+                        }
                         if (res.ok && res.result !== undefined) {
                             // Try WASM CLI formatter first, fall back to JSON
                             let text = '';

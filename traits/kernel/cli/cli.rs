@@ -2215,59 +2215,38 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         return None;
     }
 
+    let _ = backend;
     let cfg = load_unknown_cmd_config();
 
-    let prompt = format!(
-        "user input in terminal: {}\n\nInterpret this as either: (1) mistyped command to correct, or (2) natural language request to solve. Use tools to check real state when relevant. For path-like requests in WASM terminal, normalize leading slash paths to VFS paths (example: /docs -> docs). Use sys.shell for ls/find/cat checks before concluding missing paths. Only suggest 'help' when truly ambiguous.",
+    let strict_prompt = format!(
+        "user input in terminal: {}\n\nInterpret this as either: (1) mistyped command to correct, or (2) natural language request to solve. You MUST use tools when the request touches files/docs/workspace. In WASM terminal, normalize leading slash paths to VFS-relative paths (example: /docs -> docs). Prefer sys.shell for ls/find/cat and filesystem edits so results are visible in the active terminal session. If truly ambiguous, suggest help with concrete command options.",
         user_input
     );
 
-    let call_args = vec![
-        json!(prompt),
+    let agent_args = vec![
+        json!(strict_prompt),
         json!(UNKNOWN_CMD_AGENT_SYSTEM),
         json!(cfg.tools),
         json!(cfg.model),
-        json!(cfg.max_steps),
+        json!(cfg.retry_max_steps),
         json!(cfg.api_secret),
         json!("full"),
         json!(cfg.session_id),
     ];
 
-    let mut out = backend.call("llm.agent", &call_args).ok()?;
-    // If the first pass did not use tools for a prompt that clearly needs workspace/state
-    // inspection, retry with a strict tool-first prompt so "can you read docs"-style
-    // requests always attempt sys.vfs/sys.list/sys.registry before answering.
-    if should_force_tool_retry(user_input) && !llm_response_used_tools(&out) {
-        let strict_prompt = format!(
-            "user input in terminal: {}\n\nYou MUST call at least one tool before final answer. For docs/files requests in WASM terminal, first inspect workspace state with tools (prefer sys.shell with ls/find/cat). Normalize leading slash paths to VFS paths (example: /docs -> docs). Then answer based on actual tool results.",
-            user_input
-        );
-        let strict_args = vec![
-            json!(strict_prompt),
-            json!(UNKNOWN_CMD_AGENT_SYSTEM),
-            json!(cfg.tools),
-            json!(cfg.model),
-            json!(cfg.retry_max_steps),
-            json!(cfg.api_secret),
-            json!("full"),
-            json!(cfg.session_id),
-        ];
-        if let Ok(retry_out) = backend.call("llm.agent", &strict_args) {
-            out = retry_out;
-        }
-    }
+    let sentinel = json!({
+        "p": "llm.agent",
+        "a": agent_args,
+        "rp": PROMPT,
+        "stream": true,
+        "unknown_agent": true,
+    });
 
-    if !out.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
-        return None;
-    }
-
-    let response = out.get("response")
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(render_markdown_for_terminal)?;
-
-    Some(format!("{}\r\n{}", response, format_unknown_agent_activity(&out)))
+    let payload = serde_json::to_string(&sentinel).ok()?;
+    Some(format!(
+        "{GRAY}thinking…{RESET}\r\n{REST_SENTINEL_START}{}{REST_SENTINEL_END}",
+        payload
+    ))
 }
 
 fn llm_response_used_tools(out: &Value) -> bool {
