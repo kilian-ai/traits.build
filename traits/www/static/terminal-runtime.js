@@ -202,6 +202,71 @@ let Terminal, FitAddon, WebLinksAddon, SerializeAddon;
  */
 async function createTerminal(mountEl, opts = {}) {
 
+    const findFirstJsonValue = (text) => {
+        if (!text) return null;
+        const src = String(text);
+        let start = -1;
+        let open = '';
+        let close = '';
+        for (let i = 0; i < src.length; i += 1) {
+            const ch = src[i];
+            if (ch === '{' || ch === '[') {
+                start = i;
+                open = ch;
+                close = ch === '{' ? '}' : ']';
+                break;
+            }
+        }
+        if (start < 0) return null;
+
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+        for (let i = start; i < src.length; i += 1) {
+            const ch = src[i];
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (ch === '\\') {
+                    escaped = true;
+                } else if (ch === '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (ch === '"') {
+                inString = true;
+                continue;
+            }
+            if (ch === open) {
+                depth += 1;
+                continue;
+            }
+            if (ch === close) {
+                depth -= 1;
+                if (depth === 0) {
+                    return src.slice(start, i + 1);
+                }
+            }
+        }
+        return null;
+    };
+
+    const parseSentinelPayload = (payload) => {
+        const raw = String(payload || '');
+        const direct = raw.trim();
+        if (direct) {
+            try {
+                return JSON.parse(direct);
+            } catch (_) {}
+        }
+        const extracted = findFirstJsonValue(raw);
+        if (extracted) {
+            return JSON.parse(extracted);
+        }
+        throw new Error('No JSON object found in REST sentinel payload');
+    };
+
     const extractRestSentinel = (output) => {
         const primary = output.match(REST_RE);
         if (primary) {
@@ -433,7 +498,7 @@ async function createTerminal(mountEl, opts = {}) {
             // Supports @target routing: sentinel JSON may contain "t" field (rest/relay/helper/wasm)
             // Chat mode: "rp" = return prompt (instead of PROMPT), "sid" = session ID for VFS storage
                 try {
-                    const { p, a, t, rp, sid, stream: useStream } = JSON.parse(restSentinel.payload);
+                    const { p, a, t, rp, sid, stream: useStream } = parseSentinelPayload(restSentinel.payload);
                     const returnPrompt = rp || PROMPT;
                     restPending = true;
                     const callOpts = t ? { force: t } : {};
