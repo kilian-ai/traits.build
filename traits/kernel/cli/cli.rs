@@ -142,7 +142,7 @@ pub const VOICE_SENTINEL_END: &str = "\x1b[/VOICE]";
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
 const MAX_HISTORY_ENTRIES: usize = 500;
-const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.vfs, sys.list, sys.registry, kernel.call). If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
+const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.vfs, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. Prefer real inspection with sys.shell (ls/find/cat) before claiming something does not exist. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
 
 struct ChatState {
     agent: String,
@@ -2118,7 +2118,7 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
     }
 
     let prompt = format!(
-        "user input in terminal: {}\n\nInterpret this as either: (1) mistyped command to correct, or (2) natural language request to solve. Use tools to check real state when relevant. Only suggest 'help' when truly ambiguous.",
+        "user input in terminal: {}\n\nInterpret this as either: (1) mistyped command to correct, or (2) natural language request to solve. Use tools to check real state when relevant. For path-like requests in WASM terminal, normalize leading slash paths to VFS paths (example: /docs -> docs). Use sys.shell for ls/find/cat checks before concluding missing paths. Only suggest 'help' when truly ambiguous.",
         user_input
     );
 
@@ -2140,7 +2140,7 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
     // requests always attempt sys.vfs/sys.list/sys.registry before answering.
     if should_force_tool_retry(user_input) && !llm_response_used_tools(&out) {
         let strict_prompt = format!(
-            "user input in terminal: {}\n\nYou MUST call at least one tool before final answer. For docs/files requests, first inspect workspace state with tools (for example sys.vfs list/read, sys.list, sys.registry). Then answer based on actual tool results.",
+            "user input in terminal: {}\n\nYou MUST call at least one tool before final answer. For docs/files requests in WASM terminal, first inspect workspace state with tools (prefer sys.shell with ls/find/cat). Normalize leading slash paths to VFS paths (example: /docs -> docs). Then answer based on actual tool results.",
             user_input
         );
         let strict_args = vec![
@@ -2162,11 +2162,13 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         return None;
     }
 
-    out.get("response")
+    let response = out.get("response")
         .and_then(|v| v.as_str())
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .map(render_markdown_for_terminal)
+        .map(render_markdown_for_terminal)?;
+
+    Some(format!("{}\r\n{}", response, format_unknown_agent_activity(&out)))
 }
 
 fn llm_response_used_tools(out: &Value) -> bool {
@@ -2185,6 +2187,40 @@ fn should_force_tool_retry(user_input: &str) -> bool {
         .iter()
         .any(|k| s.contains(k));
     has_subject || has_action
+}
+
+fn format_unknown_agent_activity(out: &Value) -> String {
+    let step_count = out.get("step_count").and_then(|v| v.as_u64()).unwrap_or(0);
+    let compacted = out
+        .get("compacted_messages")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let tool_calls = out
+        .get("tool_calls")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut tools: Vec<String> = Vec::new();
+    for tc in &tool_calls {
+        if let Some(name) = tc.get("trait").and_then(|v| v.as_str()) {
+            if !tools.iter().any(|t| t == name) {
+                tools.push(name.to_string());
+            }
+        }
+    }
+
+    let mut line = format!(
+        "{GRAY}[activity] steps:{} tool_calls:{} compacted:{}",
+        step_count,
+        tool_calls.len(),
+        compacted
+    );
+    if !tools.is_empty() {
+        line.push_str(&format!(" tools:{}", tools.join(",")));
+    }
+    line.push_str(RESET);
+    line
 }
 
 fn render_markdown_for_terminal(text: &str) -> String {
