@@ -1301,6 +1301,7 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **kernel.cli markdown rendering for LLM text:** unknown-command `llm.agent` fallback and `llm.agent` CLI formatter both normalize markdown/code-fence output into ANSI-styled terminal text (headings, bullets, inline code, fenced code) so WASM and native terminal output avoids staircase indentation artifacts.
 - **kernel.cli wrapped-input redraw:** for normal/interactive typing at end-of-line, stream appended chars directly instead of full `refresh_line()` redraw. This avoids duplicated-line artifacts when prompt input wraps to overflow lines in WASM/native terminals.
 - **kernel.cli `traits` prefix normalization:** interactive shell now treats leading `traits` as a no-op prefix (`traits cat foo` → `cat foo`) so users can reuse CLI-style commands without triggering unknown-command fallback.
+- **www.terminal unknown-command retry:** when a WASM unknown-command `llm.agent` request about files/docs/workspace returns zero tool calls, terminal.js automatically retries once with a stricter prompt that requires at least one real tool call before answering.
 - **test_runner live-LLM policy:** `traits test_runner '*'` should stay fast and non-billable by default. Feature suites that hit live OpenAI or other hosted LLMs should set top-level `skip = true` with a `skip_reason`, and be run manually by exact trait/path when validating integrations.
 
 ## Trait .trait.toml Template
