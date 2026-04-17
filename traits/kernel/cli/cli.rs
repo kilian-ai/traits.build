@@ -2198,7 +2198,13 @@ fn render_markdown_for_terminal(text: &str) -> String {
         out.push('\n');
     }
 
-    out.trim_end_matches('\n').to_string()
+    to_crlf(out.trim_end_matches('\n'))
+}
+
+fn to_crlf(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', "\r\n")
 }
 
 fn render_inline_code(line: &str) -> String {
