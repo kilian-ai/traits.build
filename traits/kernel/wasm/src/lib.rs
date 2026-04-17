@@ -661,6 +661,21 @@ where
 #[wasm_bindgen]
 pub fn cli_input(data: &str) -> String {
     with_session(|session| {
+        // Keep the active CLI session in sync with persistent VFS so writes coming
+        // from other trait paths (sys.vfs, sys.shell helper sessions) are visible
+        // immediately in `ls/cat` without requiring a page reload.
+        if let Some(json) = ls_get("traits.pvfs") {
+            session.vfs_load(&json);
+        } else {
+            let persisted = PERSISTENT_VFS.with(|cell| {
+                cell.borrow().as_ref().map(|vfs| vfs.dump())
+            });
+            if let Some(json) = persisted {
+                if !json.is_empty() {
+                    session.vfs_load(&json);
+                }
+            }
+        }
         session.feed(data, &WasmCliBackend)
     })
 }

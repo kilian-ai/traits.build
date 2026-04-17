@@ -9,8 +9,22 @@ fn session_store() -> &'static Mutex<HashMap<String, Vec<Value>>> {
 }
 
 fn load_session(session_id: &str) -> Option<Vec<Value>> {
-    let guard = session_store().lock().ok()?;
-    guard.get(session_id).cloned()
+    // 1) Fast in-process cache
+    if let Ok(guard) = session_store().lock() {
+        if let Some(cached) = guard.get(session_id) {
+            return Some(cached.clone());
+        }
+    }
+
+    // 2) Durable VFS-backed session memory (visible from terminal VFS)
+    let path = session_vfs_path(session_id);
+    let raw = kernel_logic::platform::vfs_read(&path)?;
+    let parsed = serde_json::from_str::<Vec<Value>>(&raw).ok()?;
+
+    if let Ok(mut guard) = session_store().lock() {
+        guard.insert(session_id.to_string(), parsed.clone());
+    }
+    Some(parsed)
 }
 
 fn save_session(session_id: &str, mut messages: Vec<Value>) {
@@ -22,6 +36,32 @@ fn save_session(session_id: &str, mut messages: Vec<Value>) {
     }
     if let Ok(mut guard) = session_store().lock() {
         guard.insert(session_id.to_string(), messages);
+    }
+
+    let path = session_vfs_path(session_id);
+    if let Ok(json) = serde_json::to_string(&session_store().lock().ok().and_then(|g| g.get(session_id).cloned()).unwrap_or_default()) {
+        kernel_logic::platform::vfs_write(&path, &json);
+    }
+}
+
+fn session_vfs_path(session_id: &str) -> String {
+    // Stored in VFS so users can inspect chat memory directly from terminal.
+    format!("agent_memory/{}.json", sanitize_session_id(session_id))
+}
+
+fn sanitize_session_id(session_id: &str) -> String {
+    let mut out = String::with_capacity(session_id.len());
+    for ch in session_id.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        "default".to_string()
+    } else {
+        out
     }
 }
 
