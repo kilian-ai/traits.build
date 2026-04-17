@@ -2,6 +2,11 @@ use serde_json::{json, Value};
 #[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
 
+#[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
+#[cfg(target_arch = "wasm32")]
+use crate::wasm_traits::cli::{CliCallBackend, CliExamplesBackend, CliHistoryBackend, CliSession};
+
 /// sys.shell — execute a shell command and return its output.
 ///
 /// Runs the command via `sh -c` so pipes, redirects, and shell builtins work.
@@ -95,13 +100,22 @@ fn shell_wasm(args: &[Value]) -> Value {
 
     let cwd = args.get(1).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
 
-    // In WASM we execute through the shared CLI session engine.
-    // This keeps behavior aligned with the terminal shell builtins (ls/cd/cat/find/...)
-    // and works without native process spawning.
-    if let Some(dir) = cwd {
-        let _ = crate::cli_input(&format!("cd {}\r", dir));
-    }
-    let raw = crate::cli_input(&format!("{}\r", command));
+    // Use a dedicated CLI session to avoid re-entrant borrows of the terminal's
+    // primary CLI_SESSION (which can happen when llm.agent -> sys.shell is called
+    // while the terminal itself is already executing a command).
+    let raw = SHELL_SESSION.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(CliSession::new());
+        }
+        let session = slot.as_mut().unwrap();
+        let backend = WasmShellBackend;
+
+        if let Some(dir) = cwd {
+            let _ = session.feed(&format!("cd {}\r", dir), &backend);
+        }
+        session.feed(&format!("{}\r", command), &backend)
+    });
     let cleaned = clean_cli_output(&raw);
 
     let looks_error = cleaned.contains("Error:")
@@ -118,6 +132,63 @@ fn shell_wasm(args: &[Value]) -> Value {
         "note": "WASM shell executed via kernel.cli session engine",
     })
 }
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static SHELL_SESSION: RefCell<Option<CliSession>> = RefCell::new(None);
+}
+
+#[cfg(target_arch = "wasm32")]
+struct WasmShellBackend;
+
+#[cfg(target_arch = "wasm32")]
+impl CliCallBackend for WasmShellBackend {
+    fn call(&self, path: &str, args: &[Value]) -> Result<Value, String> {
+        kernel_logic::platform::dispatch(path, args)
+            .ok_or_else(|| format!("Trait not found: {}", path))
+    }
+
+    fn list_all(&self) -> Vec<Value> {
+        kernel_logic::platform::registry_all()
+    }
+
+    fn get_info(&self, path: &str) -> Option<Value> {
+        kernel_logic::platform::registry_detail(path)
+    }
+
+    fn search(&self, query: &str) -> Vec<Value> {
+        let q = query.to_lowercase();
+        kernel_logic::platform::registry_all()
+            .into_iter()
+            .filter(|entry| {
+                let path = entry.get("path").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+                let desc = entry
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                path.contains(&q) || desc.contains(&q)
+            })
+            .collect()
+    }
+
+    fn all_paths(&self) -> Vec<String> {
+        kernel_logic::platform::registry_all()
+            .into_iter()
+            .filter_map(|entry| entry.get("path").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .collect()
+    }
+
+    fn version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl CliHistoryBackend for WasmShellBackend {}
+
+#[cfg(target_arch = "wasm32")]
+impl CliExamplesBackend for WasmShellBackend {}
 
 #[cfg(target_arch = "wasm32")]
 fn clean_cli_output(raw: &str) -> String {
