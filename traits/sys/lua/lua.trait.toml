@@ -1,0 +1,22 @@
+[trait]
+description = "Execute Lua scripts via Fengari (WASM) or mlua (native)"
+version = "v260417.033504"
+checksum = "6b84213237fc7ec24f6451c21e1be74162f5d0d7f5d77d458e2eb4a35c780e4b"
+author = "system"
+tags = ["sys", "lua", "runtime", "scripting"]
+
+[signature]
+params = [
+  { name = "code", type = "string", description = "Lua source code to run", required = true, example = "print('hello from lua')" },
+  { name = "input", type = "any", description = "Optional JSON input exposed as __traits_input_json and input global", optional = true, example = { user = "alice", score = 42 } },
+]
+
+[signature.returns]
+type = "map"
+description = "{ok, stdout, stderr, result, error?}"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "lua"
+wasm = true

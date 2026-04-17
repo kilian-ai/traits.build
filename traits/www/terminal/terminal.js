@@ -18,6 +18,7 @@ const CLEAR_SENTINEL = _sentinels.clear || '\x1b[CLEAR]';
 const REST_RE = new RegExp(`${(_sentinels.restOpen || '\\x1b\\[REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.restClose || '\\x1b\\[/REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 const WEBLLM_RE = new RegExp(`${(_sentinels.webllmOpen || '\\x1b\\[WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.webllmClose || '\\x1b\\[/WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 const VOICE_RE = new RegExp(`${(_sentinels.voiceOpen || '\\x1b\\[VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.voiceClose || '\\x1b\\[/VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+const LUA_RE = new RegExp(`${(_sentinels.luaOpen || '\\x1b\\[LUA\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.luaClose || '\\x1b\\[/LUA\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 const REST_RE_PLAIN = /\[REST\]([\s\S]*?)\[\/REST\]/;
 // Degraded pattern seen when ESC CSI is consumed by terminal as control sequence.
 const REST_RE_DEGRADED = /EST\]([\s\S]*?)EST\]/;
@@ -124,6 +125,61 @@ export async function createTerminal(mountEl, opts = {}) {
             return { payload: degraded[1], visible: output.replace(REST_RE_DEGRADED, '') };
         }
         return null;
+    };
+
+    // ── Lua helpers ──
+    const parseLuaJson = (raw) => {
+        const text = String(raw || '').trim();
+        if (!text) return {};
+        try { return JSON.parse(text); } catch (_) {}
+        const extracted = findFirstJsonValue(text);
+        if (extracted) { try { return JSON.parse(extracted); } catch (_) {} }
+        return {};
+    };
+
+    const unwrapResult = (res) => {
+        if (res && typeof res === 'object' && Object.prototype.hasOwnProperty.call(res, 'result')) {
+            return res.result;
+        }
+        return res;
+    };
+
+    const readVfsText = async (path) => {
+        if (!activeSdk) throw new Error('SDK unavailable');
+        const res = await activeSdk.call('sys.vfs', ['read', path], { force: 'wasm' });
+        const data = unwrapResult(res);
+        if (!res?.ok || !data?.ok) {
+            throw new Error(data?.error || res?.error || `failed to read ${path}`);
+        }
+        return String(data.content || '');
+    };
+
+    const runLuaCode = async (code, input) => {
+        if (!activeSdk) return { ok: false, error: 'SDK unavailable' };
+        const res = await activeSdk.call('sys.lua', [String(code || ''), input || {}], { force: 'wasm' });
+        if (!res?.ok) return { ok: false, error: res?.error || 'sys.lua call failed' };
+        return unwrapResult(res) || { ok: false, error: 'empty lua result' };
+    };
+
+    const printLuaOutcome = (outcome) => {
+        if (!outcome || typeof outcome !== 'object') {
+            term.write('\x1b[31mLua error: invalid result\x1b[0m\r\n');
+            return;
+        }
+        const stdout = Array.isArray(outcome.stdout) ? outcome.stdout : [];
+        const stderr = Array.isArray(outcome.stderr) ? outcome.stderr : [];
+        stdout.forEach((line) => term.write(String(line) + '\r\n'));
+        stderr.forEach((line) => term.write(`\x1b[31m${String(line)}\x1b[0m\r\n`));
+        if (outcome.ok === false) {
+            term.write(`\x1b[31mLua error: ${String(outcome.error || 'unknown error')}\x1b[0m\r\n`);
+            return;
+        }
+        if (!stdout.length && outcome.result !== undefined && outcome.result !== null && outcome.result !== '') {
+            const text = typeof outcome.result === 'string'
+                ? outcome.result
+                : JSON.stringify(outcome.result, null, 2);
+            term.write(text + '\r\n');
+        }
     };
 
     // ── Load xterm.js ──
@@ -581,6 +637,38 @@ export async function createTerminal(mountEl, opts = {}) {
                 } catch (e) {
                     term.write(`\x1b[31mWebLLM parse error: ${e.message}\x1b[0m\r\n`);
                     term.write(PROMPT);
+                    restPending = false;
+                    requestAnimationFrame(saveState);
+                }
+                return;
+            }
+
+            // Check for Lua dispatch sentinel
+            const luaMatch = output.match(LUA_RE);
+            if (luaMatch) {
+                const visible = output.replace(LUA_RE, '');
+                if (visible) term.write(visible);
+                try {
+                    const payload = parseLuaJson(luaMatch[1]);
+                    restPending = true;
+                    const payloadObj = payload && typeof payload === 'object' ? payload : {};
+                    let outcome;
+                    const code = payloadObj.code || '';
+                    const path = payloadObj.path || '';
+                    if (code) {
+                        outcome = await runLuaCode(code, payloadObj.input || {});
+                    } else if (path) {
+                        const script = await readVfsText(path);
+                        outcome = await runLuaCode(script, payloadObj.input || {});
+                    } else {
+                        throw new Error('missing lua code or script path');
+                    }
+                    printLuaOutcome(outcome);
+                    term.write(PROMPT);
+                } catch (e) {
+                    term.write(`\x1b[31mLua error: ${e && e.message ? e.message : String(e)}\x1b[0m\r\n`);
+                    term.write(PROMPT);
+                } finally {
                     restPending = false;
                     requestAnimationFrame(saveState);
                 }

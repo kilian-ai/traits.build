@@ -139,6 +139,9 @@ pub const CHAT_SENTINEL_END: &str = "\x1b[/CHAT]";
 pub const VOICE_SENTINEL_START: &str = "\x1b[VOICE]";
 pub const VOICE_SENTINEL_END: &str = "\x1b[/VOICE]";
 
+pub const LUA_SENTINEL_START: &str = "\x1b[LUA]";
+pub const LUA_SENTINEL_END: &str = "\x1b[/LUA]";
+
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
 const MAX_HISTORY_ENTRIES: usize = 500;
@@ -597,9 +600,9 @@ impl CliSession {
                 if result.contains(CLEAR_SENTINEL) {
                     return format!("{CLEAR_SENTINEL}{PROMPT}");
                 }
-                if result.contains(REST_SENTINEL_START) || result.contains(WEBLLM_SENTINEL_START) {
+                if result.contains(REST_SENTINEL_START) || result.contains(WEBLLM_SENTINEL_START) || result.contains(LUA_SENTINEL_START) {
                     out.push_str(&result);
-                    return out; // No prompt — JS handles async REST/WebLLM
+                    return out; // No prompt — JS handles async REST/WebLLM/Lua
                 }
                 if !result.is_empty() {
                     out.push_str(&result);
@@ -881,9 +884,10 @@ impl CliSession {
 
                     if result.contains(REST_SENTINEL_START)
                         || result.contains(WEBLLM_SENTINEL_START)
+                        || result.contains(LUA_SENTINEL_START)
                     {
                         out.push_str(&result);
-                        return out; // No prompt — JS handles async REST/WebLLM
+                        return out; // No prompt — JS handles async REST/WebLLM/Lua
                     }
                     if !result.is_empty() && !result.contains(CLEAR_SENTINEL) {
                         out.push_str(&result);
@@ -2055,6 +2059,8 @@ fn execute_leaf_command(
         "vi" | "ee" => editor_stub_command(&cmd_name, &args, stdin_input, vfs, cwd),
         "stat" => stat_command(&args, vfs, cwd),
 
+        "lua" => lua_command(&args, vfs, cwd, backend),
+
         "mkdir" => mkdir_command(&args, vfs, cwd),
 
         "write" | "tee" => {
@@ -3007,6 +3013,131 @@ fn curl_command(
     }
 }
 
+fn lua_command(
+    args: &[String],
+    vfs: &RefCell<Box<dyn Vfs>>,
+    cwd: &str,
+    _backend: &dyn CliCallBackend,
+) -> String {
+    if args.is_empty() {
+        return format!("{RED}Usage: lua <script.lua | inline-code>{RESET}");
+    }
+
+    let first = &args[0];
+
+    // Check if first arg looks like a VFS path (ends in .lua or exists in VFS)
+    let path_candidate = resolve_vfs_path(cwd, first);
+    let is_file = first.ends_with(".lua") || vfs.borrow().read(&path_candidate).is_some();
+
+    if is_file {
+        // Read script from VFS and execute
+        match vfs.borrow().read(&path_candidate) {
+            Some(code) => {
+                let input = if args.len() > 1 {
+                    // Try parsing remaining args as JSON, otherwise pass as string
+                    let rest = args[1..].join(" ");
+                    serde_json::from_str::<serde_json::Value>(&rest)
+                        .unwrap_or_else(|_| serde_json::json!(rest))
+                } else {
+                    serde_json::json!({})
+                };
+                // On WASM: emit sentinel for terminal.js to handle via Fengari bridge
+                // On native: call sys.lua directly via dispatch
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let payload = serde_json::json!({
+                        "code": code,
+                        "input": input,
+                    });
+                    return format!("{LUA_SENTINEL_START}{}{LUA_SENTINEL_END}", payload);
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let result = kernel_logic::platform::dispatch(
+                        "sys.lua",
+                        &[serde_json::json!(code), input],
+                    );
+                    return format_lua_result(result);
+                }
+            }
+            None => {
+                return format!("{RED}lua: {}: file not found{RESET}", first);
+            }
+        }
+    }
+
+    // Inline code execution: join all args as Lua code
+    let code = args.join(" ");
+    #[cfg(target_arch = "wasm32")]
+    {
+        let payload = serde_json::json!({
+            "code": code,
+            "input": {},
+        });
+        return format!("{LUA_SENTINEL_START}{}{LUA_SENTINEL_END}", payload);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let result = kernel_logic::platform::dispatch(
+            "sys.lua",
+            &[serde_json::json!(code), serde_json::json!({})],
+        );
+        format_lua_result(result)
+    }
+}
+
+#[allow(dead_code)]
+fn format_lua_result(result: Option<serde_json::Value>) -> String {
+    let val = match result {
+        Some(v) => v,
+        None => return format!("{RED}lua: sys.lua trait not available{RESET}"),
+    };
+
+    let ok = val.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    let mut out = String::new();
+
+    if let Some(stdout) = val.get("stdout").and_then(|v| v.as_array()) {
+        for line in stdout {
+            if let Some(s) = line.as_str() {
+                out.push_str(s);
+                out.push_str("\r\n");
+            }
+        }
+    }
+
+    if let Some(stderr) = val.get("stderr").and_then(|v| v.as_array()) {
+        for line in stderr {
+            if let Some(s) = line.as_str() {
+                out.push_str(&format!("{RED}{s}{RESET}\r\n"));
+            }
+        }
+    }
+
+    if !ok {
+        if let Some(err) = val.get("error").and_then(|v| v.as_str()) {
+            out.push_str(&format!("{RED}lua error: {err}{RESET}\r\n"));
+        }
+    } else if out.is_empty() {
+        // Show result if no stdout was produced
+        if let Some(result) = val.get("result") {
+            if !result.is_null() {
+                let text = match result {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                out.push_str(&text);
+                out.push_str("\r\n");
+            }
+        }
+    }
+
+    // Trim trailing CRLF since caller adds one
+    if out.ends_with("\r\n") {
+        out.truncate(out.len() - 2);
+    }
+    out
+}
+
 fn editor_stub_command(
     editor: &str,
     args: &[String],
@@ -3472,6 +3603,7 @@ fn format_help() -> String {
     s.push_str(&format!("  {GREEN}test{RESET}/{GREEN}[ ... ]{RESET}              Shell-style test expressions\r\n"));
     s.push_str(&format!("  {GREEN}find{RESET} {GRAY}[path] [-name P] [-type f|d] [-mindepth N] [-maxdepth N]{RESET}\r\n"));
     s.push_str(&format!("  {GREEN}curl{RESET} {GRAY}[opts] <url>{RESET}         HTTP calls via sys.call\r\n"));
+    s.push_str(&format!("  {GREEN}lua{RESET} {GRAY}<script.lua | code>{RESET}   Run Lua from VFS file or inline code\r\n"));
     s.push_str(&format!("  {GREEN}vi{RESET}/{GREEN}ee{RESET} {GRAY}[-a] <file> [text]{RESET}  Save/append text or preview file\r\n"));
     s.push_str(&format!("  {GRAY}cmd1 && cmd2{RESET}              Run cmd2 only if cmd1 succeeded\r\n"));
     s.push_str(&format!("  {GRAY}cmd1 || cmd2{RESET}              Run cmd2 only if cmd1 failed\r\n"));
@@ -3817,7 +3949,7 @@ pub fn tab_completions(prefix: &str, all_paths: &[String]) -> (Vec<String>, Stri
 fn shell_builtin_commands() -> Vec<String> {
     [
         "help", "h", "?", "list", "info", "i", "call", "c", "search", "s", "version", "v", "clear", "cls",
-        "echo", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "sed", "test", "[", "find", "curl",
+        "echo", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "sed", "test", "[", "find", "curl", "lua",
         "vi", "ee", "stat", "mkdir", "write", "tee", "rm", "ls", "cd", "chat",
     ]
     .iter()
@@ -3836,7 +3968,7 @@ fn should_complete_vfs_paths(cmd: &str, parts: &[String], ends_space: bool) -> b
 
     match cmd {
         // first-arg path commands
-        "ls" | "cd" | "find" | "mkdir" | "rm" | "stat" | "vi" | "ee" => arg_index == 0,
+        "ls" | "cd" | "find" | "mkdir" | "rm" | "stat" | "vi" | "ee" | "lua" => arg_index == 0,
         // read/write commands where additional args can still be file paths
         "cat" | "head" | "tail" | "grep" | "wc" | "sed" => arg_index <= 1,
         // write/tee complete only destination path (first arg), not content payload
