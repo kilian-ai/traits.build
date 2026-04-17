@@ -2,6 +2,80 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
+const AGENT_CONFIG_PATH: &str = "config/llm_agent.json";
+
+struct AgentConfig {
+    model: String,
+    api_secret: String,
+    max_steps: usize,
+    default_session_id: String,
+}
+
+fn default_agent_config() -> AgentConfig {
+    AgentConfig {
+        model: "gpt-4o-mini".to_string(),
+        api_secret: "openai_api_key".to_string(),
+        max_steps: 10,
+        default_session_id: "default".to_string(),
+    }
+}
+
+fn load_agent_config() -> AgentConfig {
+    let defaults = default_agent_config();
+    let raw = kernel_logic::platform::vfs_read(AGENT_CONFIG_PATH);
+
+    let cfg = if let Some(raw_json) = raw {
+        if let Ok(v) = serde_json::from_str::<Value>(&raw_json) {
+            AgentConfig {
+                model: v
+                    .get("model")
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&defaults.model)
+                    .to_string(),
+                api_secret: v
+                    .get("api_secret")
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&defaults.api_secret)
+                    .to_string(),
+                max_steps: v
+                    .get("max_steps")
+                    .and_then(|x| x.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(defaults.max_steps)
+                    .clamp(1, MAX_STEPS_LIMIT),
+                default_session_id: v
+                    .get("default_session_id")
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&defaults.default_session_id)
+                    .to_string(),
+            }
+        } else {
+            defaults
+        }
+    } else {
+        defaults
+    };
+
+    // Ensure config is visible/editable in VFS.
+    if kernel_logic::platform::vfs_read(AGENT_CONFIG_PATH).is_none() {
+        let seed = json!({
+            "model": cfg.model,
+            "api_secret": cfg.api_secret,
+            "max_steps": cfg.max_steps,
+            "default_session_id": cfg.default_session_id,
+            "notes": "Edit these defaults for llm.agent calls that omit args"
+        });
+        if let Ok(seed_json) = serde_json::to_string_pretty(&seed) {
+            kernel_logic::platform::vfs_write(AGENT_CONFIG_PATH, &seed_json);
+        }
+    }
+
+    cfg
+}
+
 static SESSION_STORE: OnceLock<Mutex<HashMap<String, Vec<Value>>>> = OnceLock::new();
 
 fn session_store() -> &'static Mutex<HashMap<String, Vec<Value>>> {
@@ -91,6 +165,8 @@ fn sanitize_session_id(session_id: &str) -> String {
 ///   session:    Previous messages array OR session id string (for multi-turn sessions)
 ///   session_id: Explicit session id for persisted auto-history (default: "default")
 pub fn agent(args: &[Value]) -> Value {
+    let cfg = load_agent_config();
+
     let prompt = match args.first().and_then(|v| v.as_str()) {
         Some(p) if !p.is_empty() => p.to_string(),
         _ => return json!({ "ok": false, "error": "prompt is required" }),
@@ -111,18 +187,18 @@ pub fn agent(args: &[Value]) -> Value {
     let model = args.get(3)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("gpt-4o-mini")
+        .unwrap_or(&cfg.model)
         .to_string();
 
     let max_steps = args.get(4)
         .and_then(|v| v.as_u64())
-        .unwrap_or(10)
+        .unwrap_or(cfg.max_steps as u64)
         .min(MAX_STEPS_LIMIT as u64) as usize;
 
     let api_secret = args.get(5)
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("openai_api_key")
+        .unwrap_or(&cfg.api_secret)
         .to_string();
 
     let mode = args.get(6)
@@ -148,7 +224,7 @@ pub fn agent(args: &[Value]) -> Value {
 
     let session_id = explicit_session_id
         .or(inline_session_id)
-        .unwrap_or_else(|| DEFAULT_SESSION_ID.to_string());
+        .unwrap_or_else(|| cfg.default_session_id.clone());
 
     // Restore session from either explicit messages, persisted store, or fresh system+user.
     let mut messages: Vec<Value> = if let Some(session) = args.get(7).and_then(|v| v.as_array()) {
@@ -674,5 +750,3 @@ const COMPACT_PRESERVE_RECENT: usize = 4;
 /// Compaction: trigger when estimated tokens exceed this threshold.
 const COMPACT_MAX_TOKENS: usize = 10_000;
 
-/// Persisted-session default key for implicit chat continuity.
-const DEFAULT_SESSION_ID: &str = "default";

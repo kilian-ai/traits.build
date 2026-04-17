@@ -1,0 +1,7 @@
+{
+  "api_secret": "openai_api_key",
+  "default_session_id": "default",
+  "max_steps": 10,
+  "model": "gpt-4o-mini",
+  "notes": "Edit these defaults for llm.agent calls that omit args"
+}

@@ -143,6 +143,93 @@ const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
 const MAX_HISTORY_ENTRIES: usize = 500;
 const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. For filesystem changes, prefer sys.shell commands (mkdir/ls/cat/find/echo redirection) so results are visible in the active terminal session. Use sys.vfs only when explicitly requested as a storage API. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
+const UNKNOWN_CMD_CONFIG_PATH: &str = "config/unknown_command_agent.json";
+
+struct UnknownCmdConfig {
+    model: String,
+    api_secret: String,
+    tools: String,
+    max_steps: u64,
+    retry_max_steps: u64,
+    session_id: String,
+}
+
+fn default_unknown_cmd_config() -> UnknownCmdConfig {
+    UnknownCmdConfig {
+        model: "gpt-4o-mini".to_string(),
+        api_secret: "openai_api_key".to_string(),
+        tools: "sys.shell,sys.list,sys.registry,kernel.call,sys.call".to_string(),
+        max_steps: 12,
+        retry_max_steps: 14,
+        session_id: "cli-unknown-command".to_string(),
+    }
+}
+
+fn load_unknown_cmd_config() -> UnknownCmdConfig {
+    let defaults = default_unknown_cmd_config();
+    let raw = kernel_logic::platform::vfs_read(UNKNOWN_CMD_CONFIG_PATH);
+    let cfg = if let Some(raw_json) = raw {
+        if let Ok(v) = serde_json::from_str::<Value>(&raw_json) {
+            UnknownCmdConfig {
+                model: v
+                    .get("model")
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&defaults.model)
+                    .to_string(),
+                api_secret: v
+                    .get("api_secret")
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&defaults.api_secret)
+                    .to_string(),
+                tools: v
+                    .get("tools")
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&defaults.tools)
+                    .to_string(),
+                max_steps: v
+                    .get("max_steps")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(defaults.max_steps)
+                    .clamp(1, 50),
+                retry_max_steps: v
+                    .get("retry_max_steps")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(defaults.retry_max_steps)
+                    .clamp(1, 50),
+                session_id: v
+                    .get("session_id")
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&defaults.session_id)
+                    .to_string(),
+            }
+        } else {
+            defaults
+        }
+    } else {
+        defaults
+    };
+
+    if kernel_logic::platform::vfs_read(UNKNOWN_CMD_CONFIG_PATH).is_none() {
+        let seed = json!({
+            "model": cfg.model,
+            "api_secret": cfg.api_secret,
+            "tools": cfg.tools,
+            "max_steps": cfg.max_steps,
+            "retry_max_steps": cfg.retry_max_steps,
+            "session_id": cfg.session_id,
+            "notes": "Config for kernel.cli unknown-command llm.agent fallback"
+        });
+        if let Ok(seed_json) = serde_json::to_string_pretty(&seed) {
+            kernel_logic::platform::vfs_write(UNKNOWN_CMD_CONFIG_PATH, &seed_json);
+        }
+    }
+
+    cfg
+}
 
 struct ChatState {
     agent: String,
@@ -2128,6 +2215,8 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         return None;
     }
 
+    let cfg = load_unknown_cmd_config();
+
     let prompt = format!(
         "user input in terminal: {}\n\nInterpret this as either: (1) mistyped command to correct, or (2) natural language request to solve. Use tools to check real state when relevant. For path-like requests in WASM terminal, normalize leading slash paths to VFS paths (example: /docs -> docs). Use sys.shell for ls/find/cat checks before concluding missing paths. Only suggest 'help' when truly ambiguous.",
         user_input
@@ -2136,13 +2225,12 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
     let call_args = vec![
         json!(prompt),
         json!(UNKNOWN_CMD_AGENT_SYSTEM),
-        // Prefer session-visible tooling in unknown-command fallback.
-        json!("sys.shell,sys.list,sys.registry,kernel.call,sys.call"),
-        json!("gpt-4o-mini"),
-        json!(12),
-        json!("openai_api_key"),
+        json!(cfg.tools),
+        json!(cfg.model),
+        json!(cfg.max_steps),
+        json!(cfg.api_secret),
         json!("full"),
-        json!("cli-unknown-command"),
+        json!(cfg.session_id),
     ];
 
     let mut out = backend.call("llm.agent", &call_args).ok()?;
@@ -2157,12 +2245,12 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         let strict_args = vec![
             json!(strict_prompt),
             json!(UNKNOWN_CMD_AGENT_SYSTEM),
-            json!("sys.shell,sys.list,sys.registry,kernel.call,sys.call"),
-            json!("gpt-4o-mini"),
-            json!(14),
-            json!("openai_api_key"),
+            json!(cfg.tools),
+            json!(cfg.model),
+            json!(cfg.retry_max_steps),
+            json!(cfg.api_secret),
             json!("full"),
-            json!("cli-unknown-command"),
+            json!(cfg.session_id),
         ];
         if let Ok(retry_out) = backend.call("llm.agent", &strict_args) {
             out = retry_out;
