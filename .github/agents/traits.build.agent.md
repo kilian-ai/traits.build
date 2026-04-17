@@ -892,6 +892,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - Relay Cloudflare worker is isolated as `traits-build-relay` (account-pinned in `relay/wrangler.toml`) to reduce accidental cross-project overwrites from other repos using generic worker names.
 - `www.linux` now normalizes legacy tunnel URL overrides (`wss://traits-relay.kiliannc.workers.dev/linux/tunnel`) to `wss://relay.traits.build/linux/tunnel` and rewrites stale localStorage values on boot.
 - `www.linux` command auto-fix monitor is now default-off to avoid appending sentinel wrappers to every interactive shell command. Use `autofix on|off|status` in the Linux terminal to control it.
+- `sys.openapi` `info.version` must come from `env!("TRAITS_BUILD_VERSION")` (same source as `sys.version`), not `CARGO_PKG_VERSION`, otherwise WASM docs can show stale API version strings after a rebuild.
 
 **Relay endpoints** (registered in `sys.serve`):
 ```
