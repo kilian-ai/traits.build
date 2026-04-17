@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
 
 /// sys.shell — execute a shell command and return its output.
@@ -6,6 +7,19 @@ use std::process::Command;
 /// Runs the command via `sh -c` so pipes, redirects, and shell builtins work.
 /// Returns stdout, stderr, and exit code. Capped at 60 seconds timeout.
 pub fn shell(args: &[Value]) -> Value {
+    #[cfg(target_arch = "wasm32")]
+    {
+        return shell_wasm(args);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return shell_native(args);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn shell_native(args: &[Value]) -> Value {
     let command = match args.first().and_then(|v| v.as_str()) {
         Some(c) if !c.is_empty() => c,
         _ => return json!({"ok": false, "error": "Missing required parameter: command"}),
@@ -70,4 +84,76 @@ pub fn shell(args: &[Value]) -> Value {
         Some(Err(e)) => json!({"ok": false, "error": format!("Failed to execute: {}", e)}),
         None => json!({"ok": false, "error": format!("Command timed out after {}s", timeout_secs)}),
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn shell_wasm(args: &[Value]) -> Value {
+    let command = match args.first().and_then(|v| v.as_str()) {
+        Some(c) if !c.is_empty() => c,
+        _ => return json!({"ok": false, "error": "Missing required parameter: command"}),
+    };
+
+    let cwd = args.get(1).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+
+    // In WASM we execute through the shared CLI session engine.
+    // This keeps behavior aligned with the terminal shell builtins (ls/cd/cat/find/...)
+    // and works without native process spawning.
+    if let Some(dir) = cwd {
+        let _ = crate::cli_input(&format!("cd {}\r", dir));
+    }
+    let raw = crate::cli_input(&format!("{}\r", command));
+    let cleaned = clean_cli_output(&raw);
+
+    let looks_error = cleaned.contains("Error:")
+        || cleaned.contains("Unknown command:")
+        || cleaned.contains("no such ")
+        || cleaned.contains("Usage:")
+        || cleaned.contains("failed");
+
+    json!({
+        "ok": !looks_error,
+        "exit_code": if looks_error { 1 } else { 0 },
+        "stdout": cleaned,
+        "stderr": "",
+        "note": "WASM shell executed via kernel.cli session engine",
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn clean_cli_output(raw: &str) -> String {
+    let mut out = String::new();
+    let bytes = raw.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1b {
+            i += 1;
+            if i < bytes.len() && bytes[i] == b'[' {
+                i += 1;
+                while i < bytes.len() {
+                    let b = bytes[i];
+                    if (0x40..=0x7e).contains(&b) {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+            continue;
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+
+    let cleaned_lines: Vec<String> = out
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .lines()
+        .map(|l| l.trim_end().to_string())
+        .filter(|l| !l.trim().is_empty())
+        .filter(|l| l.trim_start() != "traits")
+        .filter(|l| !l.trim_start().starts_with("thinking…"))
+        .collect();
+
+    cleaned_lines.join("\n")
 }
