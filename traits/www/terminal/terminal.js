@@ -18,7 +18,8 @@ const CLEAR_SENTINEL = _sentinels.clear || '\x1b[CLEAR]';
 const REST_RE = new RegExp(`${(_sentinels.restOpen || '\\x1b\\[REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.restClose || '\\x1b\\[/REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 const WEBLLM_RE = new RegExp(`${(_sentinels.webllmOpen || '\\x1b\\[WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.webllmClose || '\\x1b\\[/WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 const VOICE_RE = new RegExp(`${(_sentinels.voiceOpen || '\\x1b\\[VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.voiceClose || '\\x1b\\[/VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
-const LUA_RE = new RegExp(`${(_sentinels.luaOpen || '\\x1b\\[LUA\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.luaClose || '\\x1b\\[/LUA\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+const LUA_RE = /\x1b\[LUA\]([\s\S]*?)\x1b\[\/LUA\]/;
+const LUA_RE_PLAIN = /\[LUA\]([\s\S]*?)\[\/LUA\]/;
 const REST_RE_PLAIN = /\[REST\]([\s\S]*?)\[\/REST\]/;
 // Degraded pattern seen when ESC CSI is consumed by terminal as control sequence.
 const REST_RE_DEGRADED = /EST\]([\s\S]*?)EST\]/;
@@ -644,9 +645,10 @@ export async function createTerminal(mountEl, opts = {}) {
             }
 
             // Check for Lua dispatch sentinel
-            const luaMatch = output.match(LUA_RE);
+            const luaMatch = output.match(LUA_RE) || output.match(LUA_RE_PLAIN);
             if (luaMatch) {
-                const visible = output.replace(LUA_RE, '');
+                const matchedRe = output.match(LUA_RE) ? LUA_RE : LUA_RE_PLAIN;
+                const visible = output.replace(matchedRe, '');
                 if (visible) term.write(visible);
                 try {
                     const payload = parseLuaJson(luaMatch[1]);
