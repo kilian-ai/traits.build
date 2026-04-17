@@ -18,6 +18,9 @@ const CLEAR_SENTINEL = _sentinels.clear || '\x1b[CLEAR]';
 const REST_RE = new RegExp(`${(_sentinels.restOpen || '\\x1b\\[REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.restClose || '\\x1b\\[/REST\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 const WEBLLM_RE = new RegExp(`${(_sentinels.webllmOpen || '\\x1b\\[WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.webllmClose || '\\x1b\\[/WEBLLM\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 const VOICE_RE = new RegExp(`${(_sentinels.voiceOpen || '\\x1b\\[VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.voiceClose || '\\x1b\\[/VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+const REST_RE_PLAIN = /\[REST\]([\s\S]*?)\[\/REST\]/;
+// Degraded pattern seen when ESC CSI is consumed by terminal as control sequence.
+const REST_RE_DEGRADED = /EST\]([\s\S]*?)EST\]/;
 // Source of truth: kernel/cli/cli.rs PROMPT constant. Must stay in sync.
 const PROMPT = _sharedDefaults?.prompt || '\x1b[32mtraits \x1b[0m';
 
@@ -41,6 +44,23 @@ let Terminal, FitAddon, WebLinksAddon, SerializeAddon;
  * @returns {Promise<{term, fitAddon, wasm}>}
  */
 export async function createTerminal(mountEl, opts = {}) {
+
+    const extractRestSentinel = (output) => {
+        const primary = output.match(REST_RE);
+        if (primary) {
+            return { payload: primary[1], visible: output.replace(REST_RE, '') };
+        }
+        const plain = output.match(REST_RE_PLAIN);
+        if (plain) {
+            return { payload: plain[1], visible: output.replace(REST_RE_PLAIN, '') };
+        }
+        const degraded = output.match(REST_RE_DEGRADED);
+        if (degraded && degraded[1] && degraded[1].trim().startsWith('{')) {
+            return { payload: degraded[1], visible: output.replace(REST_RE_DEGRADED, '') };
+        }
+        return null;
+    };
+
     // ── Load xterm.js ──
     try {
         const xtermMod = await import('https://cdn.jsdelivr.net/npm/@xterm/xterm@5/+esm');
@@ -246,17 +266,17 @@ export async function createTerminal(mountEl, opts = {}) {
             if (!output) return;
 
             // Check for REST dispatch sentinel
-            const restMatch = output.match(REST_RE);
-            if (restMatch) {
+            const restSentinel = extractRestSentinel(output);
+            if (restSentinel) {
             // Write visible part (loading message) without the sentinel
-                const visible = output.replace(REST_RE, '');
+                const visible = restSentinel.visible;
                 if (visible) term.write(visible);
 
             // Parse dispatch info and call via SDK cascade (WASM → helper → REST)
             // Supports @target routing: sentinel JSON may contain "t" field (rest/relay/helper/wasm)
             // Chat mode: "rp" = return prompt (instead of PROMPT), "sid" = session ID for VFS storage
                 try {
-                    const { p, a, t, rp, sid, stream: useStream } = JSON.parse(restMatch[1]);
+                    const { p, a, t, rp, sid, stream: useStream } = JSON.parse(restSentinel.payload);
                     const returnPrompt = rp || PROMPT;
                     restPending = true;
                     const callOpts = t ? { force: t } : {};
