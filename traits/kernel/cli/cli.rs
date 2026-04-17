@@ -145,7 +145,7 @@ pub const LUA_SENTINEL_END: &str = "\x1b[/LUA]";
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
 const MAX_HISTORY_ENTRIES: usize = 500;
-const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. For filesystem changes, prefer sys.shell commands (mkdir/ls/cat/find/echo redirection) so results are visible in the active terminal session. Use sys.vfs only when explicitly requested as a storage API. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
+const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. For filesystem changes, prefer sys.shell commands (mkdir/ls/cat/find/echo redirection) so results are visible in the active terminal session. Use sys.vfs only when explicitly requested as a storage API. If input asks to fix/edit/update/create/delete code in a file, execute the edit directly using tools, then verify by reading the file back (cat or equivalent), and report completion. Do not ask for confirmation when the requested edit is clear. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
 const UNKNOWN_CMD_CONFIG_PATH: &str = "config/unknown_command_agent.json";
 
 struct UnknownCmdConfig {
@@ -2249,7 +2249,7 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
     let cfg = load_unknown_cmd_config();
 
     let strict_prompt = format!(
-        "user input in terminal: {}\n\nInterpret this as either: (1) mistyped command to correct, or (2) natural language request to solve. You MUST use tools when the request touches files/docs/workspace. In WASM terminal, normalize leading slash paths to VFS-relative paths (example: /docs -> docs). Prefer sys.shell for ls/find/cat and filesystem edits so results are visible in the active terminal session. If truly ambiguous, suggest help with concrete command options.",
+        "user input in terminal: {}\n\nInterpret this as either: (1) mistyped command to correct, or (2) natural language request to solve. You MUST use tools when the request touches files/docs/workspace. In WASM terminal, normalize leading slash paths to VFS-relative paths (example: /docs -> docs). Prefer sys.shell for ls/find/cat and filesystem edits so results are visible in the active terminal session. If the request is to fix/edit/update a file, do the edit immediately, verify by reading the modified file, and return the finished result. Do not ask for permission if intent is clear. If truly ambiguous, suggest help with concrete command options.",
         user_input
     );
 
