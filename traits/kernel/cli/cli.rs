@@ -459,7 +459,13 @@ impl CliSession {
             KeyEvent::Char(c) => {
                 self.line_buffer.insert(self.cursor_pos, c);
                 self.cursor_pos += c.len_utf8();
-                self.refresh_line()
+                // Appending at EOL can be streamed directly; this avoids full-line
+                // redraw artifacts on wrapped lines in some terminals/WASM xterm.
+                if self.cursor_pos == self.line_buffer.len() {
+                    c.to_string()
+                } else {
+                    self.refresh_line()
+                }
             }
             KeyEvent::Enter => {
                 let mut out = String::from("\r\n");
@@ -874,7 +880,12 @@ impl CliSession {
                     i.history_idx = None;
                     i.tab_idx = None;
                 }
-                self.refresh_line()
+                // Same wrapped-line protection as normal mode.
+                if self.cursor_pos == self.line_buffer.len() {
+                    c.to_string()
+                } else {
+                    self.refresh_line()
+                }
             }
             KeyEvent::Backspace => {
                 if self.cursor_pos > 0 {
