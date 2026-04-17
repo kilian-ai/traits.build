@@ -3,8 +3,6 @@ use serde_json::{json, Value};
 use std::process::Command;
 
 #[cfg(target_arch = "wasm32")]
-use std::cell::RefCell;
-#[cfg(target_arch = "wasm32")]
 use crate::wasm_traits::cli::{CliCallBackend, CliExamplesBackend, CliHistoryBackend, CliSession};
 #[cfg(target_arch = "wasm32")]
 use web_sys;
@@ -102,37 +100,25 @@ fn shell_wasm(args: &[Value]) -> Value {
 
     let cwd = args.get(1).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
 
-    // Use a dedicated CLI session to avoid re-entrant borrows of the terminal's
-    // primary CLI_SESSION (which can happen when llm.agent -> sys.shell is called
-    // while the terminal itself is already executing a command).
-    let raw = SHELL_SESSION.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(CliSession::new());
-        }
-        let session = slot.as_mut().unwrap();
-        let backend = WasmShellBackend;
+    // Use a fresh CLI session per call to avoid stale cwd leaking between tool
+    // invocations. The VFS is still shared via persisted traits.pvfs state, so
+    // files remain visible in the primary terminal session.
+    let mut session = CliSession::new();
+    let backend = WasmShellBackend;
 
-        // Keep this dedicated shell session aligned with the shared persisted VFS.
-        // Without this, sys.shell edits can appear in tool output but not in the
-        // primary terminal session.
-        if let Some(json) = shell_ls_get("traits.pvfs") {
-            session.vfs_load(&json);
-        }
+    if let Some(json) = shell_ls_get("traits.pvfs") {
+        session.vfs_load(&json);
+    }
 
-        if let Some(dir) = cwd {
-            let _ = session.feed(&format!("cd {}\r", dir), &backend);
-        }
-        let output = session.feed(&format!("{}\r", command), &backend);
+    if let Some(dir) = cwd {
+        let _ = session.feed(&format!("cd {}\r", dir), &backend);
+    }
+    let raw = session.feed(&format!("{}\r", command), &backend);
 
-        // Persist back so cli_input() in the primary terminal can refresh from it.
-        let dump = session.vfs_dump();
-        if !dump.is_empty() {
-            shell_ls_set("traits.pvfs", &dump);
-        }
-
-        output
-    });
+    let dump = session.vfs_dump();
+    if !dump.is_empty() {
+        shell_ls_set("traits.pvfs", &dump);
+    }
     let cleaned = clean_cli_output(&raw);
 
     let looks_error = cleaned.contains("Error:")
@@ -160,11 +146,6 @@ fn shell_ls_set(key: &str, value: &str) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok()).flatten() {
         let _ = storage.set_item(key, value);
     }
-}
-
-#[cfg(target_arch = "wasm32")]
-thread_local! {
-    static SHELL_SESSION: RefCell<Option<CliSession>> = RefCell::new(None);
 }
 
 #[cfg(target_arch = "wasm32")]

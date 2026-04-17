@@ -555,11 +555,30 @@ async function createTerminal(mountEl, opts = {}) {
             // Supports @target routing: sentinel JSON may contain "t" field (rest/relay/helper/wasm)
             // Chat mode: "rp" = return prompt (instead of PROMPT), "sid" = session ID for VFS storage
                 try {
-                    const { p, a, t, rp, sid, stream: useStream } = parseSentinelPayload(restSentinel.payload);
+                    const { p, a, t, rp, sid, stream: useStream, unknown_agent: unknownAgent } = parseSentinelPayload(restSentinel.payload);
                     const returnPrompt = rp || PROMPT;
                     restPending = true;
                     const callOpts = t ? { force: t } : {};
                     if (useStream) callOpts.stream = true;
+
+                    const shouldForceUnknownAgentRetry = (promptText) => {
+                        const s = String(promptText || '').toLowerCase();
+                        const hasSubject = ['doc', 'docs', 'file', 'files', 'directory', 'folder', 'trait', 'traits', 'workspace', 'path', '/']
+                            .some(k => s.includes(k));
+                        const hasAction = ['read', 'show', 'see', 'list', 'find', 'what', 'which', 'where', 'open', 'create', 'edit', 'update', 'fix', 'delete', 'write', 'make']
+                            .some(k => s.includes(k));
+                        return hasSubject || hasAction;
+                    };
+
+                    const buildUnknownAgentRetryArgs = (agentArgs) => {
+                        const nextArgs = Array.isArray(agentArgs) ? agentArgs.slice() : [];
+                        const retryPrompt = String(nextArgs[0] || '');
+                        nextArgs[0] = `${retryPrompt}\n\nMandatory retry rule: this request touches files, docs, traits, paths, or workspace state. You must call at least one tool before giving a final answer. Start by inspecting real state with an appropriate tool such as sys.shell, sys.list, sys.registry, or kernel.call. If the request requires file creation or edits, perform the edit with tools, then verify by reading the file back.`;
+                        if (typeof nextArgs[7] === 'string' && nextArgs[7]) {
+                            nextArgs[7] = `${nextArgs[7]}-retry`;
+                        }
+                        return nextArgs;
+                    };
 
                     // Helper: store assistant response in WASM VFS for chat history
                     const storeChatResponse = (text) => {
@@ -601,8 +620,18 @@ async function createTerminal(mountEl, opts = {}) {
                         // Non-streaming path (fallback)
                         term.write('\r\x1b[K'); // Clear progress line
                         if (p === 'llm.agent' && res.ok && res.result && typeof res.result === 'object') {
-                            const agent = res.result;
-                            const toolCalls = Array.isArray(agent.tool_calls) ? agent.tool_calls : [];
+                            let agent = res.result;
+                            let toolCalls = Array.isArray(agent.tool_calls) ? agent.tool_calls : [];
+                            const promptText = Array.isArray(a) ? a[0] : '';
+                            if (unknownAgent && toolCalls.length === 0 && shouldForceUnknownAgentRetry(promptText) && activeSdk) {
+                                term.write('\x1b[90mretrying with forced tool use…\x1b[0m\r\n');
+                                const retryArgs = buildUnknownAgentRetryArgs(a);
+                                const retryRes = await activeSdk.call('llm.agent', retryArgs, t ? { force: t } : {});
+                                if (retryRes && retryRes.ok && retryRes.result && typeof retryRes.result === 'object') {
+                                    agent = retryRes.result;
+                                    toolCalls = Array.isArray(agent.tool_calls) ? agent.tool_calls : [];
+                                }
+                            }
                             const truncate = (s, max = 1200) => {
                                 const text = String(s || '');
                                 return text.length <= max ? text : (text.slice(0, max) + '…');
