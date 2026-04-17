@@ -1,4 +1,29 @@
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+static SESSION_STORE: OnceLock<Mutex<HashMap<String, Vec<Value>>>> = OnceLock::new();
+
+fn session_store() -> &'static Mutex<HashMap<String, Vec<Value>>> {
+    SESSION_STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn load_session(session_id: &str) -> Option<Vec<Value>> {
+    let guard = session_store().lock().ok()?;
+    guard.get(session_id).cloned()
+}
+
+fn save_session(session_id: &str, mut messages: Vec<Value>) {
+    // Keep session payload compact before storing for follow-up turns.
+    while should_compact(&messages) {
+        if compact_messages(&mut messages) == 0 {
+            break;
+        }
+    }
+    if let Ok(mut guard) = session_store().lock() {
+        guard.insert(session_id.to_string(), messages);
+    }
+}
 
 /// llm.agent — WASM-compatible LLM agent loop with trait-based tool calling.
 ///
@@ -23,7 +48,8 @@ use serde_json::{json, Value};
 ///   max_steps:  Max agent loop iterations (default: 10)
 ///   api_secret: Secret name for OpenAI API key (default: "openai_api_key")
 ///   mode:       "full" (run to completion) or "turn" (single turn for buddy UX)
-///   session:    Previous messages array (for multi-turn buddy sessions)
+///   session:    Previous messages array OR session id string (for multi-turn sessions)
+///   session_id: Explicit session id for persisted auto-history (default: "default")
 pub fn agent(args: &[Value]) -> Value {
     let prompt = match args.first().and_then(|v| v.as_str()) {
         Some(p) if !p.is_empty() => p.to_string(),
@@ -70,11 +96,31 @@ pub fn agent(args: &[Value]) -> Value {
     // Build tool definitions and a name→path reverse map
     let (tool_defs, name_to_path) = build_tool_definitions(&tools_arg);
 
-    // Restore session from previous messages (for multi-turn buddy mode)
+    let explicit_session_id = args.get(8)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let inline_session_id = args.get(7)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let session_id = explicit_session_id
+        .or(inline_session_id)
+        .unwrap_or_else(|| DEFAULT_SESSION_ID.to_string());
+
+    // Restore session from either explicit messages, persisted store, or fresh system+user.
     let mut messages: Vec<Value> = if let Some(session) = args.get(7).and_then(|v| v.as_array()) {
         let mut msgs = session.clone();
         msgs.push(json!({"role": "user", "content": prompt}));
         msgs
+    } else if let Some(mut persisted) = load_session(&session_id) {
+        if persisted.is_empty() || persisted[0].get("role").and_then(|v| v.as_str()) != Some("system") {
+            persisted.insert(0, json!({"role": "system", "content": system}));
+        }
+        persisted.push(json!({"role": "user", "content": prompt}));
+        persisted
     } else {
         vec![
             json!({"role": "system", "content": system}),
@@ -128,6 +174,7 @@ pub fn agent(args: &[Value]) -> Value {
             return json!({
                 "ok": false,
                 "error": err,
+                "session_id": session_id,
                 "step_count": step_count,
                 "usage": total_usage.to_json(),
             });
@@ -146,6 +193,7 @@ pub fn agent(args: &[Value]) -> Value {
                 return json!({
                     "ok": false,
                     "error": "No choices in API response",
+                    "session_id": session_id,
                     "step_count": step_count,
                     "usage": total_usage.to_json(),
                     "raw": body,
@@ -224,11 +272,13 @@ pub fn agent(args: &[Value]) -> Value {
 
         // Turn mode: return after processing one round of tool calls (buddy UX)
         if is_turn_mode {
+            save_session(&session_id, messages.clone());
             return json!({
                 "ok": true,
                 "done": false,
                 "response": final_response,
                 "tool_calls": all_tool_calls,
+                "session_id": session_id,
                 "step_count": step_count,
                 "usage": total_usage.to_json(),
                 "compacted_messages": compacted_count,
@@ -242,11 +292,14 @@ pub fn agent(args: &[Value]) -> Value {
         }
     }
 
+    save_session(&session_id, messages.clone());
+
     json!({
         "ok": true,
         "done": true,
         "response": final_response,
         "tool_calls": all_tool_calls,
+        "session_id": session_id,
         "step_count": step_count,
         "usage": total_usage.to_json(),
         "compacted_messages": compacted_count,
@@ -579,3 +632,6 @@ const COMPACT_PRESERVE_RECENT: usize = 4;
 
 /// Compaction: trigger when estimated tokens exceed this threshold.
 const COMPACT_MAX_TOKENS: usize = 10_000;
+
+/// Persisted-session default key for implicit chat continuity.
+const DEFAULT_SESSION_ID: &str = "default";

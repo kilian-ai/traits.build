@@ -142,6 +142,7 @@ pub const VOICE_SENTINEL_END: &str = "\x1b[/VOICE]";
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
 const MAX_HISTORY_ENTRIES: usize = 500;
+const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. For unknown shell input: if it looks like a command typo or syntax error, return a corrected command the user can run now. If it is far from a command, suggest 'help' and 2-4 relevant command suggestions. If it is clearly a natural-language request, answer directly and concisely.";
 
 struct ChatState {
     agent: String,
@@ -2096,14 +2097,52 @@ fn execute_leaf_command(
                     };
                     exec_call(backend, &full, &args)
                 } else {
-                    format!(
-                        "{RED}Unknown command: {}{RESET}. Type {BLUE}help{RESET} for usage.",
-                        clean_cmd
-                    )
+                    let user_input = cmd.args.join(" ");
+                    if let Some(reply) = unknown_command_llm_reply(backend, &user_input) {
+                        reply
+                    } else {
+                        format!(
+                            "{RED}Unknown command: {}{RESET}. Type {BLUE}help{RESET} for usage.",
+                            clean_cmd
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> Option<String> {
+    if user_input.trim().is_empty() {
+        return None;
+    }
+
+    let prompt = format!(
+        "the user entered: {} if it was a command syntax error run the correct command, if its far fetched from a command suggest type help for usage and some suggestions and if its like below certainly a sentence or prompt to the llm, answer it directly",
+        user_input
+    );
+
+    let call_args = vec![
+        json!(prompt),
+        json!(UNKNOWN_CMD_AGENT_SYSTEM),
+        json!("kernel.call,sys.list,sys.registry,sys.call"),
+        json!("gpt-4o-mini"),
+        json!(6),
+        json!("openai_api_key"),
+        json!("full"),
+        json!("cli-unknown-command"),
+    ];
+
+    let out = backend.call("llm.agent", &call_args).ok()?;
+    if !out.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return None;
+    }
+
+    out.get("response")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
 }
 
 fn cat_command(
