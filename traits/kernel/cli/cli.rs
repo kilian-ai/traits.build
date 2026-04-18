@@ -2278,7 +2278,7 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         "p": "llm.agent",
         "a": agent_args,
         "rp": PROMPT,
-        "stream": true,
+        "stream": false,
         "unknown_agent": true,
     });
 
