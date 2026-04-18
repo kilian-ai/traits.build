@@ -559,6 +559,11 @@ async function createTerminal(mountEl, opts = {}) {
                     const returnPrompt = rp || PROMPT;
                     restPending = true;
                     const callOpts = t ? { force: t } : {};
+                    // Force WASM dispatch for unknown-command agent calls so sys.shell
+                    // writes go to the browser VFS (localStorage), not the host filesystem.
+                    // Without this, a connected helper would intercept the call and create
+                    // files on the host, invisible to subsequent terminal ls/cat commands.
+                    if (unknownAgent && !callOpts.force) callOpts.force = 'wasm';
                     if (useStream) callOpts.stream = true;
 
                     const shouldForceUnknownAgentRetry = (promptText) => {
@@ -637,7 +642,7 @@ async function createTerminal(mountEl, opts = {}) {
                             if (unknownAgent && toolCalls.length === 0 && shouldForceUnknownAgentRetry(promptText) && activeSdk) {
                                 term.write('\x1b[90mretrying with forced tool use…\x1b[0m\r\n');
                                 const retryArgs = buildUnknownAgentRetryArgs(a);
-                                const retryRes = await activeSdk.call('llm.agent', retryArgs, t ? { force: t } : {});
+                                const retryRes = await activeSdk.call('llm.agent', retryArgs, callOpts);
                                 if (retryRes && retryRes.ok && retryRes.result && typeof retryRes.result === 'object') {
                                     if (retryRes.result.ok === false && retryRes.result.error) {
                                         term.write(`\x1b[31m${retryRes.result.error}\x1b[0m\r\n`);
