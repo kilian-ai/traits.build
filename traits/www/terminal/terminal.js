@@ -464,6 +464,17 @@ export async function createTerminal(mountEl, opts = {}) {
                         term.write('\r\x1b[K'); // Clear progress line
                         if (p === 'llm.agent' && res.ok && res.result && typeof res.result === 'object') {
                             let agent = res.result;
+                            // Agent-level error (e.g. missing API key, auth failure)
+                            if (agent.ok === false && agent.error) {
+                                const errMsg = String(agent.error);
+                                const isKeyError = /api.key|unauthorized|auth/i.test(errMsg);
+                                term.write(`\x1b[31m${errMsg}\x1b[0m\r\n`);
+                                if (isKeyError) {
+                                    term.write('\x1b[33mHint: configure your OpenAI API key in Settings (#/settings)\x1b[0m\r\n');
+                                }
+                                term.write(returnPrompt);
+                                return;
+                            }
                             let toolCalls = Array.isArray(agent.tool_calls) ? agent.tool_calls : [];
                             const promptText = Array.isArray(a) ? a[0] : '';
                             if (unknownAgent && toolCalls.length === 0 && shouldForceUnknownAgentRetry(promptText) && activeSdk) {
@@ -471,6 +482,11 @@ export async function createTerminal(mountEl, opts = {}) {
                                 const retryArgs = buildUnknownAgentRetryArgs(a);
                                 const retryRes = await activeSdk.call('llm.agent', retryArgs, t ? { force: t } : {});
                                 if (retryRes && retryRes.ok && retryRes.result && typeof retryRes.result === 'object') {
+                                    if (retryRes.result.ok === false && retryRes.result.error) {
+                                        term.write(`\x1b[31m${retryRes.result.error}\x1b[0m\r\n`);
+                                        term.write(returnPrompt);
+                                        return;
+                                    }
                                     agent = retryRes.result;
                                     toolCalls = Array.isArray(agent.tool_calls) ? agent.tool_calls : [];
                                 }
