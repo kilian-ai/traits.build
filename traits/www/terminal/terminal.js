@@ -183,31 +183,30 @@ export async function createTerminal(mountEl, opts = {}) {
         }
     };
 
-    const collectLuaStdinFromTerminal = async () => {
-        term.write('\x1b[90m[Lua stdin] Enter one value per line. Press Ctrl+D when done.\x1b[0m\r\n');
+    const readLuaStdinLineFromTerminal = async () => {
         let buffer = '';
-        const lines = [];
         const prompt = 'lua stdin> ';
         term.write(prompt);
 
         return new Promise((resolve) => {
             const disposable = term.onData((data) => {
                 for (const ch of data) {
+                    if (ch === '\u0003') { // Ctrl+C
+                        term.write('^C\r\n');
+                        disposable.dispose();
+                        resolve({ cancelled: true });
+                        return;
+                    }
                     if (ch === '\u0004') { // Ctrl+D
-                        if (buffer.length) {
-                            lines.push(buffer);
-                            buffer = '';
-                        }
                         term.write('^D\r\n');
                         disposable.dispose();
-                        resolve(lines);
+                        resolve({ eof: true });
                         return;
                     }
                     if (ch === '\r') {
-                        lines.push(buffer);
-                        buffer = '';
                         term.write('\r\n');
-                        term.write(prompt);
+                        disposable.dispose();
+                        resolve({ line: buffer });
                         continue;
                     }
                     if (ch === '\u007f' || ch === '\b') {
@@ -224,6 +223,38 @@ export async function createTerminal(mountEl, opts = {}) {
                 }
             });
         });
+    };
+
+    const runInteractiveLua = async (code, input, path) => {
+        const initialInput = (input && typeof input === 'object') ? input : {};
+        let outcome = code
+            ? await runLuaCode(code, initialInput)
+            : await runLuaCode(await readVfsText(path), initialInput);
+        let firstPrompt = true;
+
+        while (outcome && outcome.need_input) {
+            if (firstPrompt) {
+                printLuaOutcome(outcome);
+                firstPrompt = false;
+            }
+            const next = await readLuaStdinLineFromTerminal();
+            if (next?.cancelled) {
+                term.write('\x1b[33mLua input cancelled\x1b[0m\r\n');
+                return { ok: false, error: 'Lua input cancelled', stdout: [], stderr: [] };
+            }
+            const resumeInput = {
+                __lua_session_id: outcome.session_id,
+                stdin: [next?.eof ? null : String(next?.line || '')],
+            };
+            outcome = await runLuaCode('', resumeInput);
+            if (outcome && outcome.need_input) {
+                // Show incremental script output immediately after each input line
+                // before prompting for the next value.
+                printLuaOutcome(outcome);
+            }
+        }
+
+        return outcome;
     };
 
     // ── Load xterm.js ──
@@ -770,14 +801,8 @@ export async function createTerminal(mountEl, opts = {}) {
                     const code = payloadObj.code || '';
                     const path = payloadObj.path || '';
                     if (payloadObj.interactive_stdin) {
-                        const inputObj = (payloadObj.input && typeof payloadObj.input === 'object') ? payloadObj.input : {};
-                        const hasStdin = Array.isArray(inputObj.stdin) && inputObj.stdin.length > 0;
-                        if (!hasStdin) {
-                            const stdinLines = await collectLuaStdinFromTerminal();
-                            payloadObj.input = Object.assign({}, inputObj, { stdin: stdinLines });
-                        }
-                    }
-                    if (code) {
+                        outcome = await runInteractiveLua(code, payloadObj.input || {}, path);
+                    } else if (code) {
                         outcome = await runLuaCode(code, payloadObj.input || {});
                     } else if (path) {
                         const script = await readVfsText(path);

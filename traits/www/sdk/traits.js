@@ -131,6 +131,8 @@ const WEBLLM_DEFAULT_MODEL = 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
 // ── Lua runtime bridge (fengari) ──
 const LUA_RUNTIME_URL = 'https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js';
 let _luaRuntimeLoading = null;
+let _luaSessionSeq = 0;
+const _luaSessions = new Map();
 
 function _luaGlobal() {
     if (typeof globalThis !== 'undefined') return globalThis;
@@ -212,6 +214,187 @@ function _installLuaBridge() {
         lua.lua_pushstring(L, to_luastring(String(value)));
     }
 
+    function luaToJsValue(L, lua, fg, idx, depth) {
+        const nextDepth = (depth || 0) + 1;
+        if (nextDepth > 16) return null;
+        const t = lua.lua_type(L, idx);
+        if (t === lua.LUA_TNIL) return null;
+        if (t === lua.LUA_TBOOLEAN) return !!lua.lua_toboolean(L, idx);
+        if (t === lua.LUA_TNUMBER) return lua.lua_tonumber(L, idx);
+        if (t === lua.LUA_TSTRING) return lua.lua_tojsstring(L, idx);
+        if (t === lua.LUA_TTABLE) {
+            const out = {};
+            lua.lua_pushnil(L);
+            while (lua.lua_next(L, idx < 0 ? idx - 1 : idx)) {
+                const key = luaToJsValue(L, lua, fg, -2, nextDepth);
+                const value = luaToJsValue(L, lua, fg, -1, nextDepth);
+                lua.lua_pop(L, 1);
+                out[String(key)] = value;
+            }
+            return out;
+        }
+        return null;
+    }
+
+    function setLuaGlobalStdin(L, lua, to_luastring, values) {
+        pushJsValueToLua(L, lua, to_luastring, Array.isArray(values) ? values : [], 0);
+        lua.lua_setglobal(L, to_luastring('__traits_stdin'));
+    }
+
+    function readLuaStdoutDelta(session, lua, to_luastring) {
+        try {
+            const status = session.runChunk('__traits_stdout_joined = table.concat(__traits_stdout, "\\n")');
+            if (status) return { stdout: [], stderr: [status] };
+            lua.lua_getglobal(session.L, to_luastring('__traits_stdout_joined'));
+            const joined = lua.lua_tojsstring(session.L, -1) || '';
+            lua.lua_pop(session.L, 1);
+            const delta = joined.slice(session.stdoutOffset || 0);
+            session.stdoutOffset = joined.length;
+            return { stdout: delta ? String(delta).split('\n') : [], stderr: [] };
+        } catch (e) {
+            return { stdout: [], stderr: [String(e)] };
+        }
+    }
+
+    function buildLuaSession(fg, code, parsedInput) {
+        const lua = fg.lua;
+        const lauxlib = fg.lauxlib;
+        const lualib = fg.lualib;
+        const to_luastring = fg.to_luastring;
+
+        const L = lauxlib.luaL_newstate();
+        lualib.luaL_openlibs(L);
+
+        const runChunk = (src) => {
+            const status = lauxlib.luaL_dostring(L, to_luastring(String(src || '')));
+            if (status !== lua.LUA_OK) {
+                const msg = lua.lua_tojsstring(L, -1) || 'lua execution error';
+                lua.lua_pop(L, 1);
+                return msg;
+            }
+            return null;
+        };
+
+        const preludeErr = runChunk([
+            '__traits_stdout = {}',
+            'local __traits_tostring = tostring',
+            'print = function(...)',
+            '  local t = {}',
+            '  for i = 1, select("#", ...) do',
+            '    t[#t + 1] = __traits_tostring(select(i, ...))',
+            '  end',
+            '  __traits_stdout[#__traits_stdout + 1] = table.concat(t, "\\t")',
+            'end',
+        ].join('\n'));
+        if (preludeErr) {
+            try { lua.lua_close(L); } catch (_) {}
+            throw new Error(preludeErr);
+        }
+
+        const safeInputJson = JSON.stringify(parsedInput || {});
+        lua.lua_pushstring(L, to_luastring(safeInputJson));
+        lua.lua_setglobal(L, to_luastring('__traits_input_json'));
+
+        pushJsValueToLua(L, lua, to_luastring, parsedInput, 0);
+        lua.lua_setglobal(L, to_luastring('input'));
+
+        if (parsedInput && typeof parsedInput === 'object' && !Array.isArray(parsedInput)) {
+            for (const [k, v] of Object.entries(parsedInput)) {
+                if (k.startsWith('__')) continue;
+                if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+                if (typeof v === 'string') lua.lua_pushstring(L, to_luastring(v));
+                else if (typeof v === 'number') lua.lua_pushnumber(L, v);
+                else if (typeof v === 'boolean') lua.lua_pushboolean(L, v ? 1 : 0);
+                else if (v === null) lua.lua_pushnil(L);
+                else continue;
+                lua.lua_setglobal(L, to_luastring(k));
+            }
+        }
+
+        setLuaGlobalStdin(L, lua, to_luastring, parsedInput?.stdin || []);
+
+        const ioShimErr = runChunk([
+            'if io == nil then io = {} end',
+            'io.read = function(fmt)',
+            '  local v = nil',
+            '  if type(__traits_stdin) == "table" and #__traits_stdin > 0 then',
+            '    v = table.remove(__traits_stdin, 1)',
+            '  else',
+            '    v = coroutine.yield({ __traits_need_input = true, format = fmt or "*l" })',
+            '  end',
+            '  if v == nil then return nil end',
+            '  if fmt == "*n" then return tonumber(v) end',
+            '  return tostring(v)',
+            'end',
+        ].join('\n'));
+        if (ioShimErr) {
+            try { lua.lua_close(L); } catch (_) {}
+            throw new Error(ioShimErr);
+        }
+
+        const thread = lua.lua_newthread(L);
+        const loadStatus = lauxlib.luaL_loadstring(thread, to_luastring(String(code || '')));
+        if (loadStatus !== lua.LUA_OK) {
+            const msg = lua.lua_tojsstring(thread, -1) || 'lua load error';
+            try { lua.lua_close(L); } catch (_) {}
+            throw new Error(msg);
+        }
+
+        return {
+            id: `lua-${Date.now()}-${++_luaSessionSeq}`,
+            L,
+            thread,
+            runChunk,
+            stdoutOffset: 0,
+        };
+    }
+
+    function closeLuaSession(session, lua) {
+        if (!session) return;
+        _luaSessions.delete(session.id);
+        try { lua.lua_close(session.L); } catch (_) {}
+    }
+
+    function stepLuaSession(session, fg, resumeValue) {
+        const lua = fg.lua;
+        const to_luastring = fg.to_luastring;
+
+        let nargs = 0;
+        if (resumeValue !== undefined) {
+            pushJsValueToLua(session.thread, lua, to_luastring, resumeValue, 0);
+            nargs = 1;
+        }
+
+        const status = lua.lua_resume(session.thread, null, nargs);
+        const delta = readLuaStdoutDelta(session, lua, to_luastring);
+
+        if (status === lua.LUA_YIELD) {
+            const yielded = luaToJsValue(session.thread, lua, fg, -1, 0) || {};
+            lua.lua_settop(session.thread, 0);
+            return {
+                ok: true,
+                need_input: !!yielded.__traits_need_input,
+                session_id: session.id,
+                stdout: delta.stdout,
+                stderr: delta.stderr,
+                result: null,
+            };
+        }
+
+        if (status !== lua.LUA_OK) {
+            const msg = lua.lua_tojsstring(session.thread, -1) || 'lua execution error';
+            lua.lua_settop(session.thread, 0);
+            closeLuaSession(session, lua);
+            return { ok: false, error: msg, stdout: delta.stdout, stderr: [...delta.stderr, msg], result: null };
+        }
+
+        lua.lua_getglobal(session.L, to_luastring('__result'));
+        const result = luaToJsValue(session.L, lua, fg, -1, 0);
+        lua.lua_pop(session.L, 1);
+        closeLuaSession(session, lua);
+        return { ok: true, stdout: delta.stdout, stderr: delta.stderr, result };
+    }
+
     root.__traitsLuaRun = function __traitsLuaRun(code, inputJson) {
         try {
             if (!_isLuaRuntimeReady() && !_loadLuaRuntimeSync()) {
@@ -220,114 +403,25 @@ function _installLuaBridge() {
 
             const fg = root.fengari;
             const lua = fg.lua;
-            const lauxlib = fg.lauxlib;
-            const lualib = fg.lualib;
-            const to_luastring = fg.to_luastring;
-
-            const L = lauxlib.luaL_newstate();
-            lualib.luaL_openlibs(L);
-
-            const runChunk = (src) => {
-                const status = lauxlib.luaL_dostring(L, to_luastring(String(src || '')));
-                if (status !== lua.LUA_OK) {
-                    const msg = lua.lua_tojsstring(L, -1) || 'lua execution error';
-                    lua.lua_pop(L, 1);
-                    return msg;
-                }
-                return null;
-            };
-
-            const preludeErr = runChunk([
-                '__traits_stdout = {}',
-                'local __traits_tostring = tostring',
-                'print = function(...)',
-                '  local t = {}',
-                '  for i = 1, select("#", ...) do',
-                '    t[#t + 1] = __traits_tostring(select(i, ...))',
-                '  end',
-                '  __traits_stdout[#__traits_stdout + 1] = table.concat(t, "\\t")',
-                'end',
-            ].join('\n'));
-            if (preludeErr) {
-                try { lua.lua_close(L); } catch (_) {}
-                return JSON.stringify({ ok: false, error: preludeErr, stdout: [], stderr: [preludeErr] });
-            }
-
             const safeInputJson = typeof inputJson === 'string' ? inputJson : '{}';
-            lua.lua_pushstring(L, to_luastring(safeInputJson));
-            lua.lua_setglobal(L, to_luastring('__traits_input_json'));
-
             let parsedInput = null;
             try { parsedInput = JSON.parse(safeInputJson); } catch (_) { parsedInput = null; }
-            pushJsValueToLua(L, lua, to_luastring, parsedInput, 0);
-            lua.lua_setglobal(L, to_luastring('input'));
+            const sessionId = parsedInput && typeof parsedInput === 'object' ? parsedInput.__lua_session_id : null;
+            let session = sessionId ? _luaSessions.get(sessionId) : null;
 
-            if (parsedInput && typeof parsedInput === 'object' && !Array.isArray(parsedInput)) {
-                for (const [k, v] of Object.entries(parsedInput)) {
-                    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
-                    if (typeof v === 'string') lua.lua_pushstring(L, to_luastring(v));
-                    else if (typeof v === 'number') lua.lua_pushnumber(L, v);
-                    else if (typeof v === 'boolean') lua.lua_pushboolean(L, v ? 1 : 0);
-                    else if (v === null) lua.lua_pushnil(L);
-                    else continue;
-                    lua.lua_setglobal(L, to_luastring(k));
-                }
+            if (!session) {
+                session = buildLuaSession(fg, code, parsedInput || {});
+                _luaSessions.set(session.id, session);
+                const first = stepLuaSession(session, fg, undefined);
+                return JSON.stringify(first);
             }
 
-            // Browser Lua bridge compatibility: provide minimal io.read support
-            // backed by input.stdin (array of values/lines). This enables scripts
-            // written for command-line Lua prompts to run in WASM mode.
-            const ioShimErr = runChunk([
-                'if io == nil then io = {} end',
-                '__traits_stdin = {}',
-                '__traits_stdin_idx = 1',
-                'if type(input) == "table" and type(input.stdin) == "table" then',
-                '  __traits_stdin = input.stdin',
-                'end',
-                'io.read = function(fmt)',
-                '  local v = __traits_stdin[__traits_stdin_idx]',
-                '  __traits_stdin_idx = __traits_stdin_idx + 1',
-                '  if v == nil then return nil end',
-                '  if fmt == "*n" then',
-                '    return tonumber(v)',
-                '  end',
-                '  return tostring(v)',
-                'end',
-            ].join('\n'));
-            if (ioShimErr && !execErr) {
-                try { lua.lua_close(L); } catch (_) {}
-                return JSON.stringify({ ok: false, error: ioShimErr, stdout: [], stderr: [ioShimErr] });
-            }
-
-            const execErr = runChunk(code);
-
-            const postErr = runChunk('__traits_stdout_joined = table.concat(__traits_stdout, "\\n")');
-            if (postErr && !execErr) {
-                try { lua.lua_close(L); } catch (_) {}
-                return JSON.stringify({ ok: false, error: postErr, stdout: [], stderr: [postErr] });
-            }
-
-            lua.lua_getglobal(L, to_luastring('__traits_stdout_joined'));
-            const stdoutJoined = lua.lua_tojsstring(L, -1) || '';
-            lua.lua_pop(L, 1);
-
-            lua.lua_getglobal(L, to_luastring('__result'));
-            const resultType = lua.lua_type(L, -1);
-            let result = null;
-            if (resultType === lua.LUA_TSTRING) result = lua.lua_tojsstring(L, -1);
-            else if (resultType === lua.LUA_TNUMBER) result = lua.lua_tonumber(L, -1);
-            else if (resultType === lua.LUA_TBOOLEAN) result = !!lua.lua_toboolean(L, -1);
-            else if (resultType === lua.LUA_TNIL) result = null;
-            lua.lua_pop(L, 1);
-
-            try { lua.lua_close(L); } catch (_) {}
-
-            const stdout = stdoutJoined ? String(stdoutJoined).split('\n') : [];
-            const stderr = execErr ? [execErr] : [];
-            if (execErr) {
-                return JSON.stringify({ ok: false, error: execErr, stdout, stderr, result });
-            }
-            return JSON.stringify({ ok: true, stdout, stderr, result });
+            const stdinValues = (parsedInput && typeof parsedInput === 'object' && Array.isArray(parsedInput.stdin))
+                ? parsedInput.stdin.slice()
+                : [];
+            const resumeValue = stdinValues.length ? stdinValues.shift() : undefined;
+            setLuaGlobalStdin(session.L, lua, fg.to_luastring, stdinValues);
+            return JSON.stringify(stepLuaSession(session, fg, resumeValue));
         } catch (e) {
             const msg = (e && (e.message || e.toString())) || 'lua runtime failure';
             return JSON.stringify({ ok: false, error: msg, stdout: [], stderr: [msg] });
