@@ -1,5 +1,8 @@
 use serde_json::{json, Value};
 
+#[cfg(not(target_arch = "wasm32"))]
+use kernel_logic;
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};
 
@@ -130,6 +133,36 @@ fn run_native_lua(code: &str, input: &Value) -> Value {
         return json!({ "ok": false, "error": format!("failed to set print: {e}") });
     }
 
+    // Expose traits.call(path, arg1, arg2, ...) -> result table
+    let traits_call_fn = lua.create_function(|inner_lua, args: mlua::MultiValue| {
+        let mut iter = args.iter();
+        let path = match iter.next() {
+            Some(mlua::Value::String(s)) => s.to_str().map(|b| b.to_string()).unwrap_or_default(),
+            _ => return Err(mlua::Error::RuntimeError("traits.call: path must be a string".into())),
+        };
+        let call_args: Vec<Value> = iter
+            .map(|v| lua_value_to_json(v))
+            .collect();
+        let result = kernel_logic::platform::dispatch(&path, &call_args)
+            .unwrap_or_else(|| json!({"ok": false, "error": format!("trait not found: {path}")}));
+        match json_to_lua(inner_lua, &result) {
+            Ok(v) => Ok(v),
+            Err(e) => Err(mlua::Error::RuntimeError(format!("traits.call result conversion: {e}"))),
+        }
+    });
+    let traits_call_fn = match traits_call_fn {
+        Ok(f) => f,
+        Err(e) => return json!({ "ok": false, "error": format!("failed to create traits.call: {e}") }),
+    };
+    let traits_table = match lua.create_table() {
+        Ok(t) => t,
+        Err(e) => return json!({ "ok": false, "error": format!("failed to create traits table: {e}") }),
+    };
+    let _ = traits_table.set("call", traits_call_fn);
+    if let Err(e) = lua.globals().set("traits", traits_table) {
+        return json!({ "ok": false, "error": format!("failed to set traits global: {e}") });
+    }
+
     // Expose input as __traits_input_json string
     let input_json = input.to_string();
     if let Err(e) = lua.globals().set("__traits_input_json", input_json.as_str()) {
@@ -229,5 +262,47 @@ fn json_to_lua(lua: &mlua::Lua, value: &Value) -> mlua::Result<mlua::Value> {
             }
             Ok(mlua::Value::Table(table))
         }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn lua_value_to_json(v: &mlua::Value) -> Value {
+    match v {
+        mlua::Value::Nil => Value::Null,
+        mlua::Value::Boolean(b) => json!(*b),
+        mlua::Value::Integer(n) => json!(*n),
+        mlua::Value::Number(n) => json!(*n),
+        mlua::Value::String(s) => {
+            let s = s.to_str().map(|b| b.to_string()).unwrap_or_default();
+            json!(s)
+        }
+        mlua::Value::Table(t) => {
+            // Check if it's array-like (keys 1..n)
+            let len = t.raw_len();
+            if len > 0 {
+                let mut arr = Vec::new();
+                for i in 1..=len {
+                    let item: mlua::Value = t.get(i).unwrap_or(mlua::Value::Nil);
+                    arr.push(lua_value_to_json(&item));
+                }
+                json!(arr)
+            } else {
+                let mut map = serde_json::Map::new();
+                for pair in t.clone().pairs::<mlua::Value, mlua::Value>() {
+                    if let Ok((k, val)) = pair {
+                        let key = match &k {
+                            mlua::Value::String(s) => s.to_str().map(|b| b.to_string()).ok(),
+                            mlua::Value::Integer(n) => Some(n.to_string()),
+                            _ => None,
+                        };
+                        if let Some(key) = key {
+                            map.insert(key, lua_value_to_json(&val));
+                        }
+                    }
+                }
+                Value::Object(map)
+            }
+        }
+        _ => Value::Null,
     }
 }

@@ -2092,6 +2092,7 @@ fn execute_leaf_command(
         "curl" => curl_command(&args, backend, vfs, cwd),
         "vi" | "ee" => editor_stub_command(&cmd_name, &args, stdin_input, vfs, cwd),
         "stat" => stat_command(&args, vfs, cwd),
+        "nl" => nl_command(&args, stdin_input, vfs, cwd),
 
         "lua" => lua_command(&args, vfs, cwd, backend),
 
@@ -2664,6 +2665,71 @@ fn wc_command(
         parts.push(path.to_string());
     }
     parts.join(" ")
+}
+
+fn nl_command(
+    args: &[String],
+    stdin_input: Option<String>,
+    vfs: &RefCell<Box<dyn Vfs>>,
+    cwd: &str,
+) -> String {
+    // flags: -b a (number all lines, default), -b t (skip blank), -v N (start number), -n FORMAT
+    let mut body_type = 'a'; // 'a' = all lines, 't' = non-blank only
+    let mut start: usize = 1;
+    let mut file: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-b" => {
+                i += 1;
+                if let Some(v) = args.get(i) {
+                    body_type = v.chars().next().unwrap_or('a');
+                }
+            }
+            "-v" => {
+                i += 1;
+                if let Some(v) = args.get(i) {
+                    start = v.parse().unwrap_or(1);
+                }
+            }
+            s if s.starts_with("-b") => {
+                body_type = s.chars().nth(2).unwrap_or('a');
+            }
+            s if s.starts_with("-v") => {
+                start = s[2..].parse().unwrap_or(1);
+            }
+            s if !s.starts_with('-') => {
+                file = Some(s.to_string());
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let text = if let Some(path) = file {
+        let full = resolve_vfs_path(cwd, &path);
+        match vfs.borrow().read(&full) {
+            Some(content) => content,
+            None => return format!("{RED}nl: {}: no such file{RESET}", path),
+        }
+    } else {
+        stdin_input.unwrap_or_default()
+    };
+    let mut out = String::new();
+    let mut n = start;
+    for line in text.lines() {
+        let number = if body_type == 't' && line.trim().is_empty() {
+            "       \t".to_string()
+        } else {
+            let s = format!("{:>6}\t", n);
+            n += 1;
+            s
+        };
+        out.push_str(&number);
+        out.push_str(line);
+        out.push('\n');
+    }
+    if out.ends_with('\n') { out.truncate(out.len() - 1); }
+    out
 }
 
 fn sed_command(
@@ -4102,7 +4168,7 @@ pub fn tab_completions(prefix: &str, all_paths: &[String]) -> (Vec<String>, Stri
 fn shell_builtin_commands() -> Vec<String> {
     [
         "help", "h", "?", "list", "info", "i", "call", "c", "search", "s", "version", "v", "clear", "cls",
-        "echo", "printf", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "sed", "test", "[", "find", "curl", "lua",
+        "echo", "printf", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "nl", "sed", "test", "[", "find", "curl", "lua",
         "vi", "ee", "stat", "mkdir", "write", "tee", "rm", "ls", "cd", "chat",
     ]
     .iter()
@@ -4123,7 +4189,7 @@ fn should_complete_vfs_paths(cmd: &str, parts: &[String], ends_space: bool) -> b
         // first-arg path commands
         "ls" | "cd" | "find" | "mkdir" | "rm" | "stat" | "vi" | "ee" | "lua" => arg_index == 0,
         // read/write commands where additional args can still be file paths
-        "cat" | "head" | "tail" | "grep" | "wc" | "sed" => arg_index <= 1,
+        "cat" | "head" | "tail" | "grep" | "wc" | "nl" | "sed" => arg_index <= 1,
         // write/tee complete only destination path (first arg), not content payload
         "write" | "tee" => arg_index == 0,
         _ => false,

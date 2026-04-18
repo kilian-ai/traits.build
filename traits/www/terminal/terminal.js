@@ -25,6 +25,7 @@ const REST_RE_PLAIN = /\[REST\]([\s\S]*?)\[\/REST\]/;
 const REST_RE_DEGRADED = /EST\]([\s\S]*?)EST\]/;
 // Source of truth: kernel/cli/cli.rs PROMPT constant. Must stay in sync.
 const PROMPT = _sharedDefaults?.prompt || '\x1b[32mtraits \x1b[0m';
+const LUA_ESCAPED_PROMPT_LINE_RE = /^\\x1b\[[0-9;]*m.*\\x1b\[[0-9;]*m\s*$/;
 
 const _keys = _sharedDefaults?.storageKeys || {};
 const LS_SCROLLBACK = _keys.scrollback || 'traits.terminal.scrollback';
@@ -46,6 +47,19 @@ let Terminal, FitAddon, WebLinksAddon, SerializeAddon;
  * @returns {Promise<{term, fitAddon, wasm}>}
  */
 export async function createTerminal(mountEl, opts = {}) {
+
+    const decodeEscapedAnsi = (text) => String(text || '')
+        .replace(/\\x1b/gi, '\x1b')
+        .replace(/\\u001b/gi, '\x1b');
+
+    const writePrompt = () => term.write(decodeEscapedAnsi(PROMPT));
+
+    const isLuaPromptArtifactLine = (line) => {
+        const s = String(line || '').trim();
+        if (!s) return false;
+        if (LUA_ESCAPED_PROMPT_LINE_RE.test(s)) return true;
+        return false;
+    };
 
     const findFirstJsonValue = (text) => {
         if (!text) return null;
@@ -167,8 +181,12 @@ export async function createTerminal(mountEl, opts = {}) {
             term.write('\x1b[31mLua error: invalid result\x1b[0m\r\n');
             return;
         }
-        const stdout = Array.isArray(outcome.stdout) ? outcome.stdout : [];
-        const stderr = Array.isArray(outcome.stderr) ? outcome.stderr : [];
+        const stdout = Array.isArray(outcome.stdout)
+            ? outcome.stdout.filter((line) => !isLuaPromptArtifactLine(line))
+            : [];
+        const stderr = Array.isArray(outcome.stderr)
+            ? outcome.stderr.filter((line) => !isLuaPromptArtifactLine(line))
+            : [];
         stdout.forEach((line) => term.write(String(line) + '\r\n'));
         stderr.forEach((line) => term.write(`\x1b[31m${String(line)}\x1b[0m\r\n`));
         if (outcome.ok === false) {
@@ -232,24 +250,36 @@ export async function createTerminal(mountEl, opts = {}) {
             : await runLuaCode(await readVfsText(path), initialInput);
         let firstPrompt = true;
 
-        while (outcome && outcome.need_input) {
+        while (outcome && (outcome.need_input || outcome.traits_call)) {
             if (firstPrompt) {
                 printLuaOutcome(outcome);
                 firstPrompt = false;
             }
-            const next = await readLuaStdinLineFromTerminal();
-            if (next?.cancelled) {
-                term.write('\x1b[33mLua input cancelled\x1b[0m\r\n');
-                return { ok: false, error: 'Lua input cancelled', stdout: [], stderr: [] };
+            if (outcome.traits_call) {
+                // traits.call(path, args) yield — dispatch via SDK and resume with result
+                const tc = outcome.traits_call;
+                let resumeVal = null;
+                try {
+                    const tcRes = await activeSdk.call(tc.path, tc.args);
+                    resumeVal = tcRes;
+                } catch (e) {
+                    resumeVal = { ok: false, error: String(e?.message || e) };
+                }
+                const resumeInput = { __lua_session_id: outcome.session_id, __traits_call_result: resumeVal };
+                outcome = await runLuaCode('', resumeInput);
+            } else {
+                const next = await readLuaStdinLineFromTerminal();
+                if (next?.cancelled) {
+                    term.write('\x1b[33mLua input cancelled\x1b[0m\r\n');
+                    return { ok: false, error: 'Lua input cancelled', stdout: [], stderr: [] };
+                }
+                const resumeInput = {
+                    __lua_session_id: outcome.session_id,
+                    stdin: [next?.eof ? null : String(next?.line || '')],
+                };
+                outcome = await runLuaCode('', resumeInput);
             }
-            const resumeInput = {
-                __lua_session_id: outcome.session_id,
-                stdin: [next?.eof ? null : String(next?.line || '')],
-            };
-            outcome = await runLuaCode('', resumeInput);
-            if (outcome && outcome.need_input) {
-                // Show incremental script output immediately after each input line
-                // before prompting for the next value.
+            if (outcome && (outcome.need_input || outcome.traits_call)) {
                 printLuaOutcome(outcome);
             }
         }
@@ -455,7 +485,7 @@ export async function createTerminal(mountEl, opts = {}) {
             const inputRes = await backgroundCall('cli_input', { data });
             if (!inputRes?.ok) {
                 term.write(`\x1b[31mCLI error: ${inputRes?.error || 'unknown'}\x1b[0m\r\n`);
-                term.write(PROMPT);
+                writePrompt();
                 return;
             }
             const output = inputRes.result || '';
@@ -792,7 +822,13 @@ export async function createTerminal(mountEl, opts = {}) {
             if (luaMatch) {
                 const matchedRe = output.match(LUA_RE) ? LUA_RE : LUA_RE_PLAIN;
                 const visible = output.replace(matchedRe, '');
-                if (visible) term.write(visible);
+                if (visible) {
+                    const cleanedVisible = visible
+                        .split(/\r?\n/)
+                        .filter((line) => !isLuaPromptArtifactLine(line))
+                        .join('\r\n');
+                    if (cleanedVisible) term.write(decodeEscapedAnsi(cleanedVisible));
+                }
                 try {
                     const payload = parseLuaJson(luaMatch[1]);
                     restPending = true;
@@ -811,10 +847,10 @@ export async function createTerminal(mountEl, opts = {}) {
                         throw new Error('missing lua code or script path');
                     }
                     printLuaOutcome(outcome);
-                    term.write(PROMPT);
+                    writePrompt();
                 } catch (e) {
                     term.write(`\x1b[31mLua error: ${e && e.message ? e.message : String(e)}\x1b[0m\r\n`);
-                    term.write(PROMPT);
+                    writePrompt();
                 } finally {
                     restPending = false;
                     requestAnimationFrame(saveState);

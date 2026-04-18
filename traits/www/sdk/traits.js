@@ -332,7 +332,24 @@ function _installLuaBridge() {
             throw new Error(ioShimErr);
         }
 
-        const thread = lua.lua_newthread(L);
+        // ── traits.call(path, arg1, arg2, ...) ──
+        // Yields {__traits_call=true, path, args} to the JS host, which makes
+        // the async SDK call and resumes the coroutine with the result.
+        const traitsShimErr = runChunk([
+            'traits = {}',
+            'function traits.call(path, ...)',
+            '  local args = {...}',
+            '  if #args == 1 and type(args[1]) == "table" then args = args[1] end',
+            '  local result = coroutine.yield({ __traits_call = true, path = path, args = args })',
+            '  return result',
+            'end',
+        ].join('\n'));
+        if (traitsShimErr) {
+            try { lua.lua_close(L); } catch (_) {}
+            throw new Error(traitsShimErr);
+        }
+
+
         const loadStatus = lauxlib.luaL_loadstring(thread, to_luastring(String(code || '')));
         if (loadStatus !== lua.LUA_OK) {
             const msg = lua.lua_tojsstring(thread, -1) || 'lua load error';
@@ -371,9 +388,14 @@ function _installLuaBridge() {
         if (status === lua.LUA_YIELD) {
             const yielded = luaToJsValue(session.thread, lua, fg, -1, 0) || {};
             lua.lua_settop(session.thread, 0);
+            const traitsCall = yielded.__traits_call ? {
+                path: String(yielded.path || ''),
+                args: Array.isArray(yielded.args) ? yielded.args : [],
+            } : null;
             return {
                 ok: true,
                 need_input: !!yielded.__traits_need_input,
+                traits_call: traitsCall,
                 session_id: session.id,
                 stdout: delta.stdout,
                 stderr: delta.stderr,
@@ -419,6 +441,10 @@ function _installLuaBridge() {
             const stdinValues = (parsedInput && typeof parsedInput === 'object' && Array.isArray(parsedInput.stdin))
                 ? parsedInput.stdin.slice()
                 : [];
+            // traits_call resume: __traits_call_result carries the SDK call result
+            if (parsedInput && parsedInput.__traits_call_result !== undefined) {
+                return JSON.stringify(stepLuaSession(session, fg, parsedInput.__traits_call_result));
+            }
             const resumeValue = stdinValues.length ? stdinValues.shift() : undefined;
             setLuaGlobalStdin(session.L, lua, fg.to_luastring, stdinValues);
             return JSON.stringify(stepLuaSession(session, fg, resumeValue));

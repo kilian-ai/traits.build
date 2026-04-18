@@ -1,7 +1,7 @@
 [trait]
 description = "Execute Lua scripts via Fengari (WASM) or mlua (native)"
-version = "v260418"
-checksum = "0817aa5b1d81627023da54baf1d05c8889b45f095099576efc154a003b24da18"
+version = "v260418.201748"
+checksum = "c2433d2952ac8866d7c28938b048c28d467cb88f7578a7844a822fae11902106"
 author = "system"
 tags = ["sys", "lua", "runtime", "scripting"]
 
