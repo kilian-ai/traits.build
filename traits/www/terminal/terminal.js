@@ -590,7 +590,17 @@ export async function createTerminal(mountEl, opts = {}) {
                         }).catch(e => {
                             term.write(`\x1b[31mDispatch error: ${e.message}\x1b[0m\r\n`);
                             term.write(returnPrompt);
-                        }).finally(() => { restPending = false; requestAnimationFrame(saveState); });
+                        }).finally(() => {
+                            restPending = false;
+                            requestAnimationFrame(saveState);
+                            // Main-thread WASM calls (llm.agent → sys.shell) write VFS
+                            // to localStorage, but the Worker can't see localStorage.
+                            // Push updated PVFS to the Worker so next cli_input picks it up.
+                            try {
+                                const pvfs = localStorage.getItem('traits.pvfs');
+                                if (pvfs && backgroundCall) backgroundCall('pvfs_load', { json: pvfs });
+                            } catch(_) {}
+                        });
                     } else {
                     // Last-resort REST fallback (SDK unavailable)
                         const restPath = p.replace(/\./g, '/');
