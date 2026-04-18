@@ -350,7 +350,7 @@ function _installLuaBridge() {
             throw new Error(traitsShimErr);
         }
 
-
+        const thread = lua.lua_newthread(L);
         const loadStatus = lauxlib.luaL_loadstring(thread, to_luastring(String(code || '')));
         if (loadStatus !== lua.LUA_OK) {
             const msg = lua.lua_tojsstring(thread, -1) || 'lua load error';
