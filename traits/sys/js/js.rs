@@ -71,6 +71,7 @@ const input = (() => {
   try { return JSON.parse(inputJson || '{}'); }
   catch (_) { return {}; }
 })();
+const stdin = Array.isArray(input.stdin) ? input.stdin.slice() : [];
 
 const traits = {
   call(path, ...args) {
@@ -88,6 +89,35 @@ const traits = {
     return Promise.resolve(this.call(path, ...args));
   },
 };
+
+const promptShim = (message = '') => {
+	if (stdin.length > 0) {
+		return String(stdin.shift());
+	}
+	if (typeof globalThis.prompt === 'function') {
+		const v = globalThis.prompt(String(message));
+		return v == null ? null : String(v);
+	}
+	throw new Error(
+		'prompt() is not available in this runtime. Provide input via input.stdin, '
+		+ 'for example: js file.js 1 2 3 or js file.js {"stdin":["1","2","3"]}'
+	);
+};
+
+const confirmShim = (message = '') => {
+	const v = promptShim(String(message) + ' [y/n]');
+	if (v == null) return false;
+	const s = String(v).trim().toLowerCase();
+	return s === 'y' || s === 'yes' || s === 'true' || s === '1';
+};
+
+const alertShim = (message = '') => {
+	stdout.push(String(message));
+};
+
+if (typeof globalThis.prompt !== 'function') globalThis.prompt = promptShim;
+if (typeof globalThis.confirm !== 'function') globalThis.confirm = confirmShim;
+if (typeof globalThis.alert !== 'function') globalThis.alert = alertShim;
 
 const origLog = console.log;
 const origErr = console.error;

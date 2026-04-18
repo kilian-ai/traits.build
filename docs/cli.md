@@ -151,6 +151,13 @@ The portable terminal session includes shell-compatible builtins aimed at agent 
 - `js` (run JavaScript from inline code or `.js` files in WASM terminal)
 - `vi` and `ee` (preview file, or write/append via args/stdin)
 
+For `js`, scripts that use `prompt()` should provide input via trailing args or JSON stdin:
+
+```bash
+js tic_tac_toe.js 1 5 2 9 3
+js tic_tac_toe.js '{"stdin":["1","5","2","9","3"]}'
+```
+
 `cd` now updates per-session working directory state, and path-taking commands resolve relative paths against that `cwd`.
 
 `mkdir` supports plain mode and `-p` parent creation in the CLI VFS.
