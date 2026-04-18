@@ -20,6 +20,8 @@ const WEBLLM_RE = new RegExp(`${(_sentinels.webllmOpen || '\\x1b\\[WEBLLM\\]').r
 const VOICE_RE = new RegExp(`${(_sentinels.voiceOpen || '\\x1b\\[VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)${(_sentinels.voiceClose || '\\x1b\\[/VOICE\\]').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 const LUA_RE = /\x1b\[LUA\]([\s\S]*?)\x1b\[\/LUA\]/;
 const LUA_RE_PLAIN = /\[LUA\]([\s\S]*?)\[\/LUA\]/;
+const JS_RE = /\x1b\[JS\]([\s\S]*?)\x1b\[\/JS\]/;
+const JS_RE_PLAIN = /\[JS\]([\s\S]*?)\[\/JS\]/;
 const REST_RE_PLAIN = /\[REST\]([\s\S]*?)\[\/REST\]/;
 // Degraded pattern seen when ESC CSI is consumed by terminal as control sequence.
 const REST_RE_DEGRADED = /EST\]([\s\S]*?)EST\]/;
@@ -176,6 +178,13 @@ export async function createTerminal(mountEl, opts = {}) {
         return unwrapResult(res) || { ok: false, error: 'empty lua result' };
     };
 
+    const runJsCode = async (code, input) => {
+        if (!activeSdk) return { ok: false, error: 'SDK unavailable' };
+        const res = await activeSdk.call('sys.js', [String(code || ''), input || {}], { force: 'wasm' });
+        if (!res?.ok) return { ok: false, error: res?.error || 'sys.js call failed' };
+        return unwrapResult(res) || { ok: false, error: 'empty js result' };
+    };
+
     const printLuaOutcome = (outcome) => {
         if (!outcome || typeof outcome !== 'object') {
             term.write('\x1b[31mLua error: invalid result\x1b[0m\r\n');
@@ -193,6 +202,33 @@ export async function createTerminal(mountEl, opts = {}) {
             term.write(`\x1b[31mLua error: ${String(outcome.error || 'unknown error')}\x1b[0m\r\n`);
             return;
         }
+        if (!stdout.length && outcome.result !== undefined && outcome.result !== null && outcome.result !== '') {
+            const text = typeof outcome.result === 'string'
+                ? outcome.result
+                : JSON.stringify(outcome.result, null, 2);
+            term.write(text + '\r\n');
+        }
+    };
+
+    const printJsOutcome = (outcome) => {
+        if (!outcome || typeof outcome !== 'object') {
+            term.write('\x1b[31mJS error: invalid result\x1b[0m\r\n');
+            return;
+        }
+        const stdout = Array.isArray(outcome.stdout) ? outcome.stdout : [];
+        const stderr = Array.isArray(outcome.stderr) ? outcome.stderr : [];
+        stdout.forEach((line) => term.write(String(line) + '\r\n'));
+        stderr.forEach((line) => term.write(`\x1b[31m${String(line)}\x1b[0m\r\n`));
+
+        if (outcome.need_input) {
+            return;
+        }
+
+        if (outcome.ok === false) {
+            term.write(`\x1b[31mjs error: ${String(outcome.error || 'unknown error')}\x1b[0m\r\n`);
+            return;
+        }
+
         if (!stdout.length && outcome.result !== undefined && outcome.result !== null && outcome.result !== '') {
             const text = typeof outcome.result === 'string'
                 ? outcome.result
@@ -281,6 +317,85 @@ export async function createTerminal(mountEl, opts = {}) {
             }
             if (outcome && (outcome.need_input || outcome.traits_call)) {
                 printLuaOutcome(outcome);
+            }
+        }
+
+        return outcome;
+    };
+
+    const readJsStdinLineFromTerminal = async (label = 'js stdin') => {
+        let buffer = '';
+        const prompt = `${String(label || 'js stdin')}> `;
+        term.write(prompt);
+
+        return new Promise((resolve) => {
+            const disposable = term.onData((data) => {
+                for (const ch of data) {
+                    if (ch === '\u0003') { // Ctrl+C
+                        term.write('^C\r\n');
+                        disposable.dispose();
+                        resolve({ cancelled: true });
+                        return;
+                    }
+                    if (ch === '\u0004') { // Ctrl+D
+                        term.write('^D\r\n');
+                        disposable.dispose();
+                        resolve({ eof: true });
+                        return;
+                    }
+                    if (ch === '\r') {
+                        term.write('\r\n');
+                        disposable.dispose();
+                        resolve({ line: buffer });
+                        continue;
+                    }
+                    if (ch === '\u007f' || ch === '\b') {
+                        if (buffer.length > 0) {
+                            buffer = buffer.slice(0, -1);
+                            term.write('\b \b');
+                        }
+                        continue;
+                    }
+                    if (ch >= ' ') {
+                        buffer += ch;
+                        term.write(ch);
+                    }
+                }
+            });
+        });
+    };
+
+    const runInteractiveJs = async (code, input, path) => {
+        const baseInput = (input && typeof input === 'object') ? { ...input } : {};
+        const stdinAccum = Array.isArray(baseInput.stdin)
+            ? baseInput.stdin.map((v) => String(v))
+            : [];
+
+        const runOnce = async () => {
+            const script = code ? String(code) : await readVfsText(path);
+            return runJsCode(script, { ...baseInput, stdin: stdinAccum.slice() });
+        };
+
+        let outcome = await runOnce();
+        let firstPrompt = true;
+
+        while (outcome && outcome.need_input) {
+            if (firstPrompt) {
+                printJsOutcome(outcome);
+                firstPrompt = false;
+            }
+
+            const next = await readJsStdinLineFromTerminal(outcome.prompt || 'js stdin');
+            if (next?.cancelled) {
+                term.write('\x1b[33mJS input cancelled\x1b[0m\r\n');
+                return { ok: false, error: 'JS input cancelled', stdout: [], stderr: [] };
+            }
+
+            stdinAccum.push(next?.eof ? '' : String(next?.line || ''));
+            outcome = await runOnce();
+
+            if (outcome && outcome.need_input) {
+                printJsOutcome(outcome);
             }
         }
 
@@ -850,6 +965,40 @@ export async function createTerminal(mountEl, opts = {}) {
                     writePrompt();
                 } catch (e) {
                     term.write(`\x1b[31mLua error: ${e && e.message ? e.message : String(e)}\x1b[0m\r\n`);
+                    writePrompt();
+                } finally {
+                    restPending = false;
+                    requestAnimationFrame(saveState);
+                }
+                return;
+            }
+
+            // Check for JS dispatch sentinel
+            const jsMatch = output.match(JS_RE) || output.match(JS_RE_PLAIN);
+            if (jsMatch) {
+                const matchedRe = output.match(JS_RE) ? JS_RE : JS_RE_PLAIN;
+                const visible = output.replace(matchedRe, '');
+                if (visible) {
+                    term.write(decodeEscapedAnsi(visible));
+                }
+                try {
+                    const payload = parseLuaJson(jsMatch[1]);
+                    restPending = true;
+                    const payloadObj = payload && typeof payload === 'object' ? payload : {};
+                    const code = payloadObj.code || '';
+                    const path = payloadObj.path || '';
+
+                    let outcome;
+                    if (code || path) {
+                        outcome = await runInteractiveJs(code, payloadObj.input || {}, path);
+                    } else {
+                        throw new Error('missing js code or script path');
+                    }
+
+                    printJsOutcome(outcome);
+                    writePrompt();
+                } catch (e) {
+                    term.write(`\x1b[31mJS error: ${e && e.message ? e.message : String(e)}\x1b[0m\r\n`);
                     writePrompt();
                 } finally {
                     restPending = false;

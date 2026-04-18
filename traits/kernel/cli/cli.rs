@@ -141,6 +141,8 @@ pub const VOICE_SENTINEL_END: &str = "\x1b[/VOICE]";
 
 pub const LUA_SENTINEL_START: &str = "\x1b[LUA]";
 pub const LUA_SENTINEL_END: &str = "\x1b[/LUA]";
+pub const JS_SENTINEL_START: &str = "\x1b[JS]";
+pub const JS_SENTINEL_END: &str = "\x1b[/JS]";
 
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
@@ -600,9 +602,13 @@ impl CliSession {
                 if result.contains(CLEAR_SENTINEL) {
                     return format!("{CLEAR_SENTINEL}{PROMPT}");
                 }
-                if result.contains(REST_SENTINEL_START) || result.contains(WEBLLM_SENTINEL_START) || result.contains(LUA_SENTINEL_START) {
+                if result.contains(REST_SENTINEL_START)
+                    || result.contains(WEBLLM_SENTINEL_START)
+                    || result.contains(LUA_SENTINEL_START)
+                    || result.contains(JS_SENTINEL_START)
+                {
                     out.push_str(&result);
-                    return out; // No prompt — JS handles async REST/WebLLM/Lua
+                    return out; // No prompt — JS handles async REST/WebLLM/Lua/JS
                 }
                 if !result.is_empty() {
                     // Normalise LF → CRLF so xterm renders straight columns
@@ -887,9 +893,10 @@ impl CliSession {
                     if result.contains(REST_SENTINEL_START)
                         || result.contains(WEBLLM_SENTINEL_START)
                         || result.contains(LUA_SENTINEL_START)
+                        || result.contains(JS_SENTINEL_START)
                     {
                         out.push_str(&result);
-                        return out; // No prompt — JS handles async REST/WebLLM/Lua
+                        return out; // No prompt — JS handles async REST/WebLLM/Lua/JS
                     }
                     if !result.is_empty() && !result.contains(CLEAR_SENTINEL) {
                         out.push_str(&result);
@@ -3219,7 +3226,7 @@ fn js_command(
     args: &[String],
     vfs: &RefCell<Box<dyn Vfs>>,
     cwd: &str,
-    backend: &dyn CliCallBackend,
+    _backend: &dyn CliCallBackend,
 ) -> String {
     if args.is_empty() {
         return format!("{RED}Usage: js <script.js | inline-code>{RESET}");
@@ -3241,20 +3248,45 @@ fn js_command(
                     serde_json::json!({})
                 };
 
-                let result = backend
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let payload = serde_json::json!({
+                        "code": code,
+                        "input": input,
+                    });
+                    return format!("{JS_SENTINEL_START}{}{JS_SENTINEL_END}", payload);
+                }
+
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                let result = _backend
                     .call("sys.js", &[serde_json::json!(code), input])
                     .ok();
                 return format_js_result(result);
+                }
             }
             None => return format!("{RED}js: {}: file not found{RESET}", first),
         }
     }
 
     let code = args.join(" ");
-    let result = backend
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let payload = serde_json::json!({
+            "code": code,
+            "input": serde_json::json!({}),
+        });
+        return format!("{JS_SENTINEL_START}{}{JS_SENTINEL_END}", payload);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+    let result = _backend
         .call("sys.js", &[serde_json::json!(code), serde_json::json!({})])
         .ok();
     format_js_result(result)
+    }
 }
 
 fn format_js_result(result: Option<serde_json::Value>) -> String {

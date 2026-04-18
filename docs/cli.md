@@ -158,6 +158,8 @@ js tic_tac_toe.js 1 5 2 9 3
 js tic_tac_toe.js '{"stdin":["1","5","2","9","3"]}'
 ```
 
+In the WASM terminal, `js` now supports interactive `prompt()` loops: when stdin is exhausted, the terminal asks for the next value and re-runs the script with accumulated `input.stdin` entries.
+
 `cd` now updates per-session working directory state, and path-taking commands resolve relative paths against that `cwd`.
 
 `mkdir` supports plain mode and `-p` parent creation in the CLI VFS.

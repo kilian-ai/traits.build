@@ -101,10 +101,7 @@ const promptShim = (message = '') => {
 		const v = nativePrompt(String(message));
 		return v == null ? null : String(v);
 	}
-	throw new Error(
-		'prompt() is not available in this runtime. Provide input via input.stdin, '
-		+ 'for example: js file.js 1 2 3 or js file.js {"stdin":["1","2","3"]}'
-	);
+	throw { __traits_need_input: true, prompt: String(message || 'input') };
 };
 
 const confirmShim = (message = '') => {
@@ -138,18 +135,37 @@ console.error = (...args) => stderr.push(args.map(a => String(a)).join('\t'));
 let ok = true;
 let result = null;
 let error = null;
+let needInputPrompt = null;
 
 try {
 	const fn = new Function('input', 'traits', code);
 	const value = fn(input, traits);
   result = value === undefined ? null : value;
 } catch (e) {
-  ok = false;
-  error = String((e && e.stack) ? e.stack : e);
+	if (e && e.__traits_need_input) {
+		needInputPrompt = String(e.prompt || 'input');
+		ok = true;
+		error = null;
+	} else {
+		ok = false;
+		error = String((e && e.stack) ? e.stack : e);
+	}
 }
 
 console.log = origLog;
 console.error = origErr;
+
+if (needInputPrompt !== null) {
+	return JSON.stringify({
+		ok: true,
+		need_input: true,
+		prompt: needInputPrompt,
+		stdout,
+		stderr,
+		result,
+		error: null,
+	});
+}
 
 return JSON.stringify({ ok, stdout, stderr, result, error });
 "#,
