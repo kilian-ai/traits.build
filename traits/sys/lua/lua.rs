@@ -14,12 +14,23 @@ use wasm_bindgen::{JsCast, JsValue};
 /// Returns:
 ///   { ok, stdout, stderr, result, error? }
 pub fn lua(args: &[Value]) -> Value {
-    let code = match args.first().and_then(|v| v.as_str()) {
-        Some(c) if !c.trim().is_empty() => c,
-        _ => return json!({ "ok": false, "error": "code is required" }),
-    };
-
     let input = args.get(1).cloned().unwrap_or_else(|| json!({}));
+    let code = args.first().and_then(|v| v.as_str()).unwrap_or("");
+    let is_resume = input
+        .get("__lua_session_id")
+        .and_then(|v| v.as_str())
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if code.trim().is_empty() {
+        return json!({ "ok": false, "error": "code is required" });
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    if code.trim().is_empty() && !is_resume {
+        return json!({ "ok": false, "error": "code is required" });
+    }
 
     #[cfg(target_arch = "wasm32")]
     {
