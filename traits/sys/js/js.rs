@@ -123,9 +123,9 @@ const alertShim = (message = '') => {
 	stdout.push(String(message));
 };
 
-if (typeof globalThis.prompt !== 'function') globalThis.prompt = promptShim;
-if (typeof globalThis.confirm !== 'function') globalThis.confirm = confirmShim;
-if (typeof globalThis.alert !== 'function') globalThis.alert = alertShim;
+globalThis.prompt = promptShim;
+globalThis.confirm = confirmShim;
+globalThis.alert = alertShim;
 
 const origLog = console.log;
 const origErr = console.error;
