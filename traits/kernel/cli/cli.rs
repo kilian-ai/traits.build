@@ -145,7 +145,7 @@ pub const LUA_SENTINEL_END: &str = "\x1b[/LUA]";
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
 const MAX_HISTORY_ENTRIES: usize = 500;
-const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. For filesystem changes, prefer sys.shell commands (mkdir/ls/find/cat/write/tee) so results are visible in the active terminal session. For code file edits, use full-file rewrite commands with write/tee and complete content encoded as literal \\n escapes in a single command, then verify by reading the file back. Never use heredocs, cat >, nano, or markdown code fences when creating files in this shell. Avoid sed -i and chained echo >> edits because they are fragile in this shell. Use sys.vfs only when explicitly requested as a storage API. If input asks to fix/edit/update/create/delete code in a file, execute the edit directly using tools, then verify by reading the file back (cat or equivalent), and report completion. Do not ask for confirmation when the requested edit is clear. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
+const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. For filesystem changes, prefer sys.shell commands (mkdir/ls/find/cat/write/tee) so results are visible in the active terminal session. For code file edits, use full-file rewrite commands with write/tee and complete content encoded as literal \\n escapes in a single command, then verify by reading the file back. Never wrap the whole content payload in outer quotes for write/tee; pass plain text with escaped newlines only. Never use heredocs, cat >, nano, or markdown code fences when creating files in this shell. Avoid sed -i and chained echo >> edits because they are fragile in this shell. Use sys.vfs only when explicitly requested as a storage API. If input asks to fix/edit/update/create/delete code in a file, execute the edit directly using tools, then verify by reading the file back (cat or equivalent), and report completion. Do not ask for confirmation when the requested edit is clear. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
 const UNKNOWN_CMD_CONFIG_PATH: &str = "config/unknown_command_agent.json";
 
 struct UnknownCmdConfig {
@@ -3203,7 +3203,8 @@ fn format_lua_result(result: Option<serde_json::Value>) -> String {
 }
 
 fn decode_cli_file_content(raw: &str) -> String {
-    let mut text = raw
+    let normalized = unwrap_wrapped_cli_payload(raw);
+    let mut text = normalized
         .replace("\\r\\n", "\n")
         .replace("\\n", "\n")
         .replace("\\t", "\t")
@@ -3214,6 +3215,39 @@ fn decode_cli_file_content(raw: &str) -> String {
     }
 
     text
+}
+
+fn unwrap_wrapped_cli_payload(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.len() < 2 {
+        return raw.to_string();
+    }
+
+    let mut chars = trimmed.chars();
+    let first = chars.next().unwrap_or('\0');
+    let last = trimmed.chars().last().unwrap_or('\0');
+    if !(first == '"' || first == '\'') || first != last {
+        return raw.to_string();
+    }
+
+    let inner = &trimmed[1..trimmed.len() - 1];
+    let looks_escaped_or_multiline = inner.contains("\\n")
+        || inner.contains("\\r")
+        || inner.contains("\n")
+        || inner.contains("\r")
+        || inner.contains("\\\"")
+        || inner.contains("\\'");
+    if !looks_escaped_or_multiline {
+        return raw.to_string();
+    }
+
+    let mut unwrapped = inner.to_string();
+    if first == '"' {
+        unwrapped = unwrapped.replace("\\\"", "\"");
+    } else {
+        unwrapped = unwrapped.replace("\\'", "'");
+    }
+    unwrapped
 }
 
 fn strip_markdown_code_fence(text: &str) -> Option<String> {
@@ -4423,6 +4457,20 @@ mod tests {
         let out = exec_line("traits cat test.txt", &backend, &shell, &vfs, &mut cwd);
         let plain = strip_ansi(&out);
         assert_eq!(plain.trim(), "hello");
+    }
+
+    #[test]
+    fn decode_cli_file_content_unwraps_quoted_multiline_payload() {
+        let raw = "\"-- header\\nprint(\\\"hi\\\")\"";
+        let decoded = decode_cli_file_content(raw);
+        assert_eq!(decoded, "-- header\nprint(\"hi\")");
+    }
+
+    #[test]
+    fn decode_cli_file_content_keeps_normal_quoted_text() {
+        let raw = "\"hello\"";
+        let decoded = decode_cli_file_content(raw);
+        assert_eq!(decoded, "\"hello\"");
     }
 }
 
