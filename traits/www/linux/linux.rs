@@ -2190,6 +2190,23 @@ const BOOT_SCRIPT: &str = r#"
             return /(usage:|config|prompt|question|readline|std\.in|argv\.length|if\s*\(.*argv|out:\s+.*config|out:\s+.*usage)/.test(h);
         }
 
+        function hasLuaIntent(taskText, sourcePath, targetPath) {
+            const t = String(taskText || '').toLowerCase();
+            const s = String(sourcePath || '').toLowerCase();
+            const d = String(targetPath || '').toLowerCase();
+            return /(^|\s)lua(\s|$)|\.lua\b/.test(t) || s.endsWith('.lua') || d.endsWith('.lua');
+        }
+
+        function isLuaExecutionCommand(cmdText) {
+            const c = String(cmdText || '').trim();
+            return /^lua\s+/.test(c);
+        }
+
+        function hasLuaErrorOutput(outputText) {
+            const out = String(outputText || '').toLowerCase();
+            return /(lua error|unfinished string|expected near|syntax error|attempt to|\[string\s+".*"\]:\d+)/.test(out);
+        }
+
         function hasUnbalancedQuotes(text) {
             const s = String(text || '');
             let single = false;
@@ -2297,6 +2314,10 @@ const BOOT_SCRIPT: &str = r#"
             '  5. NEVER create a dummy/placeholder file if source is not found\n' +
             '  6. If source does not exist, state this clearly and stop\n' +
             '  7. Verify file contents with cat BEFORE claiming success\n\n' +
+            'LUA VALIDATION PROTOCOL:\n' +
+            '  If task creates or edits a .lua file, you MUST run: lua <file.lua>\n' +
+            '  If Lua reports any parse/runtime error, fix the file and rerun lua <file.lua>.\n' +
+            '  DONE is allowed only after a clean lua run for edited .lua files.\n\n' +
             'RESPONSE FORMAT (every round):\n' +
             'THINK: <1-2 sentences: what you learned, what you plan to do next, why>\n' +
             'CMD: <exactly one shell command>\n\n' +
@@ -2315,6 +2336,7 @@ const BOOT_SCRIPT: &str = r#"
             '  head -n N /path/file                    — first N lines\n' +
             '  tail -n N /path/file                    — last N lines\n' +
             '  wc -l /path/file                        — line count\n\n' +
+            '  lua /path/file.lua                       — execute Lua file and show errors\n\n' +
             'CONSTRAINTS:\n' +
             '  - ONE command per round (no ; or && chains except test -f pattern)\n' +
             '  - No pipelines (|). No 2>&1. No /proc/* or /sys/*\n' +
@@ -2405,7 +2427,11 @@ const BOOT_SCRIPT: &str = r#"
         const behaviorIntent = hasConfigBehaviorIntent(task || '');
         const inferredSourcePath = inferSourcePath(task);
         const inferredTargetPath = inferTargetPath(task);
+        const luaIntent = hasLuaIntent(task || '', inferredSourcePath, inferredTargetPath);
         const MAX = await resolveAgentMaxRounds();
+        let hadLuaRun = false;
+        let hadLuaSuccess = false;
+        let lastLuaError = '';
 
         term.write('\x1b[1;32m=== Agent: ' + task + ' ===\x1b[0m\r\n');
         term.write('\x1b[2m[agent] max rounds: ' + MAX + ' | model: gpt5.4\x1b[0m\r\n');
@@ -2437,6 +2463,14 @@ const BOOT_SCRIPT: &str = r#"
             if (agentExistsConfirmed) {
                 userMsg += '\nSTATE: Source file existence is already confirmed (exists). Do NOT repeat test -f. '
                     + 'Next step: read source with cat, then execute concrete edits or create target file.';
+            }
+
+            if (luaIntent) {
+                userMsg += '\nLUA TASK REQUIREMENT: For edited/created .lua files, run lua <file.lua>. '
+                    + 'If errors appear, fix and rerun until clean. Do not emit DONE before a clean lua run.';
+                if (lastLuaError) {
+                    userMsg += '\nLast Lua error to fix: ' + lastLuaError;
+                }
             }
 
             if (/REJECTED.*dummy placeholder/i.test(history)) {
@@ -2538,6 +2572,17 @@ const BOOT_SCRIPT: &str = r#"
                     if (behaviorIntent && !hasBehaviorEvidence(history)) {
                         term.write('  \x1b[31m[blocked: DONE rejected — behavior requirement not evidenced]\x1b[0m\r\n');
                         history += 'Result: BLOCKED — DONE rejected. Provide output/code evidence for interactive/config behavior requirements.\n';
+                        continue;
+                    }
+                    if (luaIntent && !hadLuaRun) {
+                        term.write('  \x1b[31m[blocked: DONE rejected — Lua file not executed]\x1b[0m\r\n');
+                        history += 'Result: BLOCKED — DONE rejected. Run lua <file.lua> and inspect output before finishing.\n';
+                        continue;
+                    }
+                    if (luaIntent && !hadLuaSuccess) {
+                        term.write('  \x1b[31m[blocked: DONE rejected — Lua run still failing]\x1b[0m\r\n');
+                        if (lastLuaError) term.write('  \x1b[33m[last lua error] ' + lastLuaError + '\x1b[0m\r\n');
+                        history += 'Result: BLOCKED — DONE rejected. Lua execution is failing; fix script and rerun lua <file.lua> until success.\n';
                         continue;
                     }
                     term.write('\r\n\x1b[1;32m=== DONE: ' + summary + ' ===\x1b[0m\r\n');
@@ -2708,6 +2753,19 @@ const BOOT_SCRIPT: &str = r#"
                 }
                 if (!inferredTargetPath && lastEditedPath && isVerificationCommand(cmd) && referencesPath(cmd, lastEditedPath)) {
                     hadTargetRead = true;
+                }
+            }
+
+            if (isLuaExecutionCommand(cmd)) {
+                hadLuaRun = true;
+                const luaFailed = exitCode !== 0 || hasLuaErrorOutput(output);
+                if (luaFailed) {
+                    const compact = String(output || '').replace(/\s+/g, ' ').trim();
+                    lastLuaError = compact.slice(0, 300) || ('exit ' + exitCode);
+                    hadLuaSuccess = false;
+                } else {
+                    hadLuaSuccess = true;
+                    lastLuaError = '';
                 }
             }
 
