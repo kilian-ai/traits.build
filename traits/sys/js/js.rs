@@ -72,6 +72,7 @@ const input = (() => {
   catch (_) { return {}; }
 })();
 const stdin = Array.isArray(input.stdin) ? input.stdin.slice() : [];
+const allowNativePrompt = !!input.__allow_native_prompt;
 const nativePrompt = (typeof globalThis.prompt === 'function') ? globalThis.prompt.bind(globalThis) : null;
 const nativeConfirm = (typeof globalThis.confirm === 'function') ? globalThis.confirm.bind(globalThis) : null;
 const nativeAlert = (typeof globalThis.alert === 'function') ? globalThis.alert.bind(globalThis) : null;
@@ -97,7 +98,7 @@ const promptShim = (message = '') => {
 	if (stdin.length > 0) {
 		return String(stdin.shift());
 	}
-	if (nativePrompt) {
+	if (allowNativePrompt && nativePrompt) {
 		const v = nativePrompt(String(message));
 		return v == null ? null : String(v);
 	}
@@ -105,7 +106,7 @@ const promptShim = (message = '') => {
 };
 
 const confirmShim = (message = '') => {
-	if (nativeConfirm) {
+	if (allowNativePrompt && nativeConfirm) {
 		return !!nativeConfirm(String(message));
 	}
 	const v = promptShim(String(message) + ' [y/n]');
@@ -115,7 +116,7 @@ const confirmShim = (message = '') => {
 };
 
 const alertShim = (message = '') => {
-	if (nativeAlert) {
+	if (allowNativePrompt && nativeAlert) {
 		nativeAlert(String(message));
 		return;
 	}
