@@ -756,11 +756,16 @@ async function createTerminal(mountEl, opts = {}) {
                             restPending = false;
                             requestAnimationFrame(saveState);
                             // Main-thread WASM calls (llm.agent → sys.shell) write VFS
-                            // to localStorage, but the Worker can't see localStorage.
-                            // Push updated PVFS to the Worker so next cli_input picks it up.
+                            // to localStorage, but Workers can't see localStorage.
+                            // Push updated PVFS to ALL workers so whichever gets the
+                            // next cli_input sees the new files.
                             try {
                                 const pvfs = localStorage.getItem('traits.pvfs');
-                                if (pvfs && backgroundCall) backgroundCall('pvfs_load', { json: pvfs });
+                                if (pvfs && activeSdk && activeSdk.syncPvfsToWorkers) {
+                                    activeSdk.syncPvfsToWorkers(pvfs);
+                                } else if (pvfs && backgroundCall) {
+                                    backgroundCall('pvfs_load', { json: pvfs });
+                                }
                             } catch(_) {}
                         });
                     } else {

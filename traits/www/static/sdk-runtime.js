@@ -1494,10 +1494,16 @@ class Traits {
             if (msg._type === 'pvfs-sync') {
                 // Worker sent VFS dump — persist to localStorage (Workers can't do this)
                 try {
-                    console.log('[pvfs-sync] received from worker, len=' + (msg.json || '').length);
-                    localStorage.setItem('traits.pvfs', msg.json || '{}');
+                    const json = msg.json || '{}';
+                    localStorage.setItem('traits.pvfs', json);
                     // Also refresh main-thread WASM VFS if available
                     if (wasm && wasm.pvfs_refresh) { try { wasm.pvfs_refresh(); } catch(e) {} }
+                    // Broadcast to all OTHER workers so their PERSISTENT_VFS stays current
+                    for (const other of this._workers) {
+                        if (other !== state) {
+                            this._rpcWorker(other, 'pvfs_load', { json }).catch(() => {});
+                        }
+                    }
                 } catch(e) { console.warn('[pvfs-sync] localStorage write failed:', e); }
                 return;
             }
@@ -1601,6 +1607,19 @@ class Traits {
             });
             this._drainWorkerQueue();
         });
+    }
+
+    /**
+     * Push PVFS JSON to ALL workers so every Worker WASM instance sees the
+     * latest VFS state.  Call this after main-thread code writes to
+     * localStorage['traits.pvfs'] (e.g. after an agent's sys.shell calls).
+     * @param {string} json  Serialised PVFS JSON
+     */
+    syncPvfsToWorkers(json) {
+        if (!json) return;
+        for (const state of this._workers) {
+            this._rpcWorker(state, 'pvfs_load', { json }).catch(() => {});
+        }
     }
 
     _syncHelperToWorkers() {
