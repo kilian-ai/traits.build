@@ -759,9 +759,20 @@ pub fn pvfs_refresh() {
 #[wasm_bindgen]
 pub fn pvfs_dump() -> String {
     // Prefer the active CLI session VFS when available (terminal Worker path).
+    // On the main thread the CLI session can be stale after agent runs
+    // (e.g. llm.agent → sys.shell wrote files to localStorage via auto_save,
+    //  but CLI_SESSION was not refreshed).  Re-sync from localStorage first
+    //  so the dump includes those writes and saveState doesn't clobber them.
     let session_dump = CLI_SESSION.with(|cell| {
         let mut opt = cell.borrow_mut();
-        opt.as_mut().map(|session| session.vfs_dump())
+        if let Some(session) = opt.as_mut() {
+            if let Some(json) = ls_get("traits.pvfs") {
+                session.vfs_load(&json);
+            }
+            Some(session.vfs_dump())
+        } else {
+            None
+        }
     });
     if let Some(json) = session_dump {
         return json;
