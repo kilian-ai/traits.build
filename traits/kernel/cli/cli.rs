@@ -145,7 +145,7 @@ pub const LUA_SENTINEL_END: &str = "\x1b[/LUA]";
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";
 const MAX_HISTORY_ENTRIES: usize = 500;
-const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. For filesystem changes, prefer sys.shell commands (mkdir/ls/find/cat/write/tee) so results are visible in the active terminal session. For code file edits, use full-file rewrite commands (write/tee with complete content) and verify by reading the file back. Avoid sed -i and chained echo >> edits because they are fragile in this shell. Use sys.vfs only when explicitly requested as a storage API. If input asks to fix/edit/update/create/delete code in a file, execute the edit directly using tools, then verify by reading the file back (cat or equivalent), and report completion. Do not ask for confirmation when the requested edit is clear. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
+const UNKNOWN_CMD_AGENT_SYSTEM: &str = "You are the traits terminal assistant. Prioritize using tools to inspect real state before answering (for example sys.shell, sys.list, sys.registry, kernel.call). In WASM terminal sessions, filesystem paths are VFS-relative: if user says /docs, check docs (no leading slash) and nearby variants. For filesystem changes, prefer sys.shell commands (mkdir/ls/find/cat/write/tee) so results are visible in the active terminal session. For code file edits, use full-file rewrite commands with write/tee and complete content encoded as literal \\n escapes in a single command, then verify by reading the file back. Never use heredocs, cat >, nano, or markdown code fences when creating files in this shell. Avoid sed -i and chained echo >> edits because they are fragile in this shell. Use sys.vfs only when explicitly requested as a storage API. If input asks to fix/edit/update/create/delete code in a file, execute the edit directly using tools, then verify by reading the file back (cat or equivalent), and report completion. Do not ask for confirmation when the requested edit is clear. If input is a command typo or syntax error, return a corrected command the user can run now. If input is clearly natural language, answer directly and use tools when needed. Suggest 'help' only when the request is truly ambiguous or far from supported commands.";
 const UNKNOWN_CMD_CONFIG_PATH: &str = "config/unknown_command_agent.json";
 
 struct UnknownCmdConfig {
@@ -2101,7 +2101,7 @@ fn execute_leaf_command(
             if args.len() < 2 {
                 format!("{RED}Usage: write <file> <content>{RESET}")
             } else {
-                let content = args[1..].join(" ");
+                let content = decode_cli_file_content(&args[1..].join(" "));
                 let full = resolve_vfs_path(cwd, &args[0]);
                 vfs.borrow_mut().write(&full, &content);
                 format!("{GRAY}wrote {} bytes to {}{RESET}", content.len(), full)
@@ -2259,7 +2259,7 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
     let cfg = load_unknown_cmd_config();
 
     let strict_prompt = format!(
-        "user input in terminal: {}\n\nInterpret this as either: (1) mistyped command to correct, or (2) natural language request to solve. You MUST use tools when the request touches files/docs/workspace. In WASM terminal, normalize leading slash paths to VFS-relative paths (example: /docs -> docs). Prefer sys.shell for ls/find/cat and filesystem edits so results are visible in the active terminal session. For file edits, do a full-file rewrite with write/tee and then cat the file to verify. Do not use sed -i or chained echo append edits. If the request is to fix/edit/update a file, do the edit immediately, verify by reading the modified file, and return the finished result. Do not ask for permission if intent is clear. If truly ambiguous, suggest help with concrete command options.",
+        "user input in terminal: {}\n\nInterpret this as either: (1) mistyped command to correct, or (2) natural language request to solve. You MUST use tools when the request touches files/docs/workspace. In WASM terminal, normalize leading slash paths to VFS-relative paths (example: /docs -> docs). Prefer sys.shell for ls/find/cat and filesystem edits so results are visible in the active terminal session. For file edits, do a full-file rewrite with write/tee using a single command and literal \\n escapes for newlines, then cat the file to verify. Never use heredocs, cat >, nano, or markdown code fences for file creation in this shell. Do not use sed -i or chained echo append edits. If the request is to fix/edit/update a file, do the edit immediately, verify by reading the modified file, and return the finished result. Do not ask for permission if intent is clear. If truly ambiguous, suggest help with concrete command options.",
         user_input
     );
 
@@ -3067,13 +3067,7 @@ fn lua_command(
         // Read script from VFS and execute
         match vfs.borrow().read(&path_candidate) {
             Some(raw_code) => {
-                // If VFS content has no real newlines but contains literal \n sequences,
-                // unescape them — common when files are created via echo without -e flag
-                let code = if !raw_code.contains('\n') && raw_code.contains("\\n") {
-                    raw_code.replace("\\n", "\n").replace("\\t", "\t")
-                } else {
-                    raw_code
-                };
+                let code = decode_cli_file_content(&raw_code);
                 let input = if args.len() > 1 {
                     // Try parsing remaining args as JSON, otherwise pass as string
                     let rest = args[1..].join(" ");
@@ -3179,6 +3173,40 @@ fn format_lua_result(result: Option<serde_json::Value>) -> String {
     out
 }
 
+fn decode_cli_file_content(raw: &str) -> String {
+    let mut text = raw
+        .replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace("\\r", "\r");
+
+    if let Some(unfenced) = strip_markdown_code_fence(&text) {
+        text = unfenced;
+    }
+
+    text
+}
+
+fn strip_markdown_code_fence(text: &str) -> Option<String> {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let trimmed = normalized.trim();
+    if !trimmed.starts_with("```") || !trimmed.ends_with("```") {
+        return None;
+    }
+
+    let mut lines: Vec<&str> = trimmed.lines().collect();
+    if lines.len() < 2 {
+        return None;
+    }
+    if !lines.first()?.trim_start().starts_with("```") || lines.last()?.trim() != "```" {
+        return None;
+    }
+
+    lines.remove(0);
+    lines.pop();
+    Some(lines.join("\n"))
+}
+
 fn editor_stub_command(
     editor: &str,
     args: &[String],
@@ -3214,7 +3242,7 @@ fn editor_stub_command(
     };
     let content_from_stdin = stdin_input.filter(|s| !s.is_empty());
 
-    if let Some(content) = content_from_stdin.or(content_from_args) {
+    if let Some(content) = content_from_stdin.or(content_from_args).map(|s| decode_cli_file_content(&s)) {
         if append {
             vfs.borrow_mut().append(&path, &content);
             vfs.borrow_mut().append(&path, "\n");

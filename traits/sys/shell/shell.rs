@@ -100,6 +100,13 @@ fn shell_wasm(args: &[Value]) -> Value {
         _ => return json!({"ok": false, "error": "Missing required parameter: command"}),
     };
 
+    if command.contains('\n') || command.contains('\r') {
+        return json!({
+            "ok": false,
+            "error": "WASM sys.shell does not support raw multi-line commands. Use a single-line write/tee/ee command with literal \\n escapes, then verify with cat."
+        });
+    }
+
     let cwd = args.get(1).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
 
     // Use a fresh CLI session per call to avoid stale cwd leaking between tool

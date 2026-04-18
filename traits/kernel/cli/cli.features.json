@@ -72,6 +72,24 @@
                     "contains": ["no such path"]
                 }
             ]
+        },
+        {
+            "name": "write decodes escaped multiline content for lua files",
+            "examples": [
+                {
+                    "input": ["write e2e_lua_multiline.lua \"print('x')\\nprint('y')\" && lua e2e_lua_multiline.lua"],
+                    "contains": ["x", "y"]
+                }
+            ]
+        },
+        {
+            "name": "lua ignores markdown code fences in written files",
+            "examples": [
+                {
+                    "input": ["write e2e_lua_fenced.lua \"```lua\\nprint('ok')\\n```\" && lua e2e_lua_fenced.lua"],
+                    "contains": ["ok"]
+                }
+            ]
         }
     ]
 }
