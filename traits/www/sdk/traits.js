@@ -274,6 +274,31 @@ function _installLuaBridge() {
                 }
             }
 
+            // Browser Lua bridge compatibility: provide minimal io.read support
+            // backed by input.stdin (array of values/lines). This enables scripts
+            // written for command-line Lua prompts to run in WASM mode.
+            const ioShimErr = runChunk([
+                'if io == nil then io = {} end',
+                '__traits_stdin = {}',
+                '__traits_stdin_idx = 1',
+                'if type(input) == "table" and type(input.stdin) == "table" then',
+                '  __traits_stdin = input.stdin',
+                'end',
+                'io.read = function(fmt)',
+                '  local v = __traits_stdin[__traits_stdin_idx]',
+                '  __traits_stdin_idx = __traits_stdin_idx + 1',
+                '  if v == nil then return nil end',
+                '  if fmt == "*n" then',
+                '    return tonumber(v)',
+                '  end',
+                '  return tostring(v)',
+                'end',
+            ].join('\n'));
+            if (ioShimErr && !execErr) {
+                try { lua.lua_close(L); } catch (_) {}
+                return JSON.stringify({ ok: false, error: ioShimErr, stdout: [], stderr: [ioShimErr] });
+            }
+
             const execErr = runChunk(code);
 
             const postErr = runChunk('__traits_stdout_joined = table.concat(__traits_stdout, "\\n")');

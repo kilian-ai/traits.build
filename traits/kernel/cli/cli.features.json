@@ -90,6 +90,15 @@
                     "contains": ["ok"]
                 }
             ]
+        },
+        {
+            "name": "lua io.read consumes stdin tokens passed after filename",
+            "examples": [
+                {
+                    "input": ["write e2e_lua_io.lua \"print('n?')\\nlocal n = io.read('*n')\\nprint(n)\" && lua e2e_lua_io.lua 7"],
+                    "contains": ["n?", "7"]
+                }
+            ]
         }
     ]
 }

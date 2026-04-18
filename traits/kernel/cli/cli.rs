@@ -3072,10 +3072,28 @@ fn lua_command(
                     // Try parsing remaining args as JSON, otherwise pass as string
                     let rest = args[1..].join(" ");
                     serde_json::from_str::<serde_json::Value>(&rest)
-                        .unwrap_or_else(|_| serde_json::json!(rest))
+                        .unwrap_or_else(|_| serde_json::json!({ "stdin": args[1..].to_vec() }))
                 } else {
                     serde_json::json!({})
                 };
+
+                let requires_io_read = code.contains("io.read");
+                let has_stdin = input
+                    .get("stdin")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| !arr.is_empty())
+                    .unwrap_or(false);
+
+                if requires_io_read && !has_stdin {
+                    return format!(
+                        "{YELLOW}lua: script uses io.read but no stdin was provided.{RESET}\r\n\
+                         {GRAY}Try: lua {} 1 5 2 8 3{RESET}\r\n\
+                         {GRAY}or:  lua {} {{\"stdin\":[1,5,2,8,3]}}{RESET}",
+                        first,
+                        first
+                    );
+                }
+
                 // On WASM: emit sentinel for terminal.js to handle via Fengari bridge
                 // On native: call sys.lua directly via dispatch
                 #[cfg(target_arch = "wasm32")]
