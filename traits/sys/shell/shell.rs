@@ -5,6 +5,8 @@ use std::process::Command;
 #[cfg(target_arch = "wasm32")]
 use crate::wasm_traits::cli::{CliCallBackend, CliExamplesBackend, CliHistoryBackend, CliSession};
 #[cfg(target_arch = "wasm32")]
+use js_sys::Date;
+#[cfg(target_arch = "wasm32")]
 use web_sys;
 
 /// sys.shell — execute a shell command and return its output.
@@ -118,6 +120,7 @@ fn shell_wasm(args: &[Value]) -> Value {
     let dump = session.vfs_dump();
     if !dump.is_empty() {
         shell_ls_set("traits.pvfs", &dump);
+        shell_ls_set("traits.pvfs.ts", &format!("{:.0}", Date::now()));
     }
     let cleaned = clean_cli_output(&raw);
 
