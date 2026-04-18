@@ -108,6 +108,11 @@ fn save_session(session_id: &str, mut messages: Vec<Value>) {
             break;
         }
     }
+    // Guard persisted history against invalid assistant/tool sequences so
+    // future turns cannot fail with OpenAI role-order validation errors.
+    let (sanitized, _) = sanitize_messages_for_api(&messages);
+    messages = sanitized;
+
     if let Ok(mut guard) = session_store().lock() {
         guard.insert(session_id.to_string(), messages);
     }
@@ -244,6 +249,9 @@ pub fn agent(args: &[Value]) -> Value {
         ]
     };
 
+    let (sanitized_start, _) = sanitize_messages_for_api(&messages);
+    messages = sanitized_start;
+
     let mut step_count = 0usize;
     let mut final_response = String::new();
     let mut all_tool_calls: Vec<Value> = Vec::new();
@@ -258,6 +266,11 @@ pub fn agent(args: &[Value]) -> Value {
         if should_compact(&messages) {
             compacted_count += compact_messages(&mut messages);
         }
+
+        // Enforce OpenAI role invariants before every request. This recovers
+        // from malformed persisted sessions (e.g. orphaned tool messages).
+        let (sanitized, _) = sanitize_messages_for_api(&messages);
+        messages = sanitized;
 
         // Build request body
         let mut request_body = json!({
@@ -570,6 +583,93 @@ fn compact_messages(messages: &mut Vec<Value>) -> usize {
     messages.extend(recent);
 
     removed_count
+}
+
+/// Sanitize message history so OpenAI Chat Completions role-order rules hold:
+/// - `tool` messages must immediately follow an assistant with matching `tool_calls`
+/// - assistant `tool_calls` blocks must be complete; otherwise drop the block
+/// Returns (sanitized_messages, dropped_count).
+fn sanitize_messages_for_api(messages: &[Value]) -> (Vec<Value>, usize) {
+    let mut out: Vec<Value> = Vec::with_capacity(messages.len());
+    let mut dropped = 0usize;
+
+    // Active assistant tool-call block being validated.
+    let mut pending_ids: Vec<String> = Vec::new();
+    let mut pending_start_idx: Option<usize> = None;
+
+    for msg in messages {
+        let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
+
+        match role {
+            "assistant" => {
+                // If previous assistant tool-call block is incomplete, drop it.
+                if !pending_ids.is_empty() {
+                    if let Some(start) = pending_start_idx {
+                        dropped += out.len().saturating_sub(start);
+                        out.truncate(start);
+                    }
+                }
+                pending_ids.clear();
+                pending_start_idx = None;
+
+                let ids: Vec<String> = msg
+                    .get("tool_calls")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|tc| tc.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+
+                out.push(msg.clone());
+                if !ids.is_empty() {
+                    pending_start_idx = Some(out.len() - 1);
+                    pending_ids = ids;
+                }
+            }
+            "tool" => {
+                let call_id = msg.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("");
+                if call_id.is_empty() {
+                    dropped += 1;
+                    continue;
+                }
+
+                if let Some(pos) = pending_ids.iter().position(|id| id == call_id) {
+                    out.push(msg.clone());
+                    pending_ids.remove(pos);
+                    if pending_ids.is_empty() {
+                        pending_start_idx = None;
+                    }
+                } else {
+                    // Orphan tool message: no matching pending assistant tool call.
+                    dropped += 1;
+                }
+            }
+            _ => {
+                // Non-tool role while an assistant tool-call block is unresolved: drop block.
+                if !pending_ids.is_empty() {
+                    if let Some(start) = pending_start_idx {
+                        dropped += out.len().saturating_sub(start);
+                        out.truncate(start);
+                    }
+                    pending_ids.clear();
+                    pending_start_idx = None;
+                }
+                out.push(msg.clone());
+            }
+        }
+    }
+
+    // Drop trailing incomplete assistant tool-call block.
+    if !pending_ids.is_empty() {
+        if let Some(start) = pending_start_idx {
+            dropped += out.len().saturating_sub(start);
+            out.truncate(start);
+        }
+    }
+
+    (out, dropped)
 }
 
 // ─── Tool name ↔ trait path conversion ──────────────────────────────────────
