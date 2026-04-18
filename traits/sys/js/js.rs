@@ -2,6 +2,8 @@ use serde_json::{json, Value};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::closure::Closure;
 
 /// sys.js — execute JavaScript snippets.
 ///
@@ -39,8 +41,29 @@ pub fn js(args: &[Value]) -> Value {
 
 #[cfg(target_arch = "wasm32")]
 fn run_in_browser_js(code: &str, input: &Value) -> Value {
+	let call_trait = Closure::wrap(Box::new(move |path_js: JsValue, args_json_js: JsValue| -> JsValue {
+		let path = match path_js.as_string() {
+			Some(p) if !p.trim().is_empty() => p,
+			_ => {
+				return JsValue::from_str(
+					"{\"__traits_error\":\"traits.call: path must be a non-empty string\"}",
+				)
+			}
+		};
+
+		let args_json = args_json_js.as_string().unwrap_or_else(|| "[]".to_string());
+		let parsed_args = serde_json::from_str::<Value>(&args_json)
+			.ok()
+			.and_then(|v| v.as_array().cloned())
+			.unwrap_or_default();
+
+		let result = kernel_logic::platform::dispatch(&path, &parsed_args)
+			.unwrap_or_else(|| json!({"ok": false, "error": format!("trait not found: {path}")}));
+		JsValue::from_str(&result.to_string())
+	}) as Box<dyn FnMut(JsValue, JsValue) -> JsValue>);
+
 	let runner = js_sys::Function::new_with_args(
-		"code,inputJson",
+		"code,inputJson,callTrait",
 		r#"
 const stdout = [];
 const stderr = [];
@@ -48,6 +71,23 @@ const input = (() => {
   try { return JSON.parse(inputJson || '{}'); }
   catch (_) { return {}; }
 })();
+
+const traits = {
+  call(path, ...args) {
+    const raw = callTrait(String(path), JSON.stringify(args));
+    let parsed;
+    try { parsed = JSON.parse(String(raw)); }
+    catch (e) { throw new Error('traits.call: invalid bridge response: ' + String(e)); }
+    if (parsed && parsed.__traits_error) {
+      throw new Error(parsed.__traits_error);
+    }
+    return parsed;
+  },
+  // Alias for ergonomics in scripts that expect async-style naming.
+  callAsync(path, ...args) {
+    return Promise.resolve(this.call(path, ...args));
+  },
+};
 
 const origLog = console.log;
 const origErr = console.error;
@@ -60,8 +100,8 @@ let result = null;
 let error = null;
 
 try {
-  const fn = new Function('input', code);
-  const value = fn(input);
+	const fn = new Function('input', 'traits', code);
+	const value = fn(input, traits);
   result = value === undefined ? null : value;
 } catch (e) {
   ok = false;
@@ -75,10 +115,11 @@ return JSON.stringify({ ok, stdout, stderr, result, error });
 "#,
 	);
 
-	let out = match runner.call2(
+	let out = match runner.call3(
 		&JsValue::NULL,
 		&JsValue::from_str(code),
 		&JsValue::from_str(&input.to_string()),
+		call_trait.as_ref(),
 	) {
 		Ok(v) => v,
 		Err(e) => {
@@ -88,6 +129,8 @@ return JSON.stringify({ ok, stdout, stderr, result, error });
 			return json!({ "ok": false, "error": err });
 		}
 	};
+
+	call_trait.forget();
 
 	let out_str = out
 		.dyn_ref::<js_sys::JsString>()
