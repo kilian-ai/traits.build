@@ -147,6 +147,8 @@ The portable terminal session includes shell-compatible builtins aimed at agent 
 - `test` and `[ ... ]`
 - `find` (supports `-name`, `-type`, `-mindepth`, `-maxdepth`)
 - `curl` (mapped to `sys.call`)
+- `lua` (run Lua from inline code or `.lua` files)
+- `js` (run JavaScript from inline code or `.js` files in WASM terminal)
 - `vi` and `ee` (preview file, or write/append via args/stdin)
 
 `cd` now updates per-session working directory state, and path-taking commands resolve relative paths against that `cwd`.

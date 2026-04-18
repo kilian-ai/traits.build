@@ -1,0 +1,14 @@
+{
+  "trait": "sys.js",
+  "features": [
+    {
+      "name": "Report WASM-only availability on native",
+      "examples": [
+        {
+          "input": ["console.log('hello from js')"],
+          "output": { "contains": ["ok", "false", "WASM/browser runtime only"] }
+        }
+      ]
+    }
+  ]
+}

@@ -2097,6 +2097,7 @@ fn execute_leaf_command(
         "nl" => nl_command(&args, stdin_input, vfs, cwd),
 
         "lua" => lua_command(&args, vfs, cwd, backend),
+        "js" => js_command(&args, vfs, cwd, backend),
 
         "mkdir" => mkdir_command(&args, vfs, cwd),
 
@@ -3185,10 +3186,7 @@ fn lua_command(
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    let result = kernel_logic::platform::dispatch(
-                        "sys.lua",
-                        &[serde_json::json!(code), input],
-                    );
+                    let result = _backend.call("sys.lua", &[serde_json::json!(code), input]).ok();
                     return format_lua_result(result);
                 }
             }
@@ -3210,12 +3208,102 @@ fn lua_command(
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let result = kernel_logic::platform::dispatch(
-            "sys.lua",
-            &[serde_json::json!(code), serde_json::json!({})],
-        );
+        let result = _backend
+            .call("sys.lua", &[serde_json::json!(code), serde_json::json!({})])
+            .ok();
         format_lua_result(result)
     }
+}
+
+fn js_command(
+    args: &[String],
+    vfs: &RefCell<Box<dyn Vfs>>,
+    cwd: &str,
+    backend: &dyn CliCallBackend,
+) -> String {
+    if args.is_empty() {
+        return format!("{RED}Usage: js <script.js | inline-code>{RESET}");
+    }
+
+    let first = &args[0];
+    let path_candidate = resolve_vfs_path(cwd, first);
+    let is_file = first.ends_with(".js") || vfs.borrow().read(&path_candidate).is_some();
+
+    if is_file {
+        match vfs.borrow().read(&path_candidate) {
+            Some(raw_code) => {
+                let code = decode_cli_file_content(&raw_code);
+                let input = if args.len() > 1 {
+                    let rest = args[1..].join(" ");
+                    serde_json::from_str::<serde_json::Value>(&rest)
+                        .unwrap_or_else(|_| serde_json::json!({ "stdin": args[1..].to_vec() }))
+                } else {
+                    serde_json::json!({})
+                };
+
+                let result = backend
+                    .call("sys.js", &[serde_json::json!(code), input])
+                    .ok();
+                return format_js_result(result);
+            }
+            None => return format!("{RED}js: {}: file not found{RESET}", first),
+        }
+    }
+
+    let code = args.join(" ");
+    let result = backend
+        .call("sys.js", &[serde_json::json!(code), serde_json::json!({})])
+        .ok();
+    format_js_result(result)
+}
+
+fn format_js_result(result: Option<serde_json::Value>) -> String {
+    let val = match result {
+        Some(v) => v,
+        None => return format!("{RED}js: sys.js trait not available{RESET}"),
+    };
+
+    let ok = val.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    let mut out = String::new();
+
+    if let Some(stdout) = val.get("stdout").and_then(|v| v.as_array()) {
+        for line in stdout {
+            if let Some(s) = line.as_str() {
+                out.push_str(s);
+                out.push_str("\r\n");
+            }
+        }
+    }
+
+    if let Some(stderr) = val.get("stderr").and_then(|v| v.as_array()) {
+        for line in stderr {
+            if let Some(s) = line.as_str() {
+                out.push_str(&format!("{RED}{s}{RESET}\r\n"));
+            }
+        }
+    }
+
+    if !ok {
+        if let Some(err) = val.get("error").and_then(|v| v.as_str()) {
+            out.push_str(&format!("{RED}js error: {err}{RESET}\r\n"));
+        }
+    } else if out.is_empty() {
+        if let Some(result) = val.get("result") {
+            if !result.is_null() {
+                let text = match result {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                out.push_str(&text);
+                out.push_str("\r\n");
+            }
+        }
+    }
+
+    if out.ends_with("\r\n") {
+        out.truncate(out.len() - 2);
+    }
+    out
 }
 
 #[allow(dead_code)]
@@ -3825,6 +3913,7 @@ fn format_help() -> String {
     s.push_str(&format!("  {GREEN}find{RESET} {GRAY}[path] [-name P] [-type f|d] [-mindepth N] [-maxdepth N]{RESET}\r\n"));
     s.push_str(&format!("  {GREEN}curl{RESET} {GRAY}[opts] <url>{RESET}         HTTP calls via sys.call\r\n"));
     s.push_str(&format!("  {GREEN}lua{RESET} {GRAY}<script.lua | code>{RESET}   Run Lua from VFS file or inline code\r\n"));
+    s.push_str(&format!("  {GREEN}js{RESET} {GRAY}<script.js | code>{RESET}     Run JavaScript from VFS file or inline code\r\n"));
     s.push_str(&format!("  {GREEN}vi{RESET}/{GREEN}ee{RESET} {GRAY}[-a] <file> [text]{RESET}  Save/append text or preview file\r\n"));
     s.push_str(&format!("  {GRAY}cmd1 && cmd2{RESET}              Run cmd2 only if cmd1 succeeded\r\n"));
     s.push_str(&format!("  {GRAY}cmd1 || cmd2{RESET}              Run cmd2 only if cmd1 failed\r\n"));
@@ -4170,7 +4259,7 @@ pub fn tab_completions(prefix: &str, all_paths: &[String]) -> (Vec<String>, Stri
 fn shell_builtin_commands() -> Vec<String> {
     [
         "help", "h", "?", "list", "info", "i", "call", "c", "search", "s", "version", "v", "clear", "cls",
-        "echo", "printf", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "nl", "sed", "test", "[", "find", "curl", "lua",
+        "echo", "printf", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "nl", "sed", "test", "[", "find", "curl", "lua", "js",
         "vi", "ee", "stat", "mkdir", "write", "tee", "rm", "ls", "cd", "chat",
     ]
     .iter()
@@ -4189,7 +4278,7 @@ fn should_complete_vfs_paths(cmd: &str, parts: &[String], ends_space: bool) -> b
 
     match cmd {
         // first-arg path commands
-        "ls" | "cd" | "find" | "mkdir" | "rm" | "stat" | "vi" | "ee" | "lua" => arg_index == 0,
+        "ls" | "cd" | "find" | "mkdir" | "rm" | "stat" | "vi" | "ee" | "lua" | "js" => arg_index == 0,
         // read/write commands where additional args can still be file paths
         "cat" | "head" | "tail" | "grep" | "wc" | "nl" | "sed" => arg_index <= 1,
         // write/tee complete only destination path (first arg), not content payload
