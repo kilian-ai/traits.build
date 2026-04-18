@@ -341,6 +341,49 @@ async function createTerminal(mountEl, opts = {}) {
         }
     };
 
+    const collectLuaStdinFromTerminal = async () => {
+        term.write('\x1b[90m[Lua stdin] Enter one value per line. Press Ctrl+D when done.\x1b[0m\r\n');
+        let buffer = '';
+        const lines = [];
+        const prompt = 'lua stdin> ';
+        term.write(prompt);
+
+        return new Promise((resolve) => {
+            const disposable = term.onData((data) => {
+                for (const ch of data) {
+                    if (ch === '\u0004') { // Ctrl+D
+                        if (buffer.length) {
+                            lines.push(buffer);
+                            buffer = '';
+                        }
+                        term.write('^D\r\n');
+                        disposable.dispose();
+                        resolve(lines);
+                        return;
+                    }
+                    if (ch === '\r') {
+                        lines.push(buffer);
+                        buffer = '';
+                        term.write('\r\n');
+                        term.write(prompt);
+                        continue;
+                    }
+                    if (ch === '\u007f' || ch === '\b') {
+                        if (buffer.length > 0) {
+                            buffer = buffer.slice(0, -1);
+                            term.write('\b \b');
+                        }
+                        continue;
+                    }
+                    if (ch >= ' ') {
+                        buffer += ch;
+                        term.write(ch);
+                    }
+                }
+            });
+        });
+    };
+
     // ── Load xterm.js ──
     try {
         const xtermMod = await import('https://cdn.jsdelivr.net/npm/@xterm/xterm@5/+esm');
@@ -884,6 +927,14 @@ async function createTerminal(mountEl, opts = {}) {
                     let outcome;
                     const code = payloadObj.code || '';
                     const path = payloadObj.path || '';
+                    if (payloadObj.interactive_stdin) {
+                        const inputObj = (payloadObj.input && typeof payloadObj.input === 'object') ? payloadObj.input : {};
+                        const hasStdin = Array.isArray(inputObj.stdin) && inputObj.stdin.length > 0;
+                        if (!hasStdin) {
+                            const stdinLines = await collectLuaStdinFromTerminal();
+                            payloadObj.input = Object.assign({}, inputObj, { stdin: stdinLines });
+                        }
+                    }
                     if (code) {
                         outcome = await runLuaCode(code, payloadObj.input || {});
                     } else if (path) {

@@ -3085,6 +3085,17 @@ fn lua_command(
                     .unwrap_or(false);
 
                 if requires_io_read && !has_stdin {
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let payload = serde_json::json!({
+                            "code": code,
+                            "input": input,
+                            "interactive_stdin": true,
+                        });
+                        return format!("{LUA_SENTINEL_START}{}{LUA_SENTINEL_END}", payload);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
                     return format!(
                         "{YELLOW}lua: script uses io.read but no stdin was provided.{RESET}\r\n\
                          {GRAY}Try: lua {} 1 5 2 8 3{RESET}\r\n\
