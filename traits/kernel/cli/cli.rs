@@ -605,8 +605,10 @@ impl CliSession {
                     return out; // No prompt — JS handles async REST/WebLLM/Lua
                 }
                 if !result.is_empty() {
-                    out.push_str(&result);
-                    if !result.ends_with('\n') && !result.ends_with("\r\n") {
+                    // Normalise LF → CRLF so xterm renders straight columns
+                    let crlf_result = to_crlf(&result);
+                    out.push_str(&crlf_result);
+                    if !crlf_result.ends_with('\n') && !crlf_result.ends_with("\r\n") {
                         out.push_str("\r\n");
                     }
                 }
