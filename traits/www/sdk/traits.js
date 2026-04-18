@@ -37,7 +37,7 @@ function resolveWorkerScriptUrl(explicitUrl) {
     if (typeof location !== 'undefined' && location.protocol === 'file:') {
         return `./traits-worker.js?v=${Date.now()}`;
     }
-    return '/static/www/static/traits-worker.js';
+    return '/static/traits-worker.js';
 }
 
 // ── Local helper state ──

@@ -64,7 +64,7 @@
                 },
                 {
                     "args": [],
-                    "test": { "type": "contains", "value": "/static/www/static/wasm-runtime.js" }
+                    "test": { "type": "contains", "value": "/static/wasm-runtime.js" }
                 },
                 {
                     "args": [],

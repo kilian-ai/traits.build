@@ -351,6 +351,7 @@ if [[ -f "$INDEX_HTML" && -f "$WASM_RUNTIME_JS" && -f "$WASM_WORKER_JS" && -f "$
     echo "Generating standalone HTML..."
     python3 - "$INDEX_HTML" "$WASM_RUNTIME_JS" "$WASM_WORKER_JS" "$TERMINAL_RUNTIME" "$SDK_RUNTIME" "$INDEX_STANDALONE_HTML" <<'PY'
 import pathlib
+import re
 import sys
 
 index_path = pathlib.Path(sys.argv[1])
@@ -369,28 +370,23 @@ sdk_runtime = sdk_runtime_path.read_text()
 runtime_fn = """function runtimeScriptPath() {
   return 'inline:wasm-runtime';
 }"""
-
-runtime_fn_old = """function runtimeScriptPath() {
-  if (isLocal) return `./wasm-runtime.js?v=${Date.now()}`;
-  return '/static/www/static/wasm-runtime.js';
-}"""
-
-term_src_old = "const termSrc = isLocal ? `./terminal-runtime.js?v=${Date.now()}` : '/static/www/static/terminal-runtime.js';"
 term_src_new = "const termSrc = 'inline:terminal-runtime';"
-
-sdk_src_old = "const sdkSrc = isLocal ? `./sdk-runtime.js?v=${Date.now()}` : '/static/www/static/sdk-runtime.js';"
 sdk_src_new = "const sdkSrc = 'inline:sdk-runtime';"
 
-if runtime_fn_old not in html:
-    raise SystemExit('standalone generation failed: runtimeScriptPath() block not found')
-if term_src_old not in html:
-    raise SystemExit('standalone generation failed: terminal runtime path not found')
-if sdk_src_old not in html:
-    raise SystemExit('standalone generation failed: SDK runtime path not found')
+runtime_pattern = r"function runtimeScriptPath\(\) \{\s*if \(isLocal\) return `\./wasm-runtime\.js\?v=\$\{Date\.now\(\)\}`;\s*return '/static(?:/www/static)?/wasm-runtime\.js';\s*\}"
+term_pattern = r"const termSrc = isLocal \? `\./terminal-runtime\.js\?v=\$\{Date\.now\(\)\}` : '/static(?:/www/static)?/terminal-runtime\.js';"
+sdk_pattern = r"const sdkSrc = isLocal \? `\./sdk-runtime\.js\?v=\$\{Date\.now\(\)\}` : '/static(?:/www/static)?/sdk-runtime\.js';"
 
-html = html.replace(runtime_fn_old, runtime_fn)
-html = html.replace(term_src_old, term_src_new)
-html = html.replace(sdk_src_old, sdk_src_new)
+html, runtime_repl = re.subn(runtime_pattern, runtime_fn, html)
+html, term_repl = re.subn(term_pattern, term_src_new, html)
+html, sdk_repl = re.subn(sdk_pattern, sdk_src_new, html)
+
+if runtime_repl == 0:
+        raise SystemExit('standalone generation failed: runtimeScriptPath() block not found')
+if term_repl == 0:
+        raise SystemExit('standalone generation failed: terminal runtime path not found')
+if sdk_repl == 0:
+        raise SystemExit('standalone generation failed: SDK runtime path not found')
 
 # Standalone is always "local" (hash routing) — no server to handle pushState paths
 html = html.replace(

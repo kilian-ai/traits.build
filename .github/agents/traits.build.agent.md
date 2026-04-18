@@ -1258,6 +1258,7 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **After modifying traits:** run `bash build.sh` to rebuild native + WASM + static assets.
 - **GitHub Pages deploy:** just `git push origin main` — root `index.html` is auto-served.
 - **Two admin pages exist:** `www.admin` (server-rendered) and `www.admin.spa` (browser-only SPA).
+- **Static runtime asset URLs must use `/static/<file>`** (for example `/static/wasm-runtime.js`, `/static/sdk-runtime.js`, `/static/terminal-runtime.js`, `/static/traits-worker.js`). Do not use duplicated `/static/www/static/...` paths.
 - **Terminal dispatch:** `terminal.js` uses `window._traitsSDK.call()` (3-tier cascade) and `Traits.backgroundCall()` for CLI session commands, NOT raw fetch/direct trait-specific command switches.
 - **Terminal PVFS persistence:** CLI-visible filesystem state must persist to `localStorage['traits.pvfs']` (not `traits.terminal.vfs`). Keep worker/main-thread sync aligned so files touched by shell commands (`ls`, `cd`, `mkdir`, `cat`, redirects) survive reloads.
 - **Terminal persistence must use PVFS APIs, not session VFS dump/load:** browser terminal save/restore should call `pvfs_dump` / `pvfs_load` when syncing `localStorage['traits.pvfs']`. Using session-scoped `vfs_dump` / `vfs_load` can overwrite unrelated persistent entries after commands like `rm`.

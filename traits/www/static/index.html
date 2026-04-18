@@ -178,7 +178,7 @@ const isLocal = location.protocol === 'file:';
 
 function runtimeScriptPath() {
   if (isLocal) return `./wasm-runtime.js?v=${Date.now()}`;
-  return '/static/www/static/wasm-runtime.js';
+  return '/static/wasm-runtime.js';
 }
 
 function loadScript(src) {
@@ -744,7 +744,7 @@ async function boot() {
   } catch(e) {}
 
   // Load SDK runtime (unless already inlined by standalone build)
-  const sdkSrc = isLocal ? `./sdk-runtime.js?v=${Date.now()}` : '/static/www/static/sdk-runtime.js';
+  const sdkSrc = isLocal ? `./sdk-runtime.js?v=${Date.now()}` : '/static/sdk-runtime.js';
   await loadScript(sdkSrc);
 
   sdk = new Traits({ wasm: false, server: isLocal ? '' : undefined });
@@ -772,7 +772,7 @@ async function boot() {
 
     // Pre-load terminal as classic script (import() blocked in file:// mode)
     try {
-      const termSrc = isLocal ? `./terminal-runtime.js?v=${Date.now()}` : '/static/www/static/terminal-runtime.js';
+      const termSrc = isLocal ? `./terminal-runtime.js?v=${Date.now()}` : '/static/terminal-runtime.js';
       await loadScript(termSrc);
     } catch(e) { console.warn('Terminal pre-load failed:', e); }
   } catch(e) {
