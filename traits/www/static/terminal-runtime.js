@@ -64,6 +64,7 @@
         if (res && res.ok && typeof res.result === 'string') {
           try {
             localStorage.setItem(keys.pvfs, res.result);
+            localStorage.setItem('traits.pvfs.ts', String(Date.now()));
             if (keys.legacyVfs) localStorage.setItem(keys.legacyVfs, res.result);
           } catch (_) {}
         }
@@ -757,14 +758,18 @@ async function createTerminal(mountEl, opts = {}) {
                             requestAnimationFrame(saveState);
                             // Main-thread WASM calls (llm.agent → sys.shell) write VFS
                             // to localStorage, but Workers can't see localStorage.
-                            // Push updated PVFS to ALL workers so whichever gets the
-                            // next cli_input sees the new files.
+                            // Stamp localStorage so any stale Worker pvfs-sync messages
+                            // (queued before the agent ran) get rejected by the SDK's
+                            // timestamp guard.  Then push to ALL workers.
                             try {
                                 const pvfs = localStorage.getItem('traits.pvfs');
-                                if (pvfs && activeSdk && activeSdk.syncPvfsToWorkers) {
-                                    activeSdk.syncPvfsToWorkers(pvfs);
-                                } else if (pvfs && backgroundCall) {
-                                    backgroundCall('pvfs_load', { json: pvfs });
+                                if (pvfs) {
+                                    localStorage.setItem('traits.pvfs.ts', String(Date.now()));
+                                    if (activeSdk && activeSdk.syncPvfsToWorkers) {
+                                        activeSdk.syncPvfsToWorkers(pvfs);
+                                    } else if (backgroundCall) {
+                                        backgroundCall('pvfs_load', { json: pvfs });
+                                    }
                                 }
                             } catch(_) {}
                         });

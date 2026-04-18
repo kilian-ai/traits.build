@@ -1492,10 +1492,21 @@ class Traits {
                 return;
             }
             if (msg._type === 'pvfs-sync') {
-                // Worker sent VFS dump — persist to localStorage (Workers can't do this)
+                // Worker sent VFS dump — persist to localStorage (Workers can't do this).
+                // Guard: if localStorage was written more recently by the main thread
+                // (e.g. agent sys.shell → auto_save), this Worker dump is stale — skip
+                // to avoid clobbering agent-created files.  The Worker will get fresh
+                // state via syncPvfsToWorkers/pvfs_load before its next cli_input.
                 try {
                     const json = msg.json || '{}';
+                    const workerTs = msg.ts || 0;
+                    const localTs = parseInt(localStorage.getItem('traits.pvfs.ts') || '0', 10);
+                    if (workerTs < localTs) {
+                        // Stale: Worker snapshot predates latest main-thread write
+                        return;
+                    }
                     localStorage.setItem('traits.pvfs', json);
+                    localStorage.setItem('traits.pvfs.ts', String(workerTs));
                     // Also refresh main-thread WASM VFS if available
                     if (wasm && wasm.pvfs_refresh) { try { wasm.pvfs_refresh(); } catch(e) {} }
                     // Broadcast to all OTHER workers so their PERSISTENT_VFS stays current

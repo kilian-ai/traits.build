@@ -25,6 +25,7 @@
         if (res && res.ok && typeof res.result === 'string') {
           try {
             localStorage.setItem(keys.pvfs, res.result);
+            localStorage.setItem('traits.pvfs.ts', String(Date.now()));
             if (keys.legacyVfs) localStorage.setItem(keys.legacyVfs, res.result);
           } catch (_) {}
         }
