@@ -1302,6 +1302,7 @@ Layer 0: kernel/logic — Shared Rust library
 '/admin':      'www.admin.spa'       // Admin (SPA mode)
 '/settings':   'www.admin.spa'       // Settings alias
 '/playground': 'www.playground'      // Trait playground
+'/testing':    'www.testing'         // Testing abstraction layer
 '/wasm':       'www.wasm'            // WASM internals
 ```
 
