@@ -115,14 +115,15 @@ pub fn wanix(_args: &[Value]) -> Value {
                 div class="wrap" {
                     div class="hero" {
                         div class="badge" { "wanix" }
+                        div class="badge" { "forked" }
                         div class="badge" { "browser shell" }
                         h1 { "Wanix Shell Runtime" }
                         p {
-                            "This page embeds the live Wanix runtime shell from wanix.run directly in the SPA, "
-                            "so you can run and test the shell environment adjacent to Linux/WASM and Munal pages."
+                            "This page runs our locally hosted Wanix runtime + shell bundle from traits.build static assets, "
+                            "so the shell runs in our own system without depending on wanix.run."
                         }
                         div class="actions" {
-                            a class="btn" href="https://wanix.run" target="_blank" rel="noopener noreferrer" { "Open Wanix in new tab" }
+                            a class="btn" href="/static/wanix/index.html" target="_blank" rel="noopener noreferrer" { "Open local Wanix shell" }
                             a class="btn" href="#/linux" { "Open Linux/WASM" }
                             a class="btn" href="#/testing" { "Open Testing" }
                         }
@@ -130,12 +131,12 @@ pub fn wanix(_args: &[Value]) -> Value {
 
                     div class="frame-wrap" {
                         div class="frame-head" {
-                            span class="ok" { "Shell active via embedded wanix.run" }
-                            span { "Use this for runtime experimentation while we evaluate deeper native integration." }
+                            span class="ok" { "Shell active via local /static/wanix runtime" }
+                            span { "Vendored from upstream Wanix release assets and hosted by traits.build." }
                         }
                         iframe
                             title="Wanix Shell"
-                            src="https://wanix.run"
+                            src="/static/wanix/index.html"
                             loading="eager"
                             allow="clipboard-read; clipboard-write"
                             referrerpolicy="strict-origin-when-cross-origin" {}

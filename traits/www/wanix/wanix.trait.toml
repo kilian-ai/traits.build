@@ -1,7 +1,7 @@
 [trait]
 description = "Wanix shell runtime page embedded in traits.build SPA"
-version = "v260419.195226"
-checksum = "d583b890d9371dc58dda8e7122f867235f029ca283776dc8f2d179a4d1c7b9e7"
+version = "v260419.203227"
+checksum = "f72a95b8ccd930a4c3f265b235a8a129dafec40b9f89cc9973dfaff79632338c"
 author = "system"
 tags = ["www", "wanix", "shell", "wasm"]
 provides = ["www/webpage"]

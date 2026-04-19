@@ -17,14 +17,14 @@
           "args": [],
           "test": {
             "type": "contains",
-            "value": "https://wanix.run"
+            "value": "/static/wanix/index.html"
           }
         },
         {
           "args": [],
           "test": {
             "type": "contains",
-            "value": "Shell active via embedded wanix.run"
+            "value": "Shell active via local /static/wanix runtime"
           }
         }
       ]
