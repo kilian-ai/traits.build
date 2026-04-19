@@ -345,6 +345,170 @@ Generated output includes ~25 module declarations, dispatch function with helper
 
 ---
 
+## traits-runtimes: Portable I/O Abstraction for Multi-Target Rust Services
+
+**Path**: `traits/kernel/runtimes/`
+**Purpose**: Enable production Rust services (Stalwart, Axum, Tonic, etc.) to compile and run on native, WASM, and WASI targets without code changes.
+
+### The Problem This Solves
+
+Compiling production Rust to WASM requires rewriting I/O operations:
+- `std::net::TcpListener` → relay bridge or WebRTC
+- `std::fs::File` → IndexedDB, VFS, or relay
+- `tokio::spawn()` → browser task queue or WASI threads
+- `openssl` → `rustls` (pure Rust)
+
+This crate provides **trait-based I/O abstraction** so the business logic is unchanged. Only the I/O backend changes.
+
+### Architecture
+
+```rust
+// Single source of truth for all I/O operations
+pub trait Socket: Send + Sync { ... }
+pub trait Listener: Send + Sync { ... }
+pub trait Filesystem: Send + Sync { ... }
+pub trait Timer: Send + Sync { ... }
+pub trait Process: Send + Sync { ... }
+
+pub struct RuntimeContext {
+    pub socket_factory: Arc<dyn SocketFactory>,
+    pub filesystem: Arc<dyn Filesystem>,
+    pub timer: Arc<dyn Timer>,
+    pub process: Arc<dyn Process>,
+}
+
+pub static RUNTIME: OnceLock<RuntimeContext> = OnceLock::new();
+```
+
+### Backend Implementations
+
+#### Native Backend (Production-Ready)
+**File**: `traits/kernel/runtimes/src/native.rs`
+- **Sockets**: tokio `TcpListener` + `TcpStream`
+- **Filesystem**: `tokio::fs` with path sandboxing
+- **Timer**: `tokio::time::sleep`
+- **Process**: `tokio::process::Command`
+
+```rust
+// Use native runtime
+let runtime = traits_runtimes::native::init_native_runtime(Some(root_dir));
+init_runtime(runtime)?;
+```
+
+#### WASM Backend (Relay Bridge)
+**File**: `traits/kernel/runtimes/src/wasm.rs`
+- **Sockets**: relay bridge (WebSocket or HTTP)
+- **Filesystem**: relay VFS (linux.vfs.read/write/list/mkdir/delete)
+- **Timer**: JavaScript `setTimeout` shim
+- **Process**: relay dispatch (linux.exec)
+
+```rust
+// Use WASM runtime with relay
+let runtime = traits_runtimes::wasm::init_wasm_runtime(
+    "https://relay.traits.build".into(),
+    "ABCD".into(),  // pairing code
+);
+init_runtime(runtime)?;
+```
+
+### How to Port a Service
+
+#### Step 1: Add the dependency
+```toml
+[dependencies]
+traits-runtimes = { path = "../kernel/runtimes" }
+```
+
+#### Step 2: Replace all I/O with `RUNTIME` calls
+**Before:**
+```rust
+use std::fs;
+use tokio::net::TcpListener;
+
+async fn server() {
+    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let data = fs::read_to_string("config.toml")?;
+}
+```
+
+**After:**
+```rust
+use traits_runtimes::{get_runtime, init_runtime, native};
+
+async fn server() {
+    let rt = get_runtime()?;
+    let mut listener = rt.socket_factory.bind("127.0.0.1:8080".parse()?).await?;
+    let data = rt.filesystem.read_to_string("config.toml").await?;
+    // Rest of code unchanged
+}
+
+#[tokio::main]
+async fn main() {
+    // Select backend at startup
+    let runtime = native::init_native_runtime(None);
+    init_runtime(runtime)?;
+    server().await
+}
+```
+
+#### Step 3: Handle target-specific differences
+For operations that can't be abstracted (e.g., TLS certificate loading), use a service trait:
+
+```rust
+#[async_trait]
+pub trait MailService: Send + Sync {
+    async fn handle_smtp(&self, socket: Box<dyn Socket>) -> Result<()>;
+}
+
+// native implementation uses real TLS
+// wasm implementation delegates to relay or uses self-signed certs
+```
+
+### Testing the Abstraction
+
+Three runnable examples validate each piece incrementally:
+
+```bash
+# Test filesystem abstraction
+cargo run -p traits-runtimes --example file_ops
+
+# Test socket abstraction (echo server)
+cargo run -p traits-runtimes --example socket_echo
+
+# Test all abstractions on current target
+cargo run -p traits-runtimes --example multi_target_test
+```
+
+All examples pass and are self-documenting. Use them as templates when porting new services.
+
+### Roadmap: From Abstraction to Production Services
+
+#### Phase 1 (Current) ✅
+- [x] Define abstract I/O traits
+- [x] Implement native backend (tokio)
+- [x] Implement WASM backend (relay bridge)
+- [x] Create validation examples
+
+#### Phase 2 (Next)
+- [ ] Port a lightweight service (echo, web server)
+- [ ] Validate WASM compilation and relay dispatch
+- [ ] Document relay perf/latency characteristics
+
+#### Phase 3 (Future)
+- [ ] Port Stalwart (mail server) to wasm32-wasi
+- [ ] Implement SSH/FTP gateway using trait abstractions
+- [ ] Publish `traits-runtimes` as standalone ecosystem crate
+
+### Key Design Decisions
+
+1. **Trait-based, not macro-based**: No `#[tokio::main]` overhead in service code; backends injected at startup.
+2. **Arc<dyn T>**: Allows runtime polymorphism and easy swapping between backends.
+3. **No lifetimes in traits**: Keeps abstractions simple and Box-compatible.
+4. **Separate Timer trait**: Prevents generic method bloat that breaks dyn compatibility.
+5. **Path sandboxing in Filesystem**: Native backend restricts paths within a root to prevent directory traversal.
+
+---
+
 ## plugin_api Crate: C ABI Contract
 
 **Path**: `traits/kernel/plugin_api/`
@@ -1383,3 +1547,133 @@ dep = "namespace.concrete_trait"
 - NEVER modify terminal.js to add per-trait output formatting. All CLI/terminal output formatting MUST go in a `{name}.cli.rs` companion file (auto-discovered by build.rs). terminal.js is a thin display layer — it pipes data to/from the WASM CLI kernel and handles REST sentinels generically. No trait-specific logic belongs there.
 - When using `mcp_chrome-devtoo_*` tools (Chrome DevTools MCP), always pass `--isolated` to avoid "browser is already running" errors. The default profile collides with existing browser sessions.
 - Always test SPA pages on the deployed GitHub Pages site (`www.traits.build`) or the SPA served by the local binary, NOT on the raw server endpoints. The SPA (`index.html`) handles routing, WASM boot, and SDK initialization — testing server-rendered pages instead of the SPA misses the real user experience and dispatch cascade.
+---
+
+## Relay API: Backend for traits-runtimes WASM
+
+**Overview**: The relay is a stateless WebSocket gateway that forwards trait calls from browser to a running guest kernel or host server. The WASM backend of traits-runtimes uses this API for all I/O operations.
+
+### Relay Endpoints
+
+All endpoints are HTTP POST to `https://relay.traits.build/relay/`.
+
+#### 1. `/relay/register`
+Reserve a 4-character pairing code for a new session.
+
+**Request:**
+```json
+POST /relay/register
+{}
+```
+
+**Response (200 OK):**
+```json
+{
+  "code": "ABCD",
+  "ttl_seconds": 3600,
+  "tunnel_url": "wss://relay.traits.build/linux/tunnel"
+}
+```
+
+#### 2. `/relay/call`
+Synchronous RPC: send a trait call with arguments, wait for result.
+
+**Request:**
+```json
+POST /relay/call
+{
+  "code": "ABCD",
+  "path": "linux.exec",
+  "args": ["ls -la /tmp"]
+}
+```
+
+**Success Response:**
+```json
+{
+  "result": {
+    "output": "total 24\ndrwxr-xr-x 6 root ...",
+    "exitCode": 0,
+    "crashed": false
+  },
+  "error": null
+}
+```
+
+#### 3. `/relay/poll?code=ABCD`
+Long-poll for incoming requests (used by remote helpers).
+
+**Response:**
+```json
+{
+  "requests": [
+    {
+      "id": "req-123",
+      "path": "linux.exec",
+      "args": ["echo hello"]
+    }
+  ]
+}
+```
+
+#### 4. `/relay/respond`
+Send response back to a caller.
+
+**Request:**
+```json
+POST /relay/respond
+{
+  "code": "ABCD",
+  "id": "req-123",
+  "result": {
+    "output": "hello",
+    "exitCode": 0
+  }
+}
+```
+
+#### 5. `/relay/status?code=ABCD`
+Check if a pairing code is active.
+
+**Response:**
+```json
+{
+  "active": true,
+  "age_seconds": 347,
+  "code": "ABCD"
+}
+```
+
+### Relay-Backed Trait Paths (WASM)
+
+| Path | Purpose | Returns |
+|------|---------|---------|
+| `linux.exec` | Execute shell command | `{output, exitCode, crashed}` |
+| `linux.vfs.read` | Read file | `{content, bytes}` |
+| `linux.vfs.write` | Write file | `{bytes, mode}` |
+| `linux.vfs.list` | List directory | `{dirs[], files[]}` |
+| `linux.vfs.mkdir` | Create directory | `{ok}` |
+| `linux.vfs.delete` | Remove file | `{removed}` |
+
+### Example: Using Relay API from curl
+
+```bash
+# Register pairing code
+CODE=$(curl -s -X POST https://relay.traits.build/relay/register | jq -r '.code')
+
+# Execute command
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d "{\"code\":\"$CODE\",\"path\":\"linux.exec\",\"args\":[\"pwd\"]}"
+
+# Read file
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d "{\"code\":\"$CODE\",\"path\":\"linux.vfs.read\",\"args\":[\"/etc/hostname\"]}"
+
+# Write file
+curl -s -X POST https://relay.traits.build/relay/call \
+  -H 'Content-Type: application/json' \
+  -d "{\"code\":\"$CODE\",\"path\":\"linux.vfs.write\",\"args\":[\"/tmp/note.txt\",\"Hello!\",\"truncate\"]}"
+```
+
