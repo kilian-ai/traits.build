@@ -258,6 +258,7 @@ pub fn agent(args: &[Value]) -> Value {
     let mut total_usage = UsageTracker::default();
     let mut compacted_count = 0usize;
     let mut execution_retry_used = false;
+    let mut input_authenticity_retry_used = false;
 
     // Agent loop (claw-code ConversationRuntime.run_turn pattern)
     for _ in 0..max_steps {
@@ -349,6 +350,20 @@ pub fn agent(args: &[Value]) -> Value {
 
         if finish_reason == "stop" || tool_calls.is_none() {
             messages.push(choice.clone());
+
+            // Input authenticity guard: if the task needs user-provided inputs
+            // and those were not provided, prevent fabricated demo values/results.
+            if !is_turn_mode
+                && !input_authenticity_retry_used
+                && should_force_input_authenticity_retry(&prompt, &all_tool_calls)
+            {
+                input_authenticity_retry_used = true;
+                messages.push(json!({
+                    "role": "user",
+                    "content": "Input authenticity guard: do not invent missing user data, operands, example constants, CLI args, or final results. If required input was not provided, gather it via interactive prompt/stdin first, or ask a concise clarification. Do not hardcode placeholder/demo values. Re-run with real user input before finalizing. End with: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>."
+                }));
+                continue;
+            }
 
             // Hard guard: if the agent produced build-like file mutations but did not
             // execute code in terminal or render to canvas, force one retry pass.
@@ -704,6 +719,129 @@ fn should_force_execution_retry(prompt: &str, tool_calls: &[Value]) -> bool {
     (wrote_or_built || build_intent) && !ran_or_rendered
 }
 
+fn should_force_input_authenticity_retry(prompt: &str, tool_calls: &[Value]) -> bool {
+    if tool_calls.is_empty() {
+        return false;
+    }
+    if prompt_has_explicit_user_inputs(prompt) {
+        return false;
+    }
+
+    let uses_interactive = tool_calls_use_interactive_input(tool_calls);
+    let hardcoded = tool_calls_hardcode_demo_values(tool_calls);
+    let invented_args = tool_calls_invent_runtime_args(prompt, tool_calls);
+
+    (hardcoded || invented_args) && !uses_interactive
+}
+
+fn prompt_has_explicit_user_inputs(prompt: &str) -> bool {
+    let p = prompt.to_ascii_lowercase();
+    let has_quotes = p.contains('"') || p.contains('\'');
+    let has_digits = p.chars().any(|c| c.is_ascii_digit());
+    has_digits || has_quotes
+}
+
+fn tool_calls_use_interactive_input(tool_calls: &[Value]) -> bool {
+    tool_calls.iter().any(|tc| {
+        let name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let args = tc.get("args").cloned().unwrap_or(Value::Null);
+
+        if name == "sys_shell" {
+            let cmd = args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            return cmd.contains("prompt(")
+                || cmd.contains("readline")
+                || cmd.contains("stdin")
+                || cmd.contains("io.read");
+        }
+
+        if name == "sys_js" {
+            return true;
+        }
+
+        false
+    })
+}
+
+fn tool_calls_hardcode_demo_values(tool_calls: &[Value]) -> bool {
+    tool_calls.iter().any(|tc| {
+        let name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        if name != "sys_shell" {
+            return false;
+        }
+
+        let cmd = tc
+            .get("args")
+            .and_then(|a| a.get("command"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        // Heuristic indicators of fabricated/demo constants in generated code.
+        (cmd.contains("write ") || cmd.contains("tee "))
+            && (cmd.contains("const ") || cmd.contains("let "))
+            && (cmd.contains("first number")
+                || cmd.contains("second number")
+                || cmd.contains("example")
+                || cmd.contains("demo")
+                || cmd.contains("sample")
+                || cmd.contains("const num")
+                || cmd.contains("let num")
+                || cmd.contains("operation ="))
+    })
+}
+
+fn tool_calls_invent_runtime_args(prompt: &str, tool_calls: &[Value]) -> bool {
+    let p = prompt.to_ascii_lowercase();
+    tool_calls.iter().any(|tc| {
+        let name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        if name != "sys_shell" {
+            return false;
+        }
+
+        let cmd = tc
+            .get("args")
+            .and_then(|a| a.get("command"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+
+        let is_runtime_exec = cmd.starts_with("js ")
+            || cmd.starts_with("python ")
+            || cmd.starts_with("python3 ")
+            || cmd.starts_with("lua ")
+            || cmd.starts_with("qjs ")
+            || cmd.starts_with("bash ")
+            || cmd.starts_with("sh ")
+            || cmd.starts_with("./");
+        if !is_runtime_exec {
+            return false;
+        }
+
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        if parts.len() < 3 {
+            return false;
+        }
+
+        let runtime_args = &parts[2..];
+        let contains_literal = runtime_args.iter().any(|arg| {
+            arg.parse::<f64>().is_ok()
+                || matches!(*arg, "+" | "-" | "*" | "/")
+                || (*arg).len() >= 2
+        });
+        if !contains_literal {
+            return false;
+        }
+
+        // Treat as invented if none of runtime args appear in user's prompt.
+        !runtime_args.iter().any(|arg| p.contains(&arg.to_ascii_lowercase()))
+    })
+}
+
 fn prompt_suggests_build_or_script(prompt: &str) -> bool {
     let p = prompt.to_ascii_lowercase();
     [
@@ -977,9 +1115,9 @@ To run JavaScript: call the sys.js tool directly with the file path as arg, e.g.
 OR use sys.shell with command \"js calculations/calc.js\". \
 NEVER use sys.shell with \"node ...\", \"deno ...\", or \"bun ...\" — these will fail. \
 Scripts using prompt() get interactive user input in the terminal via sys.js. \
-CALCULATOR / INPUT RULE: if the user asks for a calculator or simple calculations without providing the operands, prefer an interactive terminal flow first — use prompt()/stdin to ask the user for the numbers and operation at runtime. \
-Do NOT invent sample inputs such as \"5 + 3\" unless the user explicitly supplied them. \
-Only use canvas for a calculator when the user asks for a visual/UI calculator or terminal interaction is insufficient.\n\n\
+INPUT AUTHENTICITY RULE: if a task requires user-provided inputs that are missing from the prompt, do not invent demo values, placeholder constants, or synthetic final results. \
+Use interactive prompt()/stdin to gather missing input at runtime, or ask a concise clarification when interaction is not possible. \
+Only use canvas when the user explicitly wants a visual UI or terminal interaction is insufficient.\n\n\
 FILE TOOLS: You have a virtual filesystem (sys.vfs) for reading and writing files. \
 Use action=\"read\" with path to read a file, action=\"write\" with path and content to write, \
 action=\"list\" to list files, action=\"delete\" to remove, action=\"exists\" to check.\n\n\
