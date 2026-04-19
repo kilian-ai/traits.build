@@ -14,6 +14,14 @@ traits.build is deployed to [Fly.io](https://fly.io) as a single Docker image.
 - **Region:** `iad` (Ashburn, Virginia)
 - **Resources:** shared CPU, 1 vCPU, 512 MB RAM
 
+## GitHub Pages static publish
+
+The public SPA at `https://www.traits.build/` is deployed from `.github/workflows/deploy-docs.yml`.
+
+- Publish `traits/www/static/index.standalone.html` as `_site/index.html`.
+- Also copy the full `traits/www/static/` subtree into `_site/static/`.
+- This is required for nested static runtimes such as `/static/apptron/**` and `/static/wanix/**`, which load additional `.html`, `.js`, `.wasm`, and bundle files directly from GitHub Pages.
+
 ## Dockerfile
 
 The multi-stage Dockerfile builds a minimal image:

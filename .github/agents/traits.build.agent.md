@@ -1436,7 +1436,7 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **Version format:** `vYYMMDD` or `vYYMMDD.HHMMSS` for same-day bumps.
 - **After modifying traits:** run `bash build.sh` to rebuild native + WASM + static assets.
 - **GitHub Pages deploy:** just `git push origin main` — root `index.html` is auto-served.
-- **GitHub Pages workflow entrypoint:** `.github/workflows/deploy-docs.yml` must publish `traits/www/static/index.standalone.html` as `_site/index.html` (not `traits/www/static/index.html`) so runtime assets stay available without `/static/*` server routes.
+- **GitHub Pages workflow entrypoint:** `.github/workflows/deploy-docs.yml` must publish `traits/www/static/index.standalone.html` as `_site/index.html` (not `traits/www/static/index.html`) and copy the full `traits/www/static/` subtree to `_site/static/` so nested runtime assets under `/static/apptron/**` and `/static/wanix/**` do not 404 on Pages.
 - **Two admin pages exist:** `www.admin` (server-rendered) and `www.admin.spa` (browser-only SPA).
 - **Static runtime asset URLs must use `/static/<file>`** (for example `/static/wasm-runtime.js`, `/static/sdk-runtime.js`, `/static/terminal-runtime.js`, `/static/traits-worker.js`). Do not use duplicated `/static/www/static/...` paths.
 - **Terminal dispatch:** `terminal.js` uses `window._traitsSDK.call()` (3-tier cascade) and `Traits.backgroundCall()` for CLI session commands, NOT raw fetch/direct trait-specific command switches.

@@ -28,13 +28,16 @@ jobs:
 
       - name: Assemble site
         run: |
-          mkdir -p _site/local
+          mkdir -p _site/local _site/static
           # SPA files (standalone build is the primary entry point for Pages)
           cp traits/www/static/index.standalone.html _site/index.html
           cp traits/www/static/index.standalone.html _site/standalone.html
           cp traits/www/static/wasm-runtime.js _site/wasm-runtime.js
           cp traits/www/static/sdk-runtime.js _site/sdk-runtime.js
           cp traits/www/static/terminal-runtime.js _site/terminal-runtime.js
+          # Publish the full static subtree so iframe-backed pages like /static/apptron
+          # and /static/wanix can load their nested runtime assets on GitHub Pages.
+          cp -R traits/www/static/. _site/static/
           # SDK
           if [ -d traits/www/sdk ]; then
             mkdir -p _site/sdk
