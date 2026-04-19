@@ -72,10 +72,17 @@ const input = (() => {
   catch (_) { return {}; }
 })();
 const stdin = Array.isArray(input.stdin) ? input.stdin.slice() : [];
+const argv = Array.isArray(input.__argv)
+	? input.__argv.map(v => String(v))
+	: ['traits-js', String(input.__script_path || '<eval>'), ...stdin.map(v => String(v))];
+const envObj = (input && typeof input.env === 'object' && input.env)
+	? Object.fromEntries(Object.entries(input.env).map(([k, v]) => [String(k), String(v)]))
+	: {};
 const allowNativePrompt = !!input.__allow_native_prompt;
 const nativePrompt = (typeof globalThis.prompt === 'function') ? globalThis.prompt.bind(globalThis) : null;
 const nativeConfirm = (typeof globalThis.confirm === 'function') ? globalThis.confirm.bind(globalThis) : null;
 const nativeAlert = (typeof globalThis.alert === 'function') ? globalThis.alert.bind(globalThis) : null;
+const nativeProcess = (typeof globalThis.process === 'object' && globalThis.process) ? globalThis.process : null;
 
 const traits = {
   call(path, ...args) {
@@ -127,6 +134,27 @@ globalThis.prompt = promptShim;
 globalThis.confirm = confirmShim;
 globalThis.alert = alertShim;
 
+const processShim = {
+	argv,
+	env: envObj,
+	exit(code = 0) {
+		const n = Number(code);
+		throw { __traits_process_exit: true, code: Number.isFinite(n) ? n : 0 };
+	},
+	stdout: {
+		write(value = '') {
+			stdout.push(String(value));
+		},
+	},
+	stderr: {
+		write(value = '') {
+			stderr.push(String(value));
+		},
+	},
+};
+
+globalThis.process = processShim;
+
 const origLog = console.log;
 const origErr = console.error;
 
@@ -147,6 +175,10 @@ try {
 		needInputPrompt = String(e.prompt || 'input');
 		ok = true;
 		error = null;
+	} else if (e && e.__traits_process_exit) {
+		const exitCode = Number(e.code || 0) || 0;
+		ok = exitCode === 0;
+		error = exitCode === 0 ? null : `process.exit(${exitCode})`;
 	} else {
 		ok = false;
 		error = String((e && e.stack) ? e.stack : e);
@@ -155,6 +187,11 @@ try {
 
 console.log = origLog;
 console.error = origErr;
+if (nativeProcess) {
+  globalThis.process = nativeProcess;
+} else {
+  try { delete globalThis.process; } catch (_) { globalThis.process = undefined; }
+}
 
 if (needInputPrompt !== null) {
 	return JSON.stringify({

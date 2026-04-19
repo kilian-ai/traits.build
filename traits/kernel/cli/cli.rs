@@ -3244,13 +3244,34 @@ fn js_command(
         match vfs.borrow().read(&path_candidate) {
             Some(raw_code) => {
                 let code = decode_cli_file_content(&raw_code);
-                let input = if args.len() > 1 {
+                let mut input = if args.len() > 1 {
                     let rest = args[1..].join(" ");
                     serde_json::from_str::<serde_json::Value>(&rest)
                         .unwrap_or_else(|_| serde_json::json!({ "stdin": args[1..].to_vec() }))
                 } else {
                     serde_json::json!({})
                 };
+
+                if !input.is_object() {
+                    input = serde_json::json!({ "value": input });
+                }
+
+                if let Some(obj) = input.as_object_mut() {
+                    obj.entry("__script_path".to_string())
+                        .or_insert_with(|| serde_json::json!(path_candidate.clone()));
+                    obj.entry("__argv".to_string()).or_insert_with(|| {
+                        let mut argv = vec![
+                            serde_json::json!("traits-js"),
+                            serde_json::json!(path_candidate.clone()),
+                        ];
+                        argv.extend(args[1..].iter().map(|arg| serde_json::json!(arg)));
+                        serde_json::Value::Array(argv)
+                    });
+
+                    if !obj.contains_key("stdin") && args.len() > 1 {
+                        obj.insert("stdin".to_string(), serde_json::json!(args[1..].to_vec()));
+                    }
+                }
 
                 #[cfg(target_arch = "wasm32")]
                 {

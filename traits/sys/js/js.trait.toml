@@ -1,7 +1,7 @@
 [trait]
 description = "Execute JavaScript snippets (WASM/browser runtime)"
-version = "v260418.233709"
-checksum = "ce7f406bb9b870f5e220ddb7709b101e884894f0a53dc0d4107904c2a51d3be7"
+version = "v260419"
+checksum = "bc8a3450f2037969b30ab2daf725b21bca8894e042b1f567d3c8b1dd68564641"
 author = "system"
 tags = ["sys", "js", "javascript", "runtime", "scripting"]
 
