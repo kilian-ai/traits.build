@@ -29,10 +29,11 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p _site/local
-          # SPA files
-          cp traits/www/static/index.html _site/index.html
+          # SPA files (standalone build is the primary entry point for Pages)
+          cp traits/www/static/index.standalone.html _site/index.html
           cp traits/www/static/index.standalone.html _site/standalone.html
           cp traits/www/static/wasm-runtime.js _site/wasm-runtime.js
+          cp traits/www/static/sdk-runtime.js _site/sdk-runtime.js
           cp traits/www/static/terminal-runtime.js _site/terminal-runtime.js
           # SDK
           if [ -d traits/www/sdk ]; then
