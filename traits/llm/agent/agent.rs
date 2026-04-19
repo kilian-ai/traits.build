@@ -257,6 +257,7 @@ pub fn agent(args: &[Value]) -> Value {
     let mut all_tool_calls: Vec<Value> = Vec::new();
     let mut total_usage = UsageTracker::default();
     let mut compacted_count = 0usize;
+    let mut execution_retry_used = false;
 
     // Agent loop (claw-code ConversationRuntime.run_turn pattern)
     for _ in 0..max_steps {
@@ -348,6 +349,21 @@ pub fn agent(args: &[Value]) -> Value {
 
         if finish_reason == "stop" || tool_calls.is_none() {
             messages.push(choice.clone());
+
+            // Hard guard: if the agent produced build-like file mutations but did not
+            // execute code in terminal or render to canvas, force one retry pass.
+            if !is_turn_mode
+                && !execution_retry_used
+                && should_force_execution_retry(&prompt, &all_tool_calls)
+            {
+                execution_retry_used = true;
+                messages.push(json!({
+                    "role": "user",
+                    "content": "Execution guard: before finalizing, run the built artifact now. Prefer terminal execution (sys.shell) when sufficient; otherwise render interactive output via sys.canvas set. Do not only write or cat files. End with: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>."
+                }));
+                continue;
+            }
+
             break;
         }
 
@@ -672,6 +688,134 @@ fn sanitize_messages_for_api(messages: &[Value]) -> (Vec<Value>, usize) {
     (out, dropped)
 }
 
+// ─── Execution Guard ───────────────────────────────────────────────────────
+
+fn should_force_execution_retry(prompt: &str, tool_calls: &[Value]) -> bool {
+    if tool_calls.is_empty() {
+        return false;
+    }
+
+    let wrote_or_built = tool_calls_have_build_actions(tool_calls);
+    let ran_or_rendered = tool_calls_have_run_or_render(tool_calls);
+    let build_intent = prompt_suggests_build_or_script(prompt);
+
+    // Only enforce when there is strong evidence this was a build-like turn
+    // and no execution/render step happened yet.
+    (wrote_or_built || build_intent) && !ran_or_rendered
+}
+
+fn prompt_suggests_build_or_script(prompt: &str) -> bool {
+    let p = prompt.to_ascii_lowercase();
+    [
+        "build",
+        "create",
+        "make",
+        "script",
+        "program",
+        "calculator",
+        "app",
+        "tool",
+        "javascript",
+        "js",
+        "code",
+    ]
+    .iter()
+    .any(|kw| p.contains(kw))
+}
+
+fn tool_calls_have_build_actions(tool_calls: &[Value]) -> bool {
+    tool_calls.iter().any(|tc| {
+        let name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let args = tc.get("args").cloned().unwrap_or(Value::Null);
+
+        if name == "sys_vfs" {
+            let action = args
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            return action == "write" || action == "append";
+        }
+
+        if name == "sys_shell" {
+            let cmd = args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
+            return cmd.starts_with("write ")
+                || cmd.starts_with("tee ")
+                || cmd.starts_with("cat >")
+                || cmd.contains(" > ")
+                || cmd.contains(" >> ");
+        }
+
+        false
+    })
+}
+
+fn tool_calls_have_run_or_render(tool_calls: &[Value]) -> bool {
+    tool_calls.iter().any(|tc| {
+        let name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let args = tc.get("args").cloned().unwrap_or(Value::Null);
+
+        if name == "sys_canvas" {
+            let action = args
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            return action == "set" || action == "append" || action == "load";
+        }
+
+        if name == "sys_js" {
+            return true;
+        }
+
+        if name == "sys_shell" {
+            let cmd = args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
+
+            // Explicit non-execution inspection commands should not count.
+            let is_inspection = cmd.starts_with("cat ")
+                || cmd.starts_with("ls")
+                || cmd.starts_with("find ")
+                || cmd.starts_with("grep ")
+                || cmd.starts_with("head ")
+                || cmd.starts_with("tail ")
+                || cmd.starts_with("wc ");
+            if is_inspection {
+                return false;
+            }
+
+            return cmd.starts_with("node ")
+                || cmd.starts_with("deno ")
+                || cmd.starts_with("bun ")
+                || cmd.starts_with("python ")
+                || cmd.starts_with("python3 ")
+                || cmd.starts_with("lua ")
+                || cmd.starts_with("js ")
+                || cmd.starts_with("qjs ")
+                || cmd.starts_with("bash ")
+                || cmd.starts_with("sh ")
+                || cmd.starts_with("./")
+                || cmd.starts_with("canvas ")
+                || cmd.starts_with("traits canvas ")
+                || cmd.starts_with("npm run ")
+                || cmd.starts_with("pnpm ")
+                || cmd.starts_with("yarn ")
+                || cmd.starts_with("cargo run");
+        }
+
+        false
+    })
+}
+
 // ─── Tool name ↔ trait path conversion ──────────────────────────────────────
 
 /// Convert OpenAI tool name back to trait path: sys_checksum → sys.checksum
@@ -808,6 +952,8 @@ fn trait_type_to_json_schema(t: &str) -> &'static str {
 
 const DEFAULT_TOOLS: &[&str] = &[
     "sys.shell",
+    "sys.canvas",
+    "sys.js",
     "sys.call",
     "sys.vfs",
     "sys.list",
