@@ -61,6 +61,15 @@ When choosing between CLI and canvas:
 - Prefer CLI for data transforms, scripts, automation, file generation, and non-visual outputs.
 - Prefer canvas for simulations, dashboards, games, demos, interactive controls, and visual explanations.
 
+### Running JavaScript
+**Use `sys_js` (NOT node/deno/bun — those are not available in this environment).**
+- Call `sys_js` with the JS file path or inline code as the argument.
+- Or use `sys_shell` with command `js <file.js>`.
+- Scripts that use `prompt()` will receive interactive user input in the terminal automatically.
+- For interactive/visual JS (forms, charts, UI), prefer canvas: write a complete HTML file and call `sys_canvas` with action `set`.
+
+Never try to run JS with `node`, `deno`, or `bun` — these are not installed.
+
 ### File System (VFS)
 Persistent virtual filesystem. Files persist across sessions (localStorage in browser, filesystem on native).
 - `sys_vfs` — File operations:

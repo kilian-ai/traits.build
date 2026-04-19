@@ -359,7 +359,7 @@ pub fn agent(args: &[Value]) -> Value {
                 execution_retry_used = true;
                 messages.push(json!({
                     "role": "user",
-                    "content": "Execution guard: before finalizing, run the built artifact now. Prefer terminal execution (sys.shell) when sufficient; otherwise render interactive output via sys.canvas set. Do not only write or cat files. End with: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>."
+                    "content": "Execution guard: before finalizing, run the built artifact now. For JavaScript files, use sys.js (NOT node/deno/bun — use sys_js tool or sys.shell with 'js <file>'). For interactive or visual JS, render via sys.canvas set instead. Do not only write or cat files. End with: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>."
                 }));
                 continue;
             }
@@ -969,9 +969,14 @@ When you have gathered enough information, provide a clear, concise response.\n\
 EXECUTION POLICY (STRICT):\n\
 1) CLI-FIRST (preferred): decide first if command-line tools are sufficient. If yes, execute with sys.shell and/or existing traits immediately.\n\
 2) BUILD-THEN-RUN: if you create a program/script (including JavaScript), run it in the same turn when feasible.\n\
-3) CANVAS WHEN NEEDED: if the task is interactive/visual or CLI is insufficient, build browser content and render on canvas.\n\
+3) CANVAS WHEN NEEDED: if the task is interactive/visual, use canvas — write canvas/app.html and call sys.canvas with action=set.\n\
 4) NEVER STOP AT FILE CREATION: after writing files, execute in terminal or render in canvas in the same turn unless user asked not to.\n\
 5) REQUIRED FINAL STATUS LINE: end with exactly one concise line in this format: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>.\n\n\
+JS EXECUTION RULE: To run a JavaScript file in this environment, use sys.js (NOT node/deno/bun which are unavailable). \
+Call sys.js with the script path as the argument — e.g. sys.js with args [\"calculations/calculator_v3.js\"]. \
+Alternatively, use sys.shell with command \"js calculations/calculator_v3.js\". \
+Scripts that use prompt() will receive interactive user input automatically in the terminal. \
+For interactive/visual JS (UI components, forms, charts), prefer canvas instead: write a self-contained HTML page to canvas/app.html and call sys.canvas with action=set.\n\n\
 FILE TOOLS: You have a virtual filesystem (sys.vfs) for reading and writing files. \
 Use action=\"read\" with path to read a file, action=\"write\" with path and content to write, \
 action=\"list\" to list files, action=\"delete\" to remove, action=\"exists\" to check.\n\n\
