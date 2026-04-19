@@ -1,0 +1,52 @@
+{
+  "tests": [
+    {
+      "name": "testing page renders",
+      "command": ["www.testing"],
+      "type": "exit_code",
+      "expected": 0
+    },
+    {
+      "name": "testing page contains overview",
+      "command": ["www.testing"],
+      "type": "contains",
+      "expected": "Abstraction Layer Overview"
+    },
+    {
+      "name": "testing page contains examples section",
+      "command": ["www.testing"],
+      "type": "contains",
+      "expected": "Running the Examples"
+    },
+    {
+      "name": "testing page contains filesystem tests",
+      "command": ["www.testing"],
+      "type": "contains",
+      "expected": "Filesystem Abstraction Tests"
+    },
+    {
+      "name": "testing page contains socket tests",
+      "command": ["www.testing"],
+      "type": "contains",
+      "expected": "Socket Abstraction Tests"
+    },
+    {
+      "name": "testing page contains relay API section",
+      "command": ["www.testing"],
+      "type": "contains",
+      "expected": "Relay API Testing"
+    },
+    {
+      "name": "testing page contains file_ops example",
+      "command": ["www.testing"],
+      "type": "contains",
+      "expected": "Filesystem Operations"
+    },
+    {
+      "name": "testing page contains socket_echo example",
+      "command": ["www.testing"],
+      "type": "contains",
+      "expected": "Socket Operations"
+    }
+  ]
+}
