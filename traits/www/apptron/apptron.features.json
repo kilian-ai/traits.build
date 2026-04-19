@@ -1,0 +1,33 @@
+{
+  "trait": "www.apptron",
+  "description": "Apptron runtime shell page",
+  "features": [
+    {
+      "name": "Returns Apptron shell HTML",
+      "description": "The apptron trait renders an embedded local Apptron shell page",
+      "examples": [
+        {
+          "args": [],
+          "test": {
+            "type": "contains",
+            "value": "Apptron Runtime Shell"
+          }
+        },
+        {
+          "args": [],
+          "test": {
+            "type": "contains",
+            "value": "/static/apptron/index.html"
+          }
+        },
+        {
+          "args": [],
+          "test": {
+            "type": "contains",
+            "value": "Shell active via local /static/apptron runtime"
+          }
+        }
+      ]
+    }
+  ]
+}

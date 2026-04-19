@@ -805,6 +805,7 @@ The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel
 | `www.wasm` | WASM kernel internals page | builtin |
 | `www.playground` | Interactive trait playground | builtin |
 | `www.terminal` | WASM-powered terminal (xterm.js) | builtin |
+| `www.apptron` | Locally hosted Apptron shell runtime page (`/static/apptron`) | builtin |
 | `www.wanix` | Locally hosted Wanix shell runtime page (`/static/wanix`) | builtin |
 | `www.admin` | Admin dashboard (Basic Auth) | builtin |
 | `www.admin.spa` | SPA admin (browser-only, no auth) | builtin |
@@ -1310,11 +1311,13 @@ Layer 0: kernel/logic — Shared Rust library
 '/admin':      'www.admin.spa'       // Admin (SPA mode)
 '/settings':   'www.admin.spa'       // Settings alias
 '/playground': 'www.playground'      // Trait playground
+'/apptron':    'www.apptron'         // Apptron runtime shell embed
 '/wanix':      'www.wanix'           // Wanix shell runtime embed
 '/testing':    'www.testing'         // Testing abstraction layer
 '/wasm':       'www.wasm'            // WASM internals
 ```
 
+- `www.apptron` runs a locally hosted Apptron runtime from `/static/apptron` (vendored `wanix.min.js`, `wanix.wasm`, and `bundles/sys.tar.gz`) for a dedicated Apptron shell page in the SPA.
 - `www.wanix` runs a locally hosted Wanix forked runtime from `/static/wanix` (vendored `wanix.min.js`, `wanix.wasm`, `wasi/worker/lib.js`, and `shell.tgz`) so shell sessions run inside traits.build infrastructure.
 
 **Two admin variants:**

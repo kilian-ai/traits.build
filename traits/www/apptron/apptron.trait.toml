@@ -1,0 +1,19 @@
+[trait]
+description = "Apptron runtime shell page hosted in traits.build"
+version = "v260419.204903"
+checksum = "8006afe7bfb58aae898b75206a3b558b6c8d36a2d4ec98052ee9658e417cd45b"
+author = "system"
+tags = ["www", "apptron", "shell", "linux"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML page for embedded Apptron shell"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "apptron"
+wasm = true
