@@ -149,6 +149,7 @@ The portable terminal session includes shell-compatible builtins aimed at agent 
 - `curl` (mapped to `sys.call`)
 - `lua` (run Lua from inline code or `.lua` files)
 - `js` (run JavaScript from inline code or `.js` files in WASM terminal)
+- `canvas` (render `.html` or `.js` files from VFS to `/canvas`, or proxy `sys.canvas` actions)
 - `vi` and `ee` (preview file, or write/append via args/stdin)
 
 For `js`, scripts that use `prompt()` should provide input via trailing args or JSON stdin:
@@ -159,6 +160,17 @@ js tic_tac_toe.js '{"stdin":["1","5","2","9","3"]}'
 ```
 
 In the WASM terminal, `js` now supports interactive `prompt()` loops: when stdin is exhausted, the terminal asks for the next value and re-runs the script with accumulated `input.stdin` entries.
+
+For `canvas`, you can render directly from a VFS file in one command:
+
+```bash
+canvas demo.html
+canvas sketch.js
+canvas save my-project
+canvas load my-project
+```
+
+When given a `.js` file, `canvas` auto-wraps it into a full HTML document and pushes it to `sys.canvas set`.
 
 `cd` now updates per-session working directory state, and path-taking commands resolve relative paths against that `cwd`.
 

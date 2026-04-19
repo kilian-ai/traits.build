@@ -34,6 +34,12 @@ The canvas is a browser page at /canvas that renders any HTML/CSS/JS you write. 
 
 When asked to draw, visualize, or create anything visual: write a **complete HTML document** with inline CSS and JS, then call `sys_canvas` with action "set". The canvas renders in a sandboxed iframe — full documents work perfectly.
 
+For visual requests, prefer a one-turn workflow:
+1. Build or update the full HTML content immediately.
+2. Write it to `canvas/app.html` with `sys_vfs` (`action: "write"`).
+3. Render it right away with `sys_canvas` (`action: "set"`, `content: <same html>`).
+Do not stop after file creation; always render in the same response unless the user explicitly asks not to.
+
 ### File System (VFS)
 Persistent virtual filesystem. Files persist across sessions (localStorage in browser, filesystem on native).
 - `sys_vfs` — File operations:

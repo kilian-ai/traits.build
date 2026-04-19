@@ -2105,6 +2105,7 @@ fn execute_leaf_command(
 
         "lua" => lua_command(&args, vfs, cwd, backend),
         "js" => js_command(&args, vfs, cwd, backend),
+        "canvas" => canvas_command(&args, vfs, cwd, backend),
 
         "mkdir" => mkdir_command(&args, vfs, cwd),
 
@@ -3289,6 +3290,69 @@ fn js_command(
     }
 }
 
+fn canvas_command(
+    args: &[String],
+    vfs: &RefCell<Box<dyn Vfs>>,
+    cwd: &str,
+    backend: &dyn CliCallBackend,
+) -> String {
+    if args.is_empty() {
+        return format!(
+            "{RED}Usage:{RESET} canvas <file.html|file.js> | canvas <set|get|append|clear|path|save|load|projects|delete_project> [arg]"
+        );
+    }
+
+    let first = args[0].as_str();
+    let action = first.to_lowercase();
+    let known_actions = [
+        "set",
+        "append",
+        "get",
+        "clear",
+        "path",
+        "save",
+        "load",
+        "projects",
+        "delete_project",
+    ];
+
+    if known_actions.contains(&action.as_str()) {
+        let mut call_args: Vec<String> = vec![action];
+        if args.len() > 1 {
+            call_args.push(args[1..].join(" "));
+        }
+        return exec_call(backend, "sys.canvas", &call_args);
+    }
+
+    let path = resolve_vfs_path(cwd, first);
+    let raw = match vfs.borrow().read(&path) {
+        Some(v) => v,
+        None => return format!("{RED}canvas:{RESET} {} not found in VFS", first),
+    };
+
+    let decoded = decode_cli_file_content(&raw);
+    let html = if first.ends_with(".js") {
+        let escaped_title = first.replace('<', "&lt;").replace('>', "&gt;");
+        format!(
+            "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>{}</title>\n  <style>\n    :root {{ color-scheme: dark; }}\n    html, body {{ margin: 0; width: 100%; height: 100%; background: #0a0a0a; color: #e0e0e0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}\n    #canvas-container {{ width: 100%; height: 100%; }}\n  </style>\n</head>\n<body>\n  <div id=\"canvas-container\"></div>\n  <script>\n{}\n  </script>\n</body>\n</html>",
+            escaped_title, decoded
+        )
+    } else {
+        decoded
+    };
+
+    let result = exec_call(backend, "sys.canvas", &["set".to_string(), html]);
+    if result.contains("Unknown trait") || result.contains("trait not found") {
+        return result;
+    }
+
+    format!(
+        "{GREEN}canvas loaded{RESET}: {CYAN}{}{RESET} {GRAY}({} bytes){RESET}",
+        path,
+        raw.len()
+    )
+}
+
 fn format_js_result(result: Option<serde_json::Value>) -> String {
     let val = match result {
         Some(v) => v,
@@ -3946,6 +4010,7 @@ fn format_help() -> String {
     s.push_str(&format!("  {GREEN}curl{RESET} {GRAY}[opts] <url>{RESET}         HTTP calls via sys.call\r\n"));
     s.push_str(&format!("  {GREEN}lua{RESET} {GRAY}<script.lua | code>{RESET}   Run Lua from VFS file or inline code\r\n"));
     s.push_str(&format!("  {GREEN}js{RESET} {GRAY}<script.js | code>{RESET}     Run JavaScript from VFS file or inline code\r\n"));
+    s.push_str(&format!("  {GREEN}canvas{RESET} {GRAY}<file|action>{RESET}      Render HTML/JS from VFS or call sys.canvas actions\r\n"));
     s.push_str(&format!("  {GREEN}vi{RESET}/{GREEN}ee{RESET} {GRAY}[-a] <file> [text]{RESET}  Save/append text or preview file\r\n"));
     s.push_str(&format!("  {GRAY}cmd1 && cmd2{RESET}              Run cmd2 only if cmd1 succeeded\r\n"));
     s.push_str(&format!("  {GRAY}cmd1 || cmd2{RESET}              Run cmd2 only if cmd1 failed\r\n"));
@@ -4035,6 +4100,8 @@ fn format_help() -> String {
     s.push_str(&format!("  {GRAY}info sys.list{RESET}\r\n"));
     s.push_str(&format!("  {GRAY}list sys{RESET}\r\n"));
     s.push_str(&format!("  {GRAY}search checksum{RESET}\r\n"));
+    s.push_str(&format!("  {GRAY}canvas demo.html{RESET}\r\n"));
+    s.push_str(&format!("  {GRAY}canvas sketch.js{RESET}\r\n"));
     s
 }
 
@@ -4291,7 +4358,7 @@ pub fn tab_completions(prefix: &str, all_paths: &[String]) -> (Vec<String>, Stri
 fn shell_builtin_commands() -> Vec<String> {
     [
         "help", "h", "?", "list", "info", "i", "call", "c", "search", "s", "version", "v", "clear", "cls",
-        "echo", "printf", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "nl", "sed", "test", "[", "find", "curl", "lua", "js",
+        "echo", "printf", "pwd", "true", "false", "cat", "head", "tail", "grep", "wc", "nl", "sed", "test", "[", "find", "curl", "lua", "js", "canvas",
         "vi", "ee", "stat", "mkdir", "write", "tee", "rm", "ls", "cd", "chat",
     ]
     .iter()
@@ -4310,7 +4377,7 @@ fn should_complete_vfs_paths(cmd: &str, parts: &[String], ends_space: bool) -> b
 
     match cmd {
         // first-arg path commands
-        "ls" | "cd" | "find" | "mkdir" | "rm" | "stat" | "vi" | "ee" | "lua" | "js" => arg_index == 0,
+        "ls" | "cd" | "find" | "mkdir" | "rm" | "stat" | "vi" | "ee" | "lua" | "js" | "canvas" => arg_index == 0,
         // read/write commands where additional args can still be file paths
         "cat" | "head" | "tail" | "grep" | "wc" | "nl" | "sed" => arg_index <= 1,
         // write/tee complete only destination path (first arg), not content payload

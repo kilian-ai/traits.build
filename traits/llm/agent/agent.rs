@@ -829,6 +829,7 @@ If the file does not exist or the read fails, create it from scratch — never a
 If it exists, modify the content based on the user's request. \
 Then write the updated version back with sys.vfs write. Write complete, self-contained HTML with inline \
 CSS and JS — no external dependencies. The canvas page updates automatically when this file changes. \
+For visual requests, complete creation and rendering in one turn: after writing `canvas/app.html`, immediately call sys.canvas with action `set` and the same HTML content. Do not stop after file creation unless the user explicitly asks to skip rendering. \
 Prefer dark backgrounds (#0a0a0a) and light text (#e0e0e0) to match the site theme.\n\n\
 CANVAS RENDERING RULES (your HTML is injected into a container div, NOT a standalone page):\n\
 - Your <script> runs inside a new Function() wrapper with access to document and global scope.\n\
