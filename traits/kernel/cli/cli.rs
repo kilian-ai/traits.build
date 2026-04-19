@@ -141,8 +141,11 @@ pub const VOICE_SENTINEL_END: &str = "\x1b[/VOICE]";
 
 pub const LUA_SENTINEL_START: &str = "\x1b[LUA]";
 pub const LUA_SENTINEL_END: &str = "\x1b[/LUA]";
-pub const JS_SENTINEL_START: &str = "\x1b[JS]";
-pub const JS_SENTINEL_END: &str = "\x1b[/JS]";
+// Use plain markers for JS. `\x1b[J` is a real ANSI clear-screen sequence,
+// so ESC-prefixed JS sentinels get partially consumed by xterm and leak as
+// broken `S]...S]` fragments instead of entering the interactive JS bridge.
+pub const JS_SENTINEL_START: &str = "[JS]";
+pub const JS_SENTINEL_END: &str = "[/JS]";
 
 const CHAT_PROMPT: &str = "\x1b[96mchat❯\x1b[0m ";
 const HISTORY_VFS_PATH: &str = "/.terminal_history.json";

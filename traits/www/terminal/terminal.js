@@ -22,6 +22,9 @@ const LUA_RE = /\x1b\[LUA\]([\s\S]*?)\x1b\[\/LUA\]/;
 const LUA_RE_PLAIN = /\[LUA\]([\s\S]*?)\[\/LUA\]/;
 const JS_RE = /\x1b\[JS\]([\s\S]*?)\x1b\[\/JS\]/;
 const JS_RE_PLAIN = /\[JS\]([\s\S]*?)\[\/JS\]/;
+// Degraded pattern seen when ESC[J is consumed as a terminal clear-screen control,
+// leaving only the trailing `S]...S]` bytes visible.
+const JS_RE_DEGRADED = /S\]([\s\S]*?)S\]/;
 const REST_RE_PLAIN = /\[REST\]([\s\S]*?)\[\/REST\]/;
 // Degraded pattern seen when ESC CSI is consumed by terminal as control sequence.
 const REST_RE_DEGRADED = /EST\]([\s\S]*?)EST\]/;
@@ -974,9 +977,11 @@ export async function createTerminal(mountEl, opts = {}) {
             }
 
             // Check for JS dispatch sentinel
-            const jsMatch = output.match(JS_RE) || output.match(JS_RE_PLAIN);
+            const jsMatch = output.match(JS_RE) || output.match(JS_RE_PLAIN) || output.match(JS_RE_DEGRADED);
             if (jsMatch) {
-                const matchedRe = output.match(JS_RE) ? JS_RE : JS_RE_PLAIN;
+                const matchedRe = output.match(JS_RE)
+                    ? JS_RE
+                    : (output.match(JS_RE_PLAIN) ? JS_RE_PLAIN : JS_RE_DEGRADED);
                 const visible = output.replace(matchedRe, '');
                 if (visible) {
                     term.write(decodeEscapedAnsi(visible));
