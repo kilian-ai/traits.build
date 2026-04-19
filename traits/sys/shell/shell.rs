@@ -129,6 +129,11 @@ fn shell_wasm(args: &[Value]) -> Value {
         shell_ls_set("traits.pvfs", &dump);
         shell_ls_set("traits.pvfs.ts", &format!("{:.0}", Date::now()));
     }
+
+    if let Some(payload) = extract_js_payload(&raw) {
+        return execute_js_payload(&payload);
+    }
+
     let cleaned = clean_cli_output(&raw);
 
     let looks_error = cleaned.contains("Error:")
@@ -143,6 +148,100 @@ fn shell_wasm(args: &[Value]) -> Value {
         "stdout": cleaned,
         "stderr": "",
         "note": "WASM shell executed via kernel.cli session engine",
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn extract_js_payload(raw: &str) -> Option<Value> {
+    let start = raw.find("[JS]")? + 4;
+    let end = raw[start..].find("[/JS]")? + start;
+    serde_json::from_str::<Value>(&raw[start..end]).ok()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn execute_js_payload(payload: &Value) -> Value {
+    let code = payload
+        .get("code")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let input = payload.get("input").cloned().unwrap_or_else(|| json!({}));
+
+    let result = match kernel_logic::platform::dispatch("sys.js", &[json!(code), input]) {
+        Some(v) => v,
+        None => {
+            return json!({
+                "ok": false,
+                "exit_code": 1,
+                "stdout": "",
+                "stderr": "sys.js trait not available",
+                "note": "WASM shell JS dispatch bridge failed"
+            })
+        }
+    };
+
+    let stdout_lines: Vec<String> = result
+        .get("stdout")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let stderr_lines: Vec<String> = result
+        .get("stderr")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut stdout = stdout_lines.join("\n");
+    if stdout.trim().is_empty() {
+        if let Some(value) = result.get("result") {
+            if !value.is_null() {
+                stdout = if let Some(s) = value.as_str() {
+                    s.to_string()
+                } else {
+                    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
+                };
+            }
+        }
+    }
+
+    let stderr = stderr_lines.join("\n");
+    let need_input = result
+        .get("need_input")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if need_input {
+        return json!({
+            "ok": false,
+            "exit_code": 1,
+            "stdout": stdout,
+            "stderr": stderr,
+            "error": format!(
+                "interactive JS input required: {}",
+                result.get("prompt").and_then(|v| v.as_str()).unwrap_or("js stdin")
+            ),
+            "note": "WASM shell JS execution requires terminal interaction when stdin is insufficient"
+        });
+    }
+
+    let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    let error = result
+        .get("error")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    json!({
+        "ok": ok,
+        "exit_code": if ok { 0 } else { 1 },
+        "stdout": stdout,
+        "stderr": if stderr.is_empty() { error } else { &stderr },
+        "note": "WASM shell executed JS via sys.js bridge",
     })
 }
 
