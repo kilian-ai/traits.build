@@ -992,17 +992,29 @@ const BOOT_SCRIPT: &str = r#"
         persistSave(state);
     }
 
-    async function persistSyncToGuest(silent) {
+    async function persistSyncToGuest(silent, opts) {
+        const options = opts && typeof opts === 'object' ? opts : {};
+        const bootSafe = !!options.bootSafe;
+        const maxFiles = Number.isFinite(options.maxFiles) ? Math.max(1, options.maxFiles) : (bootSafe ? 48 : Number.POSITIVE_INFINITY);
+        const maxBytes = Number.isFinite(options.maxBytes) ? Math.max(0, options.maxBytes) : (bootSafe ? 262144 : Number.POSITIVE_INFINITY);
+        const yieldEvery = Number.isFinite(options.yieldEvery) ? Math.max(1, options.yieldEvery) : (bootSafe ? 8 : 0);
+
         const state = persistLoad();
         const mounts = persistMountPaths();
         const dirs = Array.isArray(state.dirs) ? state.dirs.slice().sort() : [];
-        const names = Object.keys(state.files || {}).sort();
+        const namesRaw = Object.keys(state.files || {});
+        const names = bootSafe ? namesRaw : namesRaw.sort();
+
+        let syncedFiles = 0;
+        let syncedBytes = 0;
+        let bootLimited = false;
         if (!silent) {
             term.write('\x1b[2m[persist] sync -> ' + mounts.join(', ') + ' (' + names.length + ' file(s), ' + dirs.length + ' dir(s))\x1b[0m\r\n');
         }
 
         // Ensure persisted directories exist first.
-        for (const dir of dirs) {
+        for (let i = 0; i < dirs.length; i++) {
+            const dir = dirs[i];
             const cmd = "mkdir -p '" + shellSingleQuote(dir) + "'";
             const { exitCode, crashed } = await shellExec(cmd);
             if (crashed) {
@@ -1012,10 +1024,22 @@ const BOOT_SCRIPT: &str = r#"
             if (exitCode !== 0 && !silent) {
                 term.write('\x1b[33m[persist] mkdir failed: ' + dir + ' (exit ' + exitCode + ')\x1b[0m\r\n');
             }
+            if (yieldEvery > 0 && ((i + 1) % yieldEvery) === 0) {
+                await sleepMs(0);
+            }
         }
 
-        for (const target of names) {
+        for (let i = 0; i < names.length; i++) {
+            const target = names[i];
+            if (syncedFiles >= maxFiles) {
+                bootLimited = true;
+                break;
+            }
             const content = String(state.files[target] || '');
+            if ((syncedBytes + content.length) > maxBytes) {
+                bootLimited = true;
+                break;
+            }
             const cmd = "printf '%s' '" + shellSingleQuote(content) + "' > '" + shellSingleQuote(target) + "'";
             const { exitCode, crashed } = await shellExec(cmd);
             if (crashed) {
@@ -1025,8 +1049,23 @@ const BOOT_SCRIPT: &str = r#"
             if (exitCode !== 0) {
                 term.write('\x1b[33m[persist] failed: ' + target + ' (exit ' + exitCode + ')\x1b[0m\r\n');
             }
+            syncedFiles++;
+            syncedBytes += content.length;
+            if (yieldEvery > 0 && ((i + 1) % yieldEvery) === 0) {
+                await sleepMs(0);
+            }
+        }
+
+        if (bootLimited && !silent) {
+            term.write('\x1b[33m[persist] boot-safe limit reached; run `persist sync` after boot for full restore\x1b[0m\r\n');
         }
         if (!silent) term.write('\x1b[32m[persist] sync done\x1b[0m\r\n');
+
+        return {
+            syncedFiles,
+            syncedBytes,
+            bootLimited,
+        };
     }
 
     // ── Persist pull: snapshot guest FS back to localStorage ──
@@ -3284,11 +3323,23 @@ const BOOT_SCRIPT: &str = r#"
     shellReadyPromise.then(() => {
         if (persistAutosyncEnabled()) {
             term.write('\x1b[2m[persist] autosync enabled\x1b[0m\r\n');
-            persistSyncToGuest(true).then(() => {
-                term.write('\x1b[2m[persist] autosync complete\x1b[0m\r\n');
-            }).catch((err) => {
-                term.write('\x1b[33m[persist] autosync failed: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
-            });
+            // Defer slightly after shell-ready so scheduler callbacks can settle first.
+            setTimeout(() => {
+                persistSyncToGuest(true, {
+                    bootSafe: true,
+                    maxFiles: 48,
+                    maxBytes: 262144,
+                    yieldEvery: 6,
+                }).then((res) => {
+                    if (res && res.bootLimited) {
+                        term.write('\x1b[2m[persist] autosync complete (boot-safe partial; run `persist sync` for full restore)\x1b[0m\r\n');
+                    } else {
+                        term.write('\x1b[2m[persist] autosync complete\x1b[0m\r\n');
+                    }
+                }).catch((err) => {
+                    term.write('\x1b[33m[persist] autosync failed: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
+                });
+            }, 1200);
         }
     });
 

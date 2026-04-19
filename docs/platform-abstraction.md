@@ -202,6 +202,14 @@ These traits have no meaningful WASM implementation. Their cfg blocks exist to p
 - `llm/prompt/webllm.rs` — WASM-only (WebGPU), 2 cfg blocks. Cannot run on native.
 - `sys/openapi.rs` — 8 cfg blocks, registry access patterns too specialized for generic platform API.
 
+## Linux/WASM Boot Note
+
+The Linux/WASM terminal persistence path now treats boot as a latency-sensitive phase.
+
+- Autosync restore after shell-ready runs in **boot-safe mode**: deferred start, bounded file/byte replay, and periodic cooperative yielding.
+- Full persisted state can still be restored manually with `persist sync` after boot.
+- This reduces main-thread callback starvation during early scheduler bring-up while preserving normal persistence behavior once the system is interactive.
+
 ## Developer Guide
 
 ### When to Use `platform::*`
