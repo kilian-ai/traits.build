@@ -593,7 +593,8 @@ const BOOT_SCRIPT: &str = r#"
 
     const resolveMaxCpus = () => {
         const HARD_MAX = 100;
-        const DEFAULT = 10;
+        // Prefer a safer default for browser SMP bring-up stability.
+        const DEFAULT = 8;
 
         const clamp = (n) => {
             if (!Number.isFinite(n)) return DEFAULT;
@@ -615,6 +616,37 @@ const BOOT_SCRIPT: &str = r#"
     };
 
     const maxCpus = resolveMaxCpus();
+    const hasExplicitCpuOverride = (() => {
+        try {
+            const params = new URLSearchParams(location.search);
+            if (params.get('linux_cpus')) return true;
+        } catch (e) {}
+        return false;
+    })();
+    const SMP_RETRY_KEY = 'linux-wasm.smp-retry-once';
+
+    const scheduleSmpSafeReboot = (reason) => {
+        try {
+            if (hasExplicitCpuOverride) return false;
+            if (maxCpus <= 6) return false;
+
+            const previous = sessionStorage.getItem(SMP_RETRY_KEY) || '';
+            if (previous === '1') return false;
+
+            sessionStorage.setItem(SMP_RETRY_KEY, '1');
+            const safeCpus = Math.max(6, Math.min(maxCpus - 2, 8));
+            localStorage.setItem('linux-wasm.maxcpus', String(safeCpus));
+
+            term.write('\x1B[33m[smp-guard] detected early SMP panic; retrying boot with maxcpus=' + safeCpus + '\x1B[0m\r\n');
+            if (reason) {
+                term.write('\x1B[33m[smp-guard] cause: ' + String(reason).slice(0, 160) + '\x1B[0m\r\n');
+            }
+            setTimeout(() => location.reload(), 900);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    };
 
     // WASM kernel model: each user task (non-kthread) needs its own dedicated CPU.
     // The kernel's user_task_set_affinity() in arch/wasm/kernel/process.c pins each
@@ -1823,6 +1855,7 @@ const BOOT_SCRIPT: &str = r#"
     let consoleFilterCarry = '';
     const KERNEL_NOISE_RE = /^\[(Main|Runner)[^\]]*\]:/;
     const RCU_STALL_RE = /\b(?:a?grcu|rcu(?:_sched|_seched|_preempt)?)[^\n]*\b(?:stall|stnall|stnalls?)\b/i;
+    const SMP_IRQ_PANIC_RE = /BUG: failure at kernel\/irq_work\.c:245\/irq_work_run_list\(\)!|Kernel panic - not syncing: Aiee, killing interrupt handler!|Kernel panic - not syncing: BUG!/i;
     let lastStallDiagMs = 0;
 
     function captureFreezeDiagnostics(reason, kernelLine) {
@@ -1873,6 +1906,11 @@ const BOOT_SCRIPT: &str = r#"
             const trimmed = line.replace(/\r?\n$/, '');
             if (AUTOFIX_SENTINEL_RE.test(trimmed)) {
                 continue;
+            }
+            if (!shellReady && SMP_IRQ_PANIC_RE.test(trimmed)) {
+                if (scheduleSmpSafeReboot(trimmed)) {
+                    continue;
+                }
             }
             if (RCU_STALL_RE.test(trimmed)) {
                 captureFreezeDiagnostics('kernel-rcu-stall', trimmed);
