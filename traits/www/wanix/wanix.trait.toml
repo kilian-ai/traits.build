@@ -1,0 +1,19 @@
+[trait]
+description = "Wanix shell runtime page embedded in traits.build SPA"
+version = "v260419.195226"
+checksum = "d583b890d9371dc58dda8e7122f867235f029ca283776dc8f2d179a4d1c7b9e7"
+author = "system"
+tags = ["www", "wanix", "shell", "wasm"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML page for embedded Wanix shell"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "wanix"
+wasm = true

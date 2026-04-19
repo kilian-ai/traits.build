@@ -74,7 +74,7 @@ Polygrait/A. traits.build/
 │   │   ├── snapshot/     # Snapshot trait versions
 │   │   ├── test_runner/  # Run .features.json tests
 │   │   └── version/      # YYMMDD version generation
-│   ├── www/              # 20 web/SPA traits
+│   ├── www/              # 21 web/SPA traits
 │   │   ├── admin/        # Admin dashboard + deploy/scale/destroy/save_config
 │   │   │   └── spa/      # SPA-specific admin (browser-only, no auth)
 │   │   ├── chat_logs/    # Chat history viewer
@@ -805,6 +805,7 @@ The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel
 | `www.wasm` | WASM kernel internals page | builtin |
 | `www.playground` | Interactive trait playground | builtin |
 | `www.terminal` | WASM-powered terminal (xterm.js) | builtin |
+| `www.wanix` | Embedded Wanix shell runtime page (wanix.run iframe) | builtin |
 | `www.munal` | Munal OS browser integration status page | builtin |
 | `www.admin` | Admin dashboard (Basic Auth) | builtin |
 | `www.admin.spa` | SPA admin (browser-only, no auth) | builtin |
@@ -1310,11 +1311,13 @@ Layer 0: kernel/logic — Shared Rust library
 '/admin':      'www.admin.spa'       // Admin (SPA mode)
 '/settings':   'www.admin.spa'       // Settings alias
 '/playground': 'www.playground'      // Trait playground
+'/wanix':      'www.wanix'           // Wanix shell runtime embed
 '/munal':      'www.munal'           // Munal OS browser integration status
 '/testing':    'www.testing'         // Testing abstraction layer
 '/wasm':       'www.wasm'            // WASM internals
 ```
 
+- `www.wanix` embeds the upstream `https://wanix.run` shell runtime inside the SPA for side-by-side experimentation with traits.build pages.
 - `www.munal` currently documents staged browser integration because upstream `Askannz/munal-os` kernel targets `x86_64-unknown-uefi` (QEMU/UEFI), not a direct browser `wasm32` kernel runtime.
 
 **Two admin variants:**
