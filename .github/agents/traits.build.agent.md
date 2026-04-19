@@ -805,6 +805,7 @@ The build-time lint (`lint_kernel_layers()` in `build.rs`) classifies all kernel
 | `www.wasm` | WASM kernel internals page | builtin |
 | `www.playground` | Interactive trait playground | builtin |
 | `www.terminal` | WASM-powered terminal (xterm.js) | builtin |
+| `www.munal` | Munal OS browser integration status page | builtin |
 | `www.admin` | Admin dashboard (Basic Auth) | builtin |
 | `www.admin.spa` | SPA admin (browser-only, no auth) | builtin |
 | `www.admin.deploy` | Deploy to Fly.io | builtin |
@@ -1309,9 +1310,12 @@ Layer 0: kernel/logic — Shared Rust library
 '/admin':      'www.admin.spa'       // Admin (SPA mode)
 '/settings':   'www.admin.spa'       // Settings alias
 '/playground': 'www.playground'      // Trait playground
+'/munal':      'www.munal'           // Munal OS browser integration status
 '/testing':    'www.testing'         // Testing abstraction layer
 '/wasm':       'www.wasm'            // WASM internals
 ```
+
+- `www.munal` currently documents staged browser integration because upstream `Askannz/munal-os` kernel targets `x86_64-unknown-uefi` (QEMU/UEFI), not a direct browser `wasm32` kernel runtime.
 
 **Two admin variants:**
 - `www.admin` — server-rendered, Basic Auth protected (only via `traits serve`)

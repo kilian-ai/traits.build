@@ -1,0 +1,19 @@
+[trait]
+description = "Munal OS browser integration status and bootstrap page"
+version = "v260419.192632"
+checksum = "40fbc295a96dba8c27a54cf10b52fd8ee256b1bd6c2e81ee236e1566532abf6b"
+author = "system"
+tags = ["www", "munal", "os", "wasm"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML page for Munal OS browser integration"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "munal"
+wasm = true
