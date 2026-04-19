@@ -169,7 +169,7 @@ fn default_unknown_cmd_config() -> UnknownCmdConfig {
         tools: "sys.shell,sys.list,sys.registry,kernel.call,sys.call".to_string(),
         max_steps: 12,
         retry_max_steps: 14,
-        session_id: "cli-unknown-command".to_string(),
+        session_id: "".to_string(),
     }
 }
 
@@ -207,12 +207,11 @@ fn load_unknown_cmd_config() -> UnknownCmdConfig {
                     .and_then(|x| x.as_u64())
                     .unwrap_or(defaults.retry_max_steps)
                     .clamp(1, 50),
-                session_id: v
-                    .get("session_id")
-                    .and_then(|x| x.as_str())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(&defaults.session_id)
-                    .to_string(),
+                session_id: match v.get("session_id").and_then(|x| x.as_str()) {
+                    Some("cli-unknown-command") => String::new(),
+                    Some(s) => s.to_string(),
+                    None => defaults.session_id.clone(),
+                },
             }
         } else {
             defaults
@@ -229,7 +228,7 @@ fn load_unknown_cmd_config() -> UnknownCmdConfig {
             "max_steps": cfg.max_steps,
             "retry_max_steps": cfg.retry_max_steps,
             "session_id": cfg.session_id,
-            "notes": "Config for kernel.cli unknown-command llm.agent fallback"
+            "notes": "Config for kernel.cli unknown-command llm.agent fallback. Leave session_id empty for stateless per-command handling."
         });
         if let Ok(seed_json) = serde_json::to_string_pretty(&seed) {
             kernel_logic::platform::vfs_write(UNKNOWN_CMD_CONFIG_PATH, &seed_json);
@@ -2278,7 +2277,7 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         user_input
     );
 
-    let agent_args = vec![
+    let mut agent_args = vec![
         json!(strict_prompt),
         json!(UNKNOWN_CMD_AGENT_SYSTEM),
         json!(cfg.tools),
@@ -2286,8 +2285,11 @@ fn unknown_command_llm_reply(backend: &dyn CliCallBackend, user_input: &str) -> 
         json!(cfg.retry_max_steps),
         json!(cfg.api_secret),
         json!("full"),
-        json!(cfg.session_id),
     ];
+
+    if !cfg.session_id.is_empty() {
+        agent_args.push(json!(cfg.session_id));
+    }
 
     let sentinel = json!({
         "p": "llm.agent",

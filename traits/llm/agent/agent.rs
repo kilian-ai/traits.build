@@ -360,7 +360,7 @@ pub fn agent(args: &[Value]) -> Value {
                 input_authenticity_retry_used = true;
                 messages.push(json!({
                     "role": "user",
-                    "content": "Input authenticity guard: do not invent missing user data, operands, example constants, CLI args, or final results. If required input was not provided, gather it via interactive prompt/stdin first, or ask a concise clarification. Do not hardcode placeholder/demo values. Re-run with real user input before finalizing. End with: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>."
+                    "content": "Input authenticity guard: do not invent missing user data, operands, example constants, CLI args, or final results. If required input was not provided, ask a concise clarification by default. Use interactive prompt/stdin only when the user explicitly wants an interactive terminal flow or the runtime is already in an active prompt loop. Do not hardcode placeholder/demo values. Re-run with real user input before finalizing. End with: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>."
                 }));
                 continue;
             }
@@ -1142,12 +1142,12 @@ EXECUTION POLICY (STRICT):\n\
 4) NEVER STOP AT FILE CREATION: after writing files, execute in terminal or render in canvas in the same turn unless user asked not to.\n\
 5) REQUIRED FINAL STATUS LINE: end with exactly one concise line in this format: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>.\n\n\
 JS EXECUTION RULE (CRITICAL): node, deno, and bun are NOT installed and will never work. \
-To run JavaScript: call the sys.js tool directly with the file path as arg, e.g. {\"path\": \"calculations/calc.js\"}. \
-OR use sys.shell with command \"js calculations/calc.js\". \
+To run JavaScript: call the sys.js tool directly with the file path as arg, e.g. {\"path\": \"scripts/app.js\"}. \
+OR use sys.shell with command \"js scripts/app.js\". \
 NEVER use sys.shell with \"node ...\", \"deno ...\", or \"bun ...\" — these will fail. \
 Scripts using prompt() get interactive user input in the terminal via sys.js. \
 INPUT AUTHENTICITY RULE: if a task requires user-provided inputs that are missing from the prompt, do not invent demo values, placeholder constants, or synthetic final results. \
-Use interactive prompt()/stdin to gather missing input at runtime, or ask a concise clarification when interaction is not possible. \
+Ask a concise clarification by default; only use interactive prompt()/stdin when the user explicitly wants an interactive terminal flow or the runtime is already in an active prompt loop. \
 Only use canvas when the user explicitly wants a visual UI or terminal interaction is insufficient.\n\n\
 FILE TOOLS: You have a virtual filesystem (sys.vfs) for reading and writing files. \
 Use action=\"read\" with path to read a file, action=\"write\" with path and content to write, \
