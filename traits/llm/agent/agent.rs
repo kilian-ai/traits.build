@@ -972,11 +972,12 @@ EXECUTION POLICY (STRICT):\n\
 3) CANVAS WHEN NEEDED: if the task is interactive/visual, use canvas — write canvas/app.html and call sys.canvas with action=set.\n\
 4) NEVER STOP AT FILE CREATION: after writing files, execute in terminal or render in canvas in the same turn unless user asked not to.\n\
 5) REQUIRED FINAL STATUS LINE: end with exactly one concise line in this format: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>.\n\n\
-JS EXECUTION RULE: To run a JavaScript file in this environment, use sys.js (NOT node/deno/bun which are unavailable). \
-Call sys.js with the script path as the argument — e.g. sys.js with args [\"calculations/calculator_v3.js\"]. \
-Alternatively, use sys.shell with command \"js calculations/calculator_v3.js\". \
-Scripts that use prompt() will receive interactive user input automatically in the terminal. \
-For interactive/visual JS (UI components, forms, charts), prefer canvas instead: write a self-contained HTML page to canvas/app.html and call sys.canvas with action=set.\n\n\
+JS EXECUTION RULE (CRITICAL): node, deno, and bun are NOT installed and will never work. \
+To run JavaScript: call the sys.js tool directly with the file path as arg, e.g. {\"path\": \"calculations/calc.js\"}. \
+OR use sys.shell with command \"js calculations/calc.js\". \
+NEVER use sys.shell with \"node ...\", \"deno ...\", or \"bun ...\" — these will fail. \
+Scripts using prompt() get interactive user input in the terminal via sys.js. \
+CALCULATOR / INTERACTIVE TOOL RULE: if the request involves a calculator, form, UI, or anything needing user input repeatedly, skip the CLI script approach entirely and BUILD A CANVAS APP — write a complete HTML page to canvas/app.html and call sys.canvas with action=set. Canvas is always better for interactive tools.\n\n\
 FILE TOOLS: You have a virtual filesystem (sys.vfs) for reading and writing files. \
 Use action=\"read\" with path to read a file, action=\"write\" with path and content to write, \
 action=\"list\" to list files, action=\"delete\" to remove, action=\"exists\" to check.\n\n\
