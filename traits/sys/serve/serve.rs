@@ -585,16 +585,73 @@ async fn serve_coi_sw() -> HttpResponse {
 }
 
 /// Serve embedded static assets (.css, .js) discovered at build time from trait directories.
+/// Falls back to filesystem for binary files (e.g., .wasm, .tar.gz) not embedded in build.
 async fn serve_static(req: HttpRequest) -> HttpResponse {
     let path = req.match_info().get("path").unwrap_or("");
-    match crate::dispatcher::static_assets::get_static_asset(path) {
-        Some((content, content_type)) => HttpResponse::Ok()
+    
+    // Try embedded assets first (JS, CSS, etc.)
+    if let Some((content, content_type)) = crate::dispatcher::static_assets::get_static_asset(path) {
+        return HttpResponse::Ok()
             .content_type(content_type)
             .insert_header(("Cache-Control", "public, max-age=3600"))
-            .body(content),
-        None => HttpResponse::NotFound()
+            .body(content);
+    }
+    
+    // Fallback: serve from filesystem for binary/large files (wasm, tar.gz, etc.)
+    // Path validation: must be under traits/www/static/
+    let clean_path = path.trim_start_matches('/');
+    
+    // Prevent directory traversal attacks
+    if clean_path.contains("..") || clean_path.starts_with('/') {
+        return HttpResponse::BadRequest()
             .content_type("text/plain")
-            .body("Static asset not found"),
+            .body("Invalid path");
+    }
+    
+    let traits_dir = std::env::var("TRAITS_DIR").unwrap_or_else(|_| "./traits".to_string());
+    let file_path = std::path::Path::new(&traits_dir)
+        .join("www/static")
+        .join(clean_path);
+    
+    // Double-check path is still under traits/www/static/
+    if let Ok(canonical) = file_path.canonicalize() {
+        let traits_static_dir = std::path::Path::new(&traits_dir)
+            .join("www/static")
+            .canonicalize()
+            .unwrap_or_else(|_| std::path::PathBuf::new());
+        
+        if !canonical.starts_with(&traits_static_dir) {
+            return HttpResponse::BadRequest()
+                .content_type("text/plain")
+                .body("Path outside allowed directory");
+        }
+        
+        match std::fs::read(&canonical) {
+            Ok(content) => {
+                let content_type = match std::path::Path::new(clean_path).extension() {
+                    Some(ext) => match ext.to_str() {
+                        Some("wasm") => "application/wasm",
+                        Some("js") => "application/javascript",
+                        Some("gz") => "application/gzip",
+                        Some("tar") => "application/x-tar",
+                        Some("json") => "application/json",
+                        _ => "application/octet-stream",
+                    },
+                    None => "application/octet-stream",
+                };
+                HttpResponse::Ok()
+                    .content_type(content_type)
+                    .insert_header(("Cache-Control", "public, max-age=86400"))
+                    .body(content)
+            }
+            Err(_) => HttpResponse::NotFound()
+                .content_type("text/plain")
+                .body("Static asset not found"),
+        }
+    } else {
+        HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body("Static asset not found")
     }
 }
 
