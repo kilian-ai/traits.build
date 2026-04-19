@@ -730,8 +730,9 @@ fn should_force_input_authenticity_retry(prompt: &str, tool_calls: &[Value]) -> 
     let uses_interactive = tool_calls_use_interactive_input(tool_calls);
     let hardcoded = tool_calls_hardcode_demo_values(tool_calls);
     let invented_args = tool_calls_invent_runtime_args(prompt, tool_calls);
+    let node_only_js = tool_calls_use_node_only_js_apis(tool_calls);
 
-    (hardcoded || invented_args) && !uses_interactive
+    (hardcoded || invented_args || node_only_js) && !uses_interactive
 }
 
 fn prompt_has_explicit_user_inputs(prompt: &str) -> bool {
@@ -752,8 +753,14 @@ fn tool_calls_use_interactive_input(tool_calls: &[Value]) -> bool {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_ascii_lowercase();
+
+            // Only count interactive input on actual execution commands,
+            // not on file-writing commands that merely contain those strings.
+            if !is_shell_runtime_execution_command(&cmd) {
+                return false;
+            }
+
             return cmd.contains("prompt(")
-                || cmd.contains("readline")
                 || cmd.contains("stdin")
                 || cmd.contains("io.read");
         }
@@ -810,15 +817,7 @@ fn tool_calls_invent_runtime_args(prompt: &str, tool_calls: &[Value]) -> bool {
             .trim()
             .to_ascii_lowercase();
 
-        let is_runtime_exec = cmd.starts_with("js ")
-            || cmd.starts_with("python ")
-            || cmd.starts_with("python3 ")
-            || cmd.starts_with("lua ")
-            || cmd.starts_with("qjs ")
-            || cmd.starts_with("bash ")
-            || cmd.starts_with("sh ")
-            || cmd.starts_with("./");
-        if !is_runtime_exec {
+        if !is_shell_runtime_execution_command(&cmd) {
             return false;
         }
 
@@ -840,6 +839,38 @@ fn tool_calls_invent_runtime_args(prompt: &str, tool_calls: &[Value]) -> bool {
         // Treat as invented if none of runtime args appear in user's prompt.
         !runtime_args.iter().any(|arg| p.contains(&arg.to_ascii_lowercase()))
     })
+}
+
+fn tool_calls_use_node_only_js_apis(tool_calls: &[Value]) -> bool {
+    tool_calls.iter().any(|tc| {
+        let name = tc.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        if name != "sys_shell" {
+            return false;
+        }
+
+        let cmd = tc
+            .get("args")
+            .and_then(|a| a.get("command"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        // In this environment, `js` runs via sys.js in browser/WASM, so Node's
+        // require/readline APIs are unavailable and indicate an invalid approach.
+        (cmd.starts_with("write ") || cmd.starts_with("tee "))
+            && (cmd.contains("require(") || cmd.contains("require ('") || cmd.contains("readline"))
+    })
+}
+
+fn is_shell_runtime_execution_command(cmd: &str) -> bool {
+    cmd.starts_with("js ")
+        || cmd.starts_with("python ")
+        || cmd.starts_with("python3 ")
+        || cmd.starts_with("lua ")
+        || cmd.starts_with("qjs ")
+        || cmd.starts_with("bash ")
+        || cmd.starts_with("sh ")
+        || cmd.starts_with("./")
 }
 
 fn prompt_suggests_build_or_script(prompt: &str) -> bool {

@@ -69,6 +69,7 @@ When choosing between CLI and canvas:
 - To run JS: call `sys_js` tool with the file path, e.g. `{"path": "calculations/calc.js"}`.
 - Or use `sys_shell` with command `js calculations/calc.js`.
 - Scripts that use `prompt()` get interactive terminal input via sys.js.
+- In `js` (sys.js) mode, do NOT use Node-only APIs such as `require(...)`, `readline`, or Node stream modules.
 - For requests with missing runtime inputs, use interactive `prompt()`/stdin and ask for the required values at runtime.
 - **Never fabricate inputs or outcomes just to demonstrate execution.**
 - For visual/UI-heavy interactive tools, build a canvas app instead — write a complete HTML page and call `sys_canvas` with action `set`.
