@@ -25,6 +25,7 @@ members = [
     "traits/kernel/logic",
     "traits/kernel/plugin_api",
     "traits/kernel/wasm",
+    "traits/kernel/runtimes",
     "traits/sys/checksum",
 ]
 default-members = [
