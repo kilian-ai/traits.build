@@ -379,6 +379,7 @@ const NetProxy = (() => {
         for (const candidate of candidateUrls) {
           try {
             fetchedUrl = candidate;
+        let relayOnlyPolicy = false;
             resp = await fetch(candidate, fetchOpts);
             break;
           } catch (err) {
@@ -398,6 +399,7 @@ const NetProxy = (() => {
         respHeaders += '\r\n';
 
         const headerBytes = new TextEncoder().encode(statusLine + respHeaders);
+          relayOnlyDrops: 0,
         const fullResp = new Uint8Array(headerBytes.length + bodyBytes.length);
         fullResp.set(headerBytes);
         fullResp.set(bodyBytes, headerBytes.length);
@@ -486,6 +488,17 @@ const NetProxy = (() => {
 
     const proto = ipPkt.protocol;
 
+    // Strict relay-only mode: transport traffic must not use browser emulation.
+    // If tunnel is not connected, drop TCP/UDP packets and keep all non-network
+    // virtualization local to the guest (no host fetch/WebSocket fallback path).
+    if (relayOnlyPolicy && (proto === 6 || proto === 17) && !tunnelConnected) {
+      stats.relayOnlyDrops++;
+      const dt = performance.now() - t0;
+      stats.txHandleTotalMs += dt;
+      if (dt > stats.txHandleMaxMs) stats.txHandleMaxMs = dt;
+      return;
+    }
+
     // If a tunnel is connected, prefer routing transport protocols through it.
     // Keep ICMP local so ping-to-gateway remains available without a tunnel daemon.
     if (tunnelConnected && (proto === 6 || proto === 17)) {
@@ -498,6 +511,13 @@ const NetProxy = (() => {
         return;
       }
       stats.tunnelTxErrors++;
+      if (relayOnlyPolicy) {
+        stats.relayOnlyDrops++;
+        const dt = performance.now() - t0;
+        stats.txHandleTotalMs += dt;
+        if (dt > stats.txHandleMaxMs) stats.txHandleMaxMs = dt;
+        return;
+      }
       // If tunnel send fails, fall through to browser emulation path.
     }
     if (proto === 6 || proto === 17) stats.fallbackPackets++;
@@ -713,6 +733,14 @@ const NetProxy = (() => {
     },
 
     getMode() { return tunnelConnected ? 'tunnel' : 'browser-fallback'; },
+    getPolicy() { return relayOnlyPolicy ? 'relay-only' : 'hybrid'; },
+    setRelayOnly(enabled) {
+      relayOnlyPolicy = !!enabled;
+      if (relayOnlyPolicy && tunnelConnected) {
+        tunnelError = null;
+      }
+      return relayOnlyPolicy;
+    },
     getTunnelError() {
       console.log('[net-proxy] getTunnelError called, returning:', tunnelError);
       return tunnelError;
@@ -739,7 +767,8 @@ const NetProxy = (() => {
       const avgTxHandleMs = stats.txHandleCalls > 0 ? (stats.txHandleTotalMs / stats.txHandleCalls) : 0;
       return {
         ...stats,
-        mode: tunnelConnected ? 'tunnel' : 'browser-fallback',
+        mode: tunnelConnected ? 'tunnel' : (relayOnlyPolicy ? 'relay-only-offline' : 'browser-fallback'),
+        policy: relayOnlyPolicy ? 'relay-only' : 'hybrid',
         queueLen: rxQueue.length,
         queueHighWater,
         connections: connections.size,

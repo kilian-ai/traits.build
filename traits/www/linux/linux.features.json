@@ -31,6 +31,13 @@
           "args": [],
           "test": {
             "type": "contains",
+            "value": "netmode relay-only"
+          }
+        },
+        {
+          "args": [],
+          "test": {
+            "type": "contains",
             "value": "<!DOCTYPE html>"
           }
         }

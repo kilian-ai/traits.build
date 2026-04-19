@@ -477,9 +477,16 @@ cargo run -p traits-runtimes --example socket_echo
 
 # Test all abstractions on current target
 cargo run -p traits-runtimes --example multi_target_test
+
+# Verify the abstraction boundary compiles to browser wasm
+cargo build -p traits-runtimes --example file_ops --target wasm32-unknown-unknown
+cargo build -p traits-runtimes --example socket_echo --target wasm32-unknown-unknown
+cargo build -p traits-runtimes --example multi_target_test --target wasm32-unknown-unknown
 ```
 
 All examples pass and are self-documenting. Use them as templates when porting new services.
+
+**Important boundary rule:** `traits-runtimes` now uses target-specific dependencies so `wasm32-unknown-unknown` does not pull in Tokio/Mio. Keep Tokio imports and `#[tokio::main]` wrappers behind `#[cfg(not(target_arch = "wasm32"))]`, and let wasm builds hit only the crate's own relay-backed abstractions.
 
 ### Roadmap: From Abstraction to Production Services
 
@@ -1442,6 +1449,7 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **linux-wasm initramfs networking:** prefer `ifconfig` + `route` in `patches/initramfs/init`. Do not rely on bare `ip` in early boot scripts because `/sbin` may not be on `PATH` during init.
 - **linux-wasm browser networking mode:** prefer tunnel-first proxying when available (`NetProxy.setTunnelURL(...)`), with browser emulation as fallback. Surface active mode in boot logs (`NET mode: tunnel|browser-fallback`) when changing Linux networking behavior.
 - **linux-wasm relay tunnel endpoint:** default tunnel URL is `wss://relay.traits.build/linux/tunnel` (Cloudflare Worker). Query/localStorage overrides still apply via `linux_tunnel` and `linux-wasm.tunnel-url`. **IMPORTANT: Relay tunnel initialization is DEFERRED until after SMP bring-up completes** (detected by shell-ready). This prevents interrupt handler starvation during secondary CPU initialization. Tunnel connects automatically after first shell prompt appears.
+- **linux-wasm relay-only policy mode:** network policy is now configurable via `linux_net=relay-only|hybrid` query param, persisted in `localStorage['linux-wasm.net-policy']`, and switchable at runtime with `netmode relay-only|hybrid|status`. In `relay-only`, TCP/UDP packets are dropped when tunnel is unavailable (no browser fetch fallback).
 - **linux-wasm SMP bring-up fix:** The relay tunnel polling was causing main-thread starvation during secondary CPU initialization, triggering "Kernel panic - not syncing: Aiee, killing interrupt handler!" panics. Fixed by deferring `NetProxy.setTunnelURL()` until `shellReady = true` (commit 3b351207). Early boot uses `browser-fallback` mode, auto-upgrades to tunnel after shell prompt.
 - **linux-wasm worker net callback handshake:** `wasm_net_recv`/`wasm_net_poll` use sentinel states (`-1` waiting, `-2` departed, `-3` main-thread claim). Always handle `-3` with a brief bounded wait before returning, otherwise the worker can spin while main is writing and trigger ARCH_NO_PREEMPT softirq/RCU stalls.
 - **linux-wasm net poll throttle (3-layer):** The wasm0 driver's kernel-side poll loop never yields under ARCH_NO_PREEMPT. Three JS-side layers mitigate CPU waste: (1) **sleep-in-cache** — `Atomics.store(0)` then `Atomics.wait` for remaining cache window (up to 50ms); (2) **blocking round-trip** — 50ms `Atomics.wait` on main-thread poll/recv calls; (3) **poll exhaustion** — after 100 consecutive zero-polls, return 1 to trigger a driver recv call. Despite these, `ifconfig` still hangs (infinite non-yielding kernel loop). Use `cat /proc/net/dev` or sysfs reads instead.

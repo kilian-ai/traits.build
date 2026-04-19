@@ -1,8 +1,10 @@
 // traits/kernel/runtimes/examples/multi_target_test.rs
 // Test abstraction layer features across targets (native/wasm/wasi)
 
-use traits_runtimes::{init_runtime, get_runtime};
+#[cfg(not(target_arch = "wasm32"))]
+use traits_runtimes::{get_runtime, init_runtime};
 
+#[cfg(not(target_arch = "wasm32"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
@@ -85,4 +87,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • WASI (standardized syscalls)");
 
     Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    let _runtime = traits_runtimes::wasm::init_wasm_runtime(
+        "https://relay.traits.build".to_string(),
+        std::env::var("RELAY_CODE").unwrap_or_else(|_| "TEST".to_string()),
+    );
+    println!("multi_target_test compiles for wasm32 using the traits-runtimes wasm boundary");
 }

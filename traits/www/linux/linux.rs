@@ -506,10 +506,31 @@ const BOOT_SCRIPT: &str = r#"
 
     const tunnelUrl = resolveTunnelUrl();
 
+    const NET_POLICY_KEY = 'linux-wasm.net-policy';
+    const resolveNetPolicy = () => {
+        try {
+            const params = new URLSearchParams(location.search);
+            const fromQuery = String(params.get('linux_net') || '').trim().toLowerCase();
+            if (fromQuery === 'relay-only' || fromQuery === 'hybrid') return fromQuery;
+        } catch (e) {}
+
+        try {
+            const fromStorage = String(localStorage.getItem(NET_POLICY_KEY) || '').trim().toLowerCase();
+            if (fromStorage === 'relay-only' || fromStorage === 'hybrid') return fromStorage;
+        } catch (e) {}
+
+        return 'hybrid';
+    };
+
+    let netPolicy = resolveNetPolicy();
+    if (typeof NetProxy !== 'undefined' && NetProxy.setRelayOnly) {
+        try { NetProxy.setRelayOnly(netPolicy === 'relay-only'); } catch (_) {}
+    }
+
     // Defensive boot guard: stale SPA state can keep an old relay socket alive
     // across route transitions. Force fallback before kernel boot so no tunnel
     // traffic runs during SMP bring-up.
-    if (typeof NetProxy !== 'undefined' && NetProxy.forceBrowserFallback) {
+    if (netPolicy === 'hybrid' && typeof NetProxy !== 'undefined' && NetProxy.forceBrowserFallback) {
         try { NetProxy.forceBrowserFallback(); } catch (_) {}
     }
 
@@ -546,7 +567,10 @@ const BOOT_SCRIPT: &str = r#"
     }
     
     // Boot with browser emulation first; enable relay tunnel after SMP is ready.
-    term.write(`\x1B[2m[traits.build] NET mode: browser-fallback (relay hard-deferred until after shell-ready)\x1B[0m\r\n`);
+    const bootModeText = netPolicy === 'relay-only'
+        ? 'relay-only (tunnel hard-deferred until after shell-ready; no browser fallback)'
+        : 'browser-fallback (relay hard-deferred until after shell-ready)';
+    term.write(`\x1B[2m[traits.build] NET mode: ${bootModeText}\x1B[0m\r\n`);
 
     const resolveInitProgram = () => {
         try {
@@ -1577,6 +1601,49 @@ const BOOT_SCRIPT: &str = r#"
         return true;
     }
 
+    async function runNetModeCommand(cmd) {
+        const trimmed = String(cmd || '').trim();
+        if (!/^netmode\b/i.test(trimmed)) return false;
+
+        const parts = trimmed.split(/\s+/);
+        const sub = (parts[1] || 'status').toLowerCase();
+
+        if (sub === 'status') {
+            const mode = (typeof NetProxy !== 'undefined' && NetProxy.getMode) ? NetProxy.getMode() : 'unknown';
+            const policy = (typeof NetProxy !== 'undefined' && NetProxy.getPolicy) ? NetProxy.getPolicy() : netPolicy;
+            term.write('[netmode] policy=' + policy + ' mode=' + mode + '\r\n');
+            term.write('[netmode] usage: netmode relay-only | netmode hybrid | netmode status\r\n');
+            return true;
+        }
+
+        if (sub !== 'relay-only' && sub !== 'hybrid') {
+            term.write('[netmode] unknown option: ' + sub + '\r\n');
+            term.write('[netmode] usage: netmode relay-only | netmode hybrid | netmode status\r\n');
+            return true;
+        }
+
+        netPolicy = sub;
+        try { localStorage.setItem(NET_POLICY_KEY, netPolicy); } catch (_) {}
+
+        if (typeof NetProxy !== 'undefined' && NetProxy.setRelayOnly) {
+            try { NetProxy.setRelayOnly(netPolicy === 'relay-only'); } catch (_) {}
+        }
+
+        if (netPolicy === 'hybrid') {
+            term.write('[netmode] policy set to hybrid (browser fallback allowed when tunnel unavailable)\r\n');
+            if (typeof NetProxy !== 'undefined' && NetProxy.forceBrowserFallback) {
+                try { NetProxy.forceBrowserFallback(); } catch (_) {}
+            }
+        } else {
+            term.write('[netmode] policy set to relay-only (TCP/UDP require tunnel; no browser fallback)\r\n');
+            if (typeof NetProxy !== 'undefined' && NetProxy.setTunnelURL && tunnelUrl) {
+                try { NetProxy.setTunnelURL(tunnelUrl); } catch (_) {}
+            }
+        }
+
+        return true;
+    }
+
     async function runInitramfsCurlCommand(cmd) {
         const trimmed = String(cmd || '').trim();
         if (!/^curl\b/i.test(trimmed) || !/initramfs:\/\//i.test(trimmed)) return false;
@@ -1868,14 +1935,19 @@ const BOOT_SCRIPT: &str = r#"
                         const stallDurationMs = Date.now() - tunnelStallStart;
                         if (stallDurationMs > 3000) {  // 3 second threshold
                             console.error('[net] ❌ tunnel unresponsive for ' + stallDurationMs + 'ms, forcing fallback to browser mode');
-                            term.write('\x1B[31m[traits.build] NET timeout: relay tunnel unresponsive, switching to browser emulation\x1B[0m\r\n');
-                            if (typeof NetProxy !== 'undefined' && NetProxy.forceBrowserFallback) {
-                                try {
-                                    NetProxy.forceBrowserFallback();
-                                    tunnelStallStart = null;
-                                    console.log('[net] forced fallback initiated');
-                                } catch (e) {
-                                    console.error('[net] failureForcing fallback:', e);
+                            if (netPolicy === 'relay-only') {
+                                term.write('\x1B[33m[traits.build] NET timeout: relay tunnel unresponsive (relay-only policy keeps fallback disabled)\x1B[0m\r\n');
+                                tunnelStallStart = null;
+                            } else {
+                                term.write('\x1B[31m[traits.build] NET timeout: relay tunnel unresponsive, switching to browser emulation\x1B[0m\r\n');
+                                if (typeof NetProxy !== 'undefined' && NetProxy.forceBrowserFallback) {
+                                    try {
+                                        NetProxy.forceBrowserFallback();
+                                        tunnelStallStart = null;
+                                        console.log('[net] forced fallback initiated');
+                                    } catch (e) {
+                                        console.error('[net] failureForcing fallback:', e);
+                                    }
                                 }
                             }
                         }
@@ -3064,6 +3136,19 @@ const BOOT_SCRIPT: &str = r#"
                         os.key_input('\r');
                     }).catch((err) => {
                         term.write('\x1b[31m[auto-fix] error: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
+                        os.key_input('\r');
+                    });
+                }
+
+                // ── Intercept netmode commands (relay-only vs hybrid transport policy) ──
+                if (!intercepted && /^netmode\b/i.test(cmd)) {
+                    intercepted = true;
+                    os.key_input('\x15'); // Clear current input
+                    term.write('\r\n');
+                    runNetModeCommand(cmd).then(() => {
+                        os.key_input('\r');
+                    }).catch((err) => {
+                        term.write('\x1b[31m[netmode] error: ' + (err && err.message ? err.message : String(err)) + '\x1b[0m\r\n');
                         os.key_input('\r');
                     });
                 }

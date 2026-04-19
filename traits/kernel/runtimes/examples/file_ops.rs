@@ -1,9 +1,12 @@
 // traits/kernel/runtimes/examples/file_ops.rs
 // Test filesystem abstraction incrementally
 
-use traits_runtimes::{init_runtime, get_runtime};
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
+use traits_runtimes::{get_runtime, init_runtime};
 
+#[cfg(not(target_arch = "wasm32"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
@@ -73,4 +76,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("=== All filesystem tests passed! ===");
     Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    let _runtime = traits_runtimes::wasm::init_wasm_runtime(
+        "https://relay.traits.build".to_string(),
+        "TEST".to_string(),
+    );
+    println!("file_ops compiles for wasm32 using the traits-runtimes wasm boundary");
 }

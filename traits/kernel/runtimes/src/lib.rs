@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 use std::net::SocketAddr;
-use std::path::Path;
 use thiserror::Error;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub mod native;
 pub mod wasm;
 

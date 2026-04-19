@@ -1,10 +1,14 @@
 // traits/kernel/runtimes/examples/socket_echo.rs
 // Test socket abstraction incrementally
 
-use traits_runtimes::{init_runtime, get_runtime};
+#[cfg(not(target_arch = "wasm32"))]
 use std::net::SocketAddr;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::task;
+#[cfg(not(target_arch = "wasm32"))]
+use traits_runtimes::{get_runtime, init_runtime};
 
+#[cfg(not(target_arch = "wasm32"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
@@ -28,7 +32,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 2: Connect to the listener (in background)
     println!("Test 2: Accept connection");
-    let rt_clone = rt.clone();
     let server_handle = task::spawn(async move {
         match listener.accept().await {
             Ok((mut socket, peer_addr)) => {
@@ -79,4 +82,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("=== All socket tests passed! ===");
     Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    let _runtime = traits_runtimes::wasm::init_wasm_runtime(
+        "https://relay.traits.build".to_string(),
+        "TEST".to_string(),
+    );
+    println!("socket_echo compiles for wasm32 against the relay-backed socket boundary");
 }
