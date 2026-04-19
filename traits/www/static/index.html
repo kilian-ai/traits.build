@@ -182,6 +182,9 @@ const ROUTES = {
 };
 
 const LOCAL_ROUTE_KEY = 'traits.shell.route';
+const STATIC_RUNTIME_ROUTES = {
+  '/apptron': () => (isLocal ? './apptron/index.html' : '/static/apptron/index.html') + '?spa=1',
+};
 
 const isLocal = location.protocol === 'file:';
 
@@ -437,6 +440,39 @@ function currentRouteFromLocation() {
   return ROUTES[path] ? path : '/';
 }
 
+function injectStaticRuntime(route, src) {
+  TC.cleanup();
+  if (currentPageCleanup) { currentPageCleanup(); currentPageCleanup = null; }
+  document.querySelectorAll('style[data-page]').forEach(s => s.remove());
+  document.querySelectorAll('style[data-canvas]').forEach(s => s.remove());
+  document.querySelectorAll('link[data-page]').forEach(l => l.remove());
+  document.querySelectorAll('body > .terminal-wrap').forEach(t => t.remove());
+
+  const iframe = document.createElement('iframe');
+  iframe.title = 'Apptron Runtime';
+  iframe.src = src;
+  iframe.loading = 'eager';
+  iframe.allow = 'clipboard-read; clipboard-write';
+  iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+  iframe.style.width = '100%';
+  iframe.style.height = 'calc(100vh - 110px)';
+  iframe.style.minHeight = '620px';
+  iframe.style.border = '1px solid var(--line)';
+  iframe.style.borderRadius = '12px';
+  iframe.style.background = '#070b13';
+  iframe.style.display = 'block';
+
+  frame.innerHTML = '';
+  frame.style.paddingBottom = '';
+  frame.appendChild(iframe);
+
+  $$('#shell-nav .links a').forEach(a => {
+    a.classList.toggle('active', a.dataset.href === route);
+  });
+
+  document.title = 'Apptron Shell - traits.build';
+}
+
 // ── Router ──
 let currentRoute = null;
 let navId = 0;
@@ -455,6 +491,20 @@ async function navigate(route, pushState = true) {
 
   // Show a brief loading state for slow pages
   frame.style.opacity = '0.6';
+
+  const staticRouteFactory = STATIC_RUNTIME_ROUTES[route];
+  if (staticRouteFactory) {
+    injectStaticRuntime(route, staticRouteFactory());
+    frame.style.opacity = '1';
+    if (pushState) {
+      if (isLocal) {
+        try { sessionStorage.setItem(LOCAL_ROUTE_KEY, route); } catch(e) {}
+        history.pushState({ route }, '', '#' + route);
+      }
+      else history.pushState({ route }, '', route);
+    }
+    return;
+  }
 
   const result = await sdk.call(traitPath, []);
 

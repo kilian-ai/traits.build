@@ -631,11 +631,18 @@ async fn serve_static(req: HttpRequest) -> HttpResponse {
             Ok(content) => {
                 let content_type = match std::path::Path::new(clean_path).extension() {
                     Some(ext) => match ext.to_str() {
+                        Some("html") => "text/html; charset=utf-8",
+                        Some("css") => "text/css",
+                        Some("svg") => "image/svg+xml",
+                        Some("png") => "image/png",
+                        Some("ico") => "image/x-icon",
                         Some("wasm") => "application/wasm",
-                        Some("js") => "application/javascript",
+                        Some("js") | Some("mjs") => "application/javascript",
                         Some("gz") => "application/gzip",
+                        Some("br") => "application/x-brotli",
                         Some("tar") => "application/x-tar",
                         Some("json") => "application/json",
+                        Some("txt") | Some("sh") | Some("md") => "text/plain",
                         _ => "application/octet-stream",
                     },
                     None => "application/octet-stream",

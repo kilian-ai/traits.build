@@ -9,9 +9,13 @@
       margin: 0;
       width: 100%;
       height: 100%;
+      overflow: hidden;
       background: #101418;
       color: #d7e2f7;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    body {
+      position: relative;
     }
     .boot {
       position: fixed;
@@ -25,10 +29,19 @@
       border-radius: 8px;
       padding: 6px 10px;
     }
-    wanix-terminal {
+    .boot.ready {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease;
+    }
+    .xterm {
       width: 100%;
       height: 100%;
-      display: block;
+    }
+    .xterm-screen,
+    .xterm-viewport {
+      width: 100% !important;
+      height: 100% !important;
     }
     .xterm-viewport {
       background-color: rgb(33, 39, 50) !important;
@@ -37,6 +50,14 @@
 </head>
 <body>
 <div class="boot" id="status">Booting Apptron runtime...</div>
+<div id="loader" style="display:none"><p class="loader-status"></p></div>
+<script>
+  // Required by boot.go: window.apptron must be set before WASM starts
+  window.apptron = {
+    origin: window.location.origin,
+    publishURL: async () => window.location.origin,
+  };
+</script>
 <script type="module">
   import "./wanix.min.js";
 
@@ -52,24 +73,18 @@
     network: qp.get("network") || ""
   });
 
-  const w = await runtime.ready();
-  status.textContent = "Apptron shell ready";
-
-  const term = document.createElement("wanix-terminal");
-  term.setAttribute("for", runtime._id || "wanix-main");
-  term.setAttribute("src", "#console/data");
-  document.body.appendChild(term);
+  window.apptron.instance = runtime;
 
   try {
-    const initJS = await w.readText("#bundle/init.js");
-    const blob = new Blob([initJS], { type: "text/javascript" });
-    const initUrl = URL.createObjectURL(blob);
-    const initModule = await import(initUrl);
-    if (typeof initModule.default === "function") {
-      await initModule.default(w);
-    }
-  } catch (_err) {
-    console.log("No bundle init.js bootstrap found");
+    await runtime.ready();
+    const terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
+    await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
+    await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
+    status.textContent = "Apptron shell ready";
+    status.classList.add("ready");
+  } catch (error) {
+    console.error("Apptron console bootstrap failed", error);
+    status.textContent = `Apptron boot failed: ${error?.message || error}`;
   }
 </script>
 </body>
