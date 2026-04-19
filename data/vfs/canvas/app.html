@@ -2,34 +2,47 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Bouncing 6-Point Star</title>
-<style>body{background:#0a0a0a;margin:0;overflow:hidden}canvas{display:block}</style>
+<title>Simple Calculator</title>
+<style>
+    body { background: #0a0a0a; color: #e0e0e0; font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 50px; }
+    input { padding: 10px; width: 50px; text-align: center; }
+    button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+</style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<h1>Simple Calculator</h1>
+<input type="text" id="num1" placeholder="0" />
+<select id="operator">
+    <option value="+">+</option>
+    <option value="-">-</option>
+    <option value="*">*</option>
+    <option value="/">/</option>
+</select>
+<input type="text" id="num2" placeholder="0" />
+<button id="calculate">Calculate</button>
+<h2 id="result"></h2>
 <script>
-const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
-canvas.width=innerWidth;canvas.height=innerHeight;
-addEventListener("resize",()=>{canvas.width=innerWidth;canvas.height=innerHeight});
-const s={x:canvas.width/2,y:canvas.height/2,r:40,dx:3,dy:2.5};
-function draw(cx,cy,r){
-  const ir=r*0.5;ctx.fillStyle="#e22";ctx.strokeStyle="#ff4444";ctx.lineWidth=2;
-  ctx.beginPath();
-  for(let i=0;i<12;i++){
-    const a=i*Math.PI/6-Math.PI/2,R=i%2===0?r:ir;
-    const px=cx+R*Math.cos(a),py=cy+R*Math.sin(a);
-    i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
-  }
-  ctx.closePath();ctx.fill();ctx.stroke();
-}
-function loop(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  draw(s.x,s.y,s.r);s.x+=s.dx;s.y+=s.dy;
-  if(s.x+s.r>canvas.width||s.x-s.r<0)s.dx*=-1;
-  if(s.y+s.r>canvas.height||s.y-s.r<0)s.dy*=-1;
-  requestAnimationFrame(loop);
-}
-loop();
+    const calculateBtn = document.getElementById('calculate');
+    const result = document.getElementById('result');
+
+    calculateBtn.addEventListener('click', () => {
+        const num1 = parseFloat(document.getElementById('num1').value);
+        const operator = document.getElementById('operator').value;
+        const num2 = parseFloat(document.getElementById('num2').value);
+        let calcResult;
+
+        if (operator === '+') {
+            calcResult = num1 + num2;
+        } else if (operator === '-') {
+            calcResult = num1 - num2;
+        } else if (operator === '*') {
+            calcResult = num1 * num2;
+        } else if (operator === '/') {
+            calcResult = num1 / num2;
+        }
+
+        result.textContent = 'Result: ' + calcResult;
+    });
 </script>
 </body>
 </html>

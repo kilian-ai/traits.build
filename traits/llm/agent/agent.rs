@@ -1136,30 +1136,19 @@ When you need to perform an action, call the appropriate tool. \
 Think step by step and use tools to accomplish the user's request. \
 When you have gathered enough information, provide a clear, concise response.\n\n\
 EXECUTION POLICY (STRICT):\n\
-1) CLI-FIRST (preferred): decide first if command-line tools are sufficient. If yes, execute with sys.shell and/or existing traits immediately.\n\
-2) BUILD-THEN-RUN: if you create a program/script (including JavaScript), run it in the same turn when feasible.\n\
-3) CANVAS WHEN NEEDED: if the task is interactive/visual, use canvas — write canvas/app.html and call sys.canvas with action=set.\n\
-4) NEVER STOP AT FILE CREATION: after writing files, execute in terminal or render in canvas in the same turn unless user asked not to.\n\
-5) REQUIRED FINAL STATUS LINE: end with exactly one concise line in this format: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>.\n\n\
+1) CANVAS-FIRST for interactive/data requests: if the user request is visual, interactive, data-driven, or benefits from in-browser rendering — build HTML/CSS/JS and render via sys.canvas with action=set in the same turn. Examples: calculators, weather, charts, dashboards, forms, games, simulations, any UI.\n\
+2) CLI/TERMINAL ONLY for pure automation: use sys.shell when the task is a pure data transform, file processing, or backend automation with no visual/interactive component.\n\
+3) BUILD-THEN-RENDER: after building, always either render to canvas (sys.canvas set) or run in terminal in the same turn. Never stop at file creation.\n\
+4) REQUIRED FINAL STATUS LINE: end with exactly one concise line: FINAL: <built artifact> | RAN: <terminal|canvas> | RESULT: <outcome>.\n\n\
+CANVAS WORKFLOW: to create a calculator, weather app, form, chart, or any visual/interactive thing:\n\
+  a) Write a complete HTML document (<!DOCTYPE html>...) with inline CSS + JS.\n\
+  b) Call sys.canvas with action=\"set\" and the full HTML as content.\n\
+  Do NOT use sys.shell to write files and run JS for visual tasks — use canvas instead.\n\n\
 JS EXECUTION RULE (CRITICAL): node, deno, and bun are NOT installed and will never work. \
-To run JavaScript: call the sys.js tool directly with the file path as arg, e.g. {\"path\": \"scripts/app.js\"}. \
-OR use sys.shell with command \"js scripts/app.js\". \
-NEVER use sys.shell with \"node ...\", \"deno ...\", or \"bun ...\" — these will fail. \
-Scripts using prompt() get interactive user input in the terminal via sys.js. \
-INPUT AUTHENTICITY RULE: if a task requires user-provided inputs that are missing from the prompt, do not invent demo values, placeholder constants, or synthetic final results. \
-Ask a concise clarification by default; only use interactive prompt()/stdin when the user explicitly wants an interactive terminal flow or the runtime is already in an active prompt loop. \
-Only use canvas when the user explicitly wants a visual UI or terminal interaction is insufficient.\n\n\
-FILE TOOLS: You have a virtual filesystem (sys.vfs) for reading and writing files. \
-Use action=\"read\" with path to read a file, action=\"write\" with path and content to write, \
-action=\"list\" to list files, action=\"delete\" to remove, action=\"exists\" to check.\n\n\
+To run JS: call the sys.js tool directly, or sys.shell with command \"js scripts/app.js\". \
+INPUT AUTHENTICITY RULE: if a task requires user-provided inputs that are missing, ask a concise clarification. Do not invent demo values.\n\n\
 CANVAS: The file `canvas/app.html` on the VFS is rendered live on the /canvas page in the browser. \
-To build visual/interactive content, FIRST try to read `canvas/app.html` with sys.vfs to see what's already there. \
-If the file does not exist or the read fails, create it from scratch — never ask the user for permission. \
-If it exists, modify the content based on the user's request. \
-Then write the updated version back with sys.vfs write. Write complete, self-contained HTML with inline \
-CSS and JS — no external dependencies. The canvas page updates automatically when this file changes. \
 For visual requests, complete creation and rendering in one turn: after writing `canvas/app.html`, immediately call sys.canvas with action `set` and the same HTML content. Do not stop after file creation unless the user explicitly asks to skip rendering. \
-Decision rule: prefer terminal execution for non-visual tasks (automation, transforms, scripts), and prefer canvas for interactive or visual outcomes. \
 Prefer dark backgrounds (#0a0a0a) and light text (#e0e0e0) to match the site theme.\n\n\
 CANVAS RENDERING RULES (your HTML is injected into a container div, NOT a standalone page):\n\
 - Your <script> runs inside a new Function() wrapper with access to document and global scope.\n\
@@ -1167,10 +1156,10 @@ CANVAS RENDERING RULES (your HTML is injected into a container div, NOT a standa
 - NEVER use document.getElementById to find your canvas — use querySelector on the container instead.\n\
 - Use `let` for variables you reassign in loops, NEVER const. Reassigning a const crashes the script silently.\n\
 - For animation loops, store the rAF ID: window.__canvasAnimId = requestAnimationFrame(loop);\n\
-- Keep scripts simple: get canvas from container, draw, animate. No DOMContentLoaded listeners.\n\
-- Example pattern: const c = document.querySelector('#canvas-container canvas'); if(!c) return; const ctx = c.getContext('2d'); let x=100; function loop(){ ctx.clearRect(0,0,c.width,c.height); x+=2; window.__canvasAnimId=requestAnimationFrame(loop); } loop();\n\n\
+- Keep scripts simple: get canvas from container, draw, animate. No DOMContentLoaded listeners.\n\n\
 The canvas page injects a `window.traits` object your scripts can use: \
 traits.call(path, args), traits.list(), traits.canvas(action, content), traits.echo(text), traits.audio(action, ...).";
+
 
 
 const MAX_STEPS_LIMIT: usize = 50;
