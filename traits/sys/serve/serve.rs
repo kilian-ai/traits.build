@@ -609,24 +609,25 @@ async fn serve_static(req: HttpRequest) -> HttpResponse {
     }
     
     let traits_dir = std::env::var("TRAITS_DIR").unwrap_or_else(|_| "./traits".to_string());
-    let file_path = std::path::Path::new(&traits_dir)
-        .join("www/static")
-        .join(clean_path);
+    let base_static_dir = std::path::Path::new(&traits_dir).join("www/static");
+    let requested_file = base_static_dir.join(clean_path);
     
-    // Double-check path is still under traits/www/static/
-    if let Ok(canonical) = file_path.canonicalize() {
-        let traits_static_dir = std::path::Path::new(&traits_dir)
-            .join("www/static")
-            .canonicalize()
-            .unwrap_or_else(|_| std::path::PathBuf::new());
-        
-        if !canonical.starts_with(&traits_static_dir) {
-            return HttpResponse::BadRequest()
-                .content_type("text/plain")
-                .body("Path outside allowed directory");
-        }
-        
-        match std::fs::read(&canonical) {
+    // Simple path traversal protection: use components to check if path stays within base
+    let base_components: Vec<_> = base_static_dir.components().collect();
+    let requested_components: Vec<_> = requested_file.components().collect();
+    
+    // Check if requested path is within base path
+    if requested_components.len() < base_components.len() 
+        || !requested_components.iter().zip(&base_components).all(|(a, b)| a == b) {
+        eprintln!("[serve_static] Path traversal blocked: {} not under {}", 
+            requested_file.display(), base_static_dir.display());
+        return HttpResponse::BadRequest()
+            .content_type("text/plain")
+            .body("Path outside allowed directory");
+    }
+    
+    // Try to serve the file
+    match std::fs::read(&requested_file) {
             Ok(content) => {
                 let content_type = match std::path::Path::new(clean_path).extension() {
                     Some(ext) => match ext.to_str() {
@@ -648,11 +649,6 @@ async fn serve_static(req: HttpRequest) -> HttpResponse {
                 .content_type("text/plain")
                 .body("Static asset not found"),
         }
-    } else {
-        HttpResponse::NotFound()
-            .content_type("text/plain")
-            .body("Static asset not found")
-    }
 }
 
 /// Serve WASM binary assets (wasm-pack output: .wasm, .js glue code).
