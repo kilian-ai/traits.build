@@ -1,0 +1,19 @@
+[trait]
+description = "Self-contained static website — WASM kernel + SDK, no server required"
+version = "v260324.153121"
+checksum = "f3c1fd6c1b1600f40d14b27a75fb311f00760cb9ded388c0c21227e9b4cba29c"
+author = "system"
+tags = ["www", "webpage", "static", "wasm"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML page: self-contained SPA with WASM kernel and SDK"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "static_page"
+wasm = true

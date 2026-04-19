@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>traits.build — composable function kernel in Rust + WASM</title>
+<meta name="description" content="Typed, composable functions compiled into a single Rust binary that serves itself as a web app. The same kernel runs in the browser via WASM. CLI, REST, MCP, and SPA — one binary, four surfaces.">
+<meta name="keywords" content="rust, wasm, webassembly, function kernel, composable functions, mcp, cli, rest api, traits, single binary, spa">
+<meta name="author" content="Kilian">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1117'/%3E%3Ctext x='16' y='24' font-size='22' font-family='system-ui,sans-serif' font-weight='700' fill='%2358a6ff' text-anchor='middle'%3Et%3C/text%3E%3C/svg%3E">
+<link rel="canonical" href="https://www.traits.build/">
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.traits.build/">
+<meta property="og:title" content="traits.build — composable function kernel in Rust + WASM">
+<meta property="og:description" content="Typed, composable functions compiled into a single Rust binary and WASM browser kernel. Define traits in TOML, call via CLI, REST, MCP, or directly in the SPA.">
+<meta property="og:site_name" content="traits.build">
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="traits.build — composable function kernel">
+<meta name="twitter:description" content="Single Rust binary + WASM browser kernel. CLI, REST, MCP, SPA — one trait, four surfaces.">
+<!-- JSON-LD Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "traits.build",
+  "url": "https://www.traits.build/",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux, macOS, WebAssembly",
+  "programmingLanguage": "Rust",
+  "description": "Typed, composable functions compiled into a single Rust binary that serves itself as a web app. The same kernel runs in the browser via WASM. Define traits in TOML, call them via CLI, REST, MCP, or directly in the SPA.",
+  "license": "https://github.com/kilian-ai/traits.build/blob/main/LICENSE",
+  "codeRepository": "https://github.com/kilian-ai/traits.build",
+  "author": {
+    "@type": "Person",
+    "name": "Kilian"
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--fg:#e8e6e3;--accent:#6c63ff;--accent2:#00d4aa;--muted:#6b7280;--card:#12121a;--border:#1e1e2e}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ── Shell nav ── */
+#shell-nav{position:sticky;top:0;z-index:9999;background:rgba(10,10,15,0.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;height:48px;gap:2rem}
+#shell-nav .logo{font-weight:800;font-size:1.05rem;letter-spacing:-0.02em;cursor:pointer}
+#shell-nav .logo span{background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+#shell-nav .links{display:flex;gap:1.25rem;font-size:0.88rem}
+#shell-nav .links a{color:var(--muted);transition:color 0.15s;cursor:pointer}
+#shell-nav .links a:hover,#shell-nav .links a.active{color:var(--fg);text-decoration:none}
+#shell-nav .status{margin-left:auto;font-size:0.78rem;color:var(--muted)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.dot.ok{background:var(--accent2)}
+.dot.loading{background:var(--muted);animation:pulse 1s infinite}
+.dot.off{background:#f44}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* ── Page frame ── */
+#page-frame{min-height:calc(100vh - 48px);position:relative;overflow:hidden}
+
+/* ── Voice overlay ── */
+#voice-overlay{position:fixed;bottom:16px;right:20px;display:none;align-items:center;gap:8px;padding:8px 14px;border-radius:10px;background:rgba(124,92,252,.12);border:1px solid rgba(124,92,252,.3);backdrop-filter:blur(12px);z-index:9998;font-size:12px;color:rgba(255,255,255,.7);transition:opacity .3s}
+#voice-overlay.on{display:flex}
+#voice-overlay .mic-dot{width:9px;height:9px;border-radius:50%;background:#7c5cfc;flex-shrink:0;animation:vpulse 1.8s ease-in-out infinite}
+#voice-overlay.muted .mic-dot{background:#666;animation:none}
+@keyframes vpulse{0%,100%{box-shadow:0 0 0 0 rgba(124,92,252,.4)}50%{box-shadow:0 0 0 7px rgba(124,92,252,0)}}
+#voice-overlay .voice-label{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#voice-overlay button{background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:14px;padding:0 0 0 4px;line-height:1}
+#voice-overlay button:hover{color:var(--fg)}
+#voice-overlay .voice-mute:hover{color:#f90}
+#voice-overlay .voice-stop:hover{color:#f44}
+
+/* ── Loading overlay ── */
+#boot-overlay{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10000;transition:opacity 0.3s}
+#boot-overlay.hidden{opacity:0;pointer-events:none}
+#boot-overlay .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
+#boot-overlay p{margin-top:1rem;color:var(--muted);font-size:0.9rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:640px){
+  #shell-nav{padding:0 1rem;gap:0.75rem}
+  #shell-nav .links{gap:0.75rem;font-size:0.82rem}
+}
+</style>
+</head>
+<body>
+
+<noscript>
+  <div style="max-width:700px;margin:2rem auto;padding:0 1rem;font-family:system-ui,sans-serif;color:#e0e0e0;background:#0d1117">
+    <h1>traits.build</h1>
+    <p>Typed, composable functions compiled into a single Rust binary that serves itself as a web app. The same kernel runs in the browser via WASM — no server required.</p>
+    <h2>Features</h2>
+    <ul>
+      <li>CLI, REST API, and MCP server from one binary</li>
+      <li>WASM browser kernel — runs traits locally in the browser</li>
+      <li>3-tier dispatch: WASM → local helper → server REST</li>
+      <li>Type-safe signatures with runtime validation</li>
+      <li>Hot-reloadable cdylib plugins via C ABI</li>
+      <li>OpenAPI spec auto-generated from trait definitions</li>
+    </ul>
+    <h2>Pages</h2>
+    <ul>
+      <li><a href="https://www.traits.build/#/docs">Documentation</a></li>
+      <li><a href="https://www.traits.build/#/docs/api">API Reference</a></li>
+      <li><a href="https://www.traits.build/#/playground">Playground</a></li>
+      <li><a href="https://www.traits.build/#/apptron">Apptron</a></li>
+      <li><a href="https://www.traits.build/#/wanix">Wanix</a></li>
+      <li><a href="https://www.traits.build/#/testing">Testing</a></li>
+      <li><a href="https://www.traits.build/#/terminal">Terminal</a></li>
+    </ul>
+    <p><a href="https://github.com/kilian-ai/traits.build">View source on GitHub</a></p>
+  </div>
+</noscript>
+
+<div id="boot-overlay">
+  <div class="spinner"></div>
+  <p>Loading WASM kernel…</p>
+</div>
+
+<nav id="shell-nav" style="display:none">
+  <div class="logo" data-href="/"><span>traits</span>.build</div>
+  <div class="links">
+    <a data-href="/" class="active">Home</a>
+    <a data-href="/docs">Docs</a>
+    <a data-href="/docs/api">API</a>
+    <a data-href="/canvas">Canvas</a>
+    <a data-href="/linux">Linux</a>
+    <a data-href="/apptron">Apptron</a>
+    <a data-href="/wanix">Wanix</a>
+    <a data-href="/testing">Testing</a>
+    <a data-href="/settings">Settings</a>
+  </div>
+  <div class="status">
+    <span class="dot loading" id="statusDot"></span>
+    <span id="statusText">loading…</span>
+  </div>
+</nav>
+
+<div id="page-frame"></div>
+
+<div id="voice-overlay">
+  <div class="mic-dot"></div>
+  <span class="voice-label">Voice active</span>
+  <button class="voice-mute" title="Mute/unmute voice">🔇</button>
+  <button class="voice-stop" title="Stop voice">✕</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// SPA Bootloader — loads WASM kernel, routes URLs to www.* traits
+// Page JS uses window._traitsSDK for all trait calls
+// (WASM-first, REST-fallback — transparent to pages)
+// ═══════════════════════════════════════════════════════════════
+
+// ── Route table (mostly mirrors serve.trait.toml bindings; /admin is SPA-specific) ──
+const ROUTES = {
+  '/':           'www.homepage',
+  '/about':      'www.traits.build',
+  '/docs':       'www.docs',
+  '/docs/api':   'www.docs.api',
+  '/chat-logs':  'www.chat_logs',
+  '/admin':      'www.admin.spa',
+  '/settings':   'www.admin.spa',
+  '/seo':        'www.seo',
+  '/playground': 'www.playground',
+  '/canvas':     'www.canvas',
+  '/linux':      'www.linux',
+  '/apptron':    'www.apptron',
+  '/wanix':      'www.wanix',
+  '/terminal':   'www.docs.api',
+  '/testing':    'www.testing',
+  '/wasm':       'www.wasm',
+};
+
+const LOCAL_ROUTE_KEY = 'traits.shell.route';
+
+const isLocal = location.protocol === 'file:';
+
+function runtimeScriptPath() {
+  if (isLocal) return `./wasm-runtime.js?v=${Date.now()}`;
+  return '/static/wasm-runtime.js';
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-runtime-src="${src}"]`);
+    if (existing) {
+      if (!existing.src) { resolve(); return; } // Inline script — already executed
+      existing.addEventListener('load', () => resolve(), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.dataset.runtimeSrc = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load runtime: ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+function decodeBase64Bytes(base64) {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+// ── SDK instance (set during boot, from traits.js runtime) ──
+let sdk = null;
+
+// ── Trait Components — declarative data-trait → DOM binding ──
+//
+// Attributes on any element:
+//   data-trait="sys.list"          trait path to call
+//   data-call="mount|click"        trigger (default: mount)
+//   data-args='["x"]'              JSON call args
+//   data-bind="field.path"         dot-path into result to extract
+//   data-render="text|html|json"   output mode (default: text)
+//   data-target="#id"              render into another element (default: self)
+//   data-interval="30000"          auto-refresh interval in ms
+//   data-handler="name"            custom handler fn(el, value, meta)
+//   data-loading="…"               placeholder text while loading
+
+const TC = (() => {
+  const _h = {};      // named handlers: { name: fn(el, value, meta) }
+  const _iv = [];     // active setInterval IDs
+  const _cl = [];     // cleanup fns (removeEventListener etc.)
+
+  function on(name, fn) { _h[name] = fn; }
+
+  // Resolve dot-path: "items.length", "version", "0.name"
+  function _get(obj, path) {
+    if (!path) return obj;
+    for (const k of path.split('.')) {
+      if (obj == null) return undefined;
+      if (k === 'length' && (Array.isArray(obj) || typeof obj === 'string'))
+        return obj.length;
+      obj = typeof obj === 'object' ? obj[k] : undefined;
+    }
+    return obj;
+  }
+
+  async function call(el) {
+    const path = el.dataset.trait;
+    if (!path) return;
+    const args = el.dataset.args ? JSON.parse(el.dataset.args) : [];
+    const target = el.dataset.target
+      ? document.querySelector(el.dataset.target) : el;
+    if (el.dataset.loading && target) target.textContent = el.dataset.loading;
+
+    const res = await sdk.call(path, args);
+
+    if (!res.ok) {
+      el.dispatchEvent(new CustomEvent('trait:error',
+        { detail: res, bubbles: true }));
+      return res;
+    }
+
+    // Custom handler gets full control
+    const hName = el.dataset.handler;
+    if (hName && _h[hName]) {
+      await _h[hName](el, res.result, res);
+    } else if (target) {
+      // Auto-bind: extract value, apply to target
+      const val = _get(res.result, el.dataset.bind);
+      const mode = el.dataset.render || 'text';
+      if (mode === 'html') target.innerHTML = String(val ?? '');
+      else if (mode === 'json')
+        target.textContent = JSON.stringify(val, null, 2);
+      else target.textContent = String(val ?? '-');
+    }
+
+    el.dispatchEvent(new CustomEvent('trait:done',
+      { detail: res, bubbles: true }));
+    return res;
+  }
+
+  function scan(root) {
+    if (!root?.querySelectorAll) return;
+    const els = [...root.querySelectorAll('[data-trait]')];
+    if (root.dataset?.trait) els.unshift(root);
+
+    for (const el of els) {
+      if (el._tc) continue;     // already bound
+      el._tc = true;
+      const trigger = el.dataset.call || 'mount';
+
+      if (trigger === 'mount') {
+        call(el);
+        const ms = parseInt(el.dataset.interval);
+        if (ms > 0) _iv.push(setInterval(() => call(el), ms));
+      } else if (trigger === 'click') {
+        const fn = (e) => { e.preventDefault(); call(el); };
+        el.addEventListener('click', fn);
+        _cl.push(() => el.removeEventListener('click', fn));
+      }
+    }
+  }
+
+  function cleanup() {
+    _iv.forEach(id => clearInterval(id));
+    _iv.length = 0;
+    _cl.forEach(fn => fn());
+    _cl.length = 0;
+    for (const k of Object.keys(_h)) delete _h[k];
+  }
+
+  return { on, call, scan, cleanup };
+})();
+window.TC = TC;
+
+// ── DOM refs ──
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const overlay = $('#boot-overlay');
+const nav = $('#shell-nav');
+const frame = $('#page-frame');
+const dot = $('#statusDot');
+const statusText = $('#statusText');
+
+// ── Page rendering ──
+// Inject page HTML from a trait call into the frame.
+// Extracts <body> content from the full HTML document returned by the trait.
+// Handles <style> and <script> tags properly.
+
+let currentPageCleanup = null;
+
+async function injectPage(fullHtml, route) {
+  // Clean up previous page
+  TC.cleanup();
+  if (currentPageCleanup) { currentPageCleanup(); currentPageCleanup = null; }
+  document.querySelectorAll('style[data-page]').forEach(s => s.remove());
+  document.querySelectorAll('style[data-canvas]').forEach(s => s.remove());
+  document.querySelectorAll('link[data-page]').forEach(l => l.remove());
+  document.querySelectorAll('body > .terminal-wrap').forEach(t => t.remove());
+  frame.style.paddingBottom = '';
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(fullHtml, 'text/html');
+
+  // Extract and inject <style> tags from <head>
+  doc.querySelectorAll('head style').forEach(style => {
+    const s = document.createElement('style');
+    s.dataset.page = route;
+    s.textContent = style.textContent;
+    document.head.appendChild(s);
+  });
+
+  // Extract and inject <link> tags from <head>
+  doc.querySelectorAll('head link[rel="stylesheet"]').forEach(link => {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = link.href;
+    l.dataset.page = route;
+    document.head.appendChild(l);
+  });
+
+  // Set body content
+  frame.innerHTML = doc.body.innerHTML;
+
+  // Execute scripts IN ORDER — await external scripts before running inline ones
+  const scripts = [...frame.querySelectorAll('script')];
+  for (const old of scripts) {
+    const s = document.createElement('script');
+    for (const attr of old.attributes) {
+      // Skip type="module" for file:// mode — dynamic import() from absolute paths fails
+      if (attr.name === 'type' && attr.value === 'module' && isLocal) continue;
+      s.setAttribute(attr.name, attr.value);
+    }
+    s.textContent = old.textContent;
+
+    if (s.src) {
+      // External script — wait for it to load before continuing
+      await new Promise((resolve) => {
+        s.onload = resolve;
+        s.onerror = () => { console.warn('Script load failed:', s.src); resolve(); };
+        old.replaceWith(s);
+      });
+    } else {
+      old.replaceWith(s);
+    }
+  }
+
+  // Pick up page cleanup callback if set by page scripts
+  currentPageCleanup = window._pageCleanup || null;
+  window._pageCleanup = null;
+
+  // Activate trait components declared via data-trait attributes
+  TC.scan(frame);
+
+  // Update nav active state
+  $$('#shell-nav .links a').forEach(a => {
+    a.classList.toggle('active', a.dataset.href === route);
+  });
+
+  // Update document title from the page
+  const pageTitle = doc.querySelector('title');
+  if (pageTitle) document.title = pageTitle.textContent;
+
+  // Move terminal-wrap out of frame to body (needs position:fixed on viewport)
+  const termWrap = frame.querySelector('.terminal-wrap');
+  if (termWrap) {
+    // Remove any previous terminal from body
+    document.querySelectorAll('body > .terminal-wrap').forEach(t => t.remove());
+    document.body.appendChild(termWrap);
+    // Give frame padding so content doesn't hide behind fixed terminal
+    frame.style.paddingBottom = '340px';
+  } else {
+    frame.style.paddingBottom = '';
+  }
+}
+
+function currentRouteFromLocation() {
+  if (isLocal) {
+    const hash = location.hash.slice(1) || '/';
+    if (ROUTES[hash]) {
+      try { sessionStorage.setItem(LOCAL_ROUTE_KEY, hash); } catch(e) {}
+      return hash;
+    }
+    try {
+      const storedRoute = sessionStorage.getItem(LOCAL_ROUTE_KEY);
+      if (storedRoute && ROUTES[storedRoute]) return storedRoute;
+    } catch(e) {}
+    return '/';
+  }
+  const path = location.pathname === '' || location.pathname === '/static' ? '/' : location.pathname;
+  return ROUTES[path] ? path : '/';
+}
+
+// ── Router ──
+let currentRoute = null;
+let navId = 0;
+
+async function navigate(route, pushState = true) {
+  if (!sdk) return; // Not booted yet
+  if (route === currentRoute) return;
+  const thisNav = ++navId;
+  currentRoute = route;
+
+  const traitPath = ROUTES[route];
+  if (!traitPath) {
+    frame.innerHTML = '<div style="padding:4rem;text-align:center;color:var(--muted)"><h2>404</h2><p>Page not found: ' + route + '</p></div>';
+    return;
+  }
+
+  // Show a brief loading state for slow pages
+  frame.style.opacity = '0.6';
+
+  const result = await sdk.call(traitPath, []);
+
+  // Another navigation started while we were waiting — abandon this stale one
+  if (thisNav !== navId) return;
+
+  frame.style.opacity = '1';
+
+  if (result.ok && typeof result.result === 'string') {
+    await injectPage(result.result, route);
+  } else {
+    frame.innerHTML = '<div style="padding:4rem;text-align:center;color:#f44"><h2>Error loading page</h2><p>' +
+      (result.error || 'Unknown error') + '</p><p style="color:var(--muted);margin-top:0.5rem">Trait: ' + traitPath +
+      ' · Dispatch: ' + (result.dispatch || '?') + '</p></div>';
+  }
+
+  // Check again after injectPage (which may have awaits for external scripts)
+  if (thisNav !== navId) return;
+
+  if (pushState) {
+    if (isLocal) {
+      try { sessionStorage.setItem(LOCAL_ROUTE_KEY, route); } catch(e) {}
+      history.pushState({ route }, '', '#' + route);
+    }
+    else history.pushState({ route }, '', route);
+  }
+}
+
+// ── Nav click handling ──
+nav.addEventListener('click', e => {
+  const el = e.target.closest('[data-href]');
+  if (!el) return;
+  e.preventDefault();
+  navigate(el.dataset.href);
+});
+
+// ── Global link interceptor (makes internal links work in file:// mode) ──
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href]');
+  if (!a) return;
+  const href = a.getAttribute('href');
+  if (href && ROUTES[href]) {
+    e.preventDefault();
+    navigate(href);
+  }
+});
+
+// ── SPA control bridge — executes actions from sys.spa trait via CustomEvent ──
+window.addEventListener('traits-spa-action', async (e) => {
+  const d = e.detail || {};
+  const action = d.spa_action;
+  let result = { ok: true };
+  try {
+    if (action === 'navigate') {
+      await navigate(d.route || '/');
+      result.navigated = d.route;
+    } else if (action === 'click') {
+      const el = document.querySelector(d.selector);
+      if (el) { el.click(); result.clicked = d.selector; }
+      else { result = { ok: false, error: `Element not found: ${d.selector}` }; }
+    } else if (action === 'type') {
+      const el = document.querySelector(d.selector);
+      if (el) {
+        el.focus();
+        el.value = d.text || '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        result.typed = { selector: d.selector, text: d.text };
+      } else { result = { ok: false, error: `Element not found: ${d.selector}` }; }
+    } else if (action === 'terminal') {
+      // Navigate to terminal if not there, then send keystrokes
+      if (currentRoute !== '/terminal') await navigate('/terminal');
+      // Small delay to let terminal initialize, then dispatch input
+      setTimeout(() => {
+        const text = (d.text || '') + '\r';
+        window.dispatchEvent(new CustomEvent('traits-terminal-input', { detail: { data: text } }));
+      }, currentRoute !== '/terminal' ? 500 : 50);
+      result.terminal = d.text;
+    } else if (action === 'query') {
+      const el = document.querySelector(d.selector);
+      if (el) {
+        result.found = true;
+        result.tag = el.tagName.toLowerCase();
+        result.text = (el.textContent || '').slice(0, 500);
+        result.value = el.value !== undefined ? el.value : null;
+        result.visible = el.offsetParent !== null;
+        result.id = el.id || null;
+        result.classes = el.className || null;
+      } else { result.found = false; }
+    } else if (action === 'eval') {
+      result.value = (new Function(d.script))();
+      if (result.value instanceof Promise) result.value = await result.value;
+    } else if (action === 'route') {
+      result.route = currentRoute;
+      result.routes = Object.keys(ROUTES);
+    }
+  } catch (err) {
+    result = { ok: false, error: err.message };
+  }
+  // Store result for SDK to pick up
+  window._spaActionResult = result;
+});
+
+// ── Browser back/forward ──
+window.addEventListener('popstate', e => {
+  const route = e.state?.route || currentRouteFromLocation();
+  navigate(route, false);
+});
+
+window.addEventListener('hashchange', () => {
+  if (!isLocal) return;
+  const hash = location.hash.slice(1);
+  if (hash && ROUTES[hash]) navigate(hash, false);
+});
+
+// ── Global Voice Overlay ──
+const _voiceOverlay = document.getElementById('voice-overlay');
+const _voiceLabel = _voiceOverlay.querySelector('.voice-label');
+const _voiceMuteBtn = _voiceOverlay.querySelector('.voice-mute');
+const _voiceStopBtn = _voiceOverlay.querySelector('.voice-stop');
+let _voiceMuted = false;
+
+function _hasVoiceApiKey() {
+  try {
+    return !!((localStorage.getItem('traits.secret.OPENAI_API_KEY') || '').trim()
+           || (localStorage.getItem('traits.voice.api_key') || '').trim());
+  } catch(_) { return false; }
+}
+
+function _updateVoiceOverlay() {
+  const active = sdk && sdk.isVoiceActive && sdk.isVoiceActive();
+  if (active) {
+    _voiceOverlay.classList.add('on');
+    _voiceMuteBtn.textContent = _voiceMuted ? '🔇' : '🔊';
+    _voiceOverlay.classList.toggle('muted', _voiceMuted);
+  } else {
+    _voiceOverlay.classList.remove('on');
+    _voiceMuted = false;
+  }
+}
+
+async function _startGlobalVoice() {
+  if (!sdk || !sdk.startVoice) return;
+  if (sdk.isVoiceActive && sdk.isVoiceActive()) return;
+
+  _voiceOverlay.classList.add('on');
+  _voiceLabel.textContent = 'Connecting voice…';
+
+  const result = await sdk.startVoice({
+    voice: 'shimmer',
+    model: 'gpt-realtime-mini-2025-12-15',
+    onTranscript: (text) => { _voiceLabel.textContent = '🎤 ' + text; },
+    onResponse: (text) => {
+      _voiceLabel.textContent = '💬 ' + text;
+      setTimeout(() => {
+        if (sdk && sdk.isVoiceActive && sdk.isVoiceActive()) _voiceLabel.textContent = 'Listening…';
+      }, 4000);
+    },
+    onToolCall: (name) => {
+      if (name === 'sys_canvas') _voiceLabel.textContent = '🎨 Drawing…';
+      else _voiceLabel.textContent = '⚙ ' + name.replace(/_/g, '.');
+    },
+    onError: (msg) => { _voiceLabel.textContent = '⚠ ' + msg; },
+  });
+
+  if (result.ok) {
+    _voiceLabel.textContent = 'Listening…';
+    _updateVoiceOverlay();
+    const onStopped = (e) => {
+      if (e.detail && e.detail.type === 'stopped') {
+        window.removeEventListener('voice-event', onStopped);
+        _updateVoiceOverlay();
+      }
+    };
+    window.addEventListener('voice-event', onStopped);
+  } else {
+    _voiceLabel.textContent = 'Voice unavailable: ' + (result.error || 'unknown');
+    setTimeout(() => _voiceOverlay.classList.remove('on'), 3000);
+  }
+}
+
+_voiceMuteBtn.addEventListener('click', () => {
+  _voiceMuted = !_voiceMuted;
+  try {
+    if (window._traitsSDK && window._traitsSDK._getVoiceStream) {
+      const s = window._traitsSDK._getVoiceStream();
+      if (s) s.getAudioTracks().forEach(t => { t.enabled = !_voiceMuted; });
+    }
+  } catch(_) {}
+  _updateVoiceOverlay();
+  window.dispatchEvent(new CustomEvent('voice-mute-changed', { detail: { muted: _voiceMuted } }));
+});
+
+_voiceStopBtn.addEventListener('click', () => {
+  if (sdk && sdk.stopVoice) sdk.stopVoice();
+  _voiceMuted = false;
+  _updateVoiceOverlay();
+});
+
+// Voice control bridge (from sys.voice.control WASM trait)
+window.addEventListener('traits-voice-control', (e) => {
+  const d = e.detail || {};
+  const action = d.voice_control_action;
+  if (action === 'mute') {
+    _voiceMuted = true;
+    try {
+      if (window._traitsSDK && window._traitsSDK._getVoiceStream) {
+        const s = window._traitsSDK._getVoiceStream();
+        if (s) s.getAudioTracks().forEach(t => { t.enabled = false; });
+      }
+    } catch(_) {}
+    _updateVoiceOverlay();
+  } else if (action === 'unmute') {
+    _voiceMuted = false;
+    try {
+      if (window._traitsSDK && window._traitsSDK._getVoiceStream) {
+        const s = window._traitsSDK._getVoiceStream();
+        if (s) s.getAudioTracks().forEach(t => { t.enabled = true; });
+      }
+    } catch(_) {}
+    _updateVoiceOverlay();
+  } else if (action === 'toggle') {
+    _voiceMuted = !_voiceMuted;
+    try {
+      if (window._traitsSDK && window._traitsSDK._getVoiceStream) {
+        const s = window._traitsSDK._getVoiceStream();
+        if (s) s.getAudioTracks().forEach(t => { t.enabled = !_voiceMuted; });
+      }
+    } catch(_) {}
+    _updateVoiceOverlay();
+  } else if (action === 'stop') {
+    if (sdk && sdk.stopVoice) sdk.stopVoice();
+    _voiceMuted = false;
+    _updateVoiceOverlay();
+  } else if (action === 'start') {
+    _startGlobalVoice();
+  }
+  window._voiceControlResult = {
+    ok: true,
+    active: !!(sdk && sdk.isVoiceActive && sdk.isVoiceActive()),
+    muted: _voiceMuted,
+    action: action
+  };
+});
+
+// Auto-start voice when navigating to /canvas with API key;
+// stop it when entering homepage (which has its own voice experience)
+const _origNavigate = navigate;
+navigate = async function(route, pushState) {
+  // Stop canvas voice before homepage loads so mic is free
+  if (route === '/' && sdk && sdk.isVoiceActive && sdk.isVoiceActive()) {
+    if (sdk.stopVoice) sdk.stopVoice();
+    _voiceMuted = false;
+    _updateVoiceOverlay();
+  }
+  await _origNavigate(route, pushState);
+};
+
+function updateStatusBar() {
+  const s = sdk ? sdk.status : {};
+  const parts = [];
+  if (s.wasm) parts.push(`WASM (${s.callable || 0})`);
+  if (s.helper) parts.push('helper');
+  else if (!isLocal) parts.push('REST');
+  dot.className = (s.wasm || s.helper || !isLocal) ? 'dot ok' : 'dot off';
+  statusText.textContent = _llmStatusText || parts.join(' + ') || 'offline';
+}
+
+let _llmStatusText = null;
+window.addEventListener('webllm-progress', (e) => {
+  const msg = e.detail || '';
+  if (!msg || msg === 'Model ready.') {
+    _llmStatusText = null;
+    updateStatusBar();
+    return;
+  }
+  _llmStatusText = msg.length > 40 ? msg.slice(0, 37) + '…' : msg;
+  if (statusText) statusText.textContent = _llmStatusText;
+  if (dot) dot.className = 'dot loading';
+});
+
+// ── Boot sequence ──
+async function boot() {
+  // Handle URL params: ?helper=URL, ?relay=CODE, ?server=URL
+  try {
+    const params = new URLSearchParams(location.search);
+    const helperParam = params.get('helper');
+    const relayParam = params.get('relay');
+    const serverParam = params.get('server');
+    if (helperParam) localStorage.setItem('traits.helper.url', helperParam);
+    if (relayParam) localStorage.setItem('traits.relay.code', relayParam.toUpperCase());
+    if (serverParam) localStorage.setItem('traits.relay.server', serverParam);
+    if (helperParam || relayParam) {
+      history.replaceState(null, '', location.pathname + location.hash);
+    }
+  } catch(e) {}
+
+  // Load SDK runtime (unless already inlined by standalone build)
+  const sdkSrc = isLocal ? `./sdk-runtime.js?v=${Date.now()}` : '/static/sdk-runtime.js';
+  await loadScript(sdkSrc);
+
+  sdk = new Traits({ wasm: false, server: isLocal ? '' : undefined });
+  window._traitsSDK = sdk;
+
+  // Apply persisted background backend binding before runtime init.
+  try {
+    const bgImpl = localStorage.getItem('traits.background.impl');
+    if (bgImpl && sdk.setBackgroundBinding) {
+      sdk.setBackgroundBinding(bgImpl);
+    }
+  } catch(e) {}
+
+  // Start helper discovery in parallel with WASM init
+  const initPromise = sdk.init();
+
+  try {
+    await loadScript(runtimeScriptPath());
+    const mod = window.TraitsWasm;
+    if (!mod) throw new Error('TraitsWasm runtime missing');
+    mod.initSync({ module: decodeBase64Bytes(mod.WASM_BASE64) });
+    JSON.parse(mod.init());
+    sdk.attachWasm(mod);
+    // sdk.preloadWebLLM(); // TEMPORARILY DISABLED for debugging
+
+    // Pre-load terminal as classic script (import() blocked in file:// mode)
+    try {
+      const termSrc = isLocal ? `./terminal-runtime.js?v=${Date.now()}` : '/static/terminal-runtime.js';
+      await loadScript(termSrc);
+    } catch(e) { console.warn('Terminal pre-load failed:', e); }
+  } catch(e) {
+    console.warn('WASM init failed:', e);
+  }
+
+  // Wait for helper discovery to finish (has its own timeout)
+  await initPromise;
+
+  // Re-probe helper every 30s (reduced frequency for debugging — was 1s)
+  setInterval(async () => {
+    const was = sdk.helperConnected;
+    await sdk.refreshHelper();
+    if (sdk.helperConnected !== was) updateStatusBar();
+  }, 30000);
+
+  updateStatusBar();
+
+  // Apply SEO overrides from sys.config (if helper/server connected)
+  if (sdk.helperConnected || !isLocal) {
+    try {
+      const seoRes = await sdk.call('sys.config', ['list', 'www.seo']);
+      if (seoRes.ok && seoRes.result?.config) {
+        const SEO_MAP = {
+          title:               { sel: null, attr: null },
+          description:         { sel: 'meta[name="description"]', attr: 'content' },
+          keywords:            { sel: 'meta[name="keywords"]', attr: 'content' },
+          author:              { sel: 'meta[name="author"]', attr: 'content' },
+          canonical:           { sel: 'link[rel="canonical"]', attr: 'href' },
+          og_title:            { sel: 'meta[property="og:title"]', attr: 'content' },
+          og_description:      { sel: 'meta[property="og:description"]', attr: 'content' },
+          og_site_name:        { sel: 'meta[property="og:site_name"]', attr: 'content' },
+          og_image:            { sel: 'meta[property="og:image"]', attr: 'content' },
+          twitter_title:       { sel: 'meta[name="twitter:title"]', attr: 'content' },
+          twitter_description: { sel: 'meta[name="twitter:description"]', attr: 'content' },
+          twitter_image:       { sel: 'meta[name="twitter:image"]', attr: 'content' },
+        };
+        for (const item of seoRes.result.config) {
+          if (!item.value) continue;
+          if (item.key === 'title') { document.title = item.value; continue; }
+          const m = SEO_MAP[item.key];
+          if (m?.sel) {
+            const el = document.querySelector(m.sel);
+            if (el) el.setAttribute(m.attr, item.value);
+          }
+        }
+        // Update JSON-LD
+        const ldEl = document.querySelector('script[type="application/ld+json"]');
+        if (ldEl) {
+          try {
+            const ld = JSON.parse(ldEl.textContent);
+            for (const item of seoRes.result.config) {
+              if (item.key === 'jsonld_name' && item.value) ld.name = item.value;
+              if (item.key === 'jsonld_description' && item.value) ld.description = item.value;
+              if (item.key === 'jsonld_author' && item.value) {
+                if (!ld.author) ld.author = { '@type': 'Person' };
+                ld.author.name = item.value;
+              }
+            }
+            ldEl.textContent = JSON.stringify(ld, null, 2);
+          } catch(_) {}
+        }
+      }
+    } catch(e) { console.debug('SEO config load skipped:', e.message); }
+  }
+
+  // Show nav, hide overlay
+  nav.style.display = '';
+  overlay.classList.add('hidden');
+  setTimeout(() => overlay.remove(), 300);
+
+  // Route to initial page
+  const route = currentRouteFromLocation();
+  await navigate(route, false);
+}
+
+boot();
+</script>
+</body>
+</html>

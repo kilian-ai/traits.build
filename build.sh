@@ -16,6 +16,7 @@ SDK_SRC="traits/www/sdk/traits.js"
 SDK_RUNTIME="traits/www/static/sdk-runtime.js"
 INDEX_HTML="traits/www/static/index.html"
 INDEX_STANDALONE_HTML="traits/www/static/index.standalone.html"
+ROOT_STATIC_DIR="static"
 
 # ── Pre-compute build version so WASM and native builds match ──
 TODAY=$(date -u '+%y%m%d')
@@ -424,6 +425,10 @@ fi
 if [[ -f "$INDEX_STANDALONE_HTML" ]]; then
     cp "$INDEX_STANDALONE_HTML" index.html
     echo "Copied $INDEX_STANDALONE_HTML → index.html"
+    rm -rf "$ROOT_STATIC_DIR"
+    mkdir -p "$ROOT_STATIC_DIR"
+    cp -R traits/www/static/. "$ROOT_STATIC_DIR/"
+    echo "Synced traits/www/static → $ROOT_STATIC_DIR/"
 fi
 
 echo "Copying dylibs..."

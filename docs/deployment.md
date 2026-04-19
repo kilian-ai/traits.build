@@ -21,6 +21,8 @@ The public SPA at `https://www.traits.build/` is deployed from `.github/workflow
 - Publish `traits/www/static/index.standalone.html` as `_site/index.html`.
 - Also copy the full `traits/www/static/` subtree into `_site/static/`.
 - This is required for nested static runtimes such as `/static/apptron/**` and `/static/wanix/**`, which load additional `.html`, `.js`, `.wasm`, and bundle files directly from GitHub Pages.
+- If GitHub Pages is serving from the root of `main`, the repo root must also contain a committed `static/` directory mirroring `traits/www/static/`.
+- `build.sh` now performs that root static sync automatically so `git push origin main` keeps `/static/**` available in branch-based deployments.
 
 ## Dockerfile
 

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apptron Local Shell</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: #101418;
+      color: #d7e2f7;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    .boot {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 10;
+      font-size: 12px;
+      color: #8ea0c6;
+      background: rgba(20, 29, 46, 0.85);
+      border: 1px solid #2d3d5f;
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+    wanix-terminal {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .xterm-viewport {
+      background-color: rgb(33, 39, 50) !important;
+    }
+  </style>
+</head>
+<body>
+<div class="boot" id="status">Booting Apptron runtime...</div>
+<script type="module">
+  import "./wanix.min.js";
+
+  const status = document.getElementById("status");
+  const qp = new URLSearchParams(window.location.search);
+
+  const runtime = new WanixRuntime({
+    screen: false,
+    helpers: true,
+    debug9p: qp.get("debug9p") === "true",
+    wasm: qp.get("wasm") || "./wanix.wasm",
+    bundle: qp.get("bundle") || "./bundles/sys.tar.gz",
+    network: qp.get("network") || ""
+  });
+
+  const w = await runtime.ready();
+  status.textContent = "Apptron shell ready";
+
+  const term = document.createElement("wanix-terminal");
+  term.setAttribute("for", runtime._id || "wanix-main");
+  term.setAttribute("src", "#console/data");
+  document.body.appendChild(term);
+
+  try {
+    const initJS = await w.readText("#bundle/init.js");
+    const blob = new Blob([initJS], { type: "text/javascript" });
+    const initUrl = URL.createObjectURL(blob);
+    const initModule = await import(initUrl);
+    if (typeof initModule.default === "function") {
+      await initModule.default(w);
+    }
+  } catch (_err) {
+    console.log("No bundle init.js bootstrap found");
+  }
+</script>
+</body>
+</html>
