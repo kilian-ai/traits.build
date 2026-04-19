@@ -1120,8 +1120,8 @@ fn trait_type_to_json_schema(t: &str) -> &'static str {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const DEFAULT_TOOLS: &[&str] = &[
-    "sys.shell",
     "sys.canvas",
+    "sys.shell",
     "sys.js",
     "sys.call",
     "sys.vfs",
