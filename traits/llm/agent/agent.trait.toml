@@ -1,7 +1,7 @@
 [trait]
 description = "WASM-compatible LLM agent loop — calls OpenAI API with trait-based tool calling, session compaction, usage tracking, and turn-based buddy mode"
-version = "v260419.022626"
-checksum = "749be813998471fe8343070a9ad03e15b364d59aa29d3c7ab7e6007c8bd18def"
+version = "v260419.030858"
+checksum = "422267107b8b6c4a2a9a074ba44af12378fc8246d34c49a8624321f593effaeb"
 author = "system"
 tags = ["llm", "agent", "tools", "openai", "wasm", "loop", "buddy", "compaction"]
 

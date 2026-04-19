@@ -977,7 +977,9 @@ To run JavaScript: call the sys.js tool directly with the file path as arg, e.g.
 OR use sys.shell with command \"js calculations/calc.js\". \
 NEVER use sys.shell with \"node ...\", \"deno ...\", or \"bun ...\" — these will fail. \
 Scripts using prompt() get interactive user input in the terminal via sys.js. \
-CALCULATOR / INTERACTIVE TOOL RULE: if the request involves a calculator, form, UI, or anything needing user input repeatedly, skip the CLI script approach entirely and BUILD A CANVAS APP — write a complete HTML page to canvas/app.html and call sys.canvas with action=set. Canvas is always better for interactive tools.\n\n\
+CALCULATOR / INPUT RULE: if the user asks for a calculator or simple calculations without providing the operands, prefer an interactive terminal flow first — use prompt()/stdin to ask the user for the numbers and operation at runtime. \
+Do NOT invent sample inputs such as \"5 + 3\" unless the user explicitly supplied them. \
+Only use canvas for a calculator when the user asks for a visual/UI calculator or terminal interaction is insufficient.\n\n\
 FILE TOOLS: You have a virtual filesystem (sys.vfs) for reading and writing files. \
 Use action=\"read\" with path to read a file, action=\"write\" with path and content to write, \
 action=\"list\" to list files, action=\"delete\" to remove, action=\"exists\" to check.\n\n\
