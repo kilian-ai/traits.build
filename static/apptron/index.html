@@ -376,16 +376,21 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     const homeCommand = persistentHomeBootstrapCommand(defaultUser.username);
     // Combine into a single command line so all three blocks are written
     // atomically. Shell startup can drop leading bytes; a small retry window
-    // re-sends the same idempotent line. Prepend a newline + no-op so any
-    // dropped bytes affect a safe prefix rather than the real command.
+    // re-sends the same idempotent line. Prepend a no-op so any dropped
+    // bytes affect a safe prefix rather than the real command.
     const combined = `: nop; ${relayCommand}; ${networkCommand}; ${homeCommand}`;
     const delays = [0, 1200, 3000];
-    for (const delay of delays) {
+    for (let i = 0; i < delays.length; i++) {
+      const delay = delays[i];
       if (delay > 0) {
         await sleepMs(delay);
       }
+      const isLast = i === delays.length - 1;
+      // On the final iteration, append `clear` so the visual block from the
+      // bootstrap echoes is wiped and the user sees a fresh prompt.
+      const line = isLast ? `${combined}; clear\n` : `${combined}\n`;
       try {
-        await runtime.writeFile(`web/dom/${terminalId}/data`, `\n${combined}\n`);
+        await runtime.writeFile(`web/dom/${terminalId}/data`, `\n${line}`);
       } catch {
         // Keep retrying; bootstrap is best-effort.
       }
