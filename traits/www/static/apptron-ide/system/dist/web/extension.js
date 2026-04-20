@@ -4458,7 +4458,20 @@ async function resolveTerminalDataPath(wx) {
 function shSingleQuote(value) {
   return `'${value.replace(/'/g, `"'"'`)}'`;
 }
-function buildRelayBootstrapCommandFromStorage() {
+function deriveOriginNet() {
+  try {
+    const origin = new URL(window.location.origin);
+    const wsProto = origin.protocol === "https:" ? "wss:" : "ws:";
+    return `${wsProto}//${origin.host}/x/net`;
+  } catch {
+    return "";
+  }
+}
+function buildRelayBootstrapCommandFromContext() {
+  const params = new URLSearchParams(window.top?.location?.search || window.location.search);
+  const defaultRelay = "wss://relay.traits.build/linux/tunnel";
+  const legacyRelay = "wss://relay.traits.build/x/net";
+  const normalizeRelay = (value) => value === legacyRelay ? defaultRelay : value;
   let relay = "";
   let network = "";
   let source = "";
@@ -4467,9 +4480,27 @@ function buildRelayBootstrapCommandFromStorage() {
     network = String(localStorage.getItem("apptron-network") || "").trim();
     source = String(localStorage.getItem("apptron-network-source") || "").trim();
   } catch {
-    return null;
   }
-  if (!relay || !network || !source) {
+  relay = normalizeRelay(relay || params.get("relay_url") || defaultRelay);
+  if (!network) {
+    if (params.get("network")) {
+      network = normalizeRelay(String(params.get("network")));
+      source = source || "query";
+    } else if (params.get("relay") === "off") {
+      network = deriveOriginNet() || relay;
+      source = source || "origin-net";
+    } else if (params.get("worker_url")) {
+      network = String(params.get("worker_url") || "").trim();
+      source = source || "query-worker";
+    } else {
+      network = relay;
+      source = source || "default-relay";
+    }
+  }
+  if (!source) {
+    source = "default-relay";
+  }
+  if (!relay || !network) {
     return null;
   }
   const lines = [
@@ -4489,6 +4520,7 @@ function createTerminal(wx) {
   const enc = new TextEncoder();
   let writer;
   let writeQueue = Promise.resolve();
+  let didInitialBootstrap = false;
   const pty = {
     onDidWrite: writeEmitter.event,
     open: () => {
@@ -4503,11 +4535,12 @@ function createTerminal(wx) {
           const writable = await wx.openWritable(dataPath);
           writer = writable.getWriter();
           await writer.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
-          const relayBootstrap = buildRelayBootstrapCommandFromStorage();
+          const relayBootstrap = buildRelayBootstrapCommandFromContext();
           if (relayBootstrap) {
             await writer.write(enc.encode(`${relayBootstrap}
 `));
           }
+          didInitialBootstrap = true;
           if (dataPath.startsWith("web/dom/")) {
             await writer.write(enc.encode("\n"));
           }
@@ -4533,6 +4566,15 @@ function createTerminal(wx) {
       }
       const payload = enc.encode(data);
       writeQueue = writeQueue.then(async () => {
+        if (!didInitialBootstrap) {
+          didInitialBootstrap = true;
+          await writer.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
+          const relayBootstrap = buildRelayBootstrapCommandFromContext();
+          if (relayBootstrap) {
+            await writer.write(enc.encode(`${relayBootstrap}
+`));
+          }
+        }
         await writer.write(payload);
       }).catch((error) => {
         console.error("terminal write failed", error);

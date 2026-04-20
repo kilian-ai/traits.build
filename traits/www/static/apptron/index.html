@@ -294,6 +294,21 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  async function createXtermWithRetry(runtime, attempts = 6) {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
+        if (terminalId) {
+          return terminalId;
+        }
+      } catch {
+        // Retry: early runtime boot can briefly reject xterm creation.
+      }
+      await sleepMs(200 * (i + 1));
+    }
+    return "";
+  }
+
   async function bootstrapRelayInShell(runtime, terminalId, network, source) {
     const command = relayBootstrapCommand(network, source);
     // Hidden IDE shells may not accept input immediately after xterm creation.
@@ -312,6 +327,13 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   }
 
   const selectedNetwork = await selectNetwork();
+  try {
+    localStorage.setItem("apptron-default-relay", configuredRelayUrl());
+    localStorage.setItem("apptron-network", selectedNetwork.network);
+    localStorage.setItem("apptron-network-source", selectedNetwork.source);
+  } catch {
+    // Ignore localStorage failures in restricted contexts.
+  }
   status.textContent = `Booting Apptron runtime (${selectedNetwork.source})...`;
 
   const runtime = new WanixRuntime({
@@ -349,30 +371,33 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     let terminalId = "";
     if (ideUseXterm) {
       // Create xterm terminal — this starts the shell process.
-      terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
+      terminalId = await createXtermWithRetry(runtime);
       window.apptron.terminalId = terminalId;
     }
     if (ideBridgeMode) {
+      // Persist relay/bootstrap metadata even if terminal allocation is delayed.
+      try {
+        if (terminalId) {
+          localStorage.setItem("apptron-terminal-id", terminalId);
+        }
+        localStorage.setItem("apptron-default-relay", configuredRelayUrl());
+        localStorage.setItem("apptron-network", selectedNetwork.network);
+        localStorage.setItem("apptron-network-source", selectedNetwork.source);
+      } catch {
+        // Ignore localStorage failures in restricted contexts.
+      }
+      try {
+        await runtime.writeFile("vm/1/fsys/tmp/.traits-relay.sh", `${relayRcLines(selectedNetwork.network, selectedNetwork.source).join("\n")}\n`);
+      } catch {
+        // Non-fatal: extension will fall back to localStorage-based bootstrap.
+      }
       if (terminalId) {
         // IDE mode: extension reads xterm channel directly via terminal-id file.
         // Keep shell bootstrap minimal and skip DOM attachment.
         try {
-          localStorage.setItem("apptron-terminal-id", terminalId);
-          localStorage.setItem("apptron-default-relay", configuredRelayUrl());
-          localStorage.setItem("apptron-network", selectedNetwork.network);
-          localStorage.setItem("apptron-network-source", selectedNetwork.source);
-        } catch {
-          // Ignore localStorage failures in restricted contexts.
-        }
-        try {
           await runtime.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", `${terminalId}\n`);
         } catch {
           // Non-fatal: extension will fall back to #console/data.
-        }
-        try {
-          await runtime.writeFile("vm/1/fsys/tmp/.traits-relay.sh", `${relayRcLines(selectedNetwork.network, selectedNetwork.source).join("\n")}\n`);
-        } catch {
-          // Non-fatal: extension will fall back to localStorage-based bootstrap.
         }
         await bootstrapRelayInShell(runtime, terminalId, selectedNetwork.network, selectedNetwork.source);
       }

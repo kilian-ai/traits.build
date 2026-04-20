@@ -138,20 +138,60 @@ function shSingleQuote(value: string): string {
 	return `'${value.replace(/'/g, `"'"'`)}'`;
 }
 
-function buildRelayBootstrapCommandFromStorage(): string | null {
+function deriveOriginNet(): string {
+	try {
+		const origin = new URL(window.location.origin);
+		const wsProto = origin.protocol === "https:" ? "wss:" : "ws:";
+		return `${wsProto}//${origin.host}/x/net`;
+	} catch {
+		return "";
+	}
+}
+
+function buildRelayBootstrapCommandFromContext(): string | null {
+	const params = new URLSearchParams(window.top?.location?.search || window.location.search);
+	const defaultRelay = "wss://relay.traits.build/linux/tunnel";
+	const legacyRelay = "wss://relay.traits.build/x/net";
+	const normalizeRelay = (value: string) => (value === legacyRelay ? defaultRelay : value);
+
 	let relay = "";
 	let network = "";
 	let source = "";
+
 	try {
 		relay = String(localStorage.getItem("apptron-default-relay") || "").trim();
 		network = String(localStorage.getItem("apptron-network") || "").trim();
 		source = String(localStorage.getItem("apptron-network-source") || "").trim();
 	} catch {
+		// Continue with URL/default fallback.
+	}
+
+	relay = normalizeRelay(relay || params.get("relay_url") || defaultRelay);
+
+	if (!network) {
+		if (params.get("network")) {
+			network = normalizeRelay(String(params.get("network")));
+			source = source || "query";
+		} else if (params.get("relay") === "off") {
+			network = deriveOriginNet() || relay;
+			source = source || "origin-net";
+		} else if (params.get("worker_url")) {
+			network = String(params.get("worker_url") || "").trim();
+			source = source || "query-worker";
+		} else {
+			network = relay;
+			source = source || "default-relay";
+		}
+	}
+
+	if (!source) {
+		source = "default-relay";
+	}
+
+	if (!relay || !network) {
 		return null;
 	}
-	if (!relay || !network || !source) {
-		return null;
-	}
+
 	const lines = [
 		"# traits.build relay bootstrap (ide pty)",
 		`export WANIX_DEFAULT_RELAY=${relay}`,
@@ -170,6 +210,7 @@ function createTerminal(wx: any) {
 	const enc = new TextEncoder();
 	let writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
 	let writeQueue = Promise.resolve();
+	let didInitialBootstrap = false;
 	const pty = {
 		onDidWrite: writeEmitter.event,
 		open: () => {
@@ -183,10 +224,11 @@ function createTerminal(wx: any) {
 					writer = writable.getWriter();
 					// Prefer sourcing guest-side relay bootstrap file if present.
 					await writer.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
-					const relayBootstrap = buildRelayBootstrapCommandFromStorage();
+					const relayBootstrap = buildRelayBootstrapCommandFromContext();
 					if (relayBootstrap) {
 						await writer.write(enc.encode(`${relayBootstrap}\n`));
 					}
+					didInitialBootstrap = true;
 					if (dataPath.startsWith("web/dom/")) {
 						// Trigger first prompt render for shells that wait for initial input.
 						await writer.write(enc.encode("\n"));
@@ -213,6 +255,14 @@ function createTerminal(wx: any) {
 			}
 			const payload = enc.encode(data);
 			writeQueue = writeQueue.then(async () => {
+				if (!didInitialBootstrap) {
+					didInitialBootstrap = true;
+					await writer!.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
+					const relayBootstrap = buildRelayBootstrapCommandFromContext();
+					if (relayBootstrap) {
+						await writer!.write(enc.encode(`${relayBootstrap}\n`));
+					}
+				}
 				await writer!.write(payload);
 			}).catch((error: unknown) => {
 				console.error("terminal write failed", error);
