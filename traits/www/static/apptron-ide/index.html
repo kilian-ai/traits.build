@@ -65,6 +65,15 @@
       window.location.hostname === '::1'
         ? 'https://apptron.dev'
         : window.location.origin;
+    const defaultNetwork = (() => {
+      try {
+        const origin = new URL(defaultOrigin);
+        const wsProto = origin.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${wsProto}//${origin.host}/x/net`;
+      } catch {
+        return '';
+      }
+    })();
 
     window.apptron = {
       mode: 'edit',
@@ -82,42 +91,57 @@
     };
 
     const runtime = new WanixRuntime({
-      screen: false,
+      screen: true,
       helpers: true,
       debug9p: qp.get('debug9p') === 'true',
       wasm: qp.get('wasm') || './wanix.wasm',
       bundle: qp.get('bundle') || '../apptron/bundles/sys.tar.gz',
-      network: qp.get('network') || '',
+      network: qp.get('network') || defaultNetwork,
     });
 
+    const screen = document.createElement('canvas');
+    screen.id = 'apptron-screen';
+    screen.style.display = 'none';
+    document.body.appendChild(screen);
+    if (screen.transferControlToOffscreen) {
+      runtime.screen = screen.transferControlToOffscreen();
+    }
+
     window.apptron.instance = runtime;
+
+    const workbench = document.querySelector('vscode-workbench');
+    workbench.mount();
+    workbench.addEventListener('vscode-ready', () => {
+      status.textContent = 'Apptron IDE ready';
+      status.classList.add('ready');
+    }, { once: true });
+
+    const topChannel = new MessageChannel();
+    topChannel.port2.onmessage = async (event) => {
+      await runtime.ready();
+      const wanixPort = runtime.createPort();
+      const p9Channel = new MessageChannel();
+      p9Channel.port1.onmessage = (message) => {
+        runtime._virtioHandle(message.data, (buf) => {
+          p9Channel.port1.postMessage(buf);
+        });
+      };
+      event.data.port.postMessage({ wanix: wanixPort, p9: p9Channel.port2 }, [wanixPort, p9Channel.port2]);
+    };
+    top.postMessage({ factory: topChannel.port1 }, '*', [topChannel.port1]);
 
     window.addEventListener('message', async (event) => {
       if (!event?.data?.port) return;
       try {
         await runtime.ready();
-        const port = runtime.createPort();
-        event.data.port.postMessage({ wanix: port }, [port]);
-        status.textContent = 'Apptron IDE ready';
-        status.classList.add('ready');
+        status.textContent = 'Launching VS Code workbench...';
+        const wanixPort = runtime.createPort();
+        event.data.port.postMessage({ wanix: wanixPort }, [wanixPort]);
       } catch (error) {
         console.error('Apptron IDE port bootstrap failed', error);
+        status.textContent = `Apptron IDE boot failed: ${error?.message || error}`;
       }
     });
-
-    try {
-      await runtime.ready();
-      const workbench = document.querySelector('vscode-workbench');
-      workbench.mount();
-      status.textContent = 'Launching VS Code workbench...';
-      workbench.addEventListener('vscode-ready', () => {
-        status.textContent = 'Apptron IDE ready';
-        status.classList.add('ready');
-      }, { once: true });
-    } catch (error) {
-      console.error('Apptron IDE bootstrap failed', error);
-      status.textContent = `Apptron IDE boot failed: ${error?.message || error}`;
-    }
   </script>
 </body>
 </html>
