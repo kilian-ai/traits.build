@@ -150,9 +150,20 @@ function shSingleQuote(value: string): string {
 	return `'${value.replace(/'/g, `"'"'`)}'`;
 }
 
+function safeGetGlobal<T = any>(path: string[]): T | undefined {
+	let obj: any = (typeof globalThis !== "undefined" ? globalThis : undefined);
+	for (const key of path) {
+		if (!obj) { return undefined; }
+		try { obj = obj[key]; } catch { return undefined; }
+	}
+	return obj as T;
+}
+
 function deriveOriginNet(): string {
 	try {
-		const origin = new URL(window.location.origin);
+		const originStr = safeGetGlobal<string>(["location", "origin"]);
+		if (!originStr) { return ""; }
+		const origin = new URL(originStr);
 		const wsProto = origin.protocol === "https:" ? "wss:" : "ws:";
 		return `${wsProto}//${origin.host}/x/net`;
 	} catch {
@@ -161,7 +172,9 @@ function deriveOriginNet(): string {
 }
 
 function buildRelayBootstrapCommandFromContext(): string | null {
-	const params = new URLSearchParams(window.top?.location?.search || window.location.search);
+	const topSearch = safeGetGlobal<string>(["top", "location", "search"]) || "";
+	const selfSearch = safeGetGlobal<string>(["location", "search"]) || "";
+	const params = new URLSearchParams(topSearch || selfSearch);
 	const defaultRelay = "wss://relay.traits.build/linux/tunnel";
 	const legacyRelay = "wss://relay.traits.build/x/net";
 	const normalizeRelay = (value: string) => (value === legacyRelay ? defaultRelay : value);
@@ -171,9 +184,12 @@ function buildRelayBootstrapCommandFromContext(): string | null {
 	let source = "";
 
 	try {
-		relay = String(localStorage.getItem("apptron-default-relay") || "").trim();
-		network = String(localStorage.getItem("apptron-network") || "").trim();
-		source = String(localStorage.getItem("apptron-network-source") || "").trim();
+		const ls: any = safeGetGlobal<any>(["localStorage"]);
+		if (ls && typeof ls.getItem === "function") {
+			relay = String(ls.getItem("apptron-default-relay") || "").trim();
+			network = String(ls.getItem("apptron-network") || "").trim();
+			source = String(ls.getItem("apptron-network-source") || "").trim();
+		}
 	} catch {
 		// Continue with URL/default fallback.
 	}
@@ -218,16 +234,18 @@ function buildRelayBootstrapCommandFromContext(): string | null {
 
 function buildNetworkBootstrapCommand(): string {
 	const logPath = "/tmp/.udhcpc.log";
+	// Run in subshell + background so udhcpc blocking doesn't freeze the shell
+	// prompt (DHCP can hang for minutes if tunnel isn't up yet). Use test-&&-{}
+	// instead of `if ...; then;` — the latter's trailing semicolon wedges
+	// BusyBox hush in continuation mode when joined with other commands.
 	return [
-		"ifconfig eth0 up >/dev/null 2>&1 || true",
-		`udhcpc -i eth0 -q -n > ${logPath} 2>&1 || true`,
-		`server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' ${logPath} | tail -n 1)`,
-		"if [ -n \"$server\" ]; then",
-		"  route del default >/dev/null 2>&1 || true",
-		"  route add default gw \"$server\" >/dev/null 2>&1 || true",
-		"  printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf",
-		"fi",
-	].join("; ");
+		"(",
+		" ifconfig eth0 up >/dev/null 2>&1 || true",
+		` udhcpc -i eth0 -q -n > ${logPath} 2>&1 || true`,
+		` server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' ${logPath} | tail -n 1)`,
+		" test -n \"$server\" && { route del default >/dev/null 2>&1 || true; route add default gw \"$server\" >/dev/null 2>&1 || true; printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf; }",
+		") >/dev/null 2>&1 &",
+	].join("\n");
 }
 
 function createTerminal(wx: any) {

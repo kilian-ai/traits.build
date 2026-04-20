@@ -4468,9 +4468,27 @@ async function resolveTerminalDataPath(wx) {
 function shSingleQuote(value) {
   return `'${value.replace(/'/g, `"'"'`)}'`;
 }
+function safeGetGlobal(path) {
+  let obj = typeof globalThis !== "undefined" ? globalThis : void 0;
+  for (const key of path) {
+    if (!obj) {
+      return void 0;
+    }
+    try {
+      obj = obj[key];
+    } catch {
+      return void 0;
+    }
+  }
+  return obj;
+}
 function deriveOriginNet() {
   try {
-    const origin = new URL(window.location.origin);
+    const originStr = safeGetGlobal(["location", "origin"]);
+    if (!originStr) {
+      return "";
+    }
+    const origin = new URL(originStr);
     const wsProto = origin.protocol === "https:" ? "wss:" : "ws:";
     return `${wsProto}//${origin.host}/x/net`;
   } catch {
@@ -4478,7 +4496,9 @@ function deriveOriginNet() {
   }
 }
 function buildRelayBootstrapCommandFromContext() {
-  const params = new URLSearchParams(window.top?.location?.search || window.location.search);
+  const topSearch = safeGetGlobal(["top", "location", "search"]) || "";
+  const selfSearch = safeGetGlobal(["location", "search"]) || "";
+  const params = new URLSearchParams(topSearch || selfSearch);
   const defaultRelay = "wss://relay.traits.build/linux/tunnel";
   const legacyRelay = "wss://relay.traits.build/x/net";
   const normalizeRelay = (value) => value === legacyRelay ? defaultRelay : value;
@@ -4486,9 +4506,12 @@ function buildRelayBootstrapCommandFromContext() {
   let network = "";
   let source = "";
   try {
-    relay = String(localStorage.getItem("apptron-default-relay") || "").trim();
-    network = String(localStorage.getItem("apptron-network") || "").trim();
-    source = String(localStorage.getItem("apptron-network-source") || "").trim();
+    const ls = safeGetGlobal(["localStorage"]);
+    if (ls && typeof ls.getItem === "function") {
+      relay = String(ls.getItem("apptron-default-relay") || "").trim();
+      network = String(ls.getItem("apptron-network") || "").trim();
+      source = String(ls.getItem("apptron-network-source") || "").trim();
+    }
   } catch {
   }
   relay = normalizeRelay(relay || params.get("relay_url") || defaultRelay);
@@ -4527,15 +4550,13 @@ function buildRelayBootstrapCommandFromContext() {
 function buildNetworkBootstrapCommand() {
   const logPath = "/tmp/.udhcpc.log";
   return [
-    "ifconfig eth0 up >/dev/null 2>&1 || true",
-    `udhcpc -i eth0 -q -n > ${logPath} 2>&1 || true`,
-    `server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' ${logPath} | tail -n 1)`,
-    'if [ -n "$server" ]; then',
-    "  route del default >/dev/null 2>&1 || true",
-    '  route add default gw "$server" >/dev/null 2>&1 || true',
-    `  printf 'nameserver %s\\n' "$server" > /etc/resolv.conf`,
-    "fi"
-  ].join("; ");
+    "(",
+    " ifconfig eth0 up >/dev/null 2>&1 || true",
+    ` udhcpc -i eth0 -q -n > ${logPath} 2>&1 || true`,
+    ` server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' ${logPath} | tail -n 1)`,
+    ` test -n "$server" && { route del default >/dev/null 2>&1 || true; route add default gw "$server" >/dev/null 2>&1 || true; printf 'nameserver %s\\n' "$server" > /etc/resolv.conf; }`,
+    ") >/dev/null 2>&1 &"
+  ].join("\n");
 }
 function createTerminal(wx) {
   const writeEmitter = new vscode.EventEmitter();
