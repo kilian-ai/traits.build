@@ -380,7 +380,9 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     const rcContent = [
       "#!/bin/sh",
       "# traits.build bootstrap (generated)",
+      "echo '[bootstrap] begin'",
       ...relayRcLines(network, source),
+      "echo '[bootstrap] relay-env ok'",
       "",
       "# Network bootstrap (DHCP + route + DNS) — backgrounded so it does",
       "# not block the shell prompt if the tunnel is not yet connected.",
@@ -394,11 +396,13 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
       "    printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf",
       "  fi",
       ") >/dev/null 2>&1 &",
+      "echo '[bootstrap] network spawned'",
       "",
       "# Home redirect to idbfs mount (persistent)",
-      `mkdir -p /home/${defaultUser.username} >/dev/null 2>&1 || true`,
+      `mkdir -p /home/${defaultUser.username} 2>/dev/null || true`,
       `export HOME=/home/${defaultUser.username}`,
-      `cd /home/${defaultUser.username} >/dev/null 2>&1 || true`,
+      `cd /home/${defaultUser.username} 2>/dev/null || true`,
+      "echo '[bootstrap] home ok HOME='\"$HOME\"",
       ""
     ].join("\n");
     // Write rc file directly via fsys (reliable, no shell-pipe drops).
@@ -408,17 +412,16 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
       // If fsys write fails, fall back to blasting commands (legacy path).
     }
     // Source the rc via shell. Small retry window handles early-boot drops
-    // on the xterm stdin pipe; `clear` on the last shot wipes any echo noise.
+    // on the xterm stdin pipe; send once only on each attempt so debug
+    // output is visible.
     const sourceLine = `. ${rcPath}`;
     const delays = [0, 800, 2000];
     for (let i = 0; i < delays.length; i++) {
       if (delays[i] > 0) {
         await sleepMs(delays[i]);
       }
-      const isLast = i === delays.length - 1;
-      const line = isLast ? `${sourceLine}; clear\n` : `${sourceLine}\n`;
       try {
-        await runtime.writeFile(`web/dom/${terminalId}/data`, `\n${line}`);
+        await runtime.writeFile(`web/dom/${terminalId}/data`, `\n${sourceLine}\n`);
       } catch {
         // Keep retrying; bootstrap is best-effort.
       }
