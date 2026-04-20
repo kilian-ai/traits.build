@@ -389,12 +389,6 @@ if term_repl == 0:
 if sdk_repl == 0:
         raise SystemExit('standalone generation failed: SDK runtime path not found')
 
-# Standalone is always "local" (hash routing) — no server to handle pushState paths
-html = html.replace(
-    "const isLocal = location.protocol === 'file:';",
-    "const isLocal = true; // standalone: always use hash routing"
-)
-
 def escape_script(code: str) -> str:
     return code.replace('</script>', '<\\/script>')
 

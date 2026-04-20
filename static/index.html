@@ -427,12 +427,12 @@ async function injectPage(fullHtml, route) {
 }
 
 function currentRouteFromLocation() {
+  const hash = location.hash.slice(1) || '/';
+  if (ROUTES[hash]) {
+    try { sessionStorage.setItem(LOCAL_ROUTE_KEY, hash); } catch(e) {}
+    return hash;
+  }
   if (isLocal) {
-    const hash = location.hash.slice(1) || '/';
-    if (ROUTES[hash]) {
-      try { sessionStorage.setItem(LOCAL_ROUTE_KEY, hash); } catch(e) {}
-      return hash;
-    }
     try {
       const storedRoute = sessionStorage.getItem(LOCAL_ROUTE_KEY);
       if (storedRoute && ROUTES[storedRoute]) return storedRoute;
@@ -502,11 +502,8 @@ async function navigate(route, pushState = true) {
     injectStaticRuntime(route, staticRouteFactory());
     frame.style.opacity = '1';
     if (pushState) {
-      if (isLocal) {
-        try { sessionStorage.setItem(LOCAL_ROUTE_KEY, route); } catch(e) {}
-        history.pushState({ route }, '', '#' + route);
-      }
-      else history.pushState({ route }, '', route);
+      try { sessionStorage.setItem(LOCAL_ROUTE_KEY, route); } catch(e) {}
+      history.pushState({ route }, '', '#' + route);
     }
     return;
   }
@@ -530,11 +527,8 @@ async function navigate(route, pushState = true) {
   if (thisNav !== navId) return;
 
   if (pushState) {
-    if (isLocal) {
-      try { sessionStorage.setItem(LOCAL_ROUTE_KEY, route); } catch(e) {}
-      history.pushState({ route }, '', '#' + route);
-    }
-    else history.pushState({ route }, '', route);
+    try { sessionStorage.setItem(LOCAL_ROUTE_KEY, route); } catch(e) {}
+    history.pushState({ route }, '', '#' + route);
   }
 }
 
@@ -620,7 +614,6 @@ window.addEventListener('popstate', e => {
 });
 
 window.addEventListener('hashchange', () => {
-  if (!isLocal) return;
   const hash = location.hash.slice(1);
   if (hash && ROUTES[hash]) navigate(hash, false);
 });
