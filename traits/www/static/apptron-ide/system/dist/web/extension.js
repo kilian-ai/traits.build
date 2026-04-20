@@ -4484,8 +4484,9 @@ function createTerminal(wx) {
           const stream = await wx.openReadable(dataPath);
           const writable = await wx.openWritable(dataPath);
           writer = writable.getWriter();
-          if (dataPath.startsWith("web/dom/")) {
+          try {
             await writer.write(enc.encode("\n"));
+          } catch {
           }
           for await (const chunk of stream) {
             writeEmitter.fire(dec.decode(chunk));

@@ -163,9 +163,13 @@ function createTerminal(wx: any) {
 					const stream = await wx.openReadable(dataPath);
 					const writable = await wx.openWritable(dataPath);
 					writer = writable.getWriter();
-					if (dataPath.startsWith("web/dom/")) {
-						// Trigger first prompt render for shells that wait for initial input.
+					// Kick the prompt: BusyBox hush defers first prompt until it
+					// sees input on stdin. Required for both #console/data and
+					// web/dom/<id>/data channels.
+					try {
 						await writer.write(enc.encode("\n"));
+					} catch {
+						// Non-fatal — user keystrokes will still render the prompt.
 					}
 					for await (const chunk of stream) {
 						writeEmitter.fire(dec.decode(chunk));
