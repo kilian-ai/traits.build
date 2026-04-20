@@ -409,7 +409,7 @@ async function _linuxTunnelWs(request) {
     const wsKey = btoa(String.fromCharCode(
       ...crypto.getRandomValues(new Uint8Array(16))
     ));
-    const upstreamResp = await fetch('https://apptron.dev/x/net', {
+    const upstreamResp = await fetch('https://www.apptron.dev/x/net', {
       headers: {
         'Upgrade': 'websocket',
         'Connection': 'Upgrade',
@@ -469,7 +469,7 @@ async function _linuxTunnelWs(request) {
         logTunnelEvent('ws_error', { req_id: reqId, mode: 'upstream-proxy', error: safeError(evt) });
       });
 
-      logTunnelEvent('ws_proxy_upstream', { req_id: reqId, upstream: 'https://apptron.dev/x/net' });
+      logTunnelEvent('ws_proxy_upstream', { req_id: reqId, upstream: 'https://www.apptron.dev/x/net' });
       return new Response(null, { status: 101, webSocket: client });
     }
     logTunnelEvent('ws_proxy_unavailable', { req_id: reqId, status: upstreamResp.status });
