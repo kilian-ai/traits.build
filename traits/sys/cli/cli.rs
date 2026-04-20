@@ -996,6 +996,15 @@ pub fn serve_repl() {
         return;
     }
 
+    // If stdin is not a tty (e.g. redirected from /dev/null when backgrounded),
+    // skip the REPL entirely — no interactive session is possible and writing
+    // to /dev/tty from a background process would trigger SIGTTOU suspension.
+    let stdin_is_tty = std::io::IsTerminal::is_terminal(&std::io::stdin());
+    if !stdin_is_tty {
+        // No interactive terminal — run headless (server only).
+        return;
+    }
+
     let welcome = session.welcome(&backend);
     print!("{}", welcome);
     std::io::stdout().flush().ok();
@@ -1044,16 +1053,13 @@ fn serve_repl_line_mode(session: &mut CliSession, backend: &NativeCliBackend) {
     use std::fs::OpenOptions;
     use std::io::{BufRead, BufReader, Write};
 
-    let tty = OpenOptions::new().read(true).write(true).open("/dev/tty");
+    // Only open /dev/tty for reading (input reattach), never for writing.
+    // Writing to /dev/tty from a backgrounded process triggers SIGTTOU (suspend).
+    // Output always goes to stdout, which may be redirected to a log file.
+    let tty_reader = OpenOptions::new().read(true).open("/dev/tty");
 
-    let (mut out, mut reader): (Box<dyn Write>, Box<dyn BufRead>) = match tty {
-        Ok(file) => {
-            let in_file = file.try_clone();
-            match in_file {
-                Ok(in_file) => (Box::new(file), Box::new(BufReader::new(in_file))),
-                Err(_) => (Box::new(std::io::stdout()), Box::new(BufReader::new(std::io::stdin()))),
-            }
-        }
+    let (mut out, mut reader): (Box<dyn Write>, Box<dyn BufRead>) = match tty_reader {
+        Ok(tty) => (Box::new(std::io::stdout()), Box::new(BufReader::new(tty))),
         Err(_) => (Box::new(std::io::stdout()), Box::new(BufReader::new(std::io::stdin()))),
     };
 

@@ -239,6 +239,19 @@ fn normalize_relay_url(raw: &str) -> Option<String> {
 }
 
 fn ensure_repl_tty() -> bool {
+    #[cfg(unix)]
+    {
+        // Check if we are the foreground process group of the controlling terminal.
+        // Background processes get SIGTTOU when calling tcsetattr (crossterm raw mode)
+        // or writing to /dev/tty, which suspends the entire server.
+        let tty_pgrp = unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) };
+        let our_pgrp = unsafe { libc::getpgrp() };
+        if tty_pgrp == -1 || our_pgrp != tty_pgrp {
+            // We're backgrounded or stdin has no controlling terminal — skip REPL.
+            return false;
+        }
+    }
+
     if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
         return true;
     }
@@ -248,17 +261,24 @@ fn ensure_repl_tty() -> bool {
         use std::fs::OpenOptions;
         use std::os::fd::AsRawFd;
 
-        let tty = match OpenOptions::new().read(true).write(true).open("/dev/tty") {
+        // Only reattach stdin from /dev/tty for reading.
+        // Never dup2 stdout/stderr — that hijacks log file redirects.
+        let tty = match OpenOptions::new().read(true).open("/dev/tty") {
             Ok(f) => f,
             Err(_) => return false,
         };
 
         let fd = tty.as_raw_fd();
-        let stdin_ok = unsafe { libc::dup2(fd, libc::STDIN_FILENO) } != -1;
-        let stdout_ok = unsafe { libc::dup2(fd, libc::STDOUT_FILENO) } != -1;
-        let stderr_ok = unsafe { libc::dup2(fd, libc::STDERR_FILENO) } != -1;
 
-        stdin_ok && stdout_ok && stderr_ok && std::io::IsTerminal::is_terminal(&std::io::stdin())
+        // Re-check: are we foreground on the opened tty?
+        let tty_pgrp = unsafe { libc::tcgetpgrp(fd) };
+        let our_pgrp = unsafe { libc::getpgrp() };
+        if tty_pgrp == -1 || our_pgrp != tty_pgrp {
+            return false;
+        }
+
+        let stdin_ok = unsafe { libc::dup2(fd, libc::STDIN_FILENO) } != -1;
+        stdin_ok && std::io::IsTerminal::is_terminal(&std::io::stdin())
     }
 
     #[cfg(not(unix))]
