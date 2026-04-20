@@ -63,6 +63,11 @@
     const workbench = document.querySelector('vscode-workbench');
     const params = new URLSearchParams(window.location.search);
 
+    function shellCacheBustValue() {
+      const explicit = params.get('cb');
+      return explicit || String(Date.now());
+    }
+
     function hiddenShellUrl() {
       const shellParams = new URLSearchParams();
       shellParams.set('embedded', 'true');
@@ -74,7 +79,25 @@
           shellParams.set(key, value);
         }
       }
+      if (!shellParams.get('cb')) {
+        shellParams.set('cb', shellCacheBustValue());
+      }
       return `/static/apptron/index.html?${shellParams.toString()}`;
+    }
+
+    async function waitRuntimeReadyBounded(runtime, maxWaitMs = 8000) {
+      if (!runtime || typeof runtime.ready !== 'function') return;
+      let timeoutId;
+      const timeoutPromise = new Promise((resolve) => {
+        timeoutId = setTimeout(resolve, maxWaitMs);
+      });
+      try {
+        await Promise.race([runtime.ready(), timeoutPromise]);
+      } catch {
+        // Continue with runtime handoff even if ready() rejects.
+      } finally {
+        clearTimeout(timeoutId);
+      }
     }
 
     async function bootRuntime() {
@@ -92,9 +115,7 @@
           try {
             const runtime = iframe.contentWindow?.apptron?.instance;
             if (runtime) {
-              if (typeof runtime.ready === 'function') {
-                await runtime.ready();
-              }
+              await waitRuntimeReadyBounded(runtime);
               window.apptron.instance = runtime;
               resolve(runtime);
               return;
