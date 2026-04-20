@@ -77,6 +77,7 @@ export class WanixBridge implements FileSystemProvider, /*FileSearchProvider, Te
 					const wfsys = new WanixFS(event.data.wanix);
 					wfsys.waitFor("vm/1/fsys").then(() => {
 						this.wfsys = wfsys;
+						this._fireSoon({ type: FileChangeType.Changed, uri: Uri.parse("wanix:/") });
 						resolve(wfsys);
 					});
 				}
@@ -91,7 +92,7 @@ export class WanixBridge implements FileSystemProvider, /*FileSearchProvider, Te
 	}
 
 	join(path: string): string {
-		if (path === "/") {
+		if (!path || path === "/") {
 			return this.root;
 		}
 		return this.root + path;
@@ -109,7 +110,7 @@ export class WanixBridge implements FileSystemProvider, /*FileSearchProvider, Te
 
 	async _stat(uri: Uri): Promise<FileStat> {
 		if (!this.wfsys) {
-			if (uri.path !== "/project") {
+			if (uri.path !== "" && uri.path !== "/" && uri.path !== "/project") {
 				if (uri.path.includes(".vscode")) {
 					throw FileSystemError.FileNotFound(uri);
 				}
