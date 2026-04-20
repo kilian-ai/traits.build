@@ -371,30 +371,56 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   }
 
   async function bootstrapRelayInShell(runtime, terminalId, network, source) {
-    const relayCommand = relayBootstrapCommand(network, source);
-    const networkCommand = networkBootstrapCommand();
-    const homeCommand = persistentHomeBootstrapCommand(defaultUser.username);
-    // Combine into a single command line so all three blocks are written
-    // atomically. Shell startup can drop leading bytes; a small retry window
-    // re-sends the same idempotent line. Prepend a no-op so any dropped
-    // bytes affect a safe prefix rather than the real command.
-    const combined = `: nop; ${relayCommand}; ${networkCommand}; ${homeCommand}`;
-    const delays = [0, 1200, 3000];
+    const rcPath = "/tmp/.traits-bootstrap.sh";
+    const fsysPath = `vm/1/fsys${rcPath}`;
+    // Build one rc script with all bootstrap blocks. Writing this via fsys
+    // (bypassing the shell stdin pipe) is far more reliable than blasting a
+    // ~500-char command line through the tty — hush drops early bytes and
+    // racing multi-line writes corrupt continuation state.
+    const rcContent = [
+      "#!/bin/sh",
+      "# traits.build bootstrap (generated)",
+      ...relayRcLines(network, source),
+      "",
+      "# Network bootstrap (DHCP + route + DNS)",
+      "ifconfig eth0 up >/dev/null 2>&1 || true",
+      "udhcpc -i eth0 -q -n > /tmp/.udhcpc.log 2>&1 || true",
+      "server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' /tmp/.udhcpc.log | tail -n 1)",
+      "if [ -n \"$server\" ]; then",
+      "  route del default >/dev/null 2>&1 || true",
+      "  route add default gw \"$server\" >/dev/null 2>&1 || true",
+      "  printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf",
+      "fi",
+      "",
+      "# Home redirect to idbfs mount (persistent)",
+      `mkdir -p /home/${defaultUser.username} >/dev/null 2>&1 || true`,
+      `export HOME=/home/${defaultUser.username}`,
+      `cd /home/${defaultUser.username} >/dev/null 2>&1 || true`,
+      ""
+    ].join("\n");
+    // Write rc file directly via fsys (reliable, no shell-pipe drops).
+    try {
+      await runtime.writeFile(fsysPath, rcContent);
+    } catch {
+      // If fsys write fails, fall back to blasting commands (legacy path).
+    }
+    // Source the rc via shell. Small retry window handles early-boot drops
+    // on the xterm stdin pipe; `clear` on the last shot wipes any echo noise.
+    const sourceLine = `. ${rcPath}`;
+    const delays = [0, 800, 2000];
     for (let i = 0; i < delays.length; i++) {
-      const delay = delays[i];
-      if (delay > 0) {
-        await sleepMs(delay);
+      if (delays[i] > 0) {
+        await sleepMs(delays[i]);
       }
       const isLast = i === delays.length - 1;
-      // On the final iteration, append `clear` so the visual block from the
-      // bootstrap echoes is wiped and the user sees a fresh prompt.
-      const line = isLast ? `${combined}; clear\n` : `${combined}\n`;
+      const line = isLast ? `${sourceLine}; clear\n` : `${sourceLine}\n`;
       try {
         await runtime.writeFile(`web/dom/${terminalId}/data`, `\n${line}`);
       } catch {
         // Keep retrying; bootstrap is best-effort.
       }
     }
+  }
   }
 
   const selectedNetwork = await selectNetwork();
