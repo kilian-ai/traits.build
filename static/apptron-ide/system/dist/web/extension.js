@@ -4427,6 +4427,17 @@ async function resolveTerminalDataPath(wx) {
     } catch {
     }
   }
+  try {
+    const frames = window.top?.document?.querySelectorAll("iframe") ?? [];
+    for (const frame of Array.from(frames)) {
+      const win = frame.contentWindow;
+      const terminalId = String(win?.apptron?.terminalId || "").trim();
+      if (/^[0-9]+$/.test(terminalId)) {
+        return `web/dom/${terminalId}/data`;
+      }
+    }
+  } catch {
+  }
   return "#console/data";
 }
 function createTerminal(wx) {

@@ -102,6 +102,18 @@ async function resolveTerminalDataPath(wx: any): Promise<string> {
 			// try next candidate
 		}
 	}
+	try {
+		const frames = window.top?.document?.querySelectorAll("iframe") ?? [];
+		for (const frame of Array.from(frames)) {
+			const win = (frame as HTMLIFrameElement).contentWindow as any;
+			const terminalId = String(win?.apptron?.terminalId || "").trim();
+			if (/^[0-9]+$/.test(terminalId)) {
+				return `web/dom/${terminalId}/data`;
+			}
+		}
+	} catch {
+		// same-origin/frame access can fail depending on host context
+	}
 	return "#console/data";
 }
 
