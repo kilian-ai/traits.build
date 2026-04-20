@@ -4421,8 +4421,17 @@ function createTerminal(wx) {
     open: () => {
       (async () => {
         try {
-          const stream = await wx.openReadable("#console/data");
-          const writable = await wx.openWritable("#console/data");
+          let dataPath = "#console/data";
+          try {
+            const tidBytes = await wx.readFile("#console/terminalId");
+            const tid = new TextDecoder().decode(tidBytes).trim();
+            if (tid) {
+              dataPath = `web/dom/${tid}/data`;
+            }
+          } catch {
+          }
+          const stream = await wx.openReadable(dataPath);
+          const writable = await wx.openWritable(dataPath);
           writer = writable.getWriter();
           for await (const chunk of stream) {
             writeEmitter.fire(dec.decode(chunk));

@@ -95,8 +95,21 @@ function createTerminal(wx: any) {
 		open: () => {
 			(async () => {
 				try {
-					const stream = await wx.openReadable("#console/data");
-					const writable = await wx.openWritable("#console/data");
+					// Read terminalId written by apptron/index.html in ide_bridge mode.
+					// Use web/dom/{id}/data directly instead of #console/data to avoid
+					// Wanix Go panic ("arg 1 is not a []byte") on xterm-bound writes.
+					let dataPath = "#console/data";
+					try {
+						const tidBytes = await wx.readFile("#console/terminalId");
+						const tid = new TextDecoder().decode(tidBytes).trim();
+						if (tid) {
+							dataPath = `web/dom/${tid}/data`;
+						}
+					} catch {
+						// No terminalId file — fall back to #console/data
+					}
+					const stream = await wx.openReadable(dataPath);
+					const writable = await wx.openWritable(dataPath);
 					writer = writable.getWriter();
 					for await (const chunk of stream) {
 						writeEmitter.fire(dec.decode(chunk));
