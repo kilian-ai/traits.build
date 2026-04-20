@@ -237,12 +237,43 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
 
   installDataFetchProxy();
 
-  function resolveNetwork() {
+  async function probeWebSocket(url, timeoutMs = 1200) {
+    if (!url) return false;
+    return await new Promise((resolve) => {
+      let settled = false;
+      let ws;
+      const done = (ok) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { ws && ws.close(); } catch {}
+        resolve(ok);
+      };
+      const timer = setTimeout(() => done(false), timeoutMs);
+      try {
+        ws = new WebSocket(url);
+        ws.onopen = () => done(true);
+        ws.onerror = () => done(false);
+        ws.onclose = () => done(false);
+      } catch { done(false); }
+    });
+  }
+
+  async function resolveNetwork() {
     const explicit = qp.get("network");
     if (explicit) return normalizeRelayUrl(explicit);
     if (qp.get("relay") === "off") {
       const originNet = wsNetUrlForOrigin(window.location.origin);
       if (originNet) return originNet;
+    }
+    // On localhost, prefer the native apptron worker at ws://127.0.0.1:8080
+    // when it's running. It provides full native networking (TLS, large
+    // downloads, etc.) which the remote-relay fallback can stall on.
+    const host = window.location.hostname;
+    const isLocal = host === "127.0.0.1" || host === "localhost" || host === "::1";
+    if (isLocal) {
+      const local = qp.get("worker_url") || "ws://127.0.0.1:8080/x/net";
+      if (await probeWebSocket(local, 600)) return local;
     }
     return configuredRelayUrl();
   }
@@ -270,7 +301,7 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   // rc sourcing. The shell boots clean. Users opt-in to networking manually
   // (e.g. `ifconfig eth0 up && udhcpc -i eth0`) or via Settings later.
 
-  const networkUrl = resolveNetwork();
+  const networkUrl = await resolveNetwork();
   status.textContent = `Booting Apptron runtime...`;
 
   const runtime = new WanixRuntime({
