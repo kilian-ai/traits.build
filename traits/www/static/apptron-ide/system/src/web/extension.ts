@@ -86,26 +86,44 @@ export async function activate(context: vscode.ExtensionContext) {
 
 function createTerminal(wx: any) {
 	const writeEmitter = new vscode.EventEmitter<string>();
-	let channel: any = undefined;
 	const dec = new TextDecoder();
 	const enc = new TextEncoder();
+	let writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
+	let writeQueue = Promise.resolve();
 	const pty = {
 		onDidWrite: writeEmitter.event,
 		open: () => {
 			(async () => {
-				const stream = await wx.openReadable("#console/data");
-				for await (const chunk of stream) {
-					writeEmitter.fire(dec.decode(chunk));
+				try {
+					const stream = await wx.openReadable("#console/data");
+					const writable = await wx.openWritable("#console/data");
+					writer = writable.getWriter();
+					for await (const chunk of stream) {
+						writeEmitter.fire(dec.decode(chunk));
+					}
+				} catch (error) {
+					console.error("terminal bridge open/read failed", error);
 				}
 			})();
 		},
 		close: () => {
-			// if (channel) {
-			// 	channel.close();
-			// }
+			if (writer) {
+				void writer.close().catch((error: unknown) => {
+					console.error("terminal writer close failed", error);
+				});
+				writer = undefined;
+			}
 		},
 		handleInput: (data: string) => {
-			wx.appendFile("#console/data", data);
+			if (!writer) {
+				return;
+			}
+			const payload = enc.encode(data);
+			writeQueue = writeQueue.then(async () => {
+				await writer!.write(payload);
+			}).catch((error: unknown) => {
+				console.error("terminal write failed", error);
+			});
 		}
 	};
 	return vscode.window.createTerminal({ name: `Shell`, pty });

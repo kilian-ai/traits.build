@@ -168,3 +168,4 @@ The `lint_kernel_layers()` function in `build.rs` classifies all `kernel.*` trai
 - In the bridge provider, treat both `wanix:/` and an empty URI path as the same root directory before runtime readiness; VS Code can request root as an empty path during startup.
 - In the `wanix` provider bootstrap path, `stat("/")` must be reported as a directory even before the remote FS is ready; returning a file here can leave Explorer mounted but visually empty.
 - When the Wanix backend reaches `vm/1/fsys`, the provider should emit a root `FileChangeType.Changed` event for `wanix:/` so Explorer refreshes immediately.
+- In `system/src/web/extension.ts`, keep terminal writes on a dedicated `openWritable("#console/data")` stream with a serialized write queue; `appendFile`-style per-keystroke writes can race during startup and trigger terminal runtime-exit errors.
