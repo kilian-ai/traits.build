@@ -358,6 +358,9 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
         // Keep shell bootstrap minimal and skip DOM attachment.
         try {
           localStorage.setItem("apptron-terminal-id", terminalId);
+          localStorage.setItem("apptron-default-relay", configuredRelayUrl());
+          localStorage.setItem("apptron-network", selectedNetwork.network);
+          localStorage.setItem("apptron-network-source", selectedNetwork.source);
         } catch {
           // Ignore localStorage failures in restricted contexts.
         }

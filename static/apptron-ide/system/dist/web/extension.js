@@ -4455,6 +4455,34 @@ async function resolveTerminalDataPath(wx) {
   }
   return "#console/data";
 }
+function shSingleQuote(value) {
+  return `'${value.replace(/'/g, `"'"'`)}'`;
+}
+function buildRelayBootstrapCommandFromStorage() {
+  let relay = "";
+  let network = "";
+  let source = "";
+  try {
+    relay = String(localStorage.getItem("apptron-default-relay") || "").trim();
+    network = String(localStorage.getItem("apptron-network") || "").trim();
+    source = String(localStorage.getItem("apptron-network-source") || "").trim();
+  } catch {
+    return null;
+  }
+  if (!relay || !network || !source) {
+    return null;
+  }
+  const lines = [
+    "# traits.build relay bootstrap (ide pty)",
+    `export WANIX_DEFAULT_RELAY=${relay}`,
+    `export WANIX_NETWORK=${network}`,
+    `export WANIX_NETWORK_SOURCE=${source}`,
+    "alias relay_status='echo WANIX_DEFAULT_RELAY=$WANIX_DEFAULT_RELAY; echo WANIX_NETWORK=$WANIX_NETWORK; echo WANIX_NETWORK_SOURCE=$WANIX_NETWORK_SOURCE'"
+  ];
+  const rcPath = "/tmp/.traits-relay.sh";
+  const quotedLines = lines.map((line) => shSingleQuote(line)).join(" ");
+  return `printf '%s\\n' ${quotedLines} > ${rcPath}; printf '%s\\n' ${quotedLines} > ${rcPath}; . ${rcPath}`;
+}
 function createTerminal(wx) {
   const writeEmitter = new vscode.EventEmitter();
   const dec = new TextDecoder();
@@ -4474,6 +4502,11 @@ function createTerminal(wx) {
           const stream = await wx.openReadable(dataPath);
           const writable = await wx.openWritable(dataPath);
           writer = writable.getWriter();
+          const relayBootstrap = buildRelayBootstrapCommandFromStorage();
+          if (relayBootstrap) {
+            await writer.write(enc.encode(`${relayBootstrap}
+`));
+          }
           if (dataPath.startsWith("web/dom/")) {
             await writer.write(enc.encode("\n"));
           }
