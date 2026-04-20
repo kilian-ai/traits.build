@@ -325,15 +325,15 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
 
   function networkBootstrapCommand() {
     const logPath = "/tmp/.udhcpc.log";
+    // Use a single compound command (test && ...) so semicolon-joining with
+    // other bootstrap blocks keeps valid sh syntax. `if ...; then;` with a
+    // trailing semicolon after `then` is a syntax error in BusyBox sh/hush
+    // and leaves the shell stuck in continuation mode.
     return [
       "ifconfig eth0 up >/dev/null 2>&1 || true",
       `udhcpc -i eth0 -q -n > ${logPath} 2>&1 || true`,
       `server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' ${logPath} | tail -n 1)`,
-      "if [ -n \"$server\" ]; then",
-      "  route del default >/dev/null 2>&1 || true",
-      "  route add default gw \"$server\" >/dev/null 2>&1 || true",
-      "  printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf",
-      "fi"
+      "test -n \"$server\" && { route del default >/dev/null 2>&1 || true; route add default gw \"$server\" >/dev/null 2>&1 || true; printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf; }"
     ].join("; ");
   }
 
@@ -376,15 +376,16 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     const homeCommand = persistentHomeBootstrapCommand(defaultUser.username);
     // Combine into a single command line so all three blocks are written
     // atomically. Shell startup can drop leading bytes; a small retry window
-    // re-sends the same idempotent line. Fewer writes = less visible noise.
-    const combined = `${relayCommand}; ${networkCommand}; ${homeCommand}`;
+    // re-sends the same idempotent line. Prepend a newline + no-op so any
+    // dropped bytes affect a safe prefix rather than the real command.
+    const combined = `: nop; ${relayCommand}; ${networkCommand}; ${homeCommand}`;
     const delays = [0, 1200, 3000];
     for (const delay of delays) {
       if (delay > 0) {
         await sleepMs(delay);
       }
       try {
-        await runtime.writeFile(`web/dom/${terminalId}/data`, `${combined}\n`);
+        await runtime.writeFile(`web/dom/${terminalId}/data`, `\n${combined}\n`);
       } catch {
         // Keep retrying; bootstrap is best-effort.
       }
