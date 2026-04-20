@@ -491,6 +491,19 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     }
   }
 
+  function installPersistenceFlushHooks(runtime) {
+    const flush = () => {
+      void syncPersistedVfs(runtime);
+    };
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        flush();
+      }
+    });
+  }
+
   async function createXtermWithRetry(runtime, attempts = 6) {
     for (let i = 0; i < attempts; i++) {
       try {
@@ -621,9 +634,10 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     // Keep persisted VFS in sync so shell and IDE edits survive reloads.
     try {
       await syncPersistedVfs(runtime);
+      installPersistenceFlushHooks(runtime);
       setInterval(() => {
         void syncPersistedVfs(runtime);
-      }, 5000);
+      }, 1000);
     } catch {
       // Non-fatal: app remains usable without persistence.
     }
