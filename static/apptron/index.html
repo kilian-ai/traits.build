@@ -61,7 +61,7 @@
   const hostedOnTraitsDomain =
     window.location.hostname === "traits.build" ||
     window.location.hostname.endsWith(".traits.build");
-  const defaultOrigin = window.location.origin;
+  const defaultOrigin = hostedOnTraitsDomain ? "https://relay.traits.build" : window.location.origin;
 
   window.apptron = {
     origin: bootParams.get("origin") || defaultOrigin,

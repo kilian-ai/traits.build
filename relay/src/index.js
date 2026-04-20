@@ -544,6 +544,27 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    if (url.pathname.startsWith('/data/')) {
+      const upstreamUrl = `https://apptron.dev${url.pathname}${url.search}`;
+      try {
+        const upstream = await fetch(upstreamUrl, {
+          method: request.method,
+          headers: request.headers,
+          body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+          redirect: 'follow',
+        });
+        const headers = new Headers(upstream.headers);
+        for (const [k, v] of Object.entries(cors())) headers.set(k, v);
+        return new Response(upstream.body, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers,
+        });
+      } catch (e) {
+        return json({ error: `data proxy failed: ${e?.message || e}` }, 502);
+      }
+    }
+
     if (url.pathname === '/linux/tunnel/debug' && request.method === 'GET') {
       return json(tunnelDebugSnapshot());
     }
