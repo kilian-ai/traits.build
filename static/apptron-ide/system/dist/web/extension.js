@@ -4411,6 +4411,14 @@ async function activate(context) {
   console.log("Apptron system extension activated");
 }
 async function resolveTerminalDataPath(wx) {
+  try {
+    const topSearch = window.top?.location?.search || "";
+    const force = new URLSearchParams(topSearch || window.location.search).get("term_path");
+    if (force === "console") {
+      return "#console/data";
+    }
+  } catch {
+  }
   const idFiles = [
     "vm/1/fsys/tmp/.apptron-terminal-id",
     "/tmp/.apptron-terminal-id",

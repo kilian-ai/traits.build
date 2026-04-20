@@ -85,6 +85,15 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 async function resolveTerminalDataPath(wx: any): Promise<string> {
+	try {
+		const topSearch = window.top?.location?.search || "";
+		const force = new URLSearchParams(topSearch || window.location.search).get("term_path");
+		if (force === "console") {
+			return "#console/data";
+		}
+	} catch {
+		// ignore URL access failures
+	}
 	const idFiles = [
 		"vm/1/fsys/tmp/.apptron-terminal-id",
 		"/tmp/.apptron-terminal-id",

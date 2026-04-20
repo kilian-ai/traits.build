@@ -51,7 +51,8 @@
 
   <script>
     window.APPTRON_BASE = '/static/apptron-ide';
-    window.APPTRON_DISABLE_SYSTEM_EXTENSION = false;
+    const __apptronIdeParams = new URLSearchParams(window.location.search);
+    window.APPTRON_DISABLE_SYSTEM_EXTENSION = __apptronIdeParams.get('system_ext') === 'off';
     window.apptron = { instance: null, ready: null };
   </script>
 
@@ -67,7 +68,7 @@
       shellParams.set('embedded', 'true');
       shellParams.set('mode', 'console');
       shellParams.set('ide_bridge', '1');
-      for (const key of ['network', 'relay', 'relay_url', 'worker_url', 'origin', 'debug9p', 'wasm', 'bundle', 'cb']) {
+      for (const key of ['network', 'relay', 'relay_url', 'worker_url', 'origin', 'debug9p', 'wasm', 'bundle', 'cb', 'term_path', 'ide_xterm']) {
         const value = params.get(key);
         if (value) {
           shellParams.set(key, value);
