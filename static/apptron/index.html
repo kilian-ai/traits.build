@@ -333,12 +333,14 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   try {
     await runtime.ready();
     const ideBridgeMode = qp.get("ide_bridge") === "1";
+    // Always create xterm + bind so #console/data connects to the shell.
+    // IDE extension reads #console/data directly; standalone mode appends to DOM.
+    const terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
+    window.apptron.terminalId = terminalId;
+    await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
     if (ideBridgeMode) {
       status.textContent = `Apptron runtime ready for IDE bridge (${selectedNetwork.source})`;
     } else {
-      const terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
-      window.apptron.terminalId = terminalId;
-      await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
       await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
       await bootstrapRelayInShell(runtime, terminalId, selectedNetwork.network, selectedNetwork.source);
       status.textContent = `Apptron shell ready (${selectedNetwork.source})`;

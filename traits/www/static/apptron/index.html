@@ -71,6 +71,81 @@
     publishURL: async () => window.location.origin,
   };
 </script>
+<script>
+// PIC shim: v86 npm v0.5.333 WASM lacks 14 PIC function exports that the Wanix
+// blob worker expects. We intercept blob worker creation and prepend JS code that
+// wraps WebAssembly.instantiate to add PIC shim functions via Proxy on exports.
+// The shims operate on PIC state in WASM linear memory using get_pic_addr_master/slave.
+(function() {
+  const SHIM = `(function(){
+var _wI=WebAssembly.instantiate,_wIS=WebAssembly.instantiateStreaming;
+function shimIt(inst,imp){
+  var ex=inst.exports;
+  if(!ex||!ex.get_pic_addr_master||ex.pic_set_irq)return inst;
+  var mem=(imp&&imp.env&&imp.env.memory)||ex.memory;
+  if(!mem)return inst;
+  // PIC struct: 0=irq_mask 1=irq_map 2=isr 3=irr 4=master 5=pad
+  // 6=expect_icw4 7=state 8=read_isr 9=auto_eoi 10=elcr 11=irq_value 12=special_mask
+  function p(s){return new Uint8Array(mem.buffer,s?ex.get_pic_addr_slave():ex.get_pic_addr_master(),13)}
+  function hasPend(s){var q=p(s);return(q[3]&~q[0]&255)!==0}
+  function chkSlv(){if(hasPend(1))shm.pic_set_irq(2);else shm.pic_clear_irq(2)}
+  function wCmd(q,v){
+    if(v&16){q[3]=0;q[2]=0;q[0]=0;q[11]=0;q[9]=0;q[6]=(v&1)?1:0;q[7]=1;q[8]=0}
+    else if(v&8){if(v&2)q[8]=(v&1)?1:0;if(v&64)q[12]=(v&32)?1:0}
+    else{var c=v>>5;if(c===1){var s=q[2];if(s){var b=0;while(b<8&&!(s&(1<<b)))b++;if(b<8)q[2]&=~(1<<b)&255}}
+    else if(c===3)q[2]&=~(1<<(v&7))&255}
+  }
+  function wDat(q,v){
+    var st=q[7];
+    if(st===0)q[0]=v;
+    else if(st===1){q[1]=v;q[7]=2}
+    else if(st===2)q[7]=q[6]?3:0;
+    else if(st===3){q[9]=(v&2)?1:0;q[7]=0}
+  }
+  var shm={
+    pic_set_irq:function(i){var s=i>=8,b=i&7,m=1<<b,q=p(s);if(!(q[11]&m)||(q[10]&m)){q[3]|=m;q[11]|=m}if(s)chkSlv()},
+    pic_clear_irq:function(i){var s=i>=8,b=i&7,m=1<<b,q=p(s);q[11]&=~m&255;if(q[10]&m)q[3]&=~m&255;if(s)chkSlv()},
+    port20_read:function(){var q=p(0);return q[8]?q[2]:q[3]},
+    port21_read:function(){return p(0)[0]},
+    portA0_read:function(){var q=p(1);return q[8]?q[2]:q[3]},
+    portA1_read:function(){return p(1)[0]},
+    port4D0_read:function(){return p(0)[10]},
+    port4D1_read:function(){return p(1)[10]},
+    port20_write:function(v){wCmd(p(0),v)},
+    port21_write:function(v){wDat(p(0),v)},
+    portA0_write:function(v){wCmd(p(1),v)},
+    portA1_write:function(v){wDat(p(1),v)},
+    port4D0_write:function(v){p(0)[10]=v},
+    port4D1_write:function(v){p(1)[10]=v}
+  };
+  var px=new Proxy(ex,{get:function(t,k){return shm[k]||t[k]}});
+  return{exports:px};
+}
+WebAssembly.instantiate=function(s,imp){return _wI.call(WebAssembly,s,imp).then(function(r){
+  if(r&&r.instance)return{module:r.module,instance:shimIt(r.instance,imp)};
+  return shimIt(r,imp);
+})};
+if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAssembly,s,imp).then(function(r){
+  if(r&&r.instance)return{module:r.module,instance:shimIt(r.instance,imp)};
+  return shimIt(r,imp);
+})};
+})();\n`;
+
+  var _origCOU = URL.createObjectURL.bind(URL);
+  URL.createObjectURL = function(blob) {
+    if (blob instanceof Blob && blob.size > 100000) {
+      var bt = (blob.type || "").toLowerCase();
+      // Only prepend to JS worker blobs; skip WASM/binary blobs.
+      // JS worker blob (~388KB) has type "application/javascript".
+      // WASM blob (~2MB) has type "application/wasm" or empty.
+      if (bt.indexOf("javascript") >= 0 || (bt === "" && blob.size < 1500000)) {
+        blob = new Blob([SHIM, blob], { type: blob.type || "application/javascript" });
+      }
+    }
+    return _origCOU(blob);
+  };
+})();
+</script>
 <script type="module">
   import "./wanix.min.js";
 
@@ -258,12 +333,14 @@
   try {
     await runtime.ready();
     const ideBridgeMode = qp.get("ide_bridge") === "1";
+    // Always create xterm + bind so #console/data connects to the shell.
+    // IDE extension reads #console/data directly; standalone mode appends to DOM.
+    const terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
+    window.apptron.terminalId = terminalId;
+    await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
     if (ideBridgeMode) {
       status.textContent = `Apptron runtime ready for IDE bridge (${selectedNetwork.source})`;
     } else {
-      const terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
-      window.apptron.terminalId = terminalId;
-      await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
       await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
       await bootstrapRelayInShell(runtime, terminalId, selectedNetwork.network, selectedNetwork.source);
       status.textContent = `Apptron shell ready (${selectedNetwork.source})`;
