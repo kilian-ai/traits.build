@@ -82,21 +82,27 @@
   }
 
   const envName = bootParams.get("env_name") || "local";
+  // By default we DO NOT define `env`. boot.go's project-fs goroutine does a
+  // syncfs.Sync() that is log.Fatal on error (boot.go:597). Since we have no
+  // authoritative /data backend (only a local-only ack relay), the remote list
+  // returns "file does not exist" and kills the Go runtime. Opt-in via
+  // `?with_env=1` for experimentation once a real /data backend is wired.
+  const wantEnv = bootParams.get("with_env") === "1";
 
   window.apptron = {
     origin: bootParams.get("origin") || defaultOrigin,
     mode: bootParams.get("mode") || "console",
     embedded: bootParams.get("embedded") === "true" ? true : false,
     user: defaultUser,
-    env: {
-      uuid: bootParams.get("env_uuid") || stableEnvUuid(envName),
-      name: envName,
-      // owner == user_id → isOwner == true in boot.go, which enables the
-      // IndexedDB-backed project + public mounts instead of memfs fallbacks.
-      owner: defaultUser.user_id,
-    },
     publishURL: async () => window.location.origin,
   };
+  if (wantEnv) {
+    window.apptron.env = {
+      uuid: bootParams.get("env_uuid") || stableEnvUuid(envName),
+      name: envName,
+      owner: defaultUser.user_id,
+    };
+  }
 </script>
 <script>
 // PIC shim: v86 npm v0.5.333 WASM lacks 14 PIC function exports that the Wanix

@@ -76,8 +76,8 @@ async function verifyToken(token, secret) {
 function cors() {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS",
+    "Access-Control-Allow-Headers": "*",
   };
 }
 
@@ -918,6 +918,22 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/data/')) {
+      // Answer preflight locally so Wanix syncfs PUT/DELETE passes CORS.
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: cors() });
+      }
+      // We have no authoritative /data backend — persistence is local-only
+      // (browser IDB via Wanix idbfs). For mutating methods, acknowledge the
+      // write with 204 so Wanix syncfs MkdirAll/PUT/DELETE succeed and boot
+      // progresses past user/project/public FS setup.
+      const mutating = request.method === 'PUT' || request.method === 'POST'
+        || request.method === 'DELETE' || request.method === 'PATCH';
+      if (mutating) {
+        const h = new Headers(cors());
+        h.set('x-relay-data-fallback', 'local-only-ack');
+        h.set('content-type', 'text/plain');
+        return new Response('ok', { status: 200, headers: h });
+      }
       const upstreamUrl = `https://apptron.dev${url.pathname}${url.search}`;
       const upstreamFallbackUrl = `https://www.apptron.dev${url.pathname}${url.search}`;
       try {
