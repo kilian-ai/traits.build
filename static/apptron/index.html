@@ -82,6 +82,17 @@
 
   const status = document.getElementById("status");
   const qp = new URLSearchParams(window.location.search);
+  const LEGACY_RELAY_URL = "wss://relay.traits.build/x/net";
+  const DEFAULT_RELAY_URL = "wss://relay.traits.build/linux/tunnel";
+
+  function normalizeRelayUrl(url) {
+    return url === LEGACY_RELAY_URL ? DEFAULT_RELAY_URL : url;
+  }
+
+  function configuredRelayUrl() {
+    const relayParam = qp.get("relay_url");
+    return normalizeRelayUrl(relayParam || DEFAULT_RELAY_URL);
+  }
 
   function wsNetUrlForOrigin(originLike) {
     try {
@@ -126,7 +137,7 @@
   async function selectNetwork() {
     const explicit = qp.get("network");
     if (explicit) {
-      return { network: explicit, source: "query" };
+      return { network: normalizeRelayUrl(explicit), source: "query" };
     }
 
     if (qp.get("relay") === "off") {
@@ -144,7 +155,7 @@
       }
     }
 
-    const relayUrl = qp.get("relay_url") || "wss://relay.traits.build/x/net";
+    const relayUrl = configuredRelayUrl();
     const relayOk = await probeWebSocket(relayUrl, 1200);
     if (relayOk) {
       return { network: relayUrl, source: "default-relay" };
@@ -158,7 +169,7 @@
   }
 
   function relayRcLines(network, source) {
-    const relayUrl = qp.get("relay_url") || "wss://relay.traits.build/x/net";
+    const relayUrl = configuredRelayUrl();
     return [
       "# traits.build relay bootstrap",
       `export WANIX_DEFAULT_RELAY=${relayUrl}`,
