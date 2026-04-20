@@ -290,6 +290,20 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     return `printf '%s\\n' ${quotedLines} > ${rcPath}; printf '%s\\n' ${quotedLines} > ${rcPath}; . ${rcPath}`;
   }
 
+  function networkBootstrapCommand() {
+    const logPath = "/tmp/.udhcpc.log";
+    return [
+      "ifconfig eth0 up >/dev/null 2>&1 || true",
+      `udhcpc -i eth0 -q -n > ${logPath} 2>&1 || true`,
+      `server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' ${logPath} | tail -n 1)`,
+      "if [ -n \"$server\" ]; then",
+      "  route del default >/dev/null 2>&1 || true",
+      "  route add default gw \"$server\" >/dev/null 2>&1 || true",
+      "  printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf",
+      "fi"
+    ].join("; ");
+  }
+
   function sleepMs(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -310,7 +324,7 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   }
 
   async function bootstrapRelayInShell(runtime, terminalId, network, source) {
-    const command = relayBootstrapCommand(network, source);
+    const command = `${relayBootstrapCommand(network, source)}; ${networkBootstrapCommand()}`;
     // Hidden IDE shells may not accept input immediately after xterm creation.
     // Retry bootstrap writes over a short window so env vars are eventually applied.
     const delays = [0, 300, 900, 1800];
