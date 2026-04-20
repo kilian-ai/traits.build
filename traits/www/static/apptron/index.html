@@ -324,16 +324,22 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   }
 
   async function bootstrapRelayInShell(runtime, terminalId, network, source) {
-    const command = `${relayBootstrapCommand(network, source)}; ${networkBootstrapCommand()}`;
+    const relayCommand = relayBootstrapCommand(network, source);
+    const networkCommand = networkBootstrapCommand();
     // Hidden IDE shells may not accept input immediately after xterm creation.
     // Retry bootstrap writes over a short window so env vars are eventually applied.
-    const delays = [0, 300, 900, 1800];
+    const delays = [0, 300, 900, 1800, 3500, 6000];
     for (const delay of delays) {
       if (delay > 0) {
         await sleepMs(delay);
       }
       try {
-        await runtime.writeFile(`web/dom/${terminalId}/data`, `${command}\n`);
+        await runtime.writeFile(`web/dom/${terminalId}/data`, `${relayCommand}\n`);
+      } catch {
+        // Keep retrying; bootstrap is best-effort.
+      }
+      try {
+        await runtime.writeFile(`web/dom/${terminalId}/data`, `${networkCommand}\n`);
       } catch {
         // Keep retrying; bootstrap is best-effort.
       }
