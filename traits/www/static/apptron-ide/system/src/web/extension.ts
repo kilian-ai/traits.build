@@ -181,6 +181,8 @@ function createTerminal(wx: any) {
 					const stream = await wx.openReadable(dataPath);
 					const writable = await wx.openWritable(dataPath);
 					writer = writable.getWriter();
+					// Prefer sourcing guest-side relay bootstrap file if present.
+					await writer.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
 					const relayBootstrap = buildRelayBootstrapCommandFromStorage();
 					if (relayBootstrap) {
 						await writer.write(enc.encode(`${relayBootstrap}\n`));
