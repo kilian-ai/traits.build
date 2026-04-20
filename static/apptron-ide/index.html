@@ -100,6 +100,22 @@
       }
     }
 
+    async function createWanixPortWithRetry(runtime, maxWaitMs = 30000) {
+      const started = Date.now();
+      while (Date.now() - started < maxWaitMs) {
+        try {
+          const wanixPort = await runtime.createPort();
+          if (wanixPort) {
+            return wanixPort;
+          }
+        } catch {
+          // Retry while hidden shell runtime finishes initialization.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      throw new Error('Timed out waiting for hidden-shell wanix port');
+    }
+
     async function bootRuntime() {
       const iframe = document.createElement('iframe');
       iframe.src = hiddenShellUrl();
@@ -161,7 +177,7 @@
       }
 
       try {
-        const wanixPort = await runtime.createPort();
+        const wanixPort = await createWanixPortWithRetry(runtime);
         receiverPort.postMessage({ wanix: wanixPort }, [wanixPort]);
       } catch (error) {
         console.error('Failed to hand off wanix port:', error);
