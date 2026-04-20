@@ -614,13 +614,39 @@ export default {
 
     if (url.pathname.startsWith('/data/')) {
       const upstreamUrl = `https://apptron.dev${url.pathname}${url.search}`;
+      const upstreamFallbackUrl = `https://www.apptron.dev${url.pathname}${url.search}`;
       try {
-        const upstream = await fetch(upstreamUrl, {
+        const forwardHeaders = new Headers();
+        const reqHeaders = request.headers;
+        const copyHeader = (name) => {
+          const val = reqHeaders.get(name);
+          if (val) forwardHeaders.set(name, val);
+        };
+        copyHeader('accept');
+        copyHeader('accept-language');
+        copyHeader('cache-control');
+        copyHeader('if-none-match');
+        copyHeader('if-modified-since');
+        copyHeader('range');
+        copyHeader('user-agent');
+        // Prefer first-party-style headers for hosts that gate /data assets.
+        forwardHeaders.set('origin', 'https://apptron.dev');
+        forwardHeaders.set('referer', 'https://apptron.dev/');
+
+        let upstream = await fetch(upstreamUrl, {
           method: request.method,
-          headers: request.headers,
+          headers: forwardHeaders,
           body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
           redirect: 'follow',
         });
+        if (upstream.status === 403) {
+          upstream = await fetch(upstreamFallbackUrl, {
+            method: request.method,
+            headers: forwardHeaders,
+            body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+            redirect: 'follow',
+          });
+        }
         const headers = new Headers(upstream.headers);
         for (const [k, v] of Object.entries(cors())) headers.set(k, v);
         return new Response(upstream.body, {
