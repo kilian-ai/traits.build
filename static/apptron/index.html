@@ -134,7 +134,13 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   var _origCOU = URL.createObjectURL.bind(URL);
   URL.createObjectURL = function(blob) {
     if (blob instanceof Blob && blob.size > 100000) {
-      blob = new Blob([SHIM, blob], { type: blob.type || "application/javascript" });
+      var bt = (blob.type || "").toLowerCase();
+      // Only prepend to JS worker blobs; skip WASM/binary blobs.
+      // JS worker blob (~388KB) has type "application/javascript".
+      // WASM blob (~2MB) has type "application/wasm" or empty.
+      if (bt.indexOf("javascript") >= 0 || (bt === "" && blob.size < 1500000)) {
+        blob = new Blob([SHIM, blob], { type: blob.type || "application/javascript" });
+      }
     }
     return _origCOU(blob);
   };
