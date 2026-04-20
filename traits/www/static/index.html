@@ -135,6 +135,7 @@ a:hover{text-decoration:underline}
     <a data-href="/canvas">Canvas</a>
     <a data-href="/linux">Linux</a>
     <a data-href="/apptron">Apptron</a>
+    <a data-href="/apptron-ide">Apptron IDE</a>
     <a data-href="/wanix">Wanix</a>
     <a data-href="/testing">Testing</a>
     <a data-href="/settings">Settings</a>
@@ -175,6 +176,7 @@ const ROUTES = {
   '/canvas':     'www.canvas',
   '/linux':      'www.linux',
   '/apptron':    'www.apptron',
+  '/apptron-ide':'www.apptron',
   '/wanix':      'www.wanix',
   '/terminal':   'www.docs.api',
   '/testing':    'www.testing',
@@ -184,6 +186,7 @@ const ROUTES = {
 const LOCAL_ROUTE_KEY = 'traits.shell.route';
 const STATIC_RUNTIME_ROUTES = {
   '/apptron': () => (isLocal ? './apptron/index.html' : '/static/apptron/index.html') + '?spa=1',
+  '/apptron-ide': () => (isLocal ? './apptron-ide/index.html' : '/static/apptron-ide/index.html') + '?spa=1',
 };
 
 const isLocal = location.protocol === 'file:';
@@ -470,7 +473,9 @@ function injectStaticRuntime(route, src) {
     a.classList.toggle('active', a.dataset.href === route);
   });
 
-  document.title = 'Apptron Shell - traits.build';
+  document.title = route === '/apptron-ide'
+    ? 'Apptron IDE - traits.build'
+    : 'Apptron Shell - traits.build';
 }
 
 // ── Router ──

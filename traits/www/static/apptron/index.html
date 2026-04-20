@@ -53,8 +53,23 @@
 <div id="loader" style="display:none"><p class="loader-status"></p></div>
 <script>
   // Required by boot.go: window.apptron must be set before WASM starts
+  const bootParams = new URLSearchParams(window.location.search);
+  const defaultUser = {
+    username: bootParams.get("user") || "root",
+    user_id: bootParams.get("user_id") || "local",
+  };
+  const defaultOrigin =
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "::1"
+      ? "https://apptron.dev"
+      : window.location.origin;
+
   window.apptron = {
-    origin: window.location.origin,
+    origin: bootParams.get("origin") || defaultOrigin,
+    mode: bootParams.get("mode") || "console",
+    embedded: bootParams.get("embedded") === "true" ? true : false,
+    user: defaultUser,
     publishURL: async () => window.location.origin,
   };
 </script>
@@ -70,7 +85,17 @@
     debug9p: qp.get("debug9p") === "true",
     wasm: qp.get("wasm") || "./wanix.wasm",
     bundle: qp.get("bundle") || "./bundles/sys.tar.gz",
-    network: qp.get("network") || ""
+    network:
+      qp.get("network") ||
+      (() => {
+        try {
+          const origin = new URL(window.apptron.origin);
+          const wsProto = origin.protocol === "https:" ? "wss:" : "ws:";
+          return `${wsProto}//${origin.host}/x/net`;
+        } catch {
+          return "";
+        }
+      })()
   });
 
   window.apptron.instance = runtime;

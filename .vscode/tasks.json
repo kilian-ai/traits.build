@@ -57,6 +57,18 @@
 			"command": "./target/release/traits serve -p 8092",
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "check-go-host",
+			"type": "shell",
+			"command": "go version && command -v go && go env GOPATH",
+			"isBackground": false
+		},
+		{
+			"label": "install-opencode-go",
+			"type": "shell",
+			"command": "set -e\nfor mod in github.com/sst/opencode/cmd/opencode@latest github.com/sst/opencode@latest github.com/opencode-ai/opencode/cmd/opencode@latest github.com/opencode-ai/opencode@latest; do\n  echo \"TRY $mod\"\n  if go install \"$mod\"; then\n    echo \"OK $mod\"\n    break\n  fi\ndone\nBIN=\"$(go env GOPATH)/bin/opencode\"\nif [[ -x \"$BIN\" ]]; then\n  \"$BIN\" --help | head -30\nelse\n  echo \"opencode binary not found at $BIN\"\n  exit 1\nfi",
+			"isBackground": false
 		}
 	]
 }

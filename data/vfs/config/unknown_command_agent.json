@@ -1,0 +1,9 @@
+{
+  "api_secret": "openai_api_key",
+  "max_steps": 12,
+  "model": "gpt-4o-mini",
+  "notes": "Config for kernel.cli unknown-command llm.agent fallback. Leave session_id empty for stateless per-command handling.",
+  "retry_max_steps": 14,
+  "session_id": "",
+  "tools": "sys.shell,sys.list,sys.registry,kernel.call,sys.call"
+}
