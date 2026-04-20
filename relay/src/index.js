@@ -90,7 +90,7 @@ function json(data, status = 200) {
 
 // ── Tunnel instrumentation (best-effort, isolate-local) ─────────────────────
 
-const RELAY_BUILD = '2026-04-15-tunnel-debug-1';
+const RELAY_BUILD = '2026-04-20-dhcp-fix-1';
 const TUNNEL_EVENT_LIMIT = 200;
 
 const tunnelStats = {
@@ -110,6 +110,10 @@ const tunnelStats = {
   dns_queries: 0,
   dns_replies: 0,
   dns_failures: 0,
+  dhcp_discovers: 0,
+  dhcp_requests: 0,
+  dhcp_offers: 0,
+  dhcp_acks: 0,
 };
 
 const tunnelConnections = new Map(); // connId -> { started, bytes_rx, packets_rx, colo }
@@ -239,6 +243,100 @@ function _handleIcmpEcho(ipPkt) {
   return _buildIpPacket(1, ipPkt.dstIp, ipPkt.srcIp, reply, ipPkt.id);
 }
 
+// DHCP server constants — standard QEMU/v86 guest network
+const DHCP_GUEST_IP   = [10, 0, 2, 15];
+const DHCP_SERVER_IP  = [10, 0, 2, 2];
+const DHCP_DNS_IP     = [1, 1, 1, 1];
+const DHCP_SUBNET     = [255, 255, 255, 0];
+const DHCP_LEASE_SECS = 86400;
+const DHCP_MAGIC      = [99, 130, 83, 99];
+
+function _handleDhcpUdp(ipPkt, udp) {
+  const data = udp.data;
+  // Minimum DHCP size: 236 bytes header + 4 magic + at least End option
+  if (data.length < 241) return null;
+  // Must be a BOOTREQUEST (op=1)
+  if (data[0] !== 1) return null;
+  // Check magic cookie
+  if (data[236] !== 99 || data[237] !== 130 || data[238] !== 83 || data[239] !== 99) return null;
+
+  // Read xid (transaction ID)
+  const xid = data.slice(4, 8);
+  // Read client MAC (chaddr, 6 bytes at offset 28)
+  const chaddr = data.slice(28, 34);
+
+  // Parse DHCP message type from options (starts at 240)
+  let msgType = 0;
+  let i = 240;
+  while (i < data.length) {
+    const opt = data[i];
+    if (opt === 255) break;
+    if (opt === 0) { i++; continue; }
+    const len = data[i + 1] || 0;
+    if (opt === 53 && len >= 1) {
+      msgType = data[i + 2];
+    }
+    i += 2 + len;
+  }
+
+  // We respond to DISCOVER (1) with OFFER (2) and REQUEST (3) with ACK (5)
+  let replyType;
+  if (msgType === 1) {
+    tunnelStats.dhcp_discovers += 1;
+    replyType = 2; // OFFER
+  } else if (msgType === 3) {
+    tunnelStats.dhcp_requests += 1;
+    replyType = 5; // ACK
+  } else {
+    return null;
+  }
+
+  // Build DHCP reply payload
+  const reply = new Uint8Array(300);
+  reply[0] = 2; // BOOTREPLY
+  reply[1] = 1; // htype Ethernet
+  reply[2] = 6; // hlen
+  reply[3] = 0; // hops
+  reply.set(xid, 4);     // xid
+  reply[10] = 0x80; reply[11] = 0x00; // flags: broadcast
+  // ciaddr = 0
+  reply.set(DHCP_GUEST_IP, 16);  // yiaddr: offered IP
+  reply.set(DHCP_SERVER_IP, 20); // siaddr: server IP
+  // giaddr = 0
+  // chaddr: copy MAC, pad rest with 0
+  reply.set(chaddr, 28);
+  // sname[44..108]: 0, file[108..236]: 0 (already zeroed)
+  // magic cookie
+  reply.set(DHCP_MAGIC, 236);
+
+  // Options
+  let p = 240;
+  const opt = (type, ...bytes) => {
+    reply[p++] = type;
+    reply[p++] = bytes.length;
+    for (const b of bytes) reply[p++] = b;
+  };
+  opt(53, replyType);                            // DHCP Message Type
+  opt(54, ...DHCP_SERVER_IP);                    // Server Identifier
+  opt(51, (DHCP_LEASE_SECS >> 24) & 0xff,       // IP Address Lease Time
+           (DHCP_LEASE_SECS >> 16) & 0xff,
+           (DHCP_LEASE_SECS >>  8) & 0xff,
+            DHCP_LEASE_SECS        & 0xff);
+  opt(1,  ...DHCP_SUBNET);                       // Subnet Mask
+  opt(3,  ...DHCP_SERVER_IP);                    // Router (gateway)
+  opt(6,  ...DHCP_DNS_IP);                       // DNS
+  reply[p++] = 255; // End option
+
+  const dhcpPayload = reply.slice(0, p);
+  const udpReply = _buildUdp(67, 68, dhcpPayload);
+  // Send to 255.255.255.255 (broadcast)
+  const pkt = _buildIpPacket(17, DHCP_SERVER_IP, [255, 255, 255, 255], udpReply, 0);
+
+  if (replyType === 2) tunnelStats.dhcp_offers += 1;
+  else tunnelStats.dhcp_acks += 1;
+  return pkt;
+}
+
 async function _handleDnsUdp(ipPkt) {
   const udp = _parseUdp(ipPkt.payload);
   if (!udp || udp.dstPort !== 53 || udp.data.length === 0) return null;
@@ -307,8 +405,18 @@ async function _linuxTunnelWs(request) {
   // This keeps browser traffic on relay.traits.build while preserving full
   // upstream network behavior.
   try {
+    // Include full WebSocket handshake headers; apptron.dev/x/net requires them.
+    const wsKey = btoa(String.fromCharCode(
+      ...crypto.getRandomValues(new Uint8Array(16))
+    ));
     const upstreamResp = await fetch('https://apptron.dev/x/net', {
-      headers: { Upgrade: 'websocket' },
+      headers: {
+        'Upgrade': 'websocket',
+        'Connection': 'Upgrade',
+        'Sec-WebSocket-Key': wsKey,
+        'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Protocol': 'binary',
+      },
     });
     if (upstreamResp.status === 101 && upstreamResp.webSocket) {
       const upstream = upstreamResp.webSocket;
@@ -415,6 +523,13 @@ async function _linuxTunnelWs(request) {
 
       if (ipPkt.protocol === 17) {
         tunnelStats.udp_packets += 1;
+        const udpHdr = _parseUdp(ipPkt.payload);
+        // DHCP: client sends from 0.0.0.0:68 to 255.255.255.255:67
+        if (udpHdr && udpHdr.dstPort === 67) {
+          const dhcpReply = _handleDhcpUdp(ipPkt, udpHdr);
+          if (dhcpReply) server.send(dhcpReply);
+          return;
+        }
         tunnelStats.dns_queries += 1;
         _handleDnsUdp(ipPkt)
           .then((reply) => {
