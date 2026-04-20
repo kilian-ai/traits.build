@@ -94,6 +94,30 @@ async function resolveTerminalDataPath(wx: any): Promise<string> {
 	} catch {
 		// ignore URL access failures
 	}
+	try {
+		const raw = await wx.readFile("web/dom/new/xterm");
+		const terminalId = new TextDecoder().decode(raw).trim();
+		if (/^[0-9]+$/.test(terminalId)) {
+			try {
+				await wx.writeFile("task/1/ctl", new TextEncoder().encode(`bind #console/data web/dom/${terminalId}/data`));
+			} catch {
+				// Non-fatal: direct web/dom path is still usable.
+			}
+			try {
+				await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}\n`));
+			} catch {
+				// Best-effort only.
+			}
+			try {
+				localStorage.setItem("apptron-terminal-id", terminalId);
+			} catch {
+				// localStorage may be unavailable in some extension host contexts.
+			}
+			return "#console/data";
+		}
+	} catch {
+		// Runtime may not be ready for xterm allocation yet; try legacy fallbacks.
+	}
 	const idFiles = [
 		"vm/1/fsys/tmp/.apptron-terminal-id",
 		"/tmp/.apptron-terminal-id",
@@ -118,32 +142,6 @@ async function resolveTerminalDataPath(wx: any): Promise<string> {
 		}
 	} catch {
 		// localStorage access can fail in restricted contexts
-	}
-	try {
-		const frames = window.top?.document?.querySelectorAll("iframe") ?? [];
-		for (const frame of Array.from(frames)) {
-			const win = (frame as HTMLIFrameElement).contentWindow as any;
-			const terminalId = String(win?.apptron?.terminalId || "").trim();
-			if (/^[0-9]+$/.test(terminalId)) {
-				return `web/dom/${terminalId}/data`;
-			}
-		}
-	} catch {
-		// same-origin/frame access can fail depending on host context
-	}
-	try {
-		const raw = await wx.readFile("web/dom/new/xterm");
-		const terminalId = new TextDecoder().decode(raw).trim();
-		if (/^[0-9]+$/.test(terminalId)) {
-			try {
-				await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}\n`));
-			} catch {
-				// Non-fatal; path still works even if id file write fails.
-			}
-			return `web/dom/${terminalId}/data`;
-		}
-	} catch {
-		// Runtime may not be ready for xterm allocation yet; fall back.
 	}
 	return "#console/data";
 }
@@ -233,12 +231,19 @@ function createTerminal(wx: any) {
 					const dataPath = await resolveTerminalDataPath(wx);
 					console.log("terminal channel", dataPath);
 					writeEmitter.fire(`\r\n[apptron] terminal channel: ${dataPath}\r\n`);
+					const relayBootstrap = buildRelayBootstrapCommandFromContext();
+					if (relayBootstrap) {
+						try {
+							await wx.writeFile("vm/1/fsys/tmp/.traits-relay.sh", new TextEncoder().encode(`${relayBootstrap}\n`));
+						} catch {
+							// Best-effort only; runtime bootstrap still sends direct command.
+						}
+					}
 					const stream = await wx.openReadable(dataPath);
 					const writable = await wx.openWritable(dataPath);
 					writer = writable.getWriter();
 					// Prefer sourcing guest-side relay bootstrap file if present.
 					await writer.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
-					const relayBootstrap = buildRelayBootstrapCommandFromContext();
 					if (relayBootstrap) {
 						await writer.write(enc.encode(`${relayBootstrap}\n`));
 					}

@@ -4419,6 +4419,27 @@ async function resolveTerminalDataPath(wx) {
     }
   } catch {
   }
+  try {
+    const raw = await wx.readFile("web/dom/new/xterm");
+    const terminalId = new TextDecoder().decode(raw).trim();
+    if (/^[0-9]+$/.test(terminalId)) {
+      try {
+        await wx.writeFile("task/1/ctl", new TextEncoder().encode(`bind #console/data web/dom/${terminalId}/data`));
+      } catch {
+      }
+      try {
+        await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}
+`));
+      } catch {
+      }
+      try {
+        localStorage.setItem("apptron-terminal-id", terminalId);
+      } catch {
+      }
+      return "#console/data";
+    }
+  } catch {
+  }
   const idFiles = [
     "vm/1/fsys/tmp/.apptron-terminal-id",
     "/tmp/.apptron-terminal-id",
@@ -4439,30 +4460,6 @@ async function resolveTerminalDataPath(wx) {
     const id = String(localStorage.getItem("apptron-terminal-id") || "").trim();
     if (/^[0-9]+$/.test(id)) {
       return `web/dom/${id}/data`;
-    }
-  } catch {
-  }
-  try {
-    const frames = window.top?.document?.querySelectorAll("iframe") ?? [];
-    for (const frame of Array.from(frames)) {
-      const win = frame.contentWindow;
-      const terminalId = String(win?.apptron?.terminalId || "").trim();
-      if (/^[0-9]+$/.test(terminalId)) {
-        return `web/dom/${terminalId}/data`;
-      }
-    }
-  } catch {
-  }
-  try {
-    const raw = await wx.readFile("web/dom/new/xterm");
-    const terminalId = new TextDecoder().decode(raw).trim();
-    if (/^[0-9]+$/.test(terminalId)) {
-      try {
-        await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}
-`));
-      } catch {
-      }
-      return `web/dom/${terminalId}/data`;
     }
   } catch {
   }
@@ -4544,11 +4541,18 @@ function createTerminal(wx) {
           writeEmitter.fire(`\r
 [apptron] terminal channel: ${dataPath}\r
 `);
+          const relayBootstrap = buildRelayBootstrapCommandFromContext();
+          if (relayBootstrap) {
+            try {
+              await wx.writeFile("vm/1/fsys/tmp/.traits-relay.sh", new TextEncoder().encode(`${relayBootstrap}
+`));
+            } catch {
+            }
+          }
           const stream = await wx.openReadable(dataPath);
           const writable = await wx.openWritable(dataPath);
           writer = writable.getWriter();
           await writer.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
-          const relayBootstrap = buildRelayBootstrapCommandFromContext();
           if (relayBootstrap) {
             await writer.write(enc.encode(`${relayBootstrap}
 `));
