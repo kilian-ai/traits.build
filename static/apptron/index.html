@@ -354,6 +354,7 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
         } catch {
           // Non-fatal: extension will fall back to #console/data.
         }
+        await bootstrapRelayInShell(runtime, terminalId, selectedNetwork.network, selectedNetwork.source);
       }
       status.textContent = `Apptron runtime ready for IDE bridge (${selectedNetwork.source})`;
     } else {
