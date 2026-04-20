@@ -1,4 +1,4 @@
-import { WanixRuntime } from "/wanix.min.js";
+import { WanixRuntime } from "../wanix.min.js";
 import { register } from "/hanko/elements.js";
 import { InputCapturer } from "/lib/input.js";
 
