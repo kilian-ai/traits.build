@@ -29,6 +29,7 @@ const DEFAULT_PROFILE = {
 const APPTRON_BASE = (typeof window !== "undefined" && window.APPTRON_BASE)
   ? window.APPTRON_BASE.replace(/\/$/, "")
   : "/static/apptron-ide";
+const APPTRON_DISABLE_SYSTEM_EXTENSION = !!(typeof window !== "undefined" && window.APPTRON_DISABLE_SYSTEM_EXTENSION);
 
 export class VSCodeWorkbenchComponent extends HTMLElement {
   constructor() {
@@ -72,10 +73,14 @@ export class VSCodeWorkbenchComponent extends HTMLElement {
   }
 
   _createWorkbench() {
-    const ch = new MessageChannel();
-    ch.port2.onmessage = (event) => {
-      if (event.data.port) window.postMessage(event.data, "*", [event.data.port]);
-    };
+    let messagePorts = new Map();
+    if (!APPTRON_DISABLE_SYSTEM_EXTENSION) {
+      const ch = new MessageChannel();
+      ch.port2.onmessage = (event) => {
+        if (event.data.port) window.postMessage(event.data, "*", [event.data.port]);
+      };
+      messagePorts = new Map([["progrium.apptron-system", ch.port1]]);
+    }
 
     const url = new URL(window.location.href);
     const scheme = url.protocol.replace(":", "");
@@ -84,8 +89,8 @@ export class VSCodeWorkbenchComponent extends HTMLElement {
     const hostJoin = hostParts.join(".");
 
     const config = {
-      messagePorts: new Map([["progrium.apptron-system", ch.port1]]),
-      productConfiguration: {
+      messagePorts,
+      productConfiguration: APPTRON_DISABLE_SYSTEM_EXTENSION ? {} : {
         extensionEnabledApiProposals: { "progrium.apptron-system": ["ipc"] },
         webviewContentExternalBaseUrlTemplate:
           `${scheme}://{{uuid}}.${hostJoin}${APPTRON_BASE}/vscode/out/vs/workbench/contrib/webview/browser/pre/`,
@@ -105,11 +110,13 @@ export class VSCodeWorkbenchComponent extends HTMLElement {
         "terminal.integrated.tabs.showActions": false,
       },
       developmentOptions: { logLevel: 0 },
-      additionalBuiltinExtensions: [
+      additionalBuiltinExtensions: APPTRON_DISABLE_SYSTEM_EXTENSION ? [] : [
         { scheme, authority: url.host, path: `${APPTRON_BASE}/system` },
       ],
       profile: DEFAULT_PROFILE,
-      folderUri: { scheme: "wanix", path: "/project" },
+      folderUri: APPTRON_DISABLE_SYSTEM_EXTENSION
+        ? { scheme: "file", path: "/workspace" }
+        : { scheme: "wanix", path: "/project" },
     };
 
     require(["vs/workbench/workbench.web.main"], (wb) => {
