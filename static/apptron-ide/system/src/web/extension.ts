@@ -216,6 +216,20 @@ function buildRelayBootstrapCommandFromContext(): string | null {
 	return `printf '%s\\n' ${quotedLines} > ${rcPath}; printf '%s\\n' ${quotedLines} > ${rcPath}; . ${rcPath}`;
 }
 
+function buildNetworkBootstrapCommand(): string {
+	const logPath = "/tmp/.udhcpc.log";
+	return [
+		"ifconfig eth0 up >/dev/null 2>&1 || true",
+		`udhcpc -i eth0 -q -n > ${logPath} 2>&1 || true`,
+		`server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' ${logPath} | tail -n 1)`,
+		"if [ -n \"$server\" ]; then",
+		"  route del default >/dev/null 2>&1 || true",
+		"  route add default gw \"$server\" >/dev/null 2>&1 || true",
+		"  printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf",
+		"fi",
+	].join("; ");
+}
+
 function createTerminal(wx: any) {
 	const writeEmitter = new vscode.EventEmitter<string>();
 	const dec = new TextDecoder();
@@ -242,6 +256,8 @@ function createTerminal(wx: any) {
 					const stream = await wx.openReadable(dataPath);
 					const writable = await wx.openWritable(dataPath);
 					writer = writable.getWriter();
+					const networkBootstrap = buildNetworkBootstrapCommand();
+					await writer.write(enc.encode(`${networkBootstrap}\n`));
 					// Prefer sourcing guest-side relay bootstrap file if present.
 					await writer.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
 					if (relayBootstrap) {
@@ -276,6 +292,8 @@ function createTerminal(wx: any) {
 			writeQueue = writeQueue.then(async () => {
 				if (!didInitialBootstrap) {
 					didInitialBootstrap = true;
+					const networkBootstrap = buildNetworkBootstrapCommand();
+					await writer!.write(enc.encode(`${networkBootstrap}\n`));
 					await writer!.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
 					const relayBootstrap = buildRelayBootstrapCommandFromContext();
 					if (relayBootstrap) {
