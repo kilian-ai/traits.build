@@ -236,6 +236,23 @@
     network: selectedNetwork.network
   });
 
+  // Enable on-demand bundle loading (Go toolchain etc.) via relay proxy
+  runtime._getBundle = async (name) => {
+    const url = `https://relay.traits.build/${name}`;
+    console.log('[bundle] fetching', name);
+    const cache = await caches.open('apptron-bundles');
+    const cached = await cache.match(url);
+    if (cached) {
+      console.log('[bundle] cache hit', name);
+      return await cached.arrayBuffer();
+    }
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Bundle fetch failed: ${resp.status} ${name}`);
+    await cache.put(url, resp.clone());
+    console.log('[bundle] cached', name);
+    return await resp.arrayBuffer();
+  };
+
   window.apptron.instance = runtime;
 
   try {

@@ -781,6 +781,39 @@ export default {
       }
     }
 
+    // /bundles/* proxy — Go toolchain bundles from apptron.dev
+    if (url.pathname.startsWith('/bundles/')) {
+      const upstreamUrl = `https://apptron.dev${url.pathname}${url.search}`;
+      try {
+        const forwardHeaders = new Headers();
+        forwardHeaders.set('accept', request.headers.get('accept') || '*/*');
+        forwardHeaders.set('accept-encoding', 'br, gzip, deflate');
+        forwardHeaders.set('origin', 'https://apptron.dev');
+        forwardHeaders.set('referer', 'https://apptron.dev/');
+        const upstream = await fetch(upstreamUrl, {
+          method: 'GET',
+          headers: forwardHeaders,
+          redirect: 'follow',
+        });
+        if (!upstream.ok) {
+          return new Response(upstream.body, {
+            status: upstream.status,
+            statusText: upstream.statusText,
+            headers: { ...cors() },
+          });
+        }
+        const headers = new Headers(upstream.headers);
+        for (const [k, v] of Object.entries(cors())) headers.set(k, v);
+        return new Response(upstream.body, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers,
+        });
+      } catch (e) {
+        return json({ error: `bundles proxy failed: ${e?.message || e}` }, 502);
+      }
+    }
+
     if (url.pathname === '/linux/tunnel/debug' && request.method === 'GET') {
       return json(tunnelDebugSnapshot());
     }
