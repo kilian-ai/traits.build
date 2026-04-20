@@ -185,10 +185,20 @@ const ROUTES = {
 };
 
 const LOCAL_ROUTE_KEY = 'traits.shell.route';
+const STATIC_RUNTIME_CB = String(Date.now());
 const STATIC_RUNTIME_ROUTES = {
-  '/terminal': () => (isLocal ? './apptron/index.html' : '/static/apptron/index.html') + '?spa=1&mode=console',
-  '/apptron': () => (isLocal ? './apptron/index.html' : '/static/apptron/index.html') + '?spa=1',
-  '/apptron-ide': () => (isLocal ? './apptron-ide/index.html' : '/static/apptron-ide/index.html') + '?spa=1',
+  '/terminal': () => {
+    const base = isLocal ? './apptron/index.html' : '/static/apptron/index.html';
+    return `${base}?spa=1&mode=console&cb=${STATIC_RUNTIME_CB}`;
+  },
+  '/apptron': () => {
+    const base = isLocal ? './apptron/index.html' : '/static/apptron/index.html';
+    return `${base}?spa=1&cb=${STATIC_RUNTIME_CB}`;
+  },
+  '/apptron-ide': () => {
+    const base = isLocal ? './apptron-ide/index.html' : '/static/apptron-ide/index.html';
+    return `${base}?spa=1&cb=${STATIC_RUNTIME_CB}`;
+  },
 };
 
 const isLocal = location.protocol === 'file:';

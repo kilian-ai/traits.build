@@ -472,17 +472,8 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
         await snapshotPath(runtime, p, wanted);
       }
 
-      const existing = await listPersistedFiles(db);
-      const existingPaths = new Set(existing.map((f) => String(f.path || "")));
-      const wantedPaths = new Set(wanted.keys());
-
       for (const [path, content] of wanted.entries()) {
         await persistFile(db, path, content);
-      }
-      for (const path of existingPaths) {
-        if (path && !wantedPaths.has(path)) {
-          await deletePersistedFile(db, path);
-        }
       }
     } catch (error) {
       console.warn("[persist] sync failed", error);
