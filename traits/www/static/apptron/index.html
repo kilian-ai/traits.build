@@ -341,13 +341,13 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     // Wanix idbfs is mounted at /home/<username> but /etc/passwd sets root's
     // home to /root (COW memfs, non-persistent). Redirect the session's HOME
     // and CWD to the idbfs-backed /home/<username> so ~, $HOME, and new
-    // files default to the persistent mount.
+    // files default to the persistent mount. Idempotent and quiet — safe to
+    // re-run during bootstrap retries without wiping shell output.
     const home = `/home/${username}`;
     return [
       `mkdir -p ${home} >/dev/null 2>&1 || true`,
       `export HOME=${home}`,
-      `cd ${home}`,
-      "clear"
+      `cd ${home} >/dev/null 2>&1 || true`
     ].join("; ");
   }
 
