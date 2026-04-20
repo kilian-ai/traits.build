@@ -59,10 +59,16 @@
 
     const status = document.getElementById('status');
     const qp = new URLSearchParams(window.location.search);
+    const defaultOrigin =
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '::1'
+        ? 'https://apptron.dev'
+        : window.location.origin;
 
     window.apptron = {
       mode: 'edit',
-      origin: window.location.origin,
+      origin: qp.get('origin') || defaultOrigin,
       embedded: true,
       env: {
         name: 'traits-apptron-ide',
@@ -71,12 +77,12 @@
         ownername: 'traits',
         visibility: 'public',
       },
-      user: Promise.resolve({ username: 'traits', user_id: 'traits-local' }),
+      user: { username: 'traits', user_id: 'traits-local' },
       publishURL: async () => window.location.origin,
     };
 
     const runtime = new WanixRuntime({
-      screen: true,
+      screen: false,
       helpers: true,
       debug9p: qp.get('debug9p') === 'true',
       wasm: qp.get('wasm') || './wanix.wasm',
