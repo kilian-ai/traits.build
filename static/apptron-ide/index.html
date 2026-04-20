@@ -152,6 +152,97 @@
     }, { once: true });
 
     workbench.mount();
+
+    // --- Apptron Publishing (Service Worker + VFS auto-sync) ---
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/publish-sw.js', { scope: '/' })
+        .then(() => console.log('[publish] SW registered'))
+        .catch((err) => console.warn('[publish] SW registration failed:', err));
+    }
+
+    const MIME = {
+      html: 'text/html;charset=utf-8', htm: 'text/html;charset=utf-8',
+      css: 'text/css;charset=utf-8', js: 'application/javascript;charset=utf-8',
+      mjs: 'application/javascript;charset=utf-8',
+      json: 'application/json;charset=utf-8', txt: 'text/plain;charset=utf-8',
+      md: 'text/plain;charset=utf-8', xml: 'application/xml',
+      svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg',
+      jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+      ico: 'image/x-icon', woff: 'font/woff', woff2: 'font/woff2',
+      pdf: 'application/pdf', wasm: 'application/wasm',
+    };
+    function guessMime(name) {
+      return MIME[(name.split('.').pop() || '').toLowerCase()] || 'application/octet-stream';
+    }
+    function withTimeout(p, ms) {
+      return Promise.race([p, new Promise((_, r) => setTimeout(() => r('timeout'), ms))]);
+    }
+
+    // Recursively collect files from /public (depth-limited).
+    async function collectPublic(runtime, prefix, depth) {
+      if (depth > 3) return [];
+      const base = 'vm/1/fsys/public' + (prefix ? '/' + prefix : '');
+      let entries;
+      try { entries = await withTimeout(runtime.readDir(base), 2000); }
+      catch { return []; }
+      if (!Array.isArray(entries)) return [];
+
+      const files = [];
+      for (const name of entries) {
+        const rel = prefix ? prefix + '/' + name : name;
+        try {
+          const body = await withTimeout(runtime.readFile(base + '/' + name), 2000);
+          if (body != null) files.push({ rel, body });
+        } catch {
+          // Probably a directory — recurse.
+          const sub = await collectPublic(runtime, rel, depth + 1);
+          files.push(...sub);
+        }
+      }
+      return files;
+    }
+
+    let _syncing = false;
+    let _published = new Set();
+    async function syncPublish() {
+      const runtime = window.apptron.instance;
+      const sw = navigator.serviceWorker?.controller;
+      if (!runtime || !sw || _syncing) return;
+      _syncing = true;
+      try {
+        const files = await collectPublic(runtime, '', 0);
+        const current = new Set(files.map((f) => f.rel));
+
+        for (const { rel, body } of files) {
+          sw.postMessage({
+            type: 'publish-file', path: '/' + rel,
+            body, contentType: guessMime(rel),
+          });
+          _published.add(rel);
+        }
+        // Remove files that were published before but no longer exist.
+        for (const rel of _published) {
+          if (!current.has(rel)) {
+            sw.postMessage({ type: 'unpublish-file', path: '/' + rel });
+            _published.delete(rel);
+          }
+        }
+        if (files.length) {
+          console.log(`[publish] Synced ${files.length} file(s) → ${location.origin}/`);
+        }
+      } catch { /* ignore */ }
+      finally { _syncing = false; }
+    }
+
+    // Start periodic sync once both runtime and SW are active.
+    window.apptron.ready.then((rt) => {
+      if (!rt || !('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.ready.then(() => {
+        syncPublish();
+        setInterval(syncPublish, 5000);
+      });
+    });
   </script>
 </body>
 </html>
