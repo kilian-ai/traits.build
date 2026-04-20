@@ -76,6 +76,7 @@
 
   const status = document.getElementById("status");
   const qp = new URLSearchParams(window.location.search);
+  const RELAY_DATA_ORIGIN = "https://relay.traits.build";
   const LEGACY_RELAY_URL = "wss://relay.traits.build/x/net";
   const DEFAULT_RELAY_URL = "wss://relay.traits.build/linux/tunnel";
 
@@ -97,6 +98,36 @@
       return "";
     }
   }
+
+  function installDataFetchProxy() {
+    const nativeFetch = globalThis.fetch?.bind(globalThis);
+    if (!nativeFetch) return;
+
+    globalThis.fetch = (input, init) => {
+      try {
+        const raw = typeof input === "string"
+          ? input
+          : (input && typeof input.url === "string" ? input.url : "");
+        if (raw) {
+          const resolved = new URL(raw, window.location.origin);
+          if (resolved.origin === window.location.origin && resolved.pathname.startsWith("/data/")) {
+            const target = new URL(`${RELAY_DATA_ORIGIN}${resolved.pathname}${resolved.search}`);
+            if (typeof input === "string") {
+              return nativeFetch(target.toString(), init);
+            }
+            if (input instanceof Request) {
+              return nativeFetch(new Request(target.toString(), input));
+            }
+          }
+        }
+      } catch {
+        // Fall back to native fetch for all parsing/rewriting errors.
+      }
+      return nativeFetch(input, init);
+    };
+  }
+
+  installDataFetchProxy();
 
   async function probeWebSocket(url, timeoutMs = 1200) {
     if (!url) return false;
