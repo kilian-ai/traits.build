@@ -90,7 +90,7 @@ function json(data, status = 200) {
 
 // ── Tunnel instrumentation (best-effort, isolate-local) ─────────────────────
 
-const RELAY_BUILD = '2026-04-20-dhcp-fix-1';
+const RELAY_BUILD = '2026-04-20-ethernet-tunnel';
 const TUNNEL_EVENT_LIMIT = 200;
 
 const tunnelStats = {
@@ -114,6 +114,12 @@ const tunnelStats = {
   dhcp_requests: 0,
   dhcp_offers: 0,
   dhcp_acks: 0,
+  tcp_resets: 0,
+  arp_requests: 0,
+  arp_replies: 0,
+  eth_frames: 0,
+  raw_ip_packets: 0,
+  ntp_replies: 0,
 };
 
 const tunnelConnections = new Map(); // connId -> { started, bytes_rx, packets_rx, colo }
@@ -157,7 +163,24 @@ function tunnelDebugSnapshot() {
   };
 }
 
-// ── Linux tunnel helpers (raw IPv4 packets over WebSocket) ──────────────────
+// ── Linux tunnel helpers (Ethernet frames + raw IPv4 packets over WebSocket) ─
+
+// ── v86 default network config ──
+// When no overrides, v86 uses these for its SLIRP-style user-mode networking:
+const V86_ROUTER_MAC = [0x52, 0x54, 0x00, 0x01, 0x02, 0x03]; // 52:54:00:01:02:03
+const V86_ROUTER_IP  = [192, 168, 86, 1];
+const V86_VM_IP      = [192, 168, 86, 100];
+const V86_SUBNET     = [255, 255, 255, 0];
+const V86_DNS_IP     = V86_ROUTER_IP; // v86 uses router as DNS (we do DoH behind the scenes)
+
+// ── www.linux default network config ──
+const LINUX_GUEST_IP  = [10, 0, 2, 15];
+const LINUX_SERVER_IP = [10, 0, 2, 2];
+const LINUX_DNS_IP    = [1, 1, 1, 1];
+const LINUX_SUBNET    = [255, 255, 255, 0];
+
+const DHCP_LEASE_SECS = 86400;
+const DHCP_MAGIC      = [99, 130, 83, 99];
 
 function _checksum(bytes) {
   let sum = 0;
@@ -167,6 +190,76 @@ function _checksum(bytes) {
   while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
   return (~sum) & 0xffff;
 }
+
+// ── Auto-detect frame type ──
+// Returns 'ethernet' if bytes look like an Ethernet frame, 'ipv4' for raw IP.
+function _detectFrameType(bytes) {
+  if (bytes.length < 20) return 'unknown';
+  // Check if byte 0 upper nibble = 4 → raw IPv4
+  if ((bytes[0] >> 4) === 4) return 'ipv4';
+  // Otherwise, check EtherType at bytes 12-13
+  if (bytes.length >= 14) {
+    const etherType = (bytes[12] << 8) | bytes[13];
+    if (etherType === 0x0800 || etherType === 0x0806 || etherType === 0x86DD) return 'ethernet';
+  }
+  // Fallback: if first byte is 0xFF (broadcast MAC) or 0x52 (v86 router MAC prefix), likely Ethernet
+  if (bytes[0] === 0xFF || bytes[0] === 0x52) return 'ethernet';
+  return 'unknown';
+}
+
+// ── Ethernet frame parsing/encoding ──
+
+function _parseEthFrame(bytes) {
+  if (bytes.length < 14) return null;
+  const destMac = bytes.slice(0, 6);
+  const srcMac = bytes.slice(6, 12);
+  const etherType = (bytes[12] << 8) | bytes[13];
+  const payload = bytes.slice(14);
+  return { destMac, srcMac, etherType, payload };
+}
+
+function _buildEthFrame(destMac, srcMac, etherType, payload) {
+  const frame = new Uint8Array(14 + payload.length);
+  frame.set(destMac, 0);
+  frame.set(srcMac, 6);
+  frame[12] = (etherType >> 8) & 0xff;
+  frame[13] = etherType & 0xff;
+  frame.set(payload, 14);
+  return frame;
+}
+
+// ── ARP handling ──
+
+function _parseArp(payload) {
+  if (payload.length < 28) return null;
+  const htype = (payload[0] << 8) | payload[1];
+  const ptype = (payload[2] << 8) | payload[3];
+  const hlen = payload[4];
+  const plen = payload[5];
+  const oper = (payload[6] << 8) | payload[7];
+  const sha = payload.slice(8, 8 + hlen);
+  const spa = payload.slice(8 + hlen, 8 + hlen + plen);
+  const tha = payload.slice(8 + hlen + plen, 8 + 2 * hlen + plen);
+  const tpa = payload.slice(8 + 2 * hlen + plen, 8 + 2 * hlen + 2 * plen);
+  return { htype, ptype, oper, sha, spa, tha, tpa };
+}
+
+function _buildArpReply(request, routerMac) {
+  // Build ARP reply: "I am the target IP, here is my MAC"
+  const payload = new Uint8Array(28);
+  payload[0] = 0; payload[1] = 1;   // htype = Ethernet
+  payload[2] = 0x08; payload[3] = 0; // ptype = IPv4
+  payload[4] = 6;                     // hlen = 6 (MAC)
+  payload[5] = 4;                     // plen = 4 (IPv4)
+  payload[6] = 0; payload[7] = 2;    // oper = Reply
+  payload.set(routerMac, 8);          // sha = our MAC
+  payload.set(request.tpa, 14);       // spa = requested IP (we claim to own it)
+  payload.set(request.sha, 18);       // tha = requester's MAC
+  payload.set(request.spa, 24);       // tpa = requester's IP
+  return payload;
+}
+
+// ── IPv4 parsing/encoding ──
 
 function _parseIpPacket(buf) {
   if (!(buf instanceof Uint8Array) || buf.length < 20) return null;
@@ -205,6 +298,8 @@ function _buildIpPacket(protocol, srcIp, dstIp, payload, id = 0) {
   return pkt;
 }
 
+// ── UDP ──
+
 function _parseUdp(payload) {
   if (payload.length < 8) return null;
   const srcPort = (payload[0] << 8) | payload[1];
@@ -230,6 +325,8 @@ function _buildUdp(srcPort, dstPort, data) {
   return udp;
 }
 
+// ── ICMP ──
+
 function _handleIcmpEcho(ipPkt) {
   const p = ipPkt.payload;
   if (p.length < 8 || p[0] !== 8) return null;
@@ -243,29 +340,53 @@ function _handleIcmpEcho(ipPkt) {
   return _buildIpPacket(1, ipPkt.dstIp, ipPkt.srcIp, reply, ipPkt.id);
 }
 
-// DHCP server constants — standard QEMU/v86 guest network
-const DHCP_GUEST_IP   = [10, 0, 2, 15];
-const DHCP_SERVER_IP  = [10, 0, 2, 2];
-const DHCP_DNS_IP     = [1, 1, 1, 1];
-const DHCP_SUBNET     = [255, 255, 255, 0];
-const DHCP_LEASE_SECS = 86400;
-const DHCP_MAGIC      = [99, 130, 83, 99];
+// ── NTP ──
 
-function _handleDhcpUdp(ipPkt, udp) {
+function _handleNtp(ipPkt, udp) {
+  if (udp.data.length < 48) return null;
+  const now = Date.now();
+  // NTP epoch: 1900-01-01 vs Unix epoch: 1970-01-01 = 2208988800 seconds
+  const NTP_EPOCH_OFFSET = 2208988800;
+  const ntpSecs = Math.floor(now / 1000) + NTP_EPOCH_OFFSET;
+  const ntpFrac = Math.floor((now % 1000) / 1000 * 0x100000000);
+
+  const reply = new Uint8Array(48);
+  const view = new DataView(reply.buffer);
+  // LI=0, VN=4, Mode=4(server) → 0x24
+  view.setUint8(0, 0x24);
+  view.setUint8(1, 2);       // stratum 2
+  view.setUint8(2, 10);      // poll interval
+  view.setInt8(3, -20);      // precision
+  // root delay/dispersion = 0
+  // reference ID = 0
+  // reference timestamp = now
+  view.setUint32(16, ntpSecs);
+  view.setUint32(20, ntpFrac);
+  // origin timestamp = client's transmit timestamp
+  const clientData = udp.data;
+  reply.set(clientData.slice(40, 48), 24); // ori = client's xmit
+  // receive timestamp = now
+  view.setUint32(32, ntpSecs);
+  view.setUint32(36, ntpFrac);
+  // transmit timestamp = now
+  view.setUint32(40, ntpSecs);
+  view.setUint32(44, ntpFrac);
+
+  const udpReply = _buildUdp(123, udp.srcPort, reply);
+  return _buildIpPacket(17, ipPkt.dstIp, ipPkt.srcIp, udpReply, ipPkt.id);
+}
+
+// ── DHCP ──
+
+function _handleDhcpUdp(ipPkt, udp, netCfg) {
   const data = udp.data;
-  // Minimum DHCP size: 236 bytes header + 4 magic + at least End option
   if (data.length < 241) return null;
-  // Must be a BOOTREQUEST (op=1)
   if (data[0] !== 1) return null;
-  // Check magic cookie
   if (data[236] !== 99 || data[237] !== 130 || data[238] !== 83 || data[239] !== 99) return null;
 
-  // Read xid (transaction ID)
   const xid = data.slice(4, 8);
-  // Read client MAC (chaddr, 6 bytes at offset 28)
-  const chaddr = data.slice(28, 34);
+  const chaddr = data.slice(28, 44); // full 16 bytes for chaddr field
 
-  // Parse DHCP message type from options (starts at 240)
   let msgType = 0;
   let i = 240;
   while (i < data.length) {
@@ -273,72 +394,62 @@ function _handleDhcpUdp(ipPkt, udp) {
     if (opt === 255) break;
     if (opt === 0) { i++; continue; }
     const len = data[i + 1] || 0;
-    if (opt === 53 && len >= 1) {
-      msgType = data[i + 2];
-    }
+    if (opt === 53 && len >= 1) msgType = data[i + 2];
     i += 2 + len;
   }
 
-  // We respond to DISCOVER (1) with OFFER (2) and REQUEST (3) with ACK (5)
   let replyType;
-  if (msgType === 1) {
-    tunnelStats.dhcp_discovers += 1;
-    replyType = 2; // OFFER
-  } else if (msgType === 3) {
-    tunnelStats.dhcp_requests += 1;
-    replyType = 5; // ACK
-  } else {
-    return null;
-  }
+  if (msgType === 1) { tunnelStats.dhcp_discovers += 1; replyType = 2; }
+  else if (msgType === 3) { tunnelStats.dhcp_requests += 1; replyType = 5; }
+  else return null;
 
-  // Build DHCP reply payload
   const reply = new Uint8Array(300);
   reply[0] = 2; // BOOTREPLY
   reply[1] = 1; // htype Ethernet
   reply[2] = 6; // hlen
   reply[3] = 0; // hops
-  reply.set(xid, 4);     // xid
-  reply[10] = 0x80; reply[11] = 0x00; // flags: broadcast
-  // ciaddr = 0
-  reply.set(DHCP_GUEST_IP, 16);  // yiaddr: offered IP
-  reply.set(DHCP_SERVER_IP, 20); // siaddr: server IP
-  // giaddr = 0
-  // chaddr: copy MAC, pad rest with 0
-  reply.set(chaddr, 28);
-  // sname[44..108]: 0, file[108..236]: 0 (already zeroed)
-  // magic cookie
+  reply.set(xid, 4);
+  // flags
+  reply[10] = 0x80; reply[11] = 0x00; // broadcast bit set
+  reply.set(netCfg.guestIp, 16);  // yiaddr
+  reply.set(netCfg.serverIp, 20); // siaddr
+  reply.set(netCfg.serverIp, 24); // giaddr
+  reply.set(chaddr, 28);          // chaddr (16 bytes)
   reply.set(DHCP_MAGIC, 236);
 
-  // Options
   let p = 240;
   const opt = (type, ...bytes) => {
     reply[p++] = type;
     reply[p++] = bytes.length;
     for (const b of bytes) reply[p++] = b;
   };
-  opt(53, replyType);                            // DHCP Message Type
-  opt(54, ...DHCP_SERVER_IP);                    // Server Identifier
-  opt(51, (DHCP_LEASE_SECS >> 24) & 0xff,       // IP Address Lease Time
-           (DHCP_LEASE_SECS >> 16) & 0xff,
-           (DHCP_LEASE_SECS >>  8) & 0xff,
-            DHCP_LEASE_SECS        & 0xff);
-  opt(1,  ...DHCP_SUBNET);                       // Subnet Mask
-  opt(3,  ...DHCP_SERVER_IP);                    // Router (gateway)
-  opt(6,  ...DHCP_DNS_IP);                       // DNS
-  reply[p++] = 255; // End option
+  opt(53, replyType);
+  opt(54, ...netCfg.serverIp);
+  if (replyType === 5) {
+    opt(51, (DHCP_LEASE_SECS >> 24) & 0xff,
+            (DHCP_LEASE_SECS >> 16) & 0xff,
+            (DHCP_LEASE_SECS >>  8) & 0xff,
+             DHCP_LEASE_SECS        & 0xff);
+  }
+  opt(1,  ...netCfg.subnet);
+  opt(3,  ...netCfg.serverIp); // Router/gateway
+  opt(6,  ...netCfg.dnsIp);   // DNS
+  // v86 vendor class: "v86" = [118, 56, 54]
+  opt(60, 118, 56, 54);
+  reply[p++] = 255; // End
 
   const dhcpPayload = reply.slice(0, p);
   const udpReply = _buildUdp(67, 68, dhcpPayload);
-  // Send to 255.255.255.255 (broadcast)
-  const pkt = _buildIpPacket(17, DHCP_SERVER_IP, [255, 255, 255, 255], udpReply, 0);
 
   if (replyType === 2) tunnelStats.dhcp_offers += 1;
   else tunnelStats.dhcp_acks += 1;
-  return pkt;
+
+  return _buildIpPacket(17, netCfg.serverIp, [255, 255, 255, 255], udpReply, 0);
 }
 
-async function _handleDnsUdp(ipPkt) {
-  const udp = _parseUdp(ipPkt.payload);
+// ── DNS ──
+
+async function _handleDnsUdp(ipPkt, udp) {
   if (!udp || udp.dstPort !== 53 || udp.data.length === 0) return null;
   try {
     const resp = await fetch('https://cloudflare-dns.com/dns-query', {
@@ -355,6 +466,203 @@ async function _handleDnsUdp(ipPkt) {
     return _buildIpPacket(17, ipPkt.dstIp, ipPkt.srcIp, udpReply, ipPkt.id);
   } catch (_) {
     return null;
+  }
+}
+
+// ── TCP RST ──
+
+function _handleTcpRst(ipPkt) {
+  const p = ipPkt.payload;
+  if (p.length < 20) return null;
+  const srcPort = (p[0] << 8) | p[1];
+  const dstPort = (p[2] << 8) | p[3];
+  const seqNum = (p[4] << 24) | (p[5] << 16) | (p[6] << 8) | p[7];
+  const flags = p[13];
+  const isSyn = (flags & 0x02) !== 0;
+  const isRst = (flags & 0x04) !== 0;
+  if (!isSyn || isRst) return null;
+  const rst = new Uint8Array(20);
+  rst[0] = (dstPort >> 8) & 0xff; rst[1] = dstPort & 0xff;
+  rst[2] = (srcPort >> 8) & 0xff; rst[3] = srcPort & 0xff;
+  const ackNum = seqNum + 1;
+  rst[8]  = (ackNum >> 24) & 0xff;
+  rst[9]  = (ackNum >> 16) & 0xff;
+  rst[10] = (ackNum >>  8) & 0xff;
+  rst[11] = ackNum & 0xff;
+  rst[12] = 0x50;
+  rst[13] = 0x14; // RST + ACK
+  return _buildIpPacket(6, ipPkt.dstIp, ipPkt.srcIp, rst, ipPkt.id);
+}
+
+// ── Unified packet handler (supports both Ethernet frames and raw IP) ──
+
+function _handlePacket(bytes, connState, sendFn) {
+  const frameType = connState.frameType || _detectFrameType(bytes);
+  // Lock in the frame type for this connection after first packet
+  if (!connState.frameType) connState.frameType = frameType;
+
+  if (frameType === 'ethernet') {
+    tunnelStats.eth_frames += 1;
+    _handleEthernetFrame(bytes, connState, sendFn);
+  } else if (frameType === 'ipv4') {
+    tunnelStats.raw_ip_packets += 1;
+    _handleRawIpPacket(bytes, connState, sendFn);
+  } else {
+    tunnelStats.parse_dropped += 1;
+  }
+}
+
+function _handleEthernetFrame(bytes, connState, sendFn) {
+  const eth = _parseEthFrame(bytes);
+  if (!eth) { tunnelStats.parse_dropped += 1; return; }
+
+  // Remember the VM's MAC from its first packet
+  if (!connState.vmMac) connState.vmMac = Array.from(eth.srcMac);
+
+  const routerMac = V86_ROUTER_MAC;
+  const vmMac = connState.vmMac;
+
+  // Network config for v86 Ethernet mode
+  const netCfg = {
+    serverIp: V86_ROUTER_IP,
+    guestIp: V86_VM_IP,
+    subnet: V86_SUBNET,
+    dnsIp: V86_DNS_IP,
+  };
+
+  // Helper to wrap an IP packet in an Ethernet frame and send
+  const sendEthIp = (ipPacket) => {
+    const frame = _buildEthFrame(vmMac, routerMac, 0x0800, ipPacket);
+    sendFn(frame);
+  };
+
+  // ARP (EtherType 0x0806)
+  if (eth.etherType === 0x0806) {
+    tunnelStats.arp_requests += 1;
+    const arp = _parseArp(eth.payload);
+    if (arp && arp.oper === 1 && arp.ptype === 0x0800) {
+      // Respond to ARP request: we claim to own any IP in the subnet
+      const replyPayload = _buildArpReply(arp, routerMac);
+      const replyFrame = _buildEthFrame(vmMac, routerMac, 0x0806, replyPayload);
+      tunnelStats.arp_replies += 1;
+      sendFn(replyFrame);
+    }
+    return;
+  }
+
+  // IPv4 (EtherType 0x0800)
+  if (eth.etherType === 0x0800) {
+    const ipPkt = _parseIpPacket(eth.payload);
+    if (!ipPkt) { tunnelStats.parse_dropped += 1; return; }
+
+    // ICMP
+    if (ipPkt.protocol === 1) {
+      tunnelStats.icmp_packets += 1;
+      const reply = _handleIcmpEcho(ipPkt);
+      if (reply) sendEthIp(reply);
+      return;
+    }
+
+    // TCP → RST
+    if (ipPkt.protocol === 6) {
+      tunnelStats.tcp_resets += 1;
+      const rst = _handleTcpRst(ipPkt);
+      if (rst) sendEthIp(rst);
+      return;
+    }
+
+    // UDP
+    if (ipPkt.protocol === 17) {
+      tunnelStats.udp_packets += 1;
+      const udpHdr = _parseUdp(ipPkt.payload);
+      if (!udpHdr) return;
+
+      // DHCP
+      if (udpHdr.dstPort === 67) {
+        const dhcpReply = _handleDhcpUdp(ipPkt, udpHdr, netCfg);
+        if (dhcpReply) sendEthIp(dhcpReply);
+        return;
+      }
+
+      // DNS
+      if (udpHdr.dstPort === 53) {
+        tunnelStats.dns_queries += 1;
+        _handleDnsUdp(ipPkt, udpHdr)
+          .then((reply) => {
+            if (reply) { tunnelStats.dns_replies += 1; sendEthIp(reply); }
+            else tunnelStats.dns_failures += 1;
+          })
+          .catch(() => { tunnelStats.dns_failures += 1; });
+        return;
+      }
+
+      // NTP
+      if (udpHdr.dstPort === 123) {
+        tunnelStats.ntp_replies += 1;
+        const ntpReply = _handleNtp(ipPkt, udpHdr);
+        if (ntpReply) sendEthIp(ntpReply);
+        return;
+      }
+    }
+    return;
+  }
+
+  // IPv6 (0x86DD) — silently ignore
+  if (eth.etherType === 0x86DD) return;
+
+  tunnelStats.parse_dropped += 1;
+}
+
+function _handleRawIpPacket(bytes, connState, sendFn) {
+  // Network config for www.linux raw-IP mode
+  const netCfg = {
+    serverIp: LINUX_SERVER_IP,
+    guestIp: LINUX_GUEST_IP,
+    subnet: LINUX_SUBNET,
+    dnsIp: LINUX_DNS_IP,
+  };
+
+  const ipPkt = _parseIpPacket(bytes);
+  if (!ipPkt) { tunnelStats.parse_dropped += 1; return; }
+
+  if (ipPkt.protocol === 1) {
+    tunnelStats.icmp_packets += 1;
+    const reply = _handleIcmpEcho(ipPkt);
+    if (reply) sendFn(reply);
+    return;
+  }
+
+  if (ipPkt.protocol === 6) {
+    tunnelStats.tcp_resets += 1;
+    const rst = _handleTcpRst(ipPkt);
+    if (rst) sendFn(rst);
+    return;
+  }
+
+  if (ipPkt.protocol === 17) {
+    tunnelStats.udp_packets += 1;
+    const udpHdr = _parseUdp(ipPkt.payload);
+    if (udpHdr && udpHdr.dstPort === 67) {
+      const dhcpReply = _handleDhcpUdp(ipPkt, udpHdr, netCfg);
+      if (dhcpReply) sendFn(dhcpReply);
+      return;
+    }
+    if (udpHdr && udpHdr.dstPort === 53) {
+      tunnelStats.dns_queries += 1;
+      _handleDnsUdp(ipPkt, udpHdr)
+        .then((reply) => {
+          if (reply) { tunnelStats.dns_replies += 1; sendFn(reply); }
+          else tunnelStats.dns_failures += 1;
+        })
+        .catch(() => { tunnelStats.dns_failures += 1; });
+      return;
+    }
+    if (udpHdr && udpHdr.dstPort === 123) {
+      tunnelStats.ntp_replies += 1;
+      const ntpReply = _handleNtp(ipPkt, udpHdr);
+      if (ntpReply) sendFn(ntpReply);
+      return;
+    }
   }
 }
 
@@ -401,150 +709,32 @@ async function _linuxTunnelWs(request) {
   });
   logTunnelEvent('ws_open', { req_id: reqId, colo });
 
-  // Preferred path: bridge this tunnel to the upstream Apptron net worker.
-  // This keeps browser traffic on relay.traits.build while preserving full
-  // upstream network behavior.
-  try {
-    // Include full WebSocket handshake headers; apptron.dev/x/net requires them.
-    const wsKey = btoa(String.fromCharCode(
-      ...crypto.getRandomValues(new Uint8Array(16))
-    ));
-    const upstreamResp = await fetch('https://www.apptron.dev/x/net', {
-      headers: {
-        'Upgrade': 'websocket',
-        'Connection': 'Upgrade',
-        'Sec-WebSocket-Key': wsKey,
-        'Sec-WebSocket-Version': '13',
-        'Sec-WebSocket-Protocol': 'binary',
-      },
-    });
-    if (upstreamResp.status === 101 && upstreamResp.webSocket) {
-      const upstream = upstreamResp.webSocket;
-      upstream.accept();
+  // Self-contained tunnel: ARP + DHCP + DNS + ICMP + NTP + TCP RST.
+  // Supports both Ethernet frames (v86/Apptron) and raw IP packets (www.linux).
+  // Frame type is auto-detected from the first binary message.
 
-      const closeBoth = (code = 1000, reason = 'closed') => {
-        try { server.close(code, reason); } catch (_) {}
-        try { upstream.close(code, reason); } catch (_) {}
-      };
-
-      server.addEventListener('message', (evt) => {
-        try { upstream.send(evt.data); } catch (_) { closeBoth(1011, 'upstream-send-failed'); }
-      });
-      upstream.addEventListener('message', (evt) => {
-        try { server.send(evt.data); } catch (_) { closeBoth(1011, 'client-send-failed'); }
-      });
-
-      server.addEventListener('close', (evt) => {
-        tunnelStats.closes += 1;
-        tunnelConnections.delete(reqId);
-        logTunnelEvent('ws_close', {
-          req_id: reqId,
-          code: evt && typeof evt.code === 'number' ? evt.code : null,
-          reason: evt && evt.reason ? String(evt.reason).slice(0, 120) : '',
-          clean: !!(evt && evt.wasClean),
-          mode: 'upstream-proxy',
-        });
-        try { upstream.close(evt?.code || 1000, evt?.reason || 'client-closed'); } catch (_) {}
-      });
-
-      upstream.addEventListener('close', (evt) => {
-        tunnelStats.closes += 1;
-        tunnelConnections.delete(reqId);
-        logTunnelEvent('ws_close', {
-          req_id: reqId,
-          code: evt && typeof evt.code === 'number' ? evt.code : null,
-          reason: evt && evt.reason ? String(evt.reason).slice(0, 120) : '',
-          clean: !!(evt && evt.wasClean),
-          mode: 'upstream-proxy',
-        });
-        try { server.close(evt?.code || 1000, evt?.reason || 'upstream-closed'); } catch (_) {}
-      });
-
-      server.addEventListener('error', (evt) => {
-        tunnelStats.errors += 1;
-        logTunnelEvent('ws_error', { req_id: reqId, mode: 'upstream-proxy', error: safeError(evt) });
-      });
-      upstream.addEventListener('error', (evt) => {
-        tunnelStats.errors += 1;
-        logTunnelEvent('ws_error', { req_id: reqId, mode: 'upstream-proxy', error: safeError(evt) });
-      });
-
-      logTunnelEvent('ws_proxy_upstream', { req_id: reqId, upstream: 'https://www.apptron.dev/x/net' });
-      return new Response(null, { status: 101, webSocket: client });
-    }
-    logTunnelEvent('ws_proxy_unavailable', { req_id: reqId, status: upstreamResp.status });
-  } catch (e) {
-    logTunnelEvent('ws_proxy_error', { req_id: reqId, error: safeError(e) });
-  }
-
-  // Fallback path: minimal in-worker tunnel handling (ICMP + DNS/UDP).
+  const connState = { frameType: null, vmMac: null };
+  const sendFn = (data) => { try { server.send(data); } catch(_) {} };
 
   server.addEventListener('message', (evt) => {
     try {
       tunnelStats.message_events += 1;
       const data = evt.data;
-      // Optional text ping for diagnostics.
       if (typeof data === 'string') {
-        if (data === 'ping') {
-          tunnelStats.text_pings += 1;
-          server.send('pong');
-        }
+        if (data === 'ping') { tunnelStats.text_pings += 1; server.send('pong'); }
         return;
       }
 
       let bytes;
       if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
       else if (data && data.buffer instanceof ArrayBuffer) bytes = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.length || 0);
-      else {
-        tunnelStats.parse_dropped += 1;
-        logTunnelEvent('drop_non_binary', { req_id: reqId });
-        return;
-      }
+      else { tunnelStats.parse_dropped += 1; return; }
 
       tunnelStats.binary_packets += 1;
       const c = tunnelConnections.get(reqId);
-      if (c) {
-        c.bytes_rx += bytes.length;
-        c.packets_rx += 1;
-      }
+      if (c) { c.bytes_rx += bytes.length; c.packets_rx += 1; }
 
-      const ipPkt = _parseIpPacket(bytes);
-      if (!ipPkt) {
-        tunnelStats.parse_dropped += 1;
-        return;
-      }
-
-      if (ipPkt.protocol === 1) {
-        tunnelStats.icmp_packets += 1;
-        const reply = _handleIcmpEcho(ipPkt);
-        if (reply) server.send(reply);
-        return;
-      }
-
-      if (ipPkt.protocol === 17) {
-        tunnelStats.udp_packets += 1;
-        const udpHdr = _parseUdp(ipPkt.payload);
-        // DHCP: client sends from 0.0.0.0:68 to 255.255.255.255:67
-        if (udpHdr && udpHdr.dstPort === 67) {
-          const dhcpReply = _handleDhcpUdp(ipPkt, udpHdr);
-          if (dhcpReply) server.send(dhcpReply);
-          return;
-        }
-        tunnelStats.dns_queries += 1;
-        _handleDnsUdp(ipPkt)
-          .then((reply) => {
-            if (reply) {
-              tunnelStats.dns_replies += 1;
-              server.send(reply);
-            } else {
-              tunnelStats.dns_failures += 1;
-            }
-          })
-          .catch((e) => {
-            tunnelStats.dns_failures += 1;
-            logTunnelEvent('dns_error', { req_id: reqId, error: safeError(e) });
-          });
-      }
+      _handlePacket(bytes, connState, sendFn);
     } catch (e) {
       tunnelStats.errors += 1;
       logTunnelEvent('message_error', { req_id: reqId, error: safeError(e) });
