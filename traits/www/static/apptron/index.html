@@ -83,23 +83,107 @@
   const status = document.getElementById("status");
   const qp = new URLSearchParams(window.location.search);
 
+  function wsNetUrlForOrigin(originLike) {
+    try {
+      const origin = new URL(originLike);
+      const wsProto = origin.protocol === "https:" ? "wss:" : "ws:";
+      return `${wsProto}//${origin.host}/x/net`;
+    } catch {
+      return "";
+    }
+  }
+
+  async function probeWebSocket(url, timeoutMs = 1200) {
+    if (!url) return false;
+    return await new Promise((resolve) => {
+      let settled = false;
+      let ws;
+      const finalize = (ok) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (ws) {
+          try {
+            ws.close();
+          } catch {
+            // ignore close errors during probe
+          }
+        }
+        resolve(ok);
+      };
+      const timer = setTimeout(() => finalize(false), timeoutMs);
+      try {
+        ws = new WebSocket(url);
+        ws.onopen = () => finalize(true);
+        ws.onerror = () => finalize(false);
+        ws.onclose = () => finalize(false);
+      } catch {
+        finalize(false);
+      }
+    });
+  }
+
+  async function selectNetwork() {
+    const explicit = qp.get("network");
+    if (explicit) {
+      return { network: explicit, source: "query" };
+    }
+
+    const fallbackNetwork = wsNetUrlForOrigin(window.apptron.origin);
+    if (qp.get("relay") === "off") {
+      return { network: fallbackNetwork, source: "origin-fallback" };
+    }
+
+    const relayUrl = qp.get("relay_url") || "wss://relay.traits.build/x/net";
+    const relayOk = await probeWebSocket(relayUrl);
+    if (relayOk) {
+      return { network: relayUrl, source: "default-relay" };
+    }
+
+    return { network: fallbackNetwork, source: "origin-fallback" };
+  }
+
+  function shSingleQuote(value) {
+    return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+  }
+
+  function relayRcLines(network, source) {
+    const relayUrl = qp.get("relay_url") || "wss://relay.traits.build/x/net";
+    return [
+      "# traits.build relay bootstrap",
+      `export WANIX_DEFAULT_RELAY=${relayUrl}`,
+      `export WANIX_NETWORK=${network}`,
+      `export WANIX_NETWORK_SOURCE=${source}`,
+      "alias relay_status='echo WANIX_DEFAULT_RELAY=$WANIX_DEFAULT_RELAY; echo WANIX_NETWORK=$WANIX_NETWORK; echo WANIX_NETWORK_SOURCE=$WANIX_NETWORK_SOURCE'"
+    ];
+  }
+
+  function relayBootstrapCommand(network, source) {
+    const rcPath = "/tmp/.traits-relay.sh";
+    const quotedLines = relayRcLines(network, source).map((line) => shSingleQuote(line)).join(" ");
+    // Some shells can drop a few leading bytes on early boot writes; duplicate the write command.
+    return `zz; printf '%s\\n' ${quotedLines} > ${rcPath}; printf '%s\\n' ${quotedLines} > ${rcPath}; . ${rcPath}`;
+  }
+
+  async function bootstrapRelayInShell(runtime, terminalId, network, source) {
+    const command = relayBootstrapCommand(network, source);
+    try {
+      await runtime.writeFile(`web/dom/${terminalId}/data`, `${command}\n`);
+    } catch {
+      // Optional bootstrap only; shell remains usable without relay rc injection.
+    }
+  }
+
+  const selectedNetwork = await selectNetwork();
+  status.textContent = `Booting Apptron runtime (${selectedNetwork.source})...`;
+
   const runtime = new WanixRuntime({
     screen: false,
     helpers: true,
     debug9p: qp.get("debug9p") === "true",
     wasm: qp.get("wasm") || "./wanix.wasm",
     bundle: qp.get("bundle") || "./bundles/sys.tar.gz",
-    network:
-      qp.get("network") ||
-      (() => {
-        try {
-          const origin = new URL(window.apptron.origin);
-          const wsProto = origin.protocol === "https:" ? "wss:" : "ws:";
-          return `${wsProto}//${origin.host}/x/net`;
-        } catch {
-          return "";
-        }
-      })()
+    network: selectedNetwork.network
   });
 
   window.apptron.instance = runtime;
@@ -108,12 +192,14 @@
     await runtime.ready();
     const ideBridgeMode = qp.get("ide_bridge") === "1";
     if (ideBridgeMode) {
-      status.textContent = "Apptron runtime ready for IDE bridge";
+      status.textContent = `Apptron runtime ready for IDE bridge (${selectedNetwork.source})`;
     } else {
       const terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
+      window.apptron.terminalId = terminalId;
       await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
       await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
-      status.textContent = "Apptron shell ready";
+      await bootstrapRelayInShell(runtime, terminalId, selectedNetwork.network, selectedNetwork.source);
+      status.textContent = `Apptron shell ready (${selectedNetwork.source})`;
     }
     status.classList.add("ready");
   } catch (error) {
