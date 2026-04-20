@@ -340,6 +340,11 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
       // IDE mode: extension reads xterm channel directly via terminal-id file.
       // Keep shell bootstrap minimal and skip DOM attachment.
       try {
+        localStorage.setItem("apptron-terminal-id", terminalId);
+      } catch {
+        // Ignore localStorage failures in restricted contexts.
+      }
+      try {
         await runtime.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", `${terminalId}\n`);
       } catch {
         // Non-fatal: extension will fall back to #console/data.

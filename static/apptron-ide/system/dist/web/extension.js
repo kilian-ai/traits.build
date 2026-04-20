@@ -4428,6 +4428,13 @@ async function resolveTerminalDataPath(wx) {
     }
   }
   try {
+    const id = String(localStorage.getItem("apptron-terminal-id") || "").trim();
+    if (/^[0-9]+$/.test(id)) {
+      return `web/dom/${id}/data`;
+    }
+  } catch {
+  }
+  try {
     const frames = window.top?.document?.querySelectorAll("iframe") ?? [];
     for (const frame of Array.from(frames)) {
       const win = frame.contentWindow;
@@ -4453,9 +4460,15 @@ function createTerminal(wx) {
         try {
           const dataPath = await resolveTerminalDataPath(wx);
           console.log("terminal channel", dataPath);
+          writeEmitter.fire(`\r
+[apptron] terminal channel: ${dataPath}\r
+`);
           const stream = await wx.openReadable(dataPath);
           const writable = await wx.openWritable(dataPath);
           writer = writable.getWriter();
+          if (dataPath.startsWith("web/dom/")) {
+            await writer.write(enc.encode("\n"));
+          }
           for await (const chunk of stream) {
             writeEmitter.fire(dec.decode(chunk));
           }
