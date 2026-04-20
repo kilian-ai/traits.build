@@ -161,5 +161,6 @@ The `lint_kernel_layers()` function in `build.rs` classifies all `kernel.*` trai
 ## Apptron IDE Filesystem Bridge
 
 - The Apptron IDE shell at `traits/www/static/apptron-ide/index.html` boots `WanixRuntime` and listens for extension-host port handoff messages.
+- The IDE must load `wanix.min.js` as an ES module import (not a classic `<script src=...>` tag) so `WanixRuntime` is initialized before bridge setup.
 - The workbench loader at `traits/www/static/apptron-ide/lib/vscode.js` enables the built-in `apptron-system` web extension and routes its IPC port to the page bridge.
 - The web extension registers the `wanix` `FileSystemProvider`, and the default workspace is `wanix:/` to ensure Explorer starts from a guaranteed existing root.

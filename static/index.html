@@ -134,6 +134,7 @@ a:hover{text-decoration:underline}
     <a data-href="/docs/api">API</a>
     <a data-href="/canvas">Canvas</a>
     <a data-href="/linux">Linux</a>
+    <a data-href="/terminal">Terminal</a>
     <a data-href="/apptron">Apptron</a>
     <a data-href="/apptron-ide">Apptron IDE</a>
     <a data-href="/wanix">Wanix</a>
@@ -178,13 +179,14 @@ const ROUTES = {
   '/apptron':    'www.apptron',
   '/apptron-ide':'www.apptron',
   '/wanix':      'www.wanix',
-  '/terminal':   'www.docs.api',
+  '/terminal':   'www.apptron',
   '/testing':    'www.testing',
   '/wasm':       'www.wasm',
 };
 
 const LOCAL_ROUTE_KEY = 'traits.shell.route';
 const STATIC_RUNTIME_ROUTES = {
+  '/terminal': () => (isLocal ? './apptron/index.html' : '/static/apptron/index.html') + '?spa=1&mode=console',
   '/apptron': () => (isLocal ? './apptron/index.html' : '/static/apptron/index.html') + '?spa=1',
   '/apptron-ide': () => (isLocal ? './apptron-ide/index.html' : '/static/apptron-ide/index.html') + '?spa=1',
 };
