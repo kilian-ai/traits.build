@@ -647,6 +647,13 @@ export default {
             redirect: 'follow',
           });
         }
+        if (upstream.status === 403) {
+          // Avoid hard aborts in hosted IDE boot when upstream blocks hotlinked data.
+          // Returning no-content keeps startup flow alive while still signaling no payload.
+          const fallbackHeaders = new Headers(cors());
+          fallbackHeaders.set('x-relay-data-fallback', 'upstream-403-no-content');
+          return new Response(null, { status: 204, headers: fallbackHeaders });
+        }
         const headers = new Headers(upstream.headers);
         for (const [k, v] of Object.entries(cors())) headers.set(k, v);
         return new Response(upstream.body, {

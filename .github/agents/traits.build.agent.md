@@ -892,6 +892,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - Relay Cloudflare worker is isolated as `traits-build-relay` (account-pinned in `relay/wrangler.toml`) to reduce accidental cross-project overwrites from other repos using generic worker names.
 - `www.linux` now normalizes legacy tunnel URL overrides (`wss://traits-relay.kiliannc.workers.dev/linux/tunnel`) to `wss://relay.traits.build/linux/tunnel` and rewrites stale localStorage values on boot.
 - Relay `/data/*` proxy now forwards a curated subset of request headers and rewrites `origin/referer` to `https://apptron.dev` (with fallback retry on `https://www.apptron.dev`) to reduce upstream 403 hotlink blocks during Apptron IDE filesystem sync.
+- If relay `/data/*` still receives 403 from both upstream hosts, it returns `204 No Content` with `x-relay-data-fallback: upstream-403-no-content` so hosted IDE boot does not fail with browser `ERR_ABORTED` on blocked sync assets.
 - `www.linux` command auto-fix monitor is now default-off to avoid appending sentinel wrappers to every interactive shell command. Use `autofix on|off|status` in the Linux terminal to control it.
 - `sys.openapi` `info.version` must come from `env!("TRAITS_BUILD_VERSION")` (same source as `sys.version`), not `CARGO_PKG_VERSION`, otherwise WASM docs can show stale API version strings after a rebuild.
 
