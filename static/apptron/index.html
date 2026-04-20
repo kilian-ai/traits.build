@@ -237,118 +237,14 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
 
   installDataFetchProxy();
 
-  async function probeWebSocket(url, timeoutMs = 1200) {
-    if (!url) return false;
-    return await new Promise((resolve) => {
-      let settled = false;
-      let ws;
-      const finalize = (ok) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (ws) {
-          try {
-            ws.close();
-          } catch {
-            // ignore close errors during probe
-          }
-        }
-        resolve(ok);
-      };
-      const timer = setTimeout(() => finalize(false), timeoutMs);
-      try {
-        ws = new WebSocket(url);
-        ws.onopen = () => finalize(true);
-        ws.onerror = () => finalize(false);
-        ws.onclose = () => finalize(false);
-      } catch {
-        finalize(false);
-      }
-    });
-  }
-
-  async function selectNetwork() {
+  function resolveNetwork() {
     const explicit = qp.get("network");
-    if (explicit) {
-      return { network: normalizeRelayUrl(explicit), source: "query" };
-    }
-
+    if (explicit) return normalizeRelayUrl(explicit);
     if (qp.get("relay") === "off") {
-      return {
-        network: wsNetUrlForOrigin(window.location.origin),
-        source: "origin-net"
-      };
+      const originNet = wsNetUrlForOrigin(window.location.origin);
+      if (originNet) return originNet;
     }
-
-    // On localhost: probe the local apptron worker first (default port 8080)
-    const hostname = window.location.hostname;
-    const isLocal = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
-    if (isLocal) {
-      const localWorkerUrl = qp.get("worker_url") || "ws://127.0.0.1:8080/x/net";
-      const localOk = await probeWebSocket(localWorkerUrl, 800);
-      if (localOk) {
-        return { network: localWorkerUrl, source: "local-worker" };
-      }
-    }
-
-    const relayUrl = configuredRelayUrl();
-    const relayOk = await probeWebSocket(relayUrl, 1200);
-    if (relayOk) {
-      return { network: relayUrl, source: "default-relay" };
-    }
-
-    const originNet = wsNetUrlForOrigin(window.location.origin);
-    return { network: originNet || relayUrl, source: "origin-net" };
-  }
-
-  function shSingleQuote(value) {
-    return `'${String(value).replace(/'/g, `'"'"'`)}'`;
-  }
-
-  function relayRcLines(network, source) {
-    const relayUrl = configuredRelayUrl();
-    return [
-      "# traits.build relay bootstrap",
-      `export WANIX_DEFAULT_RELAY=${relayUrl}`,
-      `export WANIX_NETWORK=${network}`,
-      `export WANIX_NETWORK_SOURCE=${source}`,
-      "alias relay_status='echo WANIX_DEFAULT_RELAY=$WANIX_DEFAULT_RELAY; echo WANIX_NETWORK=$WANIX_NETWORK; echo WANIX_NETWORK_SOURCE=$WANIX_NETWORK_SOURCE'"
-    ];
-  }
-
-  function relayBootstrapCommand(network, source) {
-    const rcPath = "/tmp/.traits-relay.sh";
-    const quotedLines = relayRcLines(network, source).map((line) => shSingleQuote(line)).join(" ");
-    // Duplicate writes because early shell startup can drop leading bytes.
-    return `printf '%s\\n' ${quotedLines} > ${rcPath}; printf '%s\\n' ${quotedLines} > ${rcPath}; . ${rcPath}`;
-  }
-
-  function networkBootstrapCommand() {
-    const logPath = "/tmp/.udhcpc.log";
-    // Use a single compound command (test && ...) so semicolon-joining with
-    // other bootstrap blocks keeps valid sh syntax. `if ...; then;` with a
-    // trailing semicolon after `then` is a syntax error in BusyBox sh/hush
-    // and leaves the shell stuck in continuation mode.
-    return [
-      "ifconfig eth0 up >/dev/null 2>&1 || true",
-      `udhcpc -i eth0 -q -n > ${logPath} 2>&1 || true`,
-      `server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' ${logPath} | tail -n 1)`,
-      "test -n \"$server\" && { route del default >/dev/null 2>&1 || true; route add default gw \"$server\" >/dev/null 2>&1 || true; printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf; }"
-    ].join("; ");
-  }
-
-  function persistentHomeBootstrapCommand(username) {
-    // Wanix idbfs is mounted at /home/<username> but /etc/passwd sets root's
-    // home to /root (COW memfs, non-persistent). Redirect the session's HOME
-    // and CWD to the idbfs-backed /home/<username> so ~, $HOME, and new
-    // files default to the persistent mount. Idempotent and quiet — safe to
-    // re-run during bootstrap retries without wiping shell output.
-    const home = `/home/${username}`;
-    return [
-      `mkdir -p ${home} >/dev/null 2>&1 || true`,
-      `export HOME=${home}`,
-      `cd ${home} >/dev/null 2>&1 || true`
-    ].join("; ");
+    return configuredRelayUrl();
   }
 
   function sleepMs(ms) {
@@ -370,73 +266,12 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     return "";
   }
 
-  async function bootstrapRelayInShell(runtime, terminalId, network, source) {
-    const rcPath = "/tmp/.traits-bootstrap.sh";
-    const fsysPath = `vm/1/fsys${rcPath}`;
-    // Build one rc script with all bootstrap blocks. Writing this via fsys
-    // (bypassing the shell stdin pipe) is far more reliable than blasting a
-    // ~500-char command line through the tty — hush drops early bytes and
-    // racing multi-line writes corrupt continuation state.
-    const rcContent = [
-      "#!/bin/sh",
-      "# traits.build bootstrap (generated)",
-      "echo '[bootstrap] begin'",
-      ...relayRcLines(network, source),
-      "echo '[bootstrap] relay-env ok'",
-      "",
-      "# Network bootstrap (DHCP + route + DNS) — backgrounded so it does",
-      "# not block the shell prompt if the tunnel is not yet connected.",
-      "(",
-      "  ifconfig eth0 up >/dev/null 2>&1 || true",
-      "  udhcpc -i eth0 -q -n > /tmp/.udhcpc.log 2>&1 || true",
-      "  server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' /tmp/.udhcpc.log | tail -n 1)",
-      "  if [ -n \"$server\" ]; then",
-      "    route del default >/dev/null 2>&1 || true",
-      "    route add default gw \"$server\" >/dev/null 2>&1 || true",
-      "    printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf",
-      "  fi",
-      ") >/dev/null 2>&1 &",
-      "echo '[bootstrap] network spawned'",
-      "",
-      "# Home redirect to idbfs mount (persistent)",
-      `mkdir -p /home/${defaultUser.username} 2>/dev/null || true`,
-      `export HOME=/home/${defaultUser.username}`,
-      `cd /home/${defaultUser.username} 2>/dev/null || true`,
-      "echo '[bootstrap] home ok HOME='\"$HOME\"",
-      ""
-    ].join("\n");
-    // Write rc file directly via fsys (reliable, no shell-pipe drops).
-    try {
-      await runtime.writeFile(fsysPath, rcContent);
-    } catch {
-      // If fsys write fails, fall back to blasting commands (legacy path).
-    }
-    // Source the rc via shell. Small retry window handles early-boot drops
-    // on the xterm stdin pipe; send once only on each attempt so debug
-    // output is visible.
-    const sourceLine = `. ${rcPath}`;
-    const delays = [0, 800, 2000];
-    for (let i = 0; i < delays.length; i++) {
-      if (delays[i] > 0) {
-        await sleepMs(delays[i]);
-      }
-      try {
-        await runtime.writeFile(`web/dom/${terminalId}/data`, `\n${sourceLine}\n`);
-      } catch {
-        // Keep retrying; bootstrap is best-effort.
-      }
-    }
-  }
+  // Intentionally no in-shell bootstrap: no DHCP, no route, no DNS, no relay
+  // rc sourcing. The shell boots clean. Users opt-in to networking manually
+  // (e.g. `ifconfig eth0 up && udhcpc -i eth0`) or via Settings later.
 
-  const selectedNetwork = await selectNetwork();
-  try {
-    localStorage.setItem("apptron-default-relay", configuredRelayUrl());
-    localStorage.setItem("apptron-network", selectedNetwork.network);
-    localStorage.setItem("apptron-network-source", selectedNetwork.source);
-  } catch {
-    // Ignore localStorage failures in restricted contexts.
-  }
-  status.textContent = `Booting Apptron runtime (${selectedNetwork.source})...`;
+  const networkUrl = resolveNetwork();
+  status.textContent = `Booting Apptron runtime...`;
 
   const runtime = new WanixRuntime({
     screen: false,
@@ -444,7 +279,7 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     debug9p: qp.get("debug9p") === "true",
     wasm: qp.get("wasm") || "./wanix.wasm",
     bundle: qp.get("bundle") || "./bundles/sys.tar.gz",
-    network: selectedNetwork.network
+    network: networkUrl
   });
 
   // Enable on-demand bundle loading (Go toolchain etc.) via relay proxy
@@ -479,33 +314,22 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
       window.apptron.terminalId = terminalId;
     }
     if (ideBridgeMode) {
-      // Persist relay/bootstrap metadata even if terminal allocation is delayed.
+      // Persist terminal-id so the IDE extension can locate the xterm channel.
       try {
         if (terminalId) {
           localStorage.setItem("apptron-terminal-id", terminalId);
         }
-        localStorage.setItem("apptron-default-relay", configuredRelayUrl());
-        localStorage.setItem("apptron-network", selectedNetwork.network);
-        localStorage.setItem("apptron-network-source", selectedNetwork.source);
       } catch {
         // Ignore localStorage failures in restricted contexts.
       }
-      try {
-        await runtime.writeFile("vm/1/fsys/tmp/.traits-relay.sh", `${relayRcLines(selectedNetwork.network, selectedNetwork.source).join("\n")}\n`);
-      } catch {
-        // Non-fatal: extension will fall back to localStorage-based bootstrap.
-      }
       if (terminalId) {
-        // IDE mode: extension reads xterm channel directly via terminal-id file.
-        // Keep shell bootstrap minimal and skip DOM attachment.
         try {
           await runtime.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", `${terminalId}\n`);
         } catch {
           // Non-fatal: extension will fall back to #console/data.
         }
-        await bootstrapRelayInShell(runtime, terminalId, selectedNetwork.network, selectedNetwork.source);
       }
-      status.textContent = `Apptron runtime ready for IDE bridge (${selectedNetwork.source})`;
+      status.textContent = `Apptron runtime ready for IDE bridge`;
     } else {
       if (!terminalId) {
         terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
@@ -513,29 +337,7 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
       }
       await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
       await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
-      // Bundle init.js spawns the shell (exec /bin/sh into task/1). Without
-      // this, the xterm binds to #console/data but no process writes to it
-      // and the terminal stays blank forever. Upstream Apptron's index.html
-      // ran this via `import("#bundle/init.js")`.
-      try {
-        const initJS = await runtime.readText("#bundle/init.js");
-        if (initJS) {
-          const blob = new Blob([initJS], { type: "text/javascript" });
-          const initUrl = URL.createObjectURL(blob);
-          try {
-            const initModule = await import(initUrl);
-            if (typeof initModule.default === "function") {
-              await initModule.default(runtime);
-            }
-          } finally {
-            URL.revokeObjectURL(initUrl);
-          }
-        }
-      } catch (initErr) {
-        console.warn("apptron: bundle init.js unavailable or failed", initErr);
-      }
-      await bootstrapRelayInShell(runtime, terminalId, selectedNetwork.network, selectedNetwork.source);
-      status.textContent = `Apptron shell ready (${selectedNetwork.source})`;
+      status.textContent = `Apptron shell ready`;
     }
     status.classList.add("ready");
   } catch (error) {
