@@ -131,6 +131,20 @@ async function resolveTerminalDataPath(wx: any): Promise<string> {
 	} catch {
 		// same-origin/frame access can fail depending on host context
 	}
+	try {
+		const raw = await wx.readFile("web/dom/new/xterm");
+		const terminalId = new TextDecoder().decode(raw).trim();
+		if (/^[0-9]+$/.test(terminalId)) {
+			try {
+				await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}\n`));
+			} catch {
+				// Non-fatal; path still works even if id file write fails.
+			}
+			return `web/dom/${terminalId}/data`;
+		}
+	} catch {
+		// Runtime may not be ready for xterm allocation yet; fall back.
+	}
 	return "#console/data";
 }
 

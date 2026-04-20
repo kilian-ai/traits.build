@@ -4453,6 +4453,19 @@ async function resolveTerminalDataPath(wx) {
     }
   } catch {
   }
+  try {
+    const raw = await wx.readFile("web/dom/new/xterm");
+    const terminalId = new TextDecoder().decode(raw).trim();
+    if (/^[0-9]+$/.test(terminalId)) {
+      try {
+        await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}
+`));
+      } catch {
+      }
+      return `web/dom/${terminalId}/data`;
+    }
+  } catch {
+  }
   return "#console/data";
 }
 function shSingleQuote(value) {
