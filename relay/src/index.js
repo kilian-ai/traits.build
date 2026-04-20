@@ -968,12 +968,18 @@ export default {
             redirect: 'follow',
           });
         }
-        if (upstream.status === 403) {
-          // Avoid hard aborts in hosted IDE boot when upstream blocks hotlinked data.
-          // Returning no-content keeps startup flow alive while still signaling no payload.
+        // Upstream apptron.dev returns 403 (hotlink block) or 404 (path not
+        // present) for many /data/* GETs. Wanix httpfs treats both as fatal
+        // on initial fetch (boot.go:597 log.Fatalf "expected multipart
+        // response"), which kills the Go runtime before the shell spawns.
+        // Map both → 200 with an empty multipart/mixed body so httpfs sees a
+        // valid "empty listing" and continues with local-only idbfs.
+        if (upstream.status === 403 || upstream.status === 404) {
+          const boundary = 'wanix-empty-fallback';
           const fallbackHeaders = new Headers(cors());
-          fallbackHeaders.set('x-relay-data-fallback', 'upstream-403-no-content');
-          return new Response(null, { status: 204, headers: fallbackHeaders });
+          fallbackHeaders.set('x-relay-data-fallback', `upstream-${upstream.status}-empty-multipart`);
+          fallbackHeaders.set('content-type', `multipart/mixed; boundary=${boundary}`);
+          return new Response(`--${boundary}--\r\n`, { status: 200, headers: fallbackHeaders });
         }
         const headers = new Headers(upstream.headers);
         for (const [k, v] of Object.entries(cors())) headers.set(k, v);
