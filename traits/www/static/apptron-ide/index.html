@@ -67,7 +67,7 @@
       shellParams.set('embedded', 'true');
       shellParams.set('mode', 'console');
       shellParams.set('ide_bridge', '1');
-      for (const key of ['network', 'relay', 'relay_url', 'worker_url', 'origin', 'debug9p', 'wasm', 'bundle']) {
+      for (const key of ['network', 'relay', 'relay_url', 'worker_url', 'origin', 'debug9p', 'wasm', 'bundle', 'cb']) {
         const value = params.get(key);
         if (value) {
           shellParams.set(key, value);
