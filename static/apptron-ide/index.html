@@ -146,6 +146,22 @@
       }
     });
 
+    // --- Clipboard fallback for terminal paste ---
+    // VS Code terminal calls navigator.clipboard.readText() which needs
+    // explicit browser permission. The editor works because it uses native
+    // paste events. Capture paste-event text as fallback for the API.
+    {
+      let lastPasteText = '';
+      document.addEventListener('paste', (e) => {
+        if (e.clipboardData) lastPasteText = e.clipboardData.getData('text/plain');
+      }, true);
+      const orig = navigator.clipboard.readText.bind(navigator.clipboard);
+      navigator.clipboard.readText = async () => {
+        try { return await orig(); }
+        catch { return lastPasteText; }
+      };
+    }
+
     workbench.addEventListener('vscode-ready', () => {
       status.textContent = 'Apptron IDE ready';
       status.classList.add('ready');
