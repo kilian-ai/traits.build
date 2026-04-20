@@ -4410,6 +4410,25 @@ async function activate(context) {
   }));
   console.log("Apptron system extension activated");
 }
+async function resolveTerminalDataPath(wx) {
+  const idFiles = [
+    "vm/1/fsys/tmp/.apptron-terminal-id",
+    "/tmp/.apptron-terminal-id",
+    "tmp/.apptron-terminal-id",
+    "#console/terminalId"
+  ];
+  for (const idFile of idFiles) {
+    try {
+      const raw = await wx.readFile(idFile);
+      const terminalId = new TextDecoder().decode(raw).trim();
+      if (/^[0-9]+$/.test(terminalId)) {
+        return `web/dom/${terminalId}/data`;
+      }
+    } catch {
+    }
+  }
+  return "#console/data";
+}
 function createTerminal(wx) {
   const writeEmitter = new vscode.EventEmitter();
   const dec = new TextDecoder();
@@ -4421,15 +4440,8 @@ function createTerminal(wx) {
     open: () => {
       (async () => {
         try {
-          let dataPath = "#console/data";
-          try {
-            const tidBytes = await wx.readFile("#console/terminalId");
-            const tid = new TextDecoder().decode(tidBytes).trim();
-            if (tid) {
-              dataPath = `web/dom/${tid}/data`;
-            }
-          } catch {
-          }
+          const dataPath = await resolveTerminalDataPath(wx);
+          console.log("terminal channel", dataPath);
           const stream = await wx.openReadable(dataPath);
           const writable = await wx.openWritable(dataPath);
           writer = writable.getWriter();

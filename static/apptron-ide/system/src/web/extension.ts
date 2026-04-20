@@ -84,6 +84,27 @@ export async function activate(context: vscode.ExtensionContext) {
 	console.log('Apptron system extension activated');
 }
 
+async function resolveTerminalDataPath(wx: any): Promise<string> {
+	const idFiles = [
+		"vm/1/fsys/tmp/.apptron-terminal-id",
+		"/tmp/.apptron-terminal-id",
+		"tmp/.apptron-terminal-id",
+		"#console/terminalId",
+	];
+	for (const idFile of idFiles) {
+		try {
+			const raw = await wx.readFile(idFile);
+			const terminalId = new TextDecoder().decode(raw).trim();
+			if (/^[0-9]+$/.test(terminalId)) {
+				return `web/dom/${terminalId}/data`;
+			}
+		} catch {
+			// try next candidate
+		}
+	}
+	return "#console/data";
+}
+
 function createTerminal(wx: any) {
 	const writeEmitter = new vscode.EventEmitter<string>();
 	const dec = new TextDecoder();
@@ -95,19 +116,8 @@ function createTerminal(wx: any) {
 		open: () => {
 			(async () => {
 				try {
-					// Read terminalId written by apptron/index.html in ide_bridge mode.
-					// Use web/dom/{id}/data directly instead of #console/data to avoid
-					// Wanix Go panic ("arg 1 is not a []byte") on xterm-bound writes.
-					let dataPath = "#console/data";
-					try {
-						const tidBytes = await wx.readFile("#console/terminalId");
-						const tid = new TextDecoder().decode(tidBytes).trim();
-						if (tid) {
-							dataPath = `web/dom/${tid}/data`;
-						}
-					} catch {
-						// No terminalId file — fall back to #console/data
-					}
+					const dataPath = await resolveTerminalDataPath(wx);
+					console.log("terminal channel", dataPath);
 					const stream = await wx.openReadable(dataPath);
 					const writable = await wx.openWritable(dataPath);
 					writer = writable.getWriter();
