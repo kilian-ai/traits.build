@@ -260,7 +260,7 @@ async function _handleDnsUdp(ipPkt) {
   }
 }
 
-function _linuxTunnelWs(request) {
+async function _linuxTunnelWs(request) {
   const reqId = crypto.randomUUID().slice(0, 8);
   const cf = request.cf || {};
   const colo = String(cf.colo || 'unknown');
@@ -302,6 +302,74 @@ function _linuxTunnelWs(request) {
     ua: ua.slice(0, 120),
   });
   logTunnelEvent('ws_open', { req_id: reqId, colo });
+
+  // Preferred path: bridge this tunnel to the upstream Apptron net worker.
+  // This keeps browser traffic on relay.traits.build while preserving full
+  // upstream network behavior.
+  try {
+    const upstreamResp = await fetch('https://apptron.dev/x/net', {
+      headers: { Upgrade: 'websocket' },
+    });
+    if (upstreamResp.status === 101 && upstreamResp.webSocket) {
+      const upstream = upstreamResp.webSocket;
+      upstream.accept();
+
+      const closeBoth = (code = 1000, reason = 'closed') => {
+        try { server.close(code, reason); } catch (_) {}
+        try { upstream.close(code, reason); } catch (_) {}
+      };
+
+      server.addEventListener('message', (evt) => {
+        try { upstream.send(evt.data); } catch (_) { closeBoth(1011, 'upstream-send-failed'); }
+      });
+      upstream.addEventListener('message', (evt) => {
+        try { server.send(evt.data); } catch (_) { closeBoth(1011, 'client-send-failed'); }
+      });
+
+      server.addEventListener('close', (evt) => {
+        tunnelStats.closes += 1;
+        tunnelConnections.delete(reqId);
+        logTunnelEvent('ws_close', {
+          req_id: reqId,
+          code: evt && typeof evt.code === 'number' ? evt.code : null,
+          reason: evt && evt.reason ? String(evt.reason).slice(0, 120) : '',
+          clean: !!(evt && evt.wasClean),
+          mode: 'upstream-proxy',
+        });
+        try { upstream.close(evt?.code || 1000, evt?.reason || 'client-closed'); } catch (_) {}
+      });
+
+      upstream.addEventListener('close', (evt) => {
+        tunnelStats.closes += 1;
+        tunnelConnections.delete(reqId);
+        logTunnelEvent('ws_close', {
+          req_id: reqId,
+          code: evt && typeof evt.code === 'number' ? evt.code : null,
+          reason: evt && evt.reason ? String(evt.reason).slice(0, 120) : '',
+          clean: !!(evt && evt.wasClean),
+          mode: 'upstream-proxy',
+        });
+        try { server.close(evt?.code || 1000, evt?.reason || 'upstream-closed'); } catch (_) {}
+      });
+
+      server.addEventListener('error', (evt) => {
+        tunnelStats.errors += 1;
+        logTunnelEvent('ws_error', { req_id: reqId, mode: 'upstream-proxy', error: safeError(evt) });
+      });
+      upstream.addEventListener('error', (evt) => {
+        tunnelStats.errors += 1;
+        logTunnelEvent('ws_error', { req_id: reqId, mode: 'upstream-proxy', error: safeError(evt) });
+      });
+
+      logTunnelEvent('ws_proxy_upstream', { req_id: reqId, upstream: 'https://apptron.dev/x/net' });
+      return new Response(null, { status: 101, webSocket: client });
+    }
+    logTunnelEvent('ws_proxy_unavailable', { req_id: reqId, status: upstreamResp.status });
+  } catch (e) {
+    logTunnelEvent('ws_proxy_error', { req_id: reqId, error: safeError(e) });
+  }
+
+  // Fallback path: minimal in-worker tunnel handling (ICMP + DNS/UDP).
 
   server.addEventListener('message', (evt) => {
     try {
