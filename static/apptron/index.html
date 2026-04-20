@@ -61,13 +61,7 @@
   const hostedOnTraitsDomain =
     window.location.hostname === "traits.build" ||
     window.location.hostname.endsWith(".traits.build");
-  const defaultOrigin =
-    window.location.hostname === "127.0.0.1" ||
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "::1" ||
-    hostedOnTraitsDomain
-      ? "https://apptron.dev"
-      : window.location.origin;
+  const defaultOrigin = window.location.origin;
 
   window.apptron = {
     origin: bootParams.get("origin") || defaultOrigin,
@@ -141,7 +135,10 @@
     }
 
     if (qp.get("relay") === "off") {
-      return { network: "wss://apptron.dev/x/net", source: "apptron-dev" };
+      return {
+        network: wsNetUrlForOrigin(window.location.origin),
+        source: "origin-net"
+      };
     }
 
     // On localhost: probe the local apptron worker first (default port 8080)
@@ -161,7 +158,8 @@
       return { network: relayUrl, source: "default-relay" };
     }
 
-    return { network: "wss://apptron.dev/x/net", source: "apptron-dev" };
+    const originNet = wsNetUrlForOrigin(window.location.origin);
+    return { network: originNet || relayUrl, source: "origin-net" };
   }
 
   function shSingleQuote(value) {

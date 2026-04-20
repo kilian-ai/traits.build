@@ -548,7 +548,7 @@ export default {
       return json(tunnelDebugSnapshot());
     }
 
-    if (url.pathname === '/linux/tunnel') {
+    if (url.pathname === '/linux/tunnel' || url.pathname === '/x/net') {
       return _linuxTunnelWs(request);
     }
 
