@@ -337,6 +337,14 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
       }
       await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
       await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
+      // Kick the prompt: BusyBox hush defers its first prompt until it sees
+      // input on its stdin pipe. Without this single newline the xterm stays
+      // blank forever.
+      try {
+        await runtime.writeFile(`web/dom/${terminalId}/data`, "\n");
+      } catch {
+        // Non-fatal: shell will render after first keystroke.
+      }
       status.textContent = `Apptron shell ready`;
     }
     status.classList.add("ready");
