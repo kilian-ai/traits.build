@@ -286,16 +286,28 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   function relayBootstrapCommand(network, source) {
     const rcPath = "/tmp/.traits-relay.sh";
     const quotedLines = relayRcLines(network, source).map((line) => shSingleQuote(line)).join(" ");
-    // Some shells can drop a few leading bytes on early boot writes; duplicate the write command.
-    return `zz; printf '%s\\n' ${quotedLines} > ${rcPath}; printf '%s\\n' ${quotedLines} > ${rcPath}; . ${rcPath}`;
+    // Duplicate writes because early shell startup can drop leading bytes.
+    return `printf '%s\\n' ${quotedLines} > ${rcPath}; printf '%s\\n' ${quotedLines} > ${rcPath}; . ${rcPath}`;
+  }
+
+  function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   async function bootstrapRelayInShell(runtime, terminalId, network, source) {
     const command = relayBootstrapCommand(network, source);
-    try {
-      await runtime.writeFile(`web/dom/${terminalId}/data`, `${command}\n`);
-    } catch {
-      // Optional bootstrap only; shell remains usable without relay rc injection.
+    // Hidden IDE shells may not accept input immediately after xterm creation.
+    // Retry bootstrap writes over a short window so env vars are eventually applied.
+    const delays = [0, 300, 900, 1800];
+    for (const delay of delays) {
+      if (delay > 0) {
+        await sleepMs(delay);
+      }
+      try {
+        await runtime.writeFile(`web/dom/${terminalId}/data`, `${command}\n`);
+      } catch {
+        // Keep retrying; bootstrap is best-effort.
+      }
     }
   }
 
