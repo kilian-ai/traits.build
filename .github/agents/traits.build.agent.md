@@ -1259,6 +1259,7 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **GitHub Pages deploy:** just `git push origin main` — root `index.html` is auto-served.
 - **Two admin pages exist:** `www.admin` (server-rendered) and `www.admin.spa` (browser-only SPA).
 - **Static runtime asset URLs must use `/static/<file>`** (for example `/static/wasm-runtime.js`, `/static/sdk-runtime.js`, `/static/terminal-runtime.js`, `/static/traits-worker.js`). Do not use duplicated `/static/www/static/...` paths.
+- **Apptron IDE FS bridge uses the system extension handshake.** Keep `apptron-ide/index.html` responsible for Wanix runtime boot + `_port` handoff (`{ wanix: MessagePort }`), and keep `lib/vscode.js` pointing the default folder URI to `wanix:/` so Explorer opens a real root.
 - **Terminal dispatch:** `terminal.js` uses `window._traitsSDK.call()` (3-tier cascade) and `Traits.backgroundCall()` for CLI session commands, NOT raw fetch/direct trait-specific command switches.
 - **Terminal PVFS persistence:** CLI-visible filesystem state must persist to `localStorage['traits.pvfs']` (not `traits.terminal.vfs`). Keep worker/main-thread sync aligned so files touched by shell commands (`ls`, `cd`, `mkdir`, `cat`, redirects) survive reloads.
 - **Terminal persistence must use PVFS APIs, not session VFS dump/load:** browser terminal save/restore should call `pvfs_dump` / `pvfs_load` when syncing `localStorage['traits.pvfs']`. Using session-scoped `vfs_dump` / `vfs_load` can overwrite unrelated persistent entries after commands like `rm`.
@@ -1371,7 +1372,7 @@ dep = "namespace.concrete_trait"
 - Always commit to git after making changes to the codebase, with a clear and concise commit message describing the changes made.
 - Always include build-generated files in your commits — `build.rs` auto-bumps versions in `.trait.toml` files, `Cargo.toml`, and `Cargo.lock` on every build. Run `git add -A` (not just the files you edited) to capture all version bumps, checksum updates, and generated TOML changes.
 - Always run the build script (`build.sh`) after making changes to ensure that the code compiles correctly and that any generated files are updated.
-- Always run tests after making changes to verify that everything is working as expected and that no existing functionality is broken.
+- Do not run the full `traits test_runner '*'` by default (it is too slow for routine iterations). Prefer targeted checks (for example `traits test_runner 'sys.*'`) and only run full-scope tests when explicitly requested.
 - Always update the documentation (e.g., `features.json` tests, README, this agent file, all files under /docs) with any new information about the project structure, build process, conventions, or any user preferences about anything that may be helpful for future reference.
 - Always push to the `main` branch to deploy changes to GitHub Pages, which serves the static SPA at `www.traits.build`. Ensure that the `index.html` file is updated with any new routes or changes to the SPA structure.
 - Always rebuild the binary and restart the local server after making changes to the codebase to ensure that the changes take effect and to test that everything is working correctly.

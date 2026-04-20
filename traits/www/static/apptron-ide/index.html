@@ -51,14 +51,59 @@
 
   <script>
     window.APPTRON_BASE = '/static/apptron-ide';
-    window.APPTRON_DISABLE_SYSTEM_EXTENSION = true;
+    window.APPTRON_DISABLE_SYSTEM_EXTENSION = false;
+    window.apptron = { instance: null, ready: null };
   </script>
+
+  <script src="./wanix.min.js"></script>
 
   <script type="module">
     import './lib/vscode.js';
 
     const status = document.getElementById('status');
     const workbench = document.querySelector('vscode-workbench');
+
+    async function bootRuntime() {
+      if (typeof window.WanixRuntime !== 'function') {
+        throw new Error('Wanix runtime is not available');
+      }
+      const runtime = new window.WanixRuntime({
+        wasm: `${window.APPTRON_BASE}/wanix.wasm`
+      });
+      window.apptron.instance = runtime;
+      await runtime.ready();
+      return runtime;
+    }
+
+    window.apptron.ready = bootRuntime()
+      .then((runtime) => {
+        status.textContent = 'Runtime ready, starting workbench...';
+        return runtime;
+      })
+      .catch((error) => {
+        console.error('Wanix boot failed:', error);
+        status.textContent = 'Runtime failed, starting editor anyway...';
+        return null;
+      });
+
+    window.addEventListener('message', async (event) => {
+      const data = event.data;
+      if (!data || !data.port) return;
+
+      const receiverPort = data.port;
+      const runtime = await window.apptron.ready;
+      if (!runtime) {
+        return;
+      }
+
+      try {
+        const wanixPort = await runtime.createPort();
+        receiverPort.postMessage({ wanix: wanixPort }, [wanixPort]);
+      } catch (error) {
+        console.error('Failed to hand off wanix port:', error);
+      }
+    });
+
     workbench.mount();
     workbench.addEventListener('vscode-ready', () => {
       status.textContent = 'Apptron IDE ready';

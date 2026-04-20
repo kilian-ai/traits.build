@@ -157,3 +157,9 @@ Traits that only compile for native targets. They form the runtime backbone: reg
 ### Build-time lint
 
 The `lint_kernel_layers()` function in `build.rs` classifies all `kernel.*` traits after discovery and emits `cargo:warning` summaries. It warns if any builtin/kernel-source trait is missing an explicit `wasm = true` or `wasm = false` declaration in its `.trait.toml`.
+
+## Apptron IDE Filesystem Bridge
+
+- The Apptron IDE shell at `traits/www/static/apptron-ide/index.html` boots `WanixRuntime` and listens for extension-host port handoff messages.
+- The workbench loader at `traits/www/static/apptron-ide/lib/vscode.js` enables the built-in `apptron-system` web extension and routes its IPC port to the page bridge.
+- The web extension registers the `wanix` `FileSystemProvider`, and the default workspace is `wanix:/` to ensure Explorer starts from a guaranteed existing root.

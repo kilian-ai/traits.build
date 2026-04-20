@@ -116,7 +116,7 @@ export class VSCodeWorkbenchComponent extends HTMLElement {
       profile: DEFAULT_PROFILE,
       folderUri: APPTRON_DISABLE_SYSTEM_EXTENSION
         ? { scheme: "file", path: "/workspace" }
-        : { scheme: "wanix", path: "/project" },
+        : { scheme: "wanix", path: "/" },
     };
 
     require(["vs/workbench/workbench.web.main"], (wb) => {

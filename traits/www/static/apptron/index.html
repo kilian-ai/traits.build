@@ -58,10 +58,14 @@
     username: bootParams.get("user") || "root",
     user_id: bootParams.get("user_id") || "local",
   };
+  const hostedOnTraitsDomain =
+    window.location.hostname === "traits.build" ||
+    window.location.hostname.endsWith(".traits.build");
   const defaultOrigin =
     window.location.hostname === "127.0.0.1" ||
     window.location.hostname === "localhost" ||
-    window.location.hostname === "::1"
+    window.location.hostname === "::1" ||
+    hostedOnTraitsDomain
       ? "https://apptron.dev"
       : window.location.origin;
 
