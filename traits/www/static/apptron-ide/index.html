@@ -60,10 +60,25 @@
 
     const status = document.getElementById('status');
     const workbench = document.querySelector('vscode-workbench');
+    const params = new URLSearchParams(window.location.search);
+
+    function hiddenShellUrl() {
+      const shellParams = new URLSearchParams();
+      shellParams.set('embedded', 'true');
+      shellParams.set('mode', 'console');
+      shellParams.set('ide_bridge', '1');
+      for (const key of ['network', 'relay', 'relay_url', 'worker_url', 'origin', 'debug9p', 'wasm', 'bundle']) {
+        const value = params.get(key);
+        if (value) {
+          shellParams.set(key, value);
+        }
+      }
+      return `/static/apptron/index.html?${shellParams.toString()}`;
+    }
 
     async function bootRuntime() {
       const iframe = document.createElement('iframe');
-      iframe.src = '/static/apptron/index.html?embedded=true&mode=console&ide_bridge=1';
+      iframe.src = hiddenShellUrl();
       iframe.style.display = 'none';
       iframe.setAttribute('aria-hidden', 'true');
       document.body.appendChild(iframe);

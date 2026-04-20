@@ -129,18 +129,28 @@
       return { network: explicit, source: "query" };
     }
 
-    const fallbackNetwork = wsNetUrlForOrigin(window.apptron.origin);
     if (qp.get("relay") === "off") {
-      return { network: fallbackNetwork, source: "origin-fallback" };
+      return { network: "wss://apptron.dev/x/net", source: "apptron-dev" };
+    }
+
+    // On localhost: probe the local apptron worker first (default port 8080)
+    const hostname = window.location.hostname;
+    const isLocal = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+    if (isLocal) {
+      const localWorkerUrl = qp.get("worker_url") || "ws://127.0.0.1:8080/x/net";
+      const localOk = await probeWebSocket(localWorkerUrl, 800);
+      if (localOk) {
+        return { network: localWorkerUrl, source: "local-worker" };
+      }
     }
 
     const relayUrl = qp.get("relay_url") || "wss://relay.traits.build/x/net";
-    const relayOk = await probeWebSocket(relayUrl);
+    const relayOk = await probeWebSocket(relayUrl, 1200);
     if (relayOk) {
       return { network: relayUrl, source: "default-relay" };
     }
 
-    return { network: fallbackNetwork, source: "origin-fallback" };
+    return { network: "wss://apptron.dev/x/net", source: "apptron-dev" };
   }
 
   function shSingleQuote(value) {

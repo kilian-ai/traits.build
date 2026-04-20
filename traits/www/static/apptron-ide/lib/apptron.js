@@ -7,19 +7,89 @@ import { InputCapturer } from "/lib/input.js";
 export function $(selector) { return document.querySelector(selector); }
 export function $$(selector) { return document.querySelectorAll(selector); }
 
+function wsNetUrlForOrigin(originLike) {
+    try {
+        const origin = new URL(originLike);
+        const wsProto = origin.protocol === "https:" ? "wss:" : "ws:";
+        return `${wsProto}//${origin.host}/x/net`;
+    } catch {
+        return "";
+    }
+}
+
+async function probeWebSocket(url, timeoutMs = 1200) {
+    if (!url) return false;
+    return await new Promise((resolve) => {
+        let settled = false;
+        let ws;
+        const finalize = (ok) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            if (ws) {
+                try {
+                    ws.close();
+                } catch {
+                    // ignore close errors during probe
+                }
+            }
+            resolve(ok);
+        };
+        const timer = setTimeout(() => finalize(false), timeoutMs);
+        try {
+            ws = new WebSocket(url);
+            ws.onopen = () => finalize(true);
+            ws.onerror = () => finalize(false);
+            ws.onclose = () => finalize(false);
+        } catch {
+            finalize(false);
+        }
+    });
+}
+
+export async function selectNetwork(params = new URLSearchParams(window.location.search)) {
+    const explicit = params.get("network");
+    if (explicit) {
+        return { network: explicit, source: "query" };
+    }
+
+    if (params.get("relay") === "off") {
+        return { network: "wss://apptron.dev/x/net", source: "apptron-dev" };
+    }
+
+    if (isLocalhost()) {
+        const localWorkerUrl = params.get("worker_url") || "ws://127.0.0.1:8080/x/net";
+        const localOk = await probeWebSocket(localWorkerUrl, 800);
+        if (localOk) {
+            return { network: localWorkerUrl, source: "local-worker" };
+        }
+    }
+
+    const relayUrl = params.get("relay_url") || "wss://relay.traits.build/x/net";
+    const relayOk = await probeWebSocket(relayUrl, 1200);
+    if (relayOk) {
+        return { network: relayUrl, source: "default-relay" };
+    }
+
+    const fallbackOrigin = isLocalhost() ? "https://apptron.dev" : window.location.origin;
+    return { network: wsNetUrlForOrigin(fallbackOrigin), source: "apptron-dev" };
+}
+
 export async function setupWanix() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("cache") === "clear" || (isLocalhost() && !params.get("cache"))) {
         await clearAllCache("assets");
         await clearAllCache("bundles");
     }
+    const selectedNetwork = await selectNetwork(params);
     const w = new WanixRuntime({
         screen: true,
         helpers: true,
         debug9p: params.get('debug9p') === "true",
         wasm: null,
-        network: params.get('network') || `${isLocalhost() ? "ws" : "wss"}://${appHost()}/x/net`
+        network: selectedNetwork.network
     });
+    w._traitsNetworkSource = selectedNetwork.source;
 
     const audio = new V86Audio();
     window.handleAudio = audio.handleEvent.bind(audio);

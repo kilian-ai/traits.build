@@ -161,6 +161,7 @@ The `lint_kernel_layers()` function in `build.rs` classifies all `kernel.*` trai
 ## Apptron IDE Filesystem Bridge
 
 - The Apptron IDE shell at `traits/www/static/apptron-ide/index.html` boots `WanixRuntime` and listens for extension-host port handoff messages.
+- The Apptron IDE must share the shell's network selection logic: localhost should probe `ws://127.0.0.1:8080/x/net` first, then relay, then `wss://apptron.dev/x/net`, and `index.html` should forward `network`, `relay`, `relay_url`, and `worker_url` query params into the hidden `/static/apptron/index.html` iframe.
 - The IDE must load `wanix.min.js` as an ES module import (not a classic `<script src=...>` tag) so `WanixRuntime` is initialized before bridge setup.
 - The IDE filesystem bridge now sources Wanix ports from a hidden `/static/apptron/index.html` iframe runtime (same-origin), reusing the shell runtime that reliably mounts Linux files.
 - The hidden Apptron iframe used for IDE bridge mode (`?ide_bridge=1`) must not create its own xterm binding for `#console/data`; otherwise the hidden shell console can steal terminal I/O from the IDE PTY.
