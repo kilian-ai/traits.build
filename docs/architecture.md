@@ -163,6 +163,7 @@ The `lint_kernel_layers()` function in `build.rs` classifies all `kernel.*` trai
 - The Apptron IDE shell at `traits/www/static/apptron-ide/index.html` boots `WanixRuntime` and listens for extension-host port handoff messages.
 - The IDE must load `wanix.min.js` as an ES module import (not a classic `<script src=...>` tag) so `WanixRuntime` is initialized before bridge setup.
 - The IDE filesystem bridge now sources Wanix ports from a hidden `/static/apptron/index.html` iframe runtime (same-origin), reusing the shell runtime that reliably mounts Linux files.
+- The hidden Apptron iframe used for IDE bridge mode (`?ide_bridge=1`) must not create its own xterm binding for `#console/data`; otherwise the hidden shell console can steal terminal I/O from the IDE PTY.
 - The workbench loader at `traits/www/static/apptron-ide/lib/vscode.js` enables the built-in `apptron-system` web extension and routes its IPC port to the page bridge.
 - The web extension registers the `wanix` `FileSystemProvider`, and the default workspace is `wanix:/` to ensure Explorer starts from a guaranteed existing root.
 - In the bridge provider, treat both `wanix:/` and an empty URI path as the same root directory before runtime readiness; VS Code can request root as an empty path during startup.

@@ -106,10 +106,15 @@
 
   try {
     await runtime.ready();
-    const terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
-    await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
-    await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
-    status.textContent = "Apptron shell ready";
+    const ideBridgeMode = qp.get("ide_bridge") === "1";
+    if (ideBridgeMode) {
+      status.textContent = "Apptron runtime ready for IDE bridge";
+    } else {
+      const terminalId = (await runtime.readText("web/dom/new/xterm")).trim();
+      await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
+      await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
+      status.textContent = "Apptron shell ready";
+    }
     status.classList.add("ready");
   } catch (error) {
     console.error("Apptron console bootstrap failed", error);

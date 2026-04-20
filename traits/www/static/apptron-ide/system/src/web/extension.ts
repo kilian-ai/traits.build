@@ -126,7 +126,7 @@ function createTerminal(wx: any) {
 			});
 		}
 	};
-	return vscode.window.createTerminal({ name: `Shell`, pty });
+	return vscode.window.createTerminal({ name: `Wanix Shell`, pty });
 }
 
 
