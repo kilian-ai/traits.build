@@ -155,13 +155,18 @@ async function resolveTerminalDataPathOnce(wx: any): Promise<string | null> {
 	if (forceConsoleChannel()) {
 		return "#console/data";
 	}
-	const existing = await tryFindExistingTerminalId(wx);
-	if (existing) {
-		return existing;
-	}
+	// Always prefer allocating a fresh xterm and reading from #console/data.
+	// The iframe no longer pre-allocates one in ide_bridge mode, so there is
+	// no active xterm DOM consumer competing for web/dom/<id>/data. Reading
+	// from #console/data directly bypasses the alias routing entirely.
 	const allocated = await tryAllocateXterm(wx);
 	if (allocated) {
 		return allocated;
+	}
+	// Fallback: if allocation fails but a prior id exists, use it.
+	const existing = await tryFindExistingTerminalId(wx);
+	if (existing) {
+		return existing;
 	}
 	return null;
 }
