@@ -188,6 +188,11 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   const LEGACY_RELAY_URL = "wss://relay.traits.build/x/net";
   const DEFAULT_RELAY_URL = "wss://relay.traits.build/linux/tunnel";
 
+  if (qp.get("cache") === "clear") {
+    try { await caches.delete("apptron-bundles"); } catch {}
+    try { await caches.delete("diag-cache"); } catch {}
+  }
+
   function normalizeRelayUrl(url) {
     return url === LEGACY_RELAY_URL ? DEFAULT_RELAY_URL : url;
   }
