@@ -90,7 +90,7 @@ function json(data, status = 200) {
 
 // ── Tunnel instrumentation (best-effort, isolate-local) ─────────────────────
 
-const RELAY_BUILD = '2026-04-20-ethernet-tunnel';
+const RELAY_BUILD = '2026-04-21-linux-tunnel-upstream-proxy';
 const TUNNEL_EVENT_LIMIT = 200;
 
 const tunnelStats = {
@@ -178,6 +178,7 @@ const LINUX_GUEST_IP  = [10, 0, 2, 15];
 const LINUX_SERVER_IP = [10, 0, 2, 2];
 const LINUX_DNS_IP    = [1, 1, 1, 1];
 const LINUX_SUBNET    = [255, 255, 255, 0];
+const LINUX_UPSTREAM_TUNNEL_URL = 'https://apptron.dev/x/net';
 
 const DHCP_LEASE_SECS = 86400;
 const DHCP_MAGIC      = [99, 130, 83, 99];
@@ -666,27 +667,105 @@ function _handleRawIpPacket(bytes, connState, sendFn) {
   }
 }
 
-async function _linuxTunnelWs(request) {
-  const reqId = crypto.randomUUID().slice(0, 8);
-  const cf = request.cf || {};
-  const colo = String(cf.colo || 'unknown');
-  const ua = String(request.headers.get('user-agent') || '');
-  tunnelStats.open_requests += 1;
-  logTunnelEvent('open_request', { req_id: reqId, colo, ua: ua.slice(0, 120) });
-
-  const upgrade = request.headers.get('Upgrade');
-  if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
-    tunnelStats.upgrade_rejected += 1;
-    logTunnelEvent('upgrade_rejected', {
-      req_id: reqId,
-      upgrade: String(upgrade || ''),
-      url: request.url,
-    });
-    return json({
-      error: 'Upgrade required',
-      hint: 'Use WebSocket at wss://relay.traits.build/linux/tunnel',
-    }, 426);
+function _buildUpstreamTunnelHeaders(request) {
+  const headers = new Headers();
+  const pass = [
+    'upgrade',
+    'connection',
+    'sec-websocket-key',
+    'sec-websocket-version',
+    'sec-websocket-protocol',
+    'sec-websocket-extensions',
+    'user-agent',
+    'accept-language',
+    'cache-control',
+    'pragma',
+  ];
+  for (const name of pass) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
   }
+  // Keep origin pinned to apptron for upstream compatibility.
+  headers.set('origin', 'https://apptron.dev');
+  headers.set('referer', 'https://apptron.dev/');
+  return headers;
+}
+
+function _safeCloseWs(ws, code = 1000, reason = '') {
+  try {
+    if (ws && ws.readyState === 1) ws.close(code, reason);
+  } catch (_) {
+  }
+}
+
+function _bridgeWebSockets(left, right, reqId) {
+  const forward = (from, to, dir) => {
+    from.addEventListener('message', (evt) => {
+      try {
+        to.send(evt.data);
+      } catch (e) {
+        tunnelStats.errors += 1;
+        logTunnelEvent('proxy_forward_error', { req_id: reqId, dir, error: safeError(e) });
+      }
+    });
+    from.addEventListener('close', (evt) => {
+      _safeCloseWs(to, evt?.code || 1000, evt?.reason || '');
+    });
+    from.addEventListener('error', (evt) => {
+      tunnelStats.errors += 1;
+      logTunnelEvent('proxy_ws_error', { req_id: reqId, dir, error: safeError(evt) });
+      _safeCloseWs(to, 1011, 'proxy_error');
+    });
+  };
+
+  forward(left, right, 'client_to_upstream');
+  forward(right, left, 'upstream_to_client');
+}
+
+async function _tryProxyLinuxTunnelWs(request, reqId) {
+  tunnelStats.proxy_attempts = (tunnelStats.proxy_attempts || 0) + 1;
+  const upstreamReq = new Request(LINUX_UPSTREAM_TUNNEL_URL, {
+    method: 'GET',
+    headers: _buildUpstreamTunnelHeaders(request),
+  });
+
+  let upstreamResp;
+  try {
+    upstreamResp = await Promise.race([
+      fetch(upstreamReq),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('proxy connect timeout')), 1200)),
+    ]);
+  } catch (e) {
+    tunnelStats.proxy_errors = (tunnelStats.proxy_errors || 0) + 1;
+    logTunnelEvent('proxy_connect_error', { req_id: reqId, error: safeError(e) });
+    return null;
+  }
+
+  if (upstreamResp.status !== 101 || !upstreamResp.webSocket) {
+    tunnelStats.proxy_rejected = (tunnelStats.proxy_rejected || 0) + 1;
+    logTunnelEvent('proxy_upgrade_rejected', {
+      req_id: reqId,
+      status: upstreamResp.status,
+      status_text: String(upstreamResp.statusText || ''),
+    });
+    return null;
+  }
+
+  const pair = new WebSocketPair();
+  const client = pair[0];
+  const server = pair[1];
+  const upstream = upstreamResp.webSocket;
+  server.accept();
+  upstream.accept();
+
+  _bridgeWebSockets(server, upstream, reqId);
+
+  tunnelStats.proxy_connected = (tunnelStats.proxy_connected || 0) + 1;
+  logTunnelEvent('proxy_connected', { req_id: reqId, upstream: LINUX_UPSTREAM_TUNNEL_URL });
+  return new Response(null, { status: 101, webSocket: client });
+}
+
+async function _linuxTunnelWsLocal(request, reqId, colo, ua) {
 
   const pair = new WebSocketPair();
   const client = pair[0];
@@ -758,6 +837,37 @@ async function _linuxTunnelWs(request) {
   });
 
   return new Response(null, { status: 101, webSocket: client });
+}
+
+async function _linuxTunnelWs(request) {
+  const reqId = crypto.randomUUID().slice(0, 8);
+  const cf = request.cf || {};
+  const colo = String(cf.colo || 'unknown');
+  const ua = String(request.headers.get('user-agent') || '');
+  tunnelStats.open_requests += 1;
+  logTunnelEvent('open_request', { req_id: reqId, colo, ua: ua.slice(0, 120) });
+
+  const upgrade = request.headers.get('Upgrade');
+  if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
+    tunnelStats.upgrade_rejected += 1;
+    logTunnelEvent('upgrade_rejected', {
+      req_id: reqId,
+      upgrade: String(upgrade || ''),
+      url: request.url,
+    });
+    return json({
+      error: 'Upgrade required',
+      hint: 'Use WebSocket at wss://relay.traits.build/linux/tunnel',
+    }, 426);
+  }
+
+  // Prefer upstream tunnel proxy for full TCP semantics (HTTPS/apk/wget).
+  const proxied = await _tryProxyLinuxTunnelWs(request, reqId);
+  if (proxied) return proxied;
+
+  tunnelStats.proxy_fallback_local = (tunnelStats.proxy_fallback_local || 0) + 1;
+  logTunnelEvent('proxy_fallback_local', { req_id: reqId });
+  return _linuxTunnelWsLocal(request, reqId, colo, ua);
 }
 
 // ── Pairing code generation ───────────────────────────────────────────────────
