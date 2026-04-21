@@ -4,7 +4,7 @@ import { WanixBridge } from './bridge.js';
 // @ts-ignore
 import monitorHtml from "./monitor.html";
 
-const PTY_DEBUG_VERSION = "pty-readiness-probe-20260421-02";
+const PTY_DEBUG_VERSION = "pty-xterm-channel-20260421-03";
 
 declare const navigator: unknown;
 
@@ -133,7 +133,13 @@ async function tryAllocateXterm(wx: any): Promise<string | null> {
 		} catch {
 			// localStorage may be unavailable in some extension host contexts.
 		}
-		return "#console/data";
+		// Return the bidirectional xterm pty channel, NOT #console/data.
+		// #console/data is a one-way display pipe: writing to it renders text in
+		// the xterm widget but does NOT feed the shell's stdin. The shell reads
+		// stdin from web/dom/<id>/data (the xterm widget's data channel).
+		// The bind above (task/1/ctl: #console/data -> web/dom/<id>/data) ensures
+		// shell stdout flows into this channel too, making it fully bidirectional.
+		return `web/dom/${terminalId}/data`;
 	} catch {
 		return null;
 	}
