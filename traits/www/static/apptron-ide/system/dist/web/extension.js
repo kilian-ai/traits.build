@@ -4533,6 +4533,24 @@ function createTerminal(wx) {
   const writeEmitter = new vscode.EventEmitter();
   const dec = new TextDecoder();
   const enc = new TextEncoder();
+  const debug2 = (msg) => {
+    const line = `[apptron][pty] ${msg}`;
+    console.log(line);
+    writeEmitter.fire(`\r
+${line}\r
+`);
+  };
+  const withTimeout = async (promise, ms, label) => {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
   let writer;
   let writeQueue = Promise.resolve();
   const pty = {
@@ -4540,22 +4558,58 @@ function createTerminal(wx) {
     open: () => {
       (async () => {
         try {
+          debug2(`open() start; forceConsole=${String(forceConsoleChannel())}`);
           const dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
           console.log("terminal channel", dataPath);
           writeEmitter.fire(`\r
 [apptron] terminal channel: ${dataPath}\r
 `);
-          const stream = await wx.openReadable(dataPath);
-          const writable = await wx.openWritable(dataPath);
+          debug2(`path resolved: ${dataPath}`);
+          try {
+            const st = await withTimeout(wx.stat(dataPath), 2500, `stat(${dataPath})`);
+            debug2(`stat(${dataPath}) ok type=${String(st?.type ?? "?")}`);
+          } catch (e) {
+            debug2(`stat(${dataPath}) failed: ${String(e)}`);
+          }
+          debug2(`opening readable: ${dataPath}`);
+          const stream = await withTimeout(wx.openReadable(dataPath), 7e3, `openReadable(${dataPath})`);
+          debug2(`openReadable ok: ${dataPath}`);
+          debug2(`opening writable: ${dataPath}`);
+          const writable = await withTimeout(wx.openWritable(dataPath), 7e3, `openWritable(${dataPath})`);
+          debug2(`openWritable ok: ${dataPath}`);
           writer = writable.getWriter();
           try {
-            await writer.write(enc.encode("\n"));
+            debug2("writing initial newline kick");
+            await withTimeout(writer.write(enc.encode("\n")), 3e3, "initial newline write");
+            debug2("initial newline kick written");
           } catch {
+            debug2("initial newline kick failed (non-fatal)");
           }
-          for await (const chunk of stream) {
-            writeEmitter.fire(dec.decode(chunk));
+          const reader = stream.getReader();
+          let gotFirstChunk = false;
+          const firstChunkWatchdog = setTimeout(() => {
+            debug2(`no terminal output within 5000ms after attach on ${dataPath}`);
+          }, 5e3);
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                debug2("readable stream closed (done=true)");
+                break;
+              }
+              if (!gotFirstChunk) {
+                gotFirstChunk = true;
+                clearTimeout(firstChunkWatchdog);
+                debug2(`first output chunk received (${value?.byteLength ?? 0} bytes)`);
+              }
+              writeEmitter.fire(dec.decode(value));
+            }
+          } finally {
+            clearTimeout(firstChunkWatchdog);
+            reader.releaseLock();
           }
         } catch (error) {
+          debug2(`open/read pipeline failed: ${String(error)}`);
           console.error("terminal bridge open/read failed", error);
         }
       })();

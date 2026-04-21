@@ -216,6 +216,22 @@ function createTerminal(wx: any) {
 	const writeEmitter = new vscode.EventEmitter<string>();
 	const dec = new TextDecoder();
 	const enc = new TextEncoder();
+	const debug = (msg: string) => {
+		const line = `[apptron][pty] ${msg}`;
+		console.log(line);
+		writeEmitter.fire(`\r\n${line}\r\n`);
+	};
+	const withTimeout = async <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const timeout = new Promise<never>((_, reject) => {
+			timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+		});
+		try {
+			return await Promise.race([promise, timeout]);
+		} finally {
+			if (timer) clearTimeout(timer);
+		}
+	};
 	let writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
 	let writeQueue = Promise.resolve();
 	const pty = {
@@ -223,24 +239,60 @@ function createTerminal(wx: any) {
 		open: () => {
 			(async () => {
 				try {
+					debug(`open() start; forceConsole=${String(forceConsoleChannel())}`);
 					const dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
 					console.log("terminal channel", dataPath);
 					writeEmitter.fire(`\r\n[apptron] terminal channel: ${dataPath}\r\n`);
-					const stream = await wx.openReadable(dataPath);
-					const writable = await wx.openWritable(dataPath);
+					debug(`path resolved: ${dataPath}`);
+					try {
+						const st = await withTimeout(wx.stat(dataPath), 2500, `stat(${dataPath})`);
+						debug(`stat(${dataPath}) ok type=${String(st?.type ?? "?")}`);
+					} catch (e) {
+						debug(`stat(${dataPath}) failed: ${String(e)}`);
+					}
+					debug(`opening readable: ${dataPath}`);
+					const stream = await withTimeout(wx.openReadable(dataPath), 7000, `openReadable(${dataPath})`);
+					debug(`openReadable ok: ${dataPath}`);
+					debug(`opening writable: ${dataPath}`);
+					const writable = await withTimeout(wx.openWritable(dataPath), 7000, `openWritable(${dataPath})`);
+					debug(`openWritable ok: ${dataPath}`);
 					writer = writable.getWriter();
 					// Kick the prompt: BusyBox hush defers first prompt until it
 					// sees input on stdin. Required for both #console/data and
 					// web/dom/<id>/data channels.
 					try {
-						await writer.write(enc.encode("\n"));
+						debug("writing initial newline kick");
+						await withTimeout(writer.write(enc.encode("\n")), 3000, "initial newline write");
+						debug("initial newline kick written");
 					} catch {
 						// Non-fatal — user keystrokes will still render the prompt.
+						debug("initial newline kick failed (non-fatal)");
 					}
-					for await (const chunk of stream) {
-						writeEmitter.fire(dec.decode(chunk));
+					const reader = stream.getReader();
+					let gotFirstChunk = false;
+					const firstChunkWatchdog = setTimeout(() => {
+						debug(`no terminal output within 5000ms after attach on ${dataPath}`);
+					}, 5000);
+					try {
+						while (true) {
+							const { done, value } = await reader.read();
+							if (done) {
+								debug("readable stream closed (done=true)");
+								break;
+							}
+							if (!gotFirstChunk) {
+								gotFirstChunk = true;
+								clearTimeout(firstChunkWatchdog);
+								debug(`first output chunk received (${value?.byteLength ?? 0} bytes)`);
+							}
+							writeEmitter.fire(dec.decode(value));
+						}
+					} finally {
+						clearTimeout(firstChunkWatchdog);
+						reader.releaseLock();
 					}
 				} catch (error) {
+					debug(`open/read pipeline failed: ${String(error)}`);
 					console.error("terminal bridge open/read failed", error);
 				}
 			})();
