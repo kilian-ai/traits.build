@@ -282,6 +282,31 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  async function decompressGzipBytes(response, attempts = 3, fallbackUrl = null) {
+    let lastErr = null;
+    for (let i = 0; i < attempts; i += 1) {
+      try {
+        if (!("DecompressionStream" in window)) {
+          throw new Error("DecompressionStream not supported in this browser.");
+        }
+        const source = response.clone();
+        const decompressed = source.body.pipeThrough(new DecompressionStream("gzip"));
+        return await new Response(decompressed).arrayBuffer();
+      } catch (err) {
+        lastErr = err;
+        // Retry with a fresh network response because the previous stream is consumed.
+        if (fallbackUrl && i + 1 < attempts) {
+          try {
+            response = await fetch(fallbackUrl, { cache: "no-store" });
+          } catch {
+            // Keep lastErr and continue retry loop.
+          }
+        }
+      }
+    }
+    throw lastErr || new Error("gzip decompression failed");
+  }
+
   async function getCachedOrFetch(url, gzipped = false, cacheName = "assets") {
     let cache = null;
     try {
@@ -295,11 +320,7 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
         const cached = await cache.match(url);
         if (cached) {
           if (gzipped) {
-            if (!("DecompressionStream" in window)) {
-              throw new Error("DecompressionStream not supported in this browser.");
-            }
-            const decompressed = cached.body.pipeThrough(new DecompressionStream("gzip"));
-            return await new Response(decompressed).arrayBuffer();
+            return await decompressGzipBytes(cached, 2, url);
           }
           return await cached.arrayBuffer();
         }
@@ -322,11 +343,7 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     }
 
     if (gzipped) {
-      if (!("DecompressionStream" in window)) {
-        throw new Error("DecompressionStream not supported in this browser.");
-      }
-      const decompressed = response.body.pipeThrough(new DecompressionStream("gzip"));
-      return await new Response(decompressed).arrayBuffer();
+      return await decompressGzipBytes(response, 4, url);
     }
     return await response.arrayBuffer();
   }
