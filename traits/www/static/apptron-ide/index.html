@@ -100,9 +100,10 @@
       }
     }
 
-    async function createWanixPortWithRetry(runtime, maxWaitMs = 30000) {
+    async function createWanixPortWithRetry(runtime, onProgress, maxWaitMs = 0) {
       const started = Date.now();
-      while (Date.now() - started < maxWaitMs) {
+      let lastProgressSec = -1;
+      while (true) {
         try {
           const wanixPort = await runtime.createPort();
           if (wanixPort) {
@@ -111,9 +112,19 @@
         } catch {
           // Retry while hidden shell runtime finishes initialization.
         }
+        const elapsedMs = Date.now() - started;
+        const elapsedSec = Math.floor(elapsedMs / 1000);
+        if (elapsedSec !== lastProgressSec && elapsedSec % 5 === 0) {
+          lastProgressSec = elapsedSec;
+          if (typeof onProgress === 'function') {
+            onProgress(elapsedSec);
+          }
+        }
+        if (maxWaitMs > 0 && elapsedMs > maxWaitMs) {
+          throw new Error(`Timed out waiting for hidden-shell wanix port after ${Math.floor(maxWaitMs / 1000)}s`);
+        }
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
-      throw new Error('Timed out waiting for hidden-shell wanix port');
     }
 
     async function bootRuntime() {
@@ -177,10 +188,14 @@
       }
 
       try {
-        const wanixPort = await createWanixPortWithRetry(runtime);
+        status.textContent = 'Loading WASM kernel...';
+        const wanixPort = await createWanixPortWithRetry(runtime, (elapsedSec) => {
+          status.textContent = `Loading WASM kernel... ${elapsedSec}s`;
+        });
         receiverPort.postMessage({ wanix: wanixPort }, [wanixPort]);
       } catch (error) {
         console.error('Failed to hand off wanix port:', error);
+        status.textContent = 'WASM kernel failed to initialize. Reload to retry.';
       }
     });
 
