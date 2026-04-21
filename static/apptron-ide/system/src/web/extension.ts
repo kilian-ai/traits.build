@@ -4,7 +4,7 @@ import { WanixBridge } from './bridge.js';
 // @ts-ignore
 import monitorHtml from "./monitor.html";
 
-const PTY_DEBUG_VERSION = "pty-stale-channel-recover-20260421-07";
+const PTY_DEBUG_VERSION = "pty-no-eof-failover-20260421-08";
 
 declare const navigator: unknown;
 
@@ -368,9 +368,12 @@ function createTerminal(wx: any) {
 					if (!firstChunk && dataPath !== "#console/data") {
 						debug("first-chunk timeout on primary channel; trying fresh xterm allocation before console fallback");
 						try {
-							await writer.close();
+							// Do NOT close here: close() can send EOF to a live shell PTY.
+							// We only need to detach this writer before failover.
+							writer.releaseLock();
+							debug("detached primary writer lock for failover (no close)");
 						} catch {
-							// Ignore close errors during failover.
+							// Ignore release errors during failover.
 						}
 						const freshPath = await tryAllocateXterm(wx);
 						if (freshPath && freshPath !== dataPath) {
