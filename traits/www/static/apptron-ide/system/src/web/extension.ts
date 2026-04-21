@@ -4,7 +4,7 @@ import { WanixBridge } from './bridge.js';
 // @ts-ignore
 import monitorHtml from "./monitor.html";
 
-const PTY_DEBUG_VERSION = "pty-no-selftest-20260421-06";
+const PTY_DEBUG_VERSION = "pty-stale-channel-recover-20260421-07";
 
 declare const navigator: unknown;
 
@@ -163,14 +163,8 @@ async function tryFindExistingTerminalId(wx: any): Promise<string | null> {
 			// try next candidate
 		}
 	}
-	try {
-		const id = String(localStorage.getItem("apptron-terminal-id") || "").trim();
-		if (/^[0-9]+$/.test(id)) {
-			return `web/dom/${id}/data`;
-		}
-	} catch {
-		// localStorage access can fail in restricted contexts
-	}
+	// Do not use localStorage terminal ids here: they can be stale across
+	// bridge iframe restarts and point to dead channels.
 	return null;
 }
 
@@ -372,27 +366,45 @@ function createTerminal(wx: any) {
 						};
 						let channelReady = false;
 					if (!firstChunk && dataPath !== "#console/data") {
-						debug("first-chunk timeout on primary channel; entering fallback branch");
-						debug(`fallback probe: switching channel to #console/data`);
+						debug("first-chunk timeout on primary channel; trying fresh xterm allocation before console fallback");
 						try {
 							await writer.close();
 						} catch {
 							// Ignore close errors during failover.
 						}
-						attached = await attachChannel("#console/data");
-						writer = attached.writer;
-						dataPath = "#console/data";
-						debug(`fallback channel attached: ${dataPath}`);
-						writeEmitter.fire(`\r\n[apptron] fallback terminal channel: ${dataPath}\r\n`);
-						try {
-							debug("writing fallback newline kick");
-							await withTimeout(writer.write(enc.encode("\r\n")), 3000, "fallback newline write");
-							debug("fallback newline kick written");
-						} catch {
-							debug("fallback newline kick failed (non-fatal)");
+						const freshPath = await tryAllocateXterm(wx);
+						if (freshPath && freshPath !== dataPath) {
+							debug(`re-allocated xterm channel: ${freshPath}`);
+							attached = await attachChannel(freshPath);
+							writer = attached.writer;
+							dataPath = freshPath;
+							try {
+								debug("writing re-allocation newline kick");
+								await withTimeout(writer.write(enc.encode("\r\n")), 3000, "re-allocation newline write");
+								debug("re-allocation newline kick written");
+							} catch {
+								debug("re-allocation newline kick failed (non-fatal)");
+							}
+							reader = attached.stream.getReader();
+							firstChunk = await waitFirstChunk(reader, dataPath, 5000);
 						}
-						reader = attached.stream.getReader();
-						firstChunk = await waitFirstChunk(reader, dataPath, 5000);
+						if (!firstChunk) {
+							debug(`fallback probe: switching channel to #console/data`);
+							attached = await attachChannel("#console/data");
+							writer = attached.writer;
+							dataPath = "#console/data";
+							debug(`fallback channel attached: ${dataPath}`);
+							writeEmitter.fire(`\r\n[apptron] fallback terminal channel: ${dataPath}\r\n`);
+							try {
+								debug("writing fallback newline kick");
+								await withTimeout(writer.write(enc.encode("\r\n")), 3000, "fallback newline write");
+								debug("fallback newline kick written");
+							} catch {
+								debug("fallback newline kick failed (non-fatal)");
+							}
+							reader = attached.stream.getReader();
+							firstChunk = await waitFirstChunk(reader, dataPath, 5000);
+						}
 					}
 					if (firstChunk) {
 						writeEmitter.fire(dec.decode(firstChunk));

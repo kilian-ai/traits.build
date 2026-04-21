@@ -4343,7 +4343,7 @@ var WanixBridge = class _WanixBridge {
 var monitor_default = '<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <style>\n        html,\n        body {\n            height: 100%;\n            width: 100%;\n            overflow: hidden;\n            margin: 0;\n            padding: 0;\n            background-color: #000;\n        }\n        iframe {\n            width: 100%;\n            height: 100%;\n            border: none;\n            display: block;\n            pointer-events: auto !important;\n            user-select: none;\n        }\n    </style>\n</head>\n<body>\n<script type="module">\n    import { WanixHandle } from "/wanix.min.js";\n\n    let vm = null;\n    const vscode = acquireVsCodeApi();\n    const channel = new MessageChannel();\n\n    const wanixReady = new Promise((resolve) => {\n        window.addEventListener("message", (event) => {\n            if (event.data.origin) {\n                if (event.data.vm) {\n                    vm = event.data.vm;\n                    vscode.setState({ vm: vm });\n                }\n                top.postMessage({ service: "wanix", port: channel.port1 }, event.data.origin, [channel.port1]);\n                channel.port2.onmessage = async (e) => {\n                    resolve(e.data);\n                };\n            }\n        });\n    });\n    \n    window.onload = async function()\n    {\n        const ports = await wanixReady;\n        const iframe = document.querySelector("iframe");\n        if (iframe) {\n            iframe.onload = function () {\n                if (iframe.contentWindow) {\n                    iframe.contentWindow.postMessage({ wanix: ports.wanix, vm: vm }, "*", [ports.wanix]);\n                }\n            };\n            // todo: use origin from message for base url\n            iframe.src = "http://localhost:8788/editor/monitor";\n        }\n    };\n<\/script>\n<iframe></iframe>\n</body>\n</html>';
 
 // src/web/extension.ts
-var PTY_DEBUG_VERSION = "pty-no-selftest-20260421-06";
+var PTY_DEBUG_VERSION = "pty-stale-channel-recover-20260421-07";
 async function activate(context) {
   if (typeof navigator !== "object") {
     console.error("not running in browser");
@@ -4473,13 +4473,6 @@ async function tryFindExistingTerminalId(wx) {
       }
     } catch {
     }
-  }
-  try {
-    const id = String(localStorage.getItem("apptron-terminal-id") || "").trim();
-    if (/^[0-9]+$/.test(id)) {
-      return `web/dom/${id}/data`;
-    }
-  } catch {
   }
   return null;
 }
@@ -4669,28 +4662,46 @@ ${line}\r
           };
           let channelReady = false;
           if (!firstChunk && dataPath !== "#console/data") {
-            debug2("first-chunk timeout on primary channel; entering fallback branch");
-            debug2(`fallback probe: switching channel to #console/data`);
+            debug2("first-chunk timeout on primary channel; trying fresh xterm allocation before console fallback");
             try {
               await writer.close();
             } catch {
             }
-            attached = await attachChannel("#console/data");
-            writer = attached.writer;
-            dataPath = "#console/data";
-            debug2(`fallback channel attached: ${dataPath}`);
-            writeEmitter.fire(`\r
+            const freshPath = await tryAllocateXterm(wx);
+            if (freshPath && freshPath !== dataPath) {
+              debug2(`re-allocated xterm channel: ${freshPath}`);
+              attached = await attachChannel(freshPath);
+              writer = attached.writer;
+              dataPath = freshPath;
+              try {
+                debug2("writing re-allocation newline kick");
+                await withTimeout(writer.write(enc.encode("\r\n")), 3e3, "re-allocation newline write");
+                debug2("re-allocation newline kick written");
+              } catch {
+                debug2("re-allocation newline kick failed (non-fatal)");
+              }
+              reader = attached.stream.getReader();
+              firstChunk = await waitFirstChunk(reader, dataPath, 5e3);
+            }
+            if (!firstChunk) {
+              debug2(`fallback probe: switching channel to #console/data`);
+              attached = await attachChannel("#console/data");
+              writer = attached.writer;
+              dataPath = "#console/data";
+              debug2(`fallback channel attached: ${dataPath}`);
+              writeEmitter.fire(`\r
 [apptron] fallback terminal channel: ${dataPath}\r
 `);
-            try {
-              debug2("writing fallback newline kick");
-              await withTimeout(writer.write(enc.encode("\r\n")), 3e3, "fallback newline write");
-              debug2("fallback newline kick written");
-            } catch {
-              debug2("fallback newline kick failed (non-fatal)");
+              try {
+                debug2("writing fallback newline kick");
+                await withTimeout(writer.write(enc.encode("\r\n")), 3e3, "fallback newline write");
+                debug2("fallback newline kick written");
+              } catch {
+                debug2("fallback newline kick failed (non-fatal)");
+              }
+              reader = attached.stream.getReader();
+              firstChunk = await waitFirstChunk(reader, dataPath, 5e3);
             }
-            reader = attached.stream.getReader();
-            firstChunk = await waitFirstChunk(reader, dataPath, 5e3);
           }
           if (firstChunk) {
             writeEmitter.fire(dec.decode(firstChunk));
