@@ -104,7 +104,17 @@ async function tryAllocateXterm(wx: any): Promise<string | null> {
 		try {
 			await wx.writeFile("task/1/ctl", new TextEncoder().encode(`bind #console/data web/dom/${terminalId}/data`));
 		} catch {
-			// Non-fatal: direct web/dom path is still usable.
+			// Non-fatal: continue; shell may still expose the xterm path.
+		}
+		try {
+			await wx.writeFile("web/dom/body/ctl", new TextEncoder().encode(`append-child ${terminalId}`));
+		} catch {
+			// Non-fatal in hidden/embedded contexts.
+		}
+		try {
+			await wx.writeFile(`web/dom/${terminalId}/data`, new TextEncoder().encode("\n"));
+		} catch {
+			// Non-fatal: prompt can still appear after first keystroke.
 		}
 		try {
 			await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}\n`));
@@ -116,7 +126,7 @@ async function tryAllocateXterm(wx: any): Promise<string | null> {
 		} catch {
 			// localStorage may be unavailable in some extension host contexts.
 		}
-		return "#console/data";
+		return `web/dom/${terminalId}/data`;
 	} catch {
 		return null;
 	}
@@ -155,22 +165,17 @@ async function resolveTerminalDataPathOnce(wx: any): Promise<string | null> {
 	if (forceConsoleChannel()) {
 		return "#console/data";
 	}
-	// Iframe always allocates the xterm in bridge mode (mirrors the server
-	// page: bind + append-child + kick). Pick up the id it wrote to
-	// /tmp/.apptron-terminal-id or localStorage and read from the same
-	// web/dom/<id>/data path. Wanix open() returns independent stream
-	// handles per caller so the iframe's hidden xterm and the extension
-	// both see the shell's output.
-	const existing = await tryFindExistingTerminalId(wx);
-	if (existing) {
-		return existing;
-	}
-	// Fallback: allocate ourselves (covers the case where the iframe hasn't
-	// finished bootstrapping yet; the retry loop will re-probe for the real id
-	// on the next pass).
+	// Deterministic path: allocate and fully wire our own xterm channel.
+	// This avoids attaching to stale/pre-existing IDs that can be present in
+	// localStorage or /tmp during SPA iframe restarts.
 	const allocated = await tryAllocateXterm(wx);
 	if (allocated) {
 		return allocated;
+	}
+	// Last-resort fallback for legacy sessions.
+	const existing = await tryFindExistingTerminalId(wx);
+	if (existing) {
+		return existing;
 	}
 	return null;
 }

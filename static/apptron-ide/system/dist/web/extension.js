@@ -4431,6 +4431,14 @@ async function tryAllocateXterm(wx) {
     } catch {
     }
     try {
+      await wx.writeFile("web/dom/body/ctl", new TextEncoder().encode(`append-child ${terminalId}`));
+    } catch {
+    }
+    try {
+      await wx.writeFile(`web/dom/${terminalId}/data`, new TextEncoder().encode("\n"));
+    } catch {
+    }
+    try {
       await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}
 `));
     } catch {
@@ -4439,7 +4447,7 @@ async function tryAllocateXterm(wx) {
       localStorage.setItem("apptron-terminal-id", terminalId);
     } catch {
     }
-    return "#console/data";
+    return `web/dom/${terminalId}/data`;
   } catch {
     return null;
   }
@@ -4474,13 +4482,13 @@ async function resolveTerminalDataPathOnce(wx) {
   if (forceConsoleChannel()) {
     return "#console/data";
   }
-  const existing = await tryFindExistingTerminalId(wx);
-  if (existing) {
-    return existing;
-  }
   const allocated = await tryAllocateXterm(wx);
   if (allocated) {
     return allocated;
+  }
+  const existing = await tryFindExistingTerminalId(wx);
+  if (existing) {
+    return existing;
   }
   return null;
 }
