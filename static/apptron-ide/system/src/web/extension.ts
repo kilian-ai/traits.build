@@ -313,6 +313,49 @@ function createTerminal(wx: any) {
 					}
 					let reader = attached.stream.getReader();
 					let firstChunk = await waitFirstChunk(reader, dataPath, 5000);
+						const probeShellReadiness = async (
+							reader: ReadableStreamDefaultReader<Uint8Array>,
+							channelWriter: WritableStreamDefaultWriter<Uint8Array>,
+							path: string,
+							ms: number,
+						): Promise<boolean> => {
+							const token = `__APPTRON_PTY_READY_${Date.now()}__`;
+							try {
+								debug(`writing readiness probe on ${path}`);
+								await withTimeout(channelWriter.write(enc.encode(`echo ${token}\r\n`)), 3000, `probe write ${path}`);
+							} catch (e) {
+								debug(`readiness probe write failed on ${path}: ${String(e)}`);
+								return false;
+							}
+
+							const timeoutToken = Symbol("probe-timeout");
+							let seen = "";
+							while (true) {
+								const raced = await Promise.race([
+									reader.read(),
+									new Promise<typeof timeoutToken>((resolve) => {
+										setTimeout(() => resolve(timeoutToken), ms);
+									}),
+								]);
+								if (raced === timeoutToken) {
+									debug(`readiness probe timed out after ${ms}ms on ${path}`);
+									return false;
+								}
+								const { done, value } = raced as ReadableStreamReadResult<Uint8Array>;
+								if (done) {
+									debug(`readiness probe stream closed on ${path}`);
+									return false;
+								}
+								const text = dec.decode(value);
+								seen += text;
+								writeEmitter.fire(text);
+								if (seen.includes(token)) {
+									debug(`readiness probe succeeded on ${path}`);
+									return true;
+								}
+							}
+						};
+						let channelReady = false;
 					if (!firstChunk && dataPath !== "#console/data") {
 						debug("first-chunk timeout on primary channel; entering fallback branch");
 						debug(`fallback probe: switching channel to #console/data`);
@@ -338,6 +381,7 @@ function createTerminal(wx: any) {
 					}
 					if (firstChunk) {
 						writeEmitter.fire(dec.decode(firstChunk));
+							channelReady = await probeShellReadiness(reader, writer, dataPath, 3000);
 					}
 					try {
 						while (true) {
