@@ -4,7 +4,7 @@ import { WanixBridge } from './bridge.js';
 // @ts-ignore
 import monitorHtml from "./monitor.html";
 
-const PTY_DEBUG_VERSION = "pty-no-eof-failover-20260421-08";
+const PTY_DEBUG_VERSION = "pty-bridge-screen-20260421-09";
 
 declare const navigator: unknown;
 

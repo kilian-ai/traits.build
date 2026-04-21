@@ -301,11 +301,14 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   // rc sourcing. The shell boots clean. Users opt-in to networking manually
   // (e.g. `ifconfig eth0 up && udhcpc -i eth0`) or via Settings later.
 
+  const ideBridgeMode = qp.get("ide_bridge") === "1";
   const networkUrl = await resolveNetwork();
   status.textContent = `Booting Apptron runtime...`;
 
   const runtime = new WanixRuntime({
-    screen: false,
+    // Keep screen pipeline enabled in bridge mode. Disabling it can leave
+    // xterm/console channels attachable but without a live producer.
+    screen: ideBridgeMode,
     helpers: true,
     debug9p: qp.get("debug9p") === "true",
     wasm: qp.get("wasm") || "./wanix.wasm",
@@ -336,7 +339,6 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     await runtime.ready();
     // Stock Apptron persistence (idbfs "apptron-rev1") is already wired by
     // boot.go for /home/<username>, /project, and /public at this point.
-    const ideBridgeMode = qp.get("ide_bridge") === "1";
     const terminalId = await createXtermWithRetry(runtime);
     window.apptron.terminalId = terminalId;
     if (terminalId) {
