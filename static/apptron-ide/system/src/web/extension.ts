@@ -4,6 +4,8 @@ import { WanixBridge } from './bridge.js';
 // @ts-ignore
 import monitorHtml from "./monitor.html";
 
+const PTY_DEBUG_VERSION = "pty-console-primary-20260421-01";
+
 declare const navigator: unknown;
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -117,6 +119,11 @@ async function tryAllocateXterm(wx: any): Promise<string | null> {
 			// Non-fatal: prompt can still appear after first keystroke.
 		}
 		try {
+			await wx.writeFile("#console/data", new TextEncoder().encode("\r\n"));
+		} catch {
+			// Non-fatal: console channel may not be ready yet.
+		}
+		try {
 			await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}\n`));
 		} catch {
 			// Best-effort only.
@@ -126,7 +133,7 @@ async function tryAllocateXterm(wx: any): Promise<string | null> {
 		} catch {
 			// localStorage may be unavailable in some extension host contexts.
 		}
-		return `web/dom/${terminalId}/data`;
+		return "#console/data";
 	} catch {
 		return null;
 	}
@@ -280,6 +287,7 @@ function createTerminal(wx: any) {
 			(async () => {
 				try {
 					debug(`open() start; forceConsole=${String(forceConsoleChannel())}`);
+					debug(`build marker: ${PTY_DEBUG_VERSION}`);
 					let dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
 					console.log("terminal channel", dataPath);
 					writeEmitter.fire(`\r\n[apptron] terminal channel: ${dataPath}\r\n`);

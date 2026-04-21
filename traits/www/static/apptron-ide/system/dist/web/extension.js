@@ -4343,6 +4343,7 @@ var WanixBridge = class _WanixBridge {
 var monitor_default = '<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <style>\n        html,\n        body {\n            height: 100%;\n            width: 100%;\n            overflow: hidden;\n            margin: 0;\n            padding: 0;\n            background-color: #000;\n        }\n        iframe {\n            width: 100%;\n            height: 100%;\n            border: none;\n            display: block;\n            pointer-events: auto !important;\n            user-select: none;\n        }\n    </style>\n</head>\n<body>\n<script type="module">\n    import { WanixHandle } from "/wanix.min.js";\n\n    let vm = null;\n    const vscode = acquireVsCodeApi();\n    const channel = new MessageChannel();\n\n    const wanixReady = new Promise((resolve) => {\n        window.addEventListener("message", (event) => {\n            if (event.data.origin) {\n                if (event.data.vm) {\n                    vm = event.data.vm;\n                    vscode.setState({ vm: vm });\n                }\n                top.postMessage({ service: "wanix", port: channel.port1 }, event.data.origin, [channel.port1]);\n                channel.port2.onmessage = async (e) => {\n                    resolve(e.data);\n                };\n            }\n        });\n    });\n    \n    window.onload = async function()\n    {\n        const ports = await wanixReady;\n        const iframe = document.querySelector("iframe");\n        if (iframe) {\n            iframe.onload = function () {\n                if (iframe.contentWindow) {\n                    iframe.contentWindow.postMessage({ wanix: ports.wanix, vm: vm }, "*", [ports.wanix]);\n                }\n            };\n            // todo: use origin from message for base url\n            iframe.src = "http://localhost:8788/editor/monitor";\n        }\n    };\n<\/script>\n<iframe></iframe>\n</body>\n</html>';
 
 // src/web/extension.ts
+var PTY_DEBUG_VERSION = "pty-console-primary-20260421-01";
 async function activate(context) {
   if (typeof navigator !== "object") {
     console.error("not running in browser");
@@ -4439,6 +4440,10 @@ async function tryAllocateXterm(wx) {
     } catch {
     }
     try {
+      await wx.writeFile("#console/data", new TextEncoder().encode("\r\n"));
+    } catch {
+    }
+    try {
       await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}
 `));
     } catch {
@@ -4447,7 +4452,7 @@ async function tryAllocateXterm(wx) {
       localStorage.setItem("apptron-terminal-id", terminalId);
     } catch {
     }
-    return `web/dom/${terminalId}/data`;
+    return "#console/data";
   } catch {
     return null;
   }
@@ -4592,6 +4597,7 @@ ${line}\r
       (async () => {
         try {
           debug2(`open() start; forceConsole=${String(forceConsoleChannel())}`);
+          debug2(`build marker: ${PTY_DEBUG_VERSION}`);
           let dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
           console.log("terminal channel", dataPath);
           writeEmitter.fire(`\r
