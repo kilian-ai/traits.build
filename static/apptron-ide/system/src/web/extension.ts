@@ -4,7 +4,7 @@ import { WanixBridge } from './bridge.js';
 // @ts-ignore
 import monitorHtml from "./monitor.html";
 
-const PTY_DEBUG_VERSION = "pty-bridge-selftest-20260421-04";
+const PTY_DEBUG_VERSION = "pty-bridge-selftest-20260421-05";
 
 declare const navigator: unknown;
 
@@ -174,7 +174,7 @@ async function tryFindExistingTerminalId(wx: any): Promise<string | null> {
 	return null;
 }
 
-async function resolveTerminalDataPathOnce(wx: any): Promise<string | null> {
+async function resolveTerminalDataPathOnce(wx: any, allowAllocate: boolean): Promise<string | null> {
 	if (forceConsoleChannel()) {
 		return "#console/data";
 	}
@@ -183,6 +183,9 @@ async function resolveTerminalDataPathOnce(wx: any): Promise<string | null> {
 	const existing = await tryFindExistingTerminalId(wx);
 	if (existing) {
 		return existing;
+	}
+	if (!allowAllocate) {
+		return null;
 	}
 	// Fallback: allocate and fully wire a new xterm channel.
 	const allocated = await tryAllocateXterm(wx);
@@ -202,11 +205,17 @@ async function resolveTerminalDataPathWithRetry(
 		3000, 3000, 3000, 3000, 3000, 3000,
 	];
 	let announcedWaiting = false;
+	let announcedAllocationFallback = false;
 	for (let i = 0; i < delaysMs.length; i++) {
 		if (delaysMs[i] > 0) {
 			await new Promise((r) => setTimeout(r, delaysMs[i]));
 		}
-		const path = await resolveTerminalDataPathOnce(wx);
+		const allowAllocate = i >= 6;
+		if (allowAllocate && !announcedAllocationFallback) {
+			writeEmitter.fire("\r\n[apptron] no bridge terminal-id yet; trying extension xterm allocation fallback...\r\n");
+			announcedAllocationFallback = true;
+		}
+		const path = await resolveTerminalDataPathOnce(wx, allowAllocate);
 		if (path) {
 			return path;
 		}
@@ -235,11 +244,16 @@ function createTerminal(wx: any) {
 	};
 	const emitBridgeSelfTest = async () => {
 		let raw = "";
-		try {
-			const fromFile = await wx.readFile("vm/1/fsys/tmp/.apptron-bridge-selftest.json");
-			raw = new TextDecoder().decode(fromFile).trim();
-		} catch {
-			// Fallback to localStorage when fs handoff isn't ready yet.
+		for (let i = 0; i < 8 && !raw; i++) {
+			try {
+				const fromFile = await wx.readFile("vm/1/fsys/tmp/.apptron-bridge-selftest.json");
+				raw = new TextDecoder().decode(fromFile).trim();
+			} catch {
+				// Fallback to localStorage when fs handoff isn't ready yet.
+			}
+			if (!raw && i < 7) {
+				await new Promise((r) => setTimeout(r, 250));
+			}
 		}
 		if (!raw) {
 			try {

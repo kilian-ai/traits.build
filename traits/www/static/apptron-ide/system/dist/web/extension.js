@@ -4343,7 +4343,7 @@ var WanixBridge = class _WanixBridge {
 var monitor_default = '<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <style>\n        html,\n        body {\n            height: 100%;\n            width: 100%;\n            overflow: hidden;\n            margin: 0;\n            padding: 0;\n            background-color: #000;\n        }\n        iframe {\n            width: 100%;\n            height: 100%;\n            border: none;\n            display: block;\n            pointer-events: auto !important;\n            user-select: none;\n        }\n    </style>\n</head>\n<body>\n<script type="module">\n    import { WanixHandle } from "/wanix.min.js";\n\n    let vm = null;\n    const vscode = acquireVsCodeApi();\n    const channel = new MessageChannel();\n\n    const wanixReady = new Promise((resolve) => {\n        window.addEventListener("message", (event) => {\n            if (event.data.origin) {\n                if (event.data.vm) {\n                    vm = event.data.vm;\n                    vscode.setState({ vm: vm });\n                }\n                top.postMessage({ service: "wanix", port: channel.port1 }, event.data.origin, [channel.port1]);\n                channel.port2.onmessage = async (e) => {\n                    resolve(e.data);\n                };\n            }\n        });\n    });\n    \n    window.onload = async function()\n    {\n        const ports = await wanixReady;\n        const iframe = document.querySelector("iframe");\n        if (iframe) {\n            iframe.onload = function () {\n                if (iframe.contentWindow) {\n                    iframe.contentWindow.postMessage({ wanix: ports.wanix, vm: vm }, "*", [ports.wanix]);\n                }\n            };\n            // todo: use origin from message for base url\n            iframe.src = "http://localhost:8788/editor/monitor";\n        }\n    };\n<\/script>\n<iframe></iframe>\n</body>\n</html>';
 
 // src/web/extension.ts
-var PTY_DEBUG_VERSION = "pty-bridge-selftest-20260421-04";
+var PTY_DEBUG_VERSION = "pty-bridge-selftest-20260421-05";
 async function activate(context) {
   if (typeof navigator !== "object") {
     console.error("not running in browser");
@@ -4483,13 +4483,16 @@ async function tryFindExistingTerminalId(wx) {
   }
   return null;
 }
-async function resolveTerminalDataPathOnce(wx) {
+async function resolveTerminalDataPathOnce(wx, allowAllocate) {
   if (forceConsoleChannel()) {
     return "#console/data";
   }
   const existing = await tryFindExistingTerminalId(wx);
   if (existing) {
     return existing;
+  }
+  if (!allowAllocate) {
+    return null;
   }
   const allocated = await tryAllocateXterm(wx);
   if (allocated) {
@@ -4516,11 +4519,17 @@ async function resolveTerminalDataPathWithRetry(wx, writeEmitter) {
     3e3
   ];
   let announcedWaiting = false;
+  let announcedAllocationFallback = false;
   for (let i = 0; i < delaysMs.length; i++) {
     if (delaysMs[i] > 0) {
       await new Promise((r) => setTimeout(r, delaysMs[i]));
     }
-    const path = await resolveTerminalDataPathOnce(wx);
+    const allowAllocate = i >= 6;
+    if (allowAllocate && !announcedAllocationFallback) {
+      writeEmitter.fire("\r\n[apptron] no bridge terminal-id yet; trying extension xterm allocation fallback...\r\n");
+      announcedAllocationFallback = true;
+    }
+    const path = await resolveTerminalDataPathOnce(wx, allowAllocate);
     if (path) {
       return path;
     }
@@ -4547,10 +4556,15 @@ ${line}\r
   };
   const emitBridgeSelfTest = async () => {
     let raw = "";
-    try {
-      const fromFile = await wx.readFile("vm/1/fsys/tmp/.apptron-bridge-selftest.json");
-      raw = new TextDecoder().decode(fromFile).trim();
-    } catch {
+    for (let i = 0; i < 8 && !raw; i++) {
+      try {
+        const fromFile = await wx.readFile("vm/1/fsys/tmp/.apptron-bridge-selftest.json");
+        raw = new TextDecoder().decode(fromFile).trim();
+      } catch {
+      }
+      if (!raw && i < 7) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
     }
     if (!raw) {
       try {
