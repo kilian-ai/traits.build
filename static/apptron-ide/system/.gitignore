@@ -1,4 +1,10 @@
-node_modules
+# Ignore node_modules by default but track the runtime deps that the
+# browser extension loads directly at runtime (see dist/web/extension.js).
+node_modules/*
+!node_modules/@progrium
+node_modules/@progrium/*
+!node_modules/@progrium/duplex
+!node_modules/ws
 dist
 !dist/web/extension.js
 !dist/web/extension.js.map
