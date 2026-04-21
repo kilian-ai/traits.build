@@ -306,9 +306,9 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   status.textContent = `Booting Apptron runtime...`;
 
   const runtime = new WanixRuntime({
-    // Keep screen pipeline enabled in bridge mode. Disabling it can leave
-    // xterm/console channels attachable but without a live producer.
-    screen: ideBridgeMode,
+    // Screen pipeline must always be enabled — both standalone shell and
+    // bridge mode need a live xterm producer for console output.
+    screen: true,
     helpers: true,
     debug9p: qp.get("debug9p") === "true",
     wasm: qp.get("wasm") || "./wanix.wasm",
