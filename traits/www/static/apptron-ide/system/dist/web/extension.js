@@ -4551,6 +4551,41 @@ ${line}\r
       if (timer) clearTimeout(timer);
     }
   };
+  const attachChannel = async (path) => {
+    debug2(`opening readable: ${path}`);
+    const stream = await withTimeout(wx.openReadable(path), 7e3, `openReadable(${path})`);
+    debug2(`openReadable ok: ${path}`);
+    debug2(`opening writable: ${path}`);
+    const writable = await withTimeout(wx.openWritable(path), 7e3, `openWritable(${path})`);
+    debug2(`openWritable ok: ${path}`);
+    const channelWriter = writable.getWriter();
+    return { stream, writer: channelWriter, path };
+  };
+  const waitFirstChunk = async (reader, path, ms) => {
+    const timeoutToken = Symbol("first-chunk-timeout");
+    const firstRead = reader.read();
+    const raced = await Promise.race([
+      firstRead,
+      new Promise((resolve) => {
+        setTimeout(() => resolve(timeoutToken), ms);
+      })
+    ]);
+    if (raced === timeoutToken) {
+      debug2(`no terminal output within ${ms}ms after attach on ${path}`);
+      try {
+        await reader.cancel("first-chunk-timeout");
+      } catch {
+      }
+      return null;
+    }
+    if (raced.done) {
+      debug2(`readable stream closed before first chunk on ${path}`);
+      return null;
+    }
+    const bytes = raced.value;
+    debug2(`first output chunk received (${bytes?.byteLength ?? 0} bytes) on ${path}`);
+    return bytes;
+  };
   let writer;
   let writeQueue = Promise.resolve();
   const pty = {
@@ -4559,7 +4594,7 @@ ${line}\r
       (async () => {
         try {
           debug2(`open() start; forceConsole=${String(forceConsoleChannel())}`);
-          const dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
+          let dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
           console.log("terminal channel", dataPath);
           writeEmitter.fire(`\r
 [apptron] terminal channel: ${dataPath}\r
@@ -4571,25 +4606,43 @@ ${line}\r
           } catch (e) {
             debug2(`stat(${dataPath}) failed: ${String(e)}`);
           }
-          debug2(`opening readable: ${dataPath}`);
-          const stream = await withTimeout(wx.openReadable(dataPath), 7e3, `openReadable(${dataPath})`);
-          debug2(`openReadable ok: ${dataPath}`);
-          debug2(`opening writable: ${dataPath}`);
-          const writable = await withTimeout(wx.openWritable(dataPath), 7e3, `openWritable(${dataPath})`);
-          debug2(`openWritable ok: ${dataPath}`);
-          writer = writable.getWriter();
+          let attached = await attachChannel(dataPath);
+          writer = attached.writer;
           try {
             debug2("writing initial newline kick");
-            await withTimeout(writer.write(enc.encode("\n")), 3e3, "initial newline write");
+            await withTimeout(writer.write(enc.encode("\r\n")), 3e3, "initial newline write");
             debug2("initial newline kick written");
           } catch {
             debug2("initial newline kick failed (non-fatal)");
           }
-          const reader = stream.getReader();
-          let gotFirstChunk = false;
-          const firstChunkWatchdog = setTimeout(() => {
-            debug2(`no terminal output within 5000ms after attach on ${dataPath}`);
-          }, 5e3);
+          let reader = attached.stream.getReader();
+          let firstChunk = await waitFirstChunk(reader, dataPath, 5e3);
+          if (!firstChunk && dataPath !== "#console/data") {
+            debug2(`fallback probe: switching channel to #console/data`);
+            try {
+              await writer.close();
+            } catch {
+            }
+            attached = await attachChannel("#console/data");
+            writer = attached.writer;
+            dataPath = "#console/data";
+            debug2(`fallback channel attached: ${dataPath}`);
+            writeEmitter.fire(`\r
+[apptron] fallback terminal channel: ${dataPath}\r
+`);
+            try {
+              debug2("writing fallback newline kick");
+              await withTimeout(writer.write(enc.encode("\r\n")), 3e3, "fallback newline write");
+              debug2("fallback newline kick written");
+            } catch {
+              debug2("fallback newline kick failed (non-fatal)");
+            }
+            reader = attached.stream.getReader();
+            firstChunk = await waitFirstChunk(reader, dataPath, 5e3);
+          }
+          if (firstChunk) {
+            writeEmitter.fire(dec.decode(firstChunk));
+          }
           try {
             while (true) {
               const { done, value } = await reader.read();
@@ -4597,15 +4650,9 @@ ${line}\r
                 debug2("readable stream closed (done=true)");
                 break;
               }
-              if (!gotFirstChunk) {
-                gotFirstChunk = true;
-                clearTimeout(firstChunkWatchdog);
-                debug2(`first output chunk received (${value?.byteLength ?? 0} bytes)`);
-              }
               writeEmitter.fire(dec.decode(value));
             }
           } finally {
-            clearTimeout(firstChunkWatchdog);
             reader.releaseLock();
           }
         } catch (error) {
