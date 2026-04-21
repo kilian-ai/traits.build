@@ -359,6 +359,26 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
         } catch {
           // Non-fatal: extension will fall back to #console/data.
         }
+        // Fully wire the shell task in the hidden iframe so that the xterm
+        // data stream is live when the IDE extension attaches. Skipping
+        // append-child or the initial kick leaves the hush shell silent —
+        // the extension then blocks on openReadable('web/dom/<id>/data')
+        // waiting for output that never comes.
+        try {
+          await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
+        } catch {
+          // Non-fatal: alias is a convenience only.
+        }
+        try {
+          await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
+        } catch {
+          // Non-fatal: xterm DOM visibility is not required in the hidden iframe.
+        }
+        try {
+          await runtime.writeFile(`web/dom/${terminalId}/data`, "\n");
+        } catch {
+          // Non-fatal: IDE extension also kicks on attach.
+        }
       }
       status.textContent = `Apptron runtime ready for IDE bridge`;
     } else {
