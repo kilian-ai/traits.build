@@ -297,64 +297,6 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     return "";
   }
 
-  async function runBridgeSelfTest(runtime, terminalId) {
-    const result = {
-      ts: new Date().toISOString(),
-      path: `web/dom/${terminalId}/data`,
-      write_ok: false,
-      token_seen: false,
-      timeout_ms: 2500,
-      notes: [],
-    };
-    if (!terminalId) {
-      result.notes.push("no terminal id");
-      return result;
-    }
-
-    const token = `__APPTRON_BRIDGE_SELFTEST_${Date.now()}__`;
-    let reader;
-    let writer;
-    const path = `web/dom/${terminalId}/data`;
-    try {
-      const stream = await runtime.openReadable(path);
-      const writable = await runtime.openWritable(path);
-      reader = stream.getReader();
-      writer = writable.getWriter();
-      await writer.write(new TextEncoder().encode(`echo ${token}\r\n`));
-      result.write_ok = true;
-
-      const started = Date.now();
-      let seen = "";
-      while (Date.now() - started < result.timeout_ms) {
-        const raced = await Promise.race([
-          reader.read(),
-          new Promise((resolve) => setTimeout(() => resolve("timeout"), 250)),
-        ]);
-        if (raced === "timeout") continue;
-        const { done, value } = raced;
-        if (done) {
-          result.notes.push("stream closed during self-test");
-          break;
-        }
-        seen += new TextDecoder().decode(value);
-        if (seen.includes(token)) {
-          result.token_seen = true;
-          break;
-        }
-      }
-      if (!result.token_seen) {
-        result.notes.push("token not observed in producer-side read window");
-      }
-    } catch (err) {
-      result.notes.push(`self-test error: ${String(err)}`);
-    } finally {
-      try { await writer?.close(); } catch {}
-      try { reader?.cancel("bridge-selftest-done"); } catch {}
-      try { reader?.releaseLock(); } catch {}
-    }
-    return result;
-  }
-
   // Intentionally no in-shell bootstrap: no DHCP, no route, no DNS, no relay
   // rc sourcing. The shell boots clean. Users opt-in to networking manually
   // (e.g. `ifconfig eth0 up && udhcpc -i eth0`) or via Settings later.
@@ -414,17 +356,6 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
         localStorage.setItem("apptron-terminal-id", terminalId);
       } catch {
         // localStorage may be unavailable.
-      }
-      if (ideBridgeMode) {
-        try {
-          const selfTest = await runBridgeSelfTest(runtime, terminalId);
-          const packed = JSON.stringify(selfTest);
-          await runtime.writeFile("vm/1/fsys/tmp/.apptron-bridge-selftest.json", `${packed}\n`);
-          localStorage.setItem("apptron-bridge-selftest", packed);
-          console.log("[apptron][bridge-selftest]", selfTest);
-        } catch (err) {
-          console.warn("[apptron][bridge-selftest] failed to persist result", err);
-        }
       }
     }
     if (ideBridgeMode) {

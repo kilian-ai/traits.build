@@ -4343,7 +4343,7 @@ var WanixBridge = class _WanixBridge {
 var monitor_default = '<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <style>\n        html,\n        body {\n            height: 100%;\n            width: 100%;\n            overflow: hidden;\n            margin: 0;\n            padding: 0;\n            background-color: #000;\n        }\n        iframe {\n            width: 100%;\n            height: 100%;\n            border: none;\n            display: block;\n            pointer-events: auto !important;\n            user-select: none;\n        }\n    </style>\n</head>\n<body>\n<script type="module">\n    import { WanixHandle } from "/wanix.min.js";\n\n    let vm = null;\n    const vscode = acquireVsCodeApi();\n    const channel = new MessageChannel();\n\n    const wanixReady = new Promise((resolve) => {\n        window.addEventListener("message", (event) => {\n            if (event.data.origin) {\n                if (event.data.vm) {\n                    vm = event.data.vm;\n                    vscode.setState({ vm: vm });\n                }\n                top.postMessage({ service: "wanix", port: channel.port1 }, event.data.origin, [channel.port1]);\n                channel.port2.onmessage = async (e) => {\n                    resolve(e.data);\n                };\n            }\n        });\n    });\n    \n    window.onload = async function()\n    {\n        const ports = await wanixReady;\n        const iframe = document.querySelector("iframe");\n        if (iframe) {\n            iframe.onload = function () {\n                if (iframe.contentWindow) {\n                    iframe.contentWindow.postMessage({ wanix: ports.wanix, vm: vm }, "*", [ports.wanix]);\n                }\n            };\n            // todo: use origin from message for base url\n            iframe.src = "http://localhost:8788/editor/monitor";\n        }\n    };\n<\/script>\n<iframe></iframe>\n</body>\n</html>';
 
 // src/web/extension.ts
-var PTY_DEBUG_VERSION = "pty-bridge-selftest-20260421-05";
+var PTY_DEBUG_VERSION = "pty-no-selftest-20260421-06";
 async function activate(context) {
   if (typeof navigator !== "object") {
     console.error("not running in browser");
@@ -4554,40 +4554,6 @@ function createTerminal(wx) {
 ${line}\r
 `);
   };
-  const emitBridgeSelfTest = async () => {
-    let raw = "";
-    for (let i = 0; i < 8 && !raw; i++) {
-      try {
-        const fromFile = await wx.readFile("vm/1/fsys/tmp/.apptron-bridge-selftest.json");
-        raw = new TextDecoder().decode(fromFile).trim();
-      } catch {
-      }
-      if (!raw && i < 7) {
-        await new Promise((r) => setTimeout(r, 250));
-      }
-    }
-    if (!raw) {
-      try {
-        raw = String(localStorage.getItem("apptron-bridge-selftest") || "").trim();
-      } catch {
-      }
-    }
-    if (!raw) {
-      debug2("bridge self-test: no producer-side result found");
-      return;
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      debug2(
-        `bridge self-test: write_ok=${String(parsed?.write_ok)} token_seen=${String(parsed?.token_seen)} path=${String(parsed?.path || "?")}`
-      );
-      if (Array.isArray(parsed?.notes) && parsed.notes.length > 0) {
-        debug2(`bridge self-test notes: ${parsed.notes.join(" | ")}`);
-      }
-    } catch {
-      debug2(`bridge self-test raw: ${raw.slice(0, 240)}`);
-    }
-  };
   const withTimeout = async (promise, ms, label) => {
     let timer;
     const timeout = new Promise((_, reject) => {
@@ -4641,7 +4607,6 @@ ${line}\r
         try {
           debug2(`open() start; forceConsole=${String(forceConsoleChannel())}`);
           debug2(`build marker: ${PTY_DEBUG_VERSION}`);
-          await emitBridgeSelfTest();
           let dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
           console.log("terminal channel", dataPath);
           writeEmitter.fire(`\r
