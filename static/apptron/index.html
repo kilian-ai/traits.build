@@ -337,32 +337,26 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     // Stock Apptron persistence (idbfs "apptron-rev1") is already wired by
     // boot.go for /home/<username>, /project, and /public at this point.
     const ideBridgeMode = qp.get("ide_bridge") === "1";
-    // In ide_bridge mode, do NOT allocate an xterm or bind any terminal
-    // channels from the iframe. The IDE extension will allocate its own
-    // xterm (via web/dom/new/xterm), bind #console/data to it, and read
-    // directly from #console/data as the sole consumer. Any wiring here
-    // would either starve the extension's reader (xterm DOM consumer
-    // competing for the stream) or leak a second console binding.
-    let terminalId = "";
+    // Wire the shell exactly like the non-bridge (server) page does:
+    // allocate xterm, bind #console/data, append-child to body (body is
+    // display:none in the hidden iframe, so the xterm is not visible),
+    // then kick to start hush's prompt. The IDE extension reads the same
+    // web/dom/<id>/data path via its own openReadable handle — Wanix's
+    // open() returns independent stream handles per caller.
+    const terminalId = await createXtermWithRetry(runtime);
+    window.apptron.terminalId = terminalId;
+    await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
+    await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
+    try {
+      await runtime.writeFile(`web/dom/${terminalId}/data`, "\n");
+    } catch {
+      // Non-fatal.
+    }
     if (ideBridgeMode) {
-      // Clear any stale terminal-id from previous non-bridge runs so the
-      // IDE extension doesn't try to attach to a non-existent xterm.
-      try { localStorage.removeItem("apptron-terminal-id"); } catch {}
-      try { await runtime.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", ""); } catch {}
+      try { localStorage.setItem("apptron-terminal-id", terminalId); } catch {}
+      try { await runtime.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", `${terminalId}\n`); } catch {}
       status.textContent = `Apptron runtime ready for IDE bridge`;
     } else {
-      terminalId = await createXtermWithRetry(runtime);
-      window.apptron.terminalId = terminalId;
-      await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
-      await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
-      // Kick the prompt: BusyBox hush defers its first prompt until it sees
-      // input on its stdin pipe. Without this single newline the xterm stays
-      // blank forever.
-      try {
-        await runtime.writeFile(`web/dom/${terminalId}/data`, "\n");
-      } catch {
-        // Non-fatal: shell will render after first keystroke.
-      }
       status.textContent = `Apptron shell ready`;
     }
     status.classList.add("ready");

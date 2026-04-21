@@ -155,18 +155,22 @@ async function resolveTerminalDataPathOnce(wx: any): Promise<string | null> {
 	if (forceConsoleChannel()) {
 		return "#console/data";
 	}
-	// Always prefer allocating a fresh xterm and reading from #console/data.
-	// The iframe no longer pre-allocates one in ide_bridge mode, so there is
-	// no active xterm DOM consumer competing for web/dom/<id>/data. Reading
-	// from #console/data directly bypasses the alias routing entirely.
-	const allocated = await tryAllocateXterm(wx);
-	if (allocated) {
-		return allocated;
-	}
-	// Fallback: if allocation fails but a prior id exists, use it.
+	// Iframe always allocates the xterm in bridge mode (mirrors the server
+	// page: bind + append-child + kick). Pick up the id it wrote to
+	// /tmp/.apptron-terminal-id or localStorage and read from the same
+	// web/dom/<id>/data path. Wanix open() returns independent stream
+	// handles per caller so the iframe's hidden xterm and the extension
+	// both see the shell's output.
 	const existing = await tryFindExistingTerminalId(wx);
 	if (existing) {
 		return existing;
+	}
+	// Fallback: allocate ourselves (covers the case where the iframe hasn't
+	// finished bootstrapping yet; the retry loop will re-probe for the real id
+	// on the next pass).
+	const allocated = await tryAllocateXterm(wx);
+	if (allocated) {
+		return allocated;
 	}
 	return null;
 }
