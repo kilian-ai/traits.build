@@ -4487,13 +4487,13 @@ async function resolveTerminalDataPathOnce(wx) {
   if (forceConsoleChannel()) {
     return "#console/data";
   }
-  const allocated = await tryAllocateXterm(wx);
-  if (allocated) {
-    return allocated;
-  }
   const existing = await tryFindExistingTerminalId(wx);
   if (existing) {
     return existing;
+  }
+  const allocated = await tryAllocateXterm(wx);
+  if (allocated) {
+    return allocated;
   }
   return null;
 }

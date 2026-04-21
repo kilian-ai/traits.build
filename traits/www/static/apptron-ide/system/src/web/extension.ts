@@ -178,17 +178,16 @@ async function resolveTerminalDataPathOnce(wx: any): Promise<string | null> {
 	if (forceConsoleChannel()) {
 		return "#console/data";
 	}
-	// Deterministic path: allocate and fully wire our own xterm channel.
-	// This avoids attaching to stale/pre-existing IDs that can be present in
-	// localStorage or /tmp during SPA iframe restarts.
-	const allocated = await tryAllocateXterm(wx);
-	if (allocated) {
-		return allocated;
-	}
-	// Last-resort fallback for legacy sessions.
+	// Prefer the hidden-shell bridge terminal when present so extension and
+	// runtime attach to the same already-bootstrapped shell producer.
 	const existing = await tryFindExistingTerminalId(wx);
 	if (existing) {
 		return existing;
+	}
+	// Fallback: allocate and fully wire a new xterm channel.
+	const allocated = await tryAllocateXterm(wx);
+	if (allocated) {
+		return allocated;
 	}
 	return null;
 }

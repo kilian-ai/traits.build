@@ -337,17 +337,9 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     // Stock Apptron persistence (idbfs "apptron-rev1") is already wired by
     // boot.go for /home/<username>, /project, and /public at this point.
     const ideBridgeMode = qp.get("ide_bridge") === "1";
-    if (ideBridgeMode) {
-      // In SPA bridge mode, the IDE extension owns terminal allocation and
-      // channel wiring. Avoid pre-allocating xterm here to prevent stale ids
-      // and split ownership of web/dom streams.
-      try { localStorage.removeItem("apptron-terminal-id"); } catch {}
-      try { await runtime.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", ""); } catch {}
-      status.textContent = `Apptron runtime ready for IDE bridge`;
-    } else {
-      // Non-bridge page keeps the stock local shell behavior.
-      const terminalId = await createXtermWithRetry(runtime);
-      window.apptron.terminalId = terminalId;
+    const terminalId = await createXtermWithRetry(runtime);
+    window.apptron.terminalId = terminalId;
+    if (terminalId) {
       await runtime.writeFile("task/1/ctl", `bind #console/data web/dom/${terminalId}/data`);
       await runtime.writeFile("web/dom/body/ctl", `append-child ${terminalId}`);
       try {
@@ -355,6 +347,20 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
       } catch {
         // Non-fatal.
       }
+      try {
+        await runtime.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", `${terminalId}\n`);
+      } catch {
+        // Best effort only.
+      }
+      try {
+        localStorage.setItem("apptron-terminal-id", terminalId);
+      } catch {
+        // localStorage may be unavailable.
+      }
+    }
+    if (ideBridgeMode) {
+      status.textContent = `Apptron runtime ready for IDE bridge`;
+    } else {
       status.textContent = `Apptron shell ready`;
     }
     status.classList.add("ready");
