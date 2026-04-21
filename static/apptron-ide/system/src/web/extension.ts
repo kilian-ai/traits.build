@@ -84,40 +84,45 @@ export async function activate(context: vscode.ExtensionContext) {
 	console.log('Apptron system extension activated');
 }
 
-async function resolveTerminalDataPath(wx: any): Promise<string> {
+function forceConsoleChannel(): boolean {
 	try {
 		const topSearch = window.top?.location?.search || "";
 		const force = new URLSearchParams(topSearch || window.location.search).get("term_path");
-		if (force === "console") {
-			return "#console/data";
-		}
+		return force === "console";
 	} catch {
-		// ignore URL access failures
+		return false;
 	}
+}
+
+async function tryAllocateXterm(wx: any): Promise<string | null> {
 	try {
 		const raw = await wx.readFile("web/dom/new/xterm");
 		const terminalId = new TextDecoder().decode(raw).trim();
-		if (/^[0-9]+$/.test(terminalId)) {
-			try {
-				await wx.writeFile("task/1/ctl", new TextEncoder().encode(`bind #console/data web/dom/${terminalId}/data`));
-			} catch {
-				// Non-fatal: direct web/dom path is still usable.
-			}
-			try {
-				await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}\n`));
-			} catch {
-				// Best-effort only.
-			}
-			try {
-				localStorage.setItem("apptron-terminal-id", terminalId);
-			} catch {
-				// localStorage may be unavailable in some extension host contexts.
-			}
-			return "#console/data";
+		if (!/^[0-9]+$/.test(terminalId)) {
+			return null;
 		}
+		try {
+			await wx.writeFile("task/1/ctl", new TextEncoder().encode(`bind #console/data web/dom/${terminalId}/data`));
+		} catch {
+			// Non-fatal: direct web/dom path is still usable.
+		}
+		try {
+			await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}\n`));
+		} catch {
+			// Best-effort only.
+		}
+		try {
+			localStorage.setItem("apptron-terminal-id", terminalId);
+		} catch {
+			// localStorage may be unavailable in some extension host contexts.
+		}
+		return "#console/data";
 	} catch {
-		// Runtime may not be ready for xterm allocation yet; try legacy fallbacks.
+		return null;
 	}
+}
+
+async function tryFindExistingTerminalId(wx: any): Promise<string | null> {
 	const idFiles = [
 		"vm/1/fsys/tmp/.apptron-terminal-id",
 		"/tmp/.apptron-terminal-id",
@@ -143,7 +148,54 @@ async function resolveTerminalDataPath(wx: any): Promise<string> {
 	} catch {
 		// localStorage access can fail in restricted contexts
 	}
-	return "#console/data";
+	return null;
+}
+
+async function resolveTerminalDataPathOnce(wx: any): Promise<string | null> {
+	if (forceConsoleChannel()) {
+		return "#console/data";
+	}
+	const existing = await tryFindExistingTerminalId(wx);
+	if (existing) {
+		return existing;
+	}
+	const allocated = await tryAllocateXterm(wx);
+	if (allocated) {
+		return allocated;
+	}
+	return null;
+}
+
+async function resolveTerminalDataPathWithRetry(
+	wx: any,
+	writeEmitter: vscode.EventEmitter<string>,
+): Promise<string> {
+	// Retry schedule: probe aggressively at first, then back off. Total ~30s.
+	const delaysMs = [
+		0, 250, 500, 750, 1000, 1500, 2000, 2500, 3000,
+		3000, 3000, 3000, 3000, 3000, 3000,
+	];
+	let announcedWaiting = false;
+	for (let i = 0; i < delaysMs.length; i++) {
+		if (delaysMs[i] > 0) {
+			await new Promise((r) => setTimeout(r, delaysMs[i]));
+		}
+		const path = await resolveTerminalDataPathOnce(wx);
+		if (path) {
+			return path;
+		}
+		if (!announcedWaiting && i >= 2) {
+			writeEmitter.fire("\r\n[apptron] waiting for Wanix terminal allocation...\r\n");
+			announcedWaiting = true;
+		}
+	}
+	writeEmitter.fire(
+		"\r\n[apptron] terminal allocation failed after 30s. " +
+		"Wanix runtime never provided a terminal id via web/dom/new/xterm or " +
+		"vm/1/fsys/tmp/.apptron-terminal-id. Reload the page to retry, or " +
+		"append ?term_path=console to force the legacy #console/data channel.\r\n",
+	);
+	throw new Error("terminal allocation timed out");
 }
 
 function createTerminal(wx: any) {
@@ -157,7 +209,7 @@ function createTerminal(wx: any) {
 		open: () => {
 			(async () => {
 				try {
-					const dataPath = await resolveTerminalDataPath(wx);
+					const dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
 					console.log("terminal channel", dataPath);
 					writeEmitter.fire(`\r\n[apptron] terminal channel: ${dataPath}\r\n`);
 					const stream = await wx.openReadable(dataPath);

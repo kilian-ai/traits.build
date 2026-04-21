@@ -4410,36 +4410,41 @@ async function activate(context) {
   }));
   console.log("Apptron system extension activated");
 }
-async function resolveTerminalDataPath(wx) {
+function forceConsoleChannel() {
   try {
     const topSearch = window.top?.location?.search || "";
     const force = new URLSearchParams(topSearch || window.location.search).get("term_path");
-    if (force === "console") {
-      return "#console/data";
-    }
+    return force === "console";
   } catch {
+    return false;
   }
+}
+async function tryAllocateXterm(wx) {
   try {
     const raw = await wx.readFile("web/dom/new/xterm");
     const terminalId = new TextDecoder().decode(raw).trim();
-    if (/^[0-9]+$/.test(terminalId)) {
-      try {
-        await wx.writeFile("task/1/ctl", new TextEncoder().encode(`bind #console/data web/dom/${terminalId}/data`));
-      } catch {
-      }
-      try {
-        await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}
-`));
-      } catch {
-      }
-      try {
-        localStorage.setItem("apptron-terminal-id", terminalId);
-      } catch {
-      }
-      return "#console/data";
+    if (!/^[0-9]+$/.test(terminalId)) {
+      return null;
     }
+    try {
+      await wx.writeFile("task/1/ctl", new TextEncoder().encode(`bind #console/data web/dom/${terminalId}/data`));
+    } catch {
+    }
+    try {
+      await wx.writeFile("vm/1/fsys/tmp/.apptron-terminal-id", new TextEncoder().encode(`${terminalId}
+`));
+    } catch {
+    }
+    try {
+      localStorage.setItem("apptron-terminal-id", terminalId);
+    } catch {
+    }
+    return "#console/data";
   } catch {
+    return null;
   }
+}
+async function tryFindExistingTerminalId(wx) {
   const idFiles = [
     "vm/1/fsys/tmp/.apptron-terminal-id",
     "/tmp/.apptron-terminal-id",
@@ -4463,7 +4468,58 @@ async function resolveTerminalDataPath(wx) {
     }
   } catch {
   }
-  return "#console/data";
+  return null;
+}
+async function resolveTerminalDataPathOnce(wx) {
+  if (forceConsoleChannel()) {
+    return "#console/data";
+  }
+  const existing = await tryFindExistingTerminalId(wx);
+  if (existing) {
+    return existing;
+  }
+  const allocated = await tryAllocateXterm(wx);
+  if (allocated) {
+    return allocated;
+  }
+  return null;
+}
+async function resolveTerminalDataPathWithRetry(wx, writeEmitter) {
+  const delaysMs = [
+    0,
+    250,
+    500,
+    750,
+    1e3,
+    1500,
+    2e3,
+    2500,
+    3e3,
+    3e3,
+    3e3,
+    3e3,
+    3e3,
+    3e3,
+    3e3
+  ];
+  let announcedWaiting = false;
+  for (let i = 0; i < delaysMs.length; i++) {
+    if (delaysMs[i] > 0) {
+      await new Promise((r) => setTimeout(r, delaysMs[i]));
+    }
+    const path = await resolveTerminalDataPathOnce(wx);
+    if (path) {
+      return path;
+    }
+    if (!announcedWaiting && i >= 2) {
+      writeEmitter.fire("\r\n[apptron] waiting for Wanix terminal allocation...\r\n");
+      announcedWaiting = true;
+    }
+  }
+  writeEmitter.fire(
+    "\r\n[apptron] terminal allocation failed after 30s. Wanix runtime never provided a terminal id via web/dom/new/xterm or vm/1/fsys/tmp/.apptron-terminal-id. Reload the page to retry, or append ?term_path=console to force the legacy #console/data channel.\r\n"
+  );
+  throw new Error("terminal allocation timed out");
 }
 function createTerminal(wx) {
   const writeEmitter = new vscode.EventEmitter();
@@ -4476,7 +4532,7 @@ function createTerminal(wx) {
     open: () => {
       (async () => {
         try {
-          const dataPath = await resolveTerminalDataPath(wx);
+          const dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
           console.log("terminal channel", dataPath);
           writeEmitter.fire(`\r
 [apptron] terminal channel: ${dataPath}\r
