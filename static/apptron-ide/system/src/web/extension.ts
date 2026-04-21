@@ -4,7 +4,7 @@ import { WanixBridge } from './bridge.js';
 // @ts-ignore
 import monitorHtml from "./monitor.html";
 
-const PTY_DEBUG_VERSION = "pty-console-primary-20260421-01";
+const PTY_DEBUG_VERSION = "pty-readiness-probe-20260421-02";
 
 declare const navigator: unknown;
 
@@ -381,6 +381,7 @@ function createTerminal(wx: any) {
 					}
 					if (firstChunk) {
 						writeEmitter.fire(dec.decode(firstChunk));
+						debug(`post-first-chunk: entering readiness probe on ${dataPath}`);
 							channelReady = await probeShellReadiness(reader, writer, dataPath, 3000);
 					}
 					try {
