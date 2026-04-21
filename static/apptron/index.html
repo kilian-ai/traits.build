@@ -282,6 +282,64 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  async function getCachedOrFetch(url, gzipped = false, cacheName = "assets") {
+    let cache = null;
+    try {
+      cache = await caches.open(cacheName);
+    } catch {
+      cache = null;
+    }
+
+    if (cache) {
+      try {
+        const cached = await cache.match(url);
+        if (cached) {
+          if (gzipped) {
+            if (!("DecompressionStream" in window)) {
+              throw new Error("DecompressionStream not supported in this browser.");
+            }
+            const decompressed = cached.body.pipeThrough(new DecompressionStream("gzip"));
+            return await new Response(decompressed).arrayBuffer();
+          }
+          return await cached.arrayBuffer();
+        }
+      } catch {
+        // If cache read/decompress fails, fall back to network fetch.
+      }
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status} for ${url}`);
+    }
+
+    if (cache) {
+      try {
+        await cache.put(url, response.clone());
+      } catch {
+        // Large artifacts may exceed cache limits in some browsers/contexts.
+      }
+    }
+
+    if (gzipped) {
+      if (!("DecompressionStream" in window)) {
+        throw new Error("DecompressionStream not supported in this browser.");
+      }
+      const decompressed = response.body.pipeThrough(new DecompressionStream("gzip"));
+      return await new Response(decompressed).arrayBuffer();
+    }
+    return await response.arrayBuffer();
+  }
+
+  function createHiddenScreenCanvas(id = "screen") {
+    const canvas = document.createElement("canvas");
+    canvas.id = id;
+    canvas.style.display = "none";
+    canvas.style.position = "absolute";
+    document.body.appendChild(canvas);
+    return canvas;
+  }
+
   async function createXtermWithRetry(runtime, attempts = 6) {
     for (let i = 0; i < attempts; i++) {
       try {
@@ -311,10 +369,15 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     screen: true,
     helpers: true,
     debug9p: qp.get("debug9p") === "true",
-    wasm: qp.get("wasm") || "./wanix.wasm",
-    bundle: qp.get("bundle") || "./bundles/sys.tar.gz",
+    wasm: null,
     network: networkUrl
   });
+
+  // Match Apptron's production boot order: attach the offscreen VM display
+  // before loading WASM, then preload the base bundle manually.
+  const screenCanvas = createHiddenScreenCanvas();
+  runtime.screen = screenCanvas.transferControlToOffscreen();
+  runtime._bundle = getCachedOrFetch(qp.get("bundle") || "./bundles/sys.tar.gz", true, "apptron-bundles");
 
   // Enable on-demand bundle loading (Go toolchain etc.) via relay proxy
   runtime._getBundle = async (name) => {
@@ -332,6 +395,8 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
     console.log('[bundle] cached', name);
     return await resp.arrayBuffer();
   };
+
+  getCachedOrFetch(qp.get("wasm") || "./wanix.wasm").then((wasm) => runtime._loadWasm(wasm));
 
   window.apptron.instance = runtime;
 
