@@ -21,6 +21,7 @@
     }
     #layout {
       display: flex;
+      flex-direction: column;
       width: 100vw;
       height: 100vh;
       min-height: 100vh;
@@ -42,13 +43,17 @@
       pointer-events: none;
       transition: opacity 180ms ease;
     }
+    body.resizing {
+      cursor: row-resize;
+      user-select: none;
+    }
     #ide-panel {
       position: relative;
-      flex: 0 0 55%;
+      flex: 0 0 62%;
       min-width: 0;
       min-height: 0;
       overflow: hidden;
-      border-right: 1px solid #2d3d5f;
+      border-bottom: 1px solid #2d3d5f;
       background: #0f141b;
     }
     #ide-panel > vscode-workbench {
@@ -63,9 +68,19 @@
     #shell-panel {
       flex: 1;
       min-width: 0;
+      min-height: 140px;
       display: flex;
       flex-direction: column;
       background: #1e1e1e;
+    }
+    #resize-handle {
+      flex: 0 0 10px;
+      height: 10px;
+      cursor: row-resize;
+      background: linear-gradient(180deg, #223352 0%, #2d3d5f 50%, #223352 100%);
+      border-top: 1px solid #31466f;
+      border-bottom: 1px solid #1a273f;
+      touch-action: none;
     }
     #shell-panel iframe {
       flex: 1;
@@ -82,6 +97,7 @@
     <div id="ide-panel">
       <vscode-workbench></vscode-workbench>
     </div>
+    <div id="resize-handle" aria-label="Resize panels" role="separator"></div>
     <div id="shell-panel">
       <iframe src="/static/apptron/index.html" allow="clipboard-read; clipboard-write" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
     </div>
@@ -99,7 +115,64 @@
 
     const status = document.getElementById('status');
     const workbench = document.querySelector('vscode-workbench');
+    const layout = document.getElementById('layout');
+    const idePanel = document.getElementById('ide-panel');
+    const resizeHandle = document.getElementById('resize-handle');
     const params = new URLSearchParams(window.location.search);
+    const SPLIT_KEY = 'apptron.ide.split.height';
+
+    function setupHorizontalResize() {
+      if (!layout || !idePanel || !resizeHandle) return;
+
+      try {
+        const saved = parseInt(localStorage.getItem(SPLIT_KEY) || '', 10);
+        if (!Number.isNaN(saved) && saved > 120) {
+          idePanel.style.flex = `0 0 ${saved}px`;
+        }
+      } catch {
+      }
+
+      let dragging = false;
+      let startY = 0;
+      let startHeight = 0;
+
+      const onMove = (event) => {
+        if (!dragging) return;
+        const deltaY = event.clientY - startY;
+        const handleHeight = resizeHandle.offsetHeight || 10;
+        const minHeight = 140;
+        const maxHeight = Math.max(minHeight, layout.clientHeight - minHeight - handleHeight);
+        const next = Math.max(minHeight, Math.min(maxHeight, startHeight + deltaY));
+        idePanel.style.flex = `0 0 ${next}px`;
+      };
+
+      const stopDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        document.body.classList.remove('resizing');
+        try {
+          localStorage.setItem(SPLIT_KEY, String(Math.round(idePanel.getBoundingClientRect().height)));
+        } catch {
+        }
+      };
+
+      resizeHandle.addEventListener('pointerdown', (event) => {
+        dragging = true;
+        startY = event.clientY;
+        startHeight = idePanel.getBoundingClientRect().height;
+        document.body.classList.add('resizing');
+        try {
+          resizeHandle.setPointerCapture(event.pointerId);
+        } catch {
+        }
+      });
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', stopDrag);
+      window.addEventListener('pointercancel', stopDrag);
+    }
+
+    setupHorizontalResize();
 
     function shellCacheBustValue() {
       const explicit = params.get('cb');
