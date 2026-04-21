@@ -4572,10 +4572,8 @@ ${line}\r
     ]);
     if (raced === timeoutToken) {
       debug2(`no terminal output within ${ms}ms after attach on ${path}`);
-      try {
-        await reader.cancel("first-chunk-timeout");
-      } catch {
-      }
+      reader.cancel("first-chunk-timeout").catch(() => {
+      });
       return null;
     }
     if (raced.done) {
@@ -4618,6 +4616,7 @@ ${line}\r
           let reader = attached.stream.getReader();
           let firstChunk = await waitFirstChunk(reader, dataPath, 5e3);
           if (!firstChunk && dataPath !== "#console/data") {
+            debug2("first-chunk timeout on primary channel; entering fallback branch");
             debug2(`fallback probe: switching channel to #console/data`);
             try {
               await writer.close();

@@ -257,11 +257,11 @@ function createTerminal(wx: any) {
 		]);
 		if (raced === timeoutToken) {
 			debug(`no terminal output within ${ms}ms after attach on ${path}`);
-			try {
-				await reader.cancel("first-chunk-timeout");
-			} catch {
-				// Best effort.
-			}
+			// Important: do not await cancel here. In some Wanix stream states,
+			// cancel() can hang and block channel failover execution.
+			reader.cancel("first-chunk-timeout").catch(() => {
+				// Best effort cleanup.
+			});
 			return null;
 		}
 		if ((raced as ReadableStreamReadResult<Uint8Array>).done) {
@@ -306,6 +306,7 @@ function createTerminal(wx: any) {
 					let reader = attached.stream.getReader();
 					let firstChunk = await waitFirstChunk(reader, dataPath, 5000);
 					if (!firstChunk && dataPath !== "#console/data") {
+						debug("first-chunk timeout on primary channel; entering fallback branch");
 						debug(`fallback probe: switching channel to #console/data`);
 						try {
 							await writer.close();
