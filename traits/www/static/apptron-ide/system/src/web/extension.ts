@@ -4,7 +4,7 @@ import { WanixBridge } from './bridge.js';
 // @ts-ignore
 import monitorHtml from "./monitor.html";
 
-const PTY_DEBUG_VERSION = "pty-xterm-channel-20260421-03";
+const PTY_DEBUG_VERSION = "pty-bridge-selftest-20260421-04";
 
 declare const navigator: unknown;
 
@@ -233,6 +233,37 @@ function createTerminal(wx: any) {
 		console.log(line);
 		writeEmitter.fire(`\r\n${line}\r\n`);
 	};
+	const emitBridgeSelfTest = async () => {
+		let raw = "";
+		try {
+			const fromFile = await wx.readFile("vm/1/fsys/tmp/.apptron-bridge-selftest.json");
+			raw = new TextDecoder().decode(fromFile).trim();
+		} catch {
+			// Fallback to localStorage when fs handoff isn't ready yet.
+		}
+		if (!raw) {
+			try {
+				raw = String(localStorage.getItem("apptron-bridge-selftest") || "").trim();
+			} catch {
+				// Ignore localStorage access failures.
+			}
+		}
+		if (!raw) {
+			debug("bridge self-test: no producer-side result found");
+			return;
+		}
+		try {
+			const parsed = JSON.parse(raw);
+			debug(
+				`bridge self-test: write_ok=${String(parsed?.write_ok)} token_seen=${String(parsed?.token_seen)} path=${String(parsed?.path || "?")}`,
+			);
+			if (Array.isArray(parsed?.notes) && parsed.notes.length > 0) {
+				debug(`bridge self-test notes: ${parsed.notes.join(" | ")}`);
+			}
+		} catch {
+			debug(`bridge self-test raw: ${raw.slice(0, 240)}`);
+		}
+	};
 	const withTimeout = async <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const timeout = new Promise<never>((_, reject) => {
@@ -293,6 +324,7 @@ function createTerminal(wx: any) {
 				try {
 					debug(`open() start; forceConsole=${String(forceConsoleChannel())}`);
 					debug(`build marker: ${PTY_DEBUG_VERSION}`);
+					await emitBridgeSelfTest();
 					let dataPath = await resolveTerminalDataPathWithRetry(wx, writeEmitter);
 					console.log("terminal channel", dataPath);
 					writeEmitter.fire(`\r\n[apptron] terminal channel: ${dataPath}\r\n`);
