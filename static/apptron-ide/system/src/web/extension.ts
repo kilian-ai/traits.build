@@ -146,97 +146,12 @@ async function resolveTerminalDataPath(wx: any): Promise<string> {
 	return "#console/data";
 }
 
-function shSingleQuote(value: string): string {
-	return `'${value.replace(/'/g, `"'"'`)}'`;
-}
-
-function deriveOriginNet(): string {
-	try {
-		const origin = new URL(window.location.origin);
-		const wsProto = origin.protocol === "https:" ? "wss:" : "ws:";
-		return `${wsProto}//${origin.host}/x/net`;
-	} catch {
-		return "";
-	}
-}
-
-function buildRelayBootstrapCommandFromContext(): string | null {
-	const params = new URLSearchParams(window.top?.location?.search || window.location.search);
-	const defaultRelay = "wss://relay.traits.build/linux/tunnel";
-	const legacyRelay = "wss://relay.traits.build/x/net";
-	const normalizeRelay = (value: string) => (value === legacyRelay ? defaultRelay : value);
-
-	let relay = "";
-	let network = "";
-	let source = "";
-
-	try {
-		relay = String(localStorage.getItem("apptron-default-relay") || "").trim();
-		network = String(localStorage.getItem("apptron-network") || "").trim();
-		source = String(localStorage.getItem("apptron-network-source") || "").trim();
-	} catch {
-		// Continue with URL/default fallback.
-	}
-
-	relay = normalizeRelay(relay || params.get("relay_url") || defaultRelay);
-
-	if (!network) {
-		if (params.get("network")) {
-			network = normalizeRelay(String(params.get("network")));
-			source = source || "query";
-		} else if (params.get("relay") === "off") {
-			network = deriveOriginNet() || relay;
-			source = source || "origin-net";
-		} else if (params.get("worker_url")) {
-			network = String(params.get("worker_url") || "").trim();
-			source = source || "query-worker";
-		} else {
-			network = relay;
-			source = source || "default-relay";
-		}
-	}
-
-	if (!source) {
-		source = "default-relay";
-	}
-
-	if (!relay || !network) {
-		return null;
-	}
-
-	const lines = [
-		"# traits.build relay bootstrap (ide pty)",
-		`export WANIX_DEFAULT_RELAY=${relay}`,
-		`export WANIX_NETWORK=${network}`,
-		`export WANIX_NETWORK_SOURCE=${source}`,
-		"alias relay_status='echo WANIX_DEFAULT_RELAY=$WANIX_DEFAULT_RELAY; echo WANIX_NETWORK=$WANIX_NETWORK; echo WANIX_NETWORK_SOURCE=$WANIX_NETWORK_SOURCE'",
-	];
-	const rcPath = "/tmp/.traits-relay.sh";
-	const quotedLines = lines.map((line) => shSingleQuote(line)).join(" ");
-	return `printf '%s\\n' ${quotedLines} > ${rcPath}; printf '%s\\n' ${quotedLines} > ${rcPath}; . ${rcPath}`;
-}
-
-function buildNetworkBootstrapCommand(): string {
-	const logPath = "/tmp/.udhcpc.log";
-	return [
-		"ifconfig eth0 up >/dev/null 2>&1 || true",
-		`udhcpc -i eth0 -q -n > ${logPath} 2>&1 || true`,
-		`server=$(sed -n 's/.*server \\([0-9.]*\\).*/\\1/p' ${logPath} | tail -n 1)`,
-		"if [ -n \"$server\" ]; then",
-		"  route del default >/dev/null 2>&1 || true",
-		"  route add default gw \"$server\" >/dev/null 2>&1 || true",
-		"  printf 'nameserver %s\\n' \"$server\" > /etc/resolv.conf",
-		"fi",
-	].join("; ");
-}
-
 function createTerminal(wx: any) {
 	const writeEmitter = new vscode.EventEmitter<string>();
 	const dec = new TextDecoder();
 	const enc = new TextEncoder();
 	let writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
 	let writeQueue = Promise.resolve();
-	let didInitialBootstrap = false;
 	const pty = {
 		onDidWrite: writeEmitter.event,
 		open: () => {
@@ -245,28 +160,16 @@ function createTerminal(wx: any) {
 					const dataPath = await resolveTerminalDataPath(wx);
 					console.log("terminal channel", dataPath);
 					writeEmitter.fire(`\r\n[apptron] terminal channel: ${dataPath}\r\n`);
-					const relayBootstrap = buildRelayBootstrapCommandFromContext();
-					if (relayBootstrap) {
-						try {
-							await wx.writeFile("vm/1/fsys/tmp/.traits-relay.sh", new TextEncoder().encode(`${relayBootstrap}\n`));
-						} catch {
-							// Best-effort only; runtime bootstrap still sends direct command.
-						}
-					}
 					const stream = await wx.openReadable(dataPath);
 					const writable = await wx.openWritable(dataPath);
 					writer = writable.getWriter();
-					const networkBootstrap = buildNetworkBootstrapCommand();
-					await writer.write(enc.encode(`${networkBootstrap}\n`));
-					// Prefer sourcing guest-side relay bootstrap file if present.
-					await writer.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
-					if (relayBootstrap) {
-						await writer.write(enc.encode(`${relayBootstrap}\n`));
-					}
-					didInitialBootstrap = true;
-					if (dataPath.startsWith("web/dom/")) {
-						// Trigger first prompt render for shells that wait for initial input.
+					// Kick the prompt: BusyBox hush defers first prompt until it
+					// sees input on stdin. Required for both #console/data and
+					// web/dom/<id>/data channels.
+					try {
 						await writer.write(enc.encode("\n"));
+					} catch {
+						// Non-fatal — user keystrokes will still render the prompt.
 					}
 					for await (const chunk of stream) {
 						writeEmitter.fire(dec.decode(chunk));
@@ -290,16 +193,6 @@ function createTerminal(wx: any) {
 			}
 			const payload = enc.encode(data);
 			writeQueue = writeQueue.then(async () => {
-				if (!didInitialBootstrap) {
-					didInitialBootstrap = true;
-					const networkBootstrap = buildNetworkBootstrapCommand();
-					await writer!.write(enc.encode(`${networkBootstrap}\n`));
-					await writer!.write(enc.encode(". /tmp/.traits-relay.sh 2>/dev/null || true\n"));
-					const relayBootstrap = buildRelayBootstrapCommandFromContext();
-					if (relayBootstrap) {
-						await writer!.write(enc.encode(`${relayBootstrap}\n`));
-					}
-				}
 				await writer!.write(payload);
 			}).catch((error: unknown) => {
 				console.error("terminal write failed", error);

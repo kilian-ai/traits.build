@@ -289,9 +289,18 @@
       finally { _syncing = false; }
     }
 
+    // Ensure /public exists in the guest FS (IDE boots without with_env=1, so
+    // project-fs never creates it). Files written here are memfs-only for this
+    // session but still get published through the SW cache.
+    async function ensurePublicDir(rt) {
+      try { await withTimeout(rt.makeDir('vm/1/fsys/public'), 2000); }
+      catch { /* already exists or not yet ready — sync loop will retry via readDir */ }
+    }
+
     // Start periodic sync once both runtime and SW are active.
-    window.apptron.ready.then((rt) => {
+    window.apptron.ready.then(async (rt) => {
       if (!rt || !('serviceWorker' in navigator)) return;
+      await ensurePublicDir(rt);
       navigator.serviceWorker.ready.then(() => {
         syncPublish();
         setInterval(syncPublish, 5000);
