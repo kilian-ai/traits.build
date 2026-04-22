@@ -44,6 +44,7 @@ WORKDIR /traits
 # Copy the binary and trait definitions (for TOML registry)
 COPY --from=builder /build/target/release/traits /usr/local/bin/traits
 COPY traits.toml traits.toml
+COPY --from=builder /build/traits/www/static /traits/traits/www/static
 
 # Ensure binary has proper permissions
 RUN chmod +x /usr/local/bin/traits

@@ -9,5 +9,8 @@ sdk/
 tests/
 bot/
 scripts/
+!scripts/
+scripts/*
+!scripts/cli_formatters_codegen.rs
 opencode-dev/
 graitcloud/
