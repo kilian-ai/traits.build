@@ -571,7 +571,8 @@
     }
 
     const PUBLIC_VIEWER_PATH = 'vm/1/fsys/home/root/public/viewer.html';
-    const PUBLIC_VIEWER_MARKER = '<!-- apptron-public-viewer:v1 -->';
+    const PUBLIC_VIEWER_MARKER = '<!-- apptron-public-viewer:v2 -->';
+    const PUBLIC_VIEWER_MARKER_PREFIX = 'apptron-public-viewer:';
 
     function publicViewerTemplate() {
       return `<!DOCTYPE html>
@@ -882,10 +883,14 @@
       return results.sort(byRel);
     }
 
-    function openPreview(rel) {
+    function openPreview(rel, options = {}) {
+      const force = !!options.force;
       activeRel = rel;
       const path = encodePublishedPath(rel);
-      previewFrame.src = path;
+      const currentSrc = previewFrame.getAttribute('src') || '';
+      if (force || currentSrc !== path) {
+        previewFrame.src = path;
+      }
       currentPathEl.textContent = rel;
       openCurrentEl.href = path;
       openCurrentEl.textContent = 'Open ' + rel;
@@ -916,7 +921,7 @@
       if (!files.some((file) => file.rel === activeRel)) {
         activeRel = files[0].rel;
       }
-      openPreview(activeRel);
+      openPreview(activeRel, { force: false });
     }
 
     async function refreshFiles() {
@@ -936,10 +941,6 @@
       refreshFiles();
     });
 
-    setInterval(() => {
-      refreshFiles();
-    }, 5000);
-
     refreshFiles();
   <\/script>
 </body>
@@ -953,8 +954,14 @@
       } catch {
         existing = null;
       }
-      if (typeof existing === 'string' && existing.includes(PUBLIC_VIEWER_MARKER)) return;
-      if (existing != null) return;
+      if (typeof existing === 'string') {
+        if (existing.includes(PUBLIC_VIEWER_MARKER)) return;
+        // Only migrate previously seeded viewer templates.
+        // Preserve user-authored custom viewer.html files.
+        if (!existing.includes(PUBLIC_VIEWER_MARKER_PREFIX)) return;
+      } else if (existing != null) {
+        return;
+      }
       try {
         await withTimeout(rt.writeFile(PUBLIC_VIEWER_PATH, publicViewerTemplate()), 2000);
         console.log('[publish] Seeded ~/public/viewer.html');
