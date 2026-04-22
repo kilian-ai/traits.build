@@ -286,8 +286,16 @@
 
     async function setupVSCodeSettings(runtime) {
       if (!runtime) return;
-      // Disable markdown preview sandboxing which causes subdomain DNS errors.
-      // This writes VS Code user settings to the guest filesystem.
+      // NOTE: Markdown preview requires VS Code Web's sandboxed subdomains (e.g., UUID.traits.build).
+      // These subdomains must resolve via DNS (either wildcard *.traits.build or relay proxy).
+      // Without DNS resolution, markdown preview will show "server IP not found" error.
+      // 
+      // Do NOT set 'markdown.experimental.useSandbox': false as it breaks rendering entirely.
+      //
+      // Temporary limitation: markdown preview unavailable in sandboxed browser IDE until:
+      // - DNS wildcard configured for *.traits.build, OR
+      // - Relay worker proxies markdown preview subdomains, OR
+      // - Different VS Code variant used (e.g., native app vs web)
       const vscodeSettingsPath = 'vm/1/fsys/home/root/.config/Code/User/settings.json';
       const settingsDir = 'vm/1/fsys/home/root/.config/Code/User';
       try {
@@ -306,19 +314,19 @@
           }
         } catch { }
         
-        // Disable markdown preview sandboxing and add other safe defaults
+        // Configure safe VS Code defaults (but do NOT disable sandbox)
         const newSettings = {
           ...settings,
-          'markdown.experimental.useSandbox': false,
           'workbench.colorTheme': 'Default Dark Modern',
           'editor.wordWrap': 'on',
+          'markdown.preview.fontSize': 14,
         };
         
         await withTimeout(
           runtime.writeFile(vscodeSettingsPath, JSON.stringify(newSettings, null, 2)),
           1000
         );
-        console.log('[IDE] VS Code settings configured (markdown sandbox disabled)');
+        console.log('[IDE] VS Code settings configured');
       } catch (error) {
         console.warn('[IDE] Failed to set up VS Code settings:', error);
       }
