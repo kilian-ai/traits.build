@@ -482,7 +482,19 @@
         bytes = body;
       } else if (body instanceof ArrayBuffer) {
         bytes = new Uint8Array(body);
-      } else {
+      } else if (Array.isArray(body) && body.every((n) => typeof n === 'number')) {
+        bytes = new Uint8Array(body);
+      } else if (body && typeof body === 'object') {
+        const keys = Object.keys(body);
+        if (keys.length && keys.every((k) => /^\d+$/.test(k))) {
+          const arr = keys
+            .map((k) => [Number(k), body[k]])
+            .sort((a, b) => a[0] - b[0])
+            .map(([, v]) => Number(v));
+          bytes = new Uint8Array(arr);
+        }
+      }
+      if (!bytes) {
         const fallback = String(body ?? '');
         let h = 5381;
         for (let i = 0; i < fallback.length; i += 1) h = ((h << 5) + h) ^ fallback.charCodeAt(i);
