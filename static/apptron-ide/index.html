@@ -418,6 +418,35 @@
       return Promise.race([p, new Promise((_, r) => setTimeout(() => r('timeout'), ms))]);
     }
 
+    function toText(value) {
+      if (value == null) return '';
+      if (typeof value === 'string') return value;
+      if (value instanceof Uint8Array) {
+        try { return new TextDecoder().decode(value); }
+        catch { return String(value); }
+      }
+      if (value instanceof ArrayBuffer) {
+        try { return new TextDecoder().decode(new Uint8Array(value)); }
+        catch { return String(value); }
+      }
+      if (Array.isArray(value) && value.every((n) => typeof n === 'number')) {
+        try { return new TextDecoder().decode(new Uint8Array(value)); }
+        catch { return String(value); }
+      }
+      return String(value);
+    }
+
+    async function getPublishWorker() {
+      if (!('serviceWorker' in navigator)) return null;
+      if (navigator.serviceWorker.controller) return navigator.serviceWorker.controller;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        return reg.active || reg.waiting || reg.installing || null;
+      } catch {
+        return null;
+      }
+    }
+
     // Recursively collect files from /home/root/public (depth-limited).
     async function collectPublic(runtime, prefix, depth) {
       if (depth > 3) return [];
@@ -471,7 +500,7 @@
 
     async function syncPublish(force = false) {
       const runtime = window.apptron.instance;
-      const sw = navigator.serviceWorker?.controller;
+      const sw = await getPublishWorker();
       if (!runtime || !sw || _syncing) return;
       _syncing = true;
       try {
@@ -515,7 +544,7 @@
         return;
       }
       if (token == null) return;
-      const nextToken = typeof token === 'string' ? token.trim() : String(token);
+      const nextToken = toText(token).trim();
       if (!nextToken || nextToken === _lastManualToken) return;
       _lastManualToken = nextToken;
       await syncPublish(true);

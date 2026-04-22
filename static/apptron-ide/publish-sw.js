@@ -1,21 +1,12 @@
 /**
- * Apptron Publishing Service Worker
+ * Apptron IDE Publishing Service Worker (scoped)
  *
- * Serves files published from the Wanix guest /public directory.
- * The IDE page reads files from the VFS and caches them here;
- * subsequent navigation to those paths serves from the Cache API.
+ * This worker is scoped to /static/apptron-ide/ and only intercepts
+ * requests under /static/apptron-ide/public/.
  */
 
 const CACHE = 'apptron-publish-v1';
-
-/* Paths that must always pass through to the network (SPA, static assets, API). */
-const RESERVED = new Set([
-  '/', '/index.html', '/publish-sw.js', '/CNAME', '/favicon.ico',
-  '/404.html', '/README.md',
-]);
-const RESERVED_PREFIXES = [
-  '/static/', '/traits/', '/relay/', '/health', '/docs/', '/_', '/.',
-];
+const PUBLISHED_PREFIX = '/static/apptron-ide/public/';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
@@ -28,21 +19,18 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   const path = url.pathname;
-  if (RESERVED.has(path)) return;
-  if (RESERVED_PREFIXES.some((p) => path.startsWith(p))) return;
+  if (!path.startsWith(PUBLISHED_PREFIX)) return;
 
   event.respondWith(
     caches.open(CACHE).then(async (cache) => {
-      let cached = await cache.match(request);
+      let cached = await cache.match(request, { ignoreSearch: true });
       if (cached) return cached;
 
-      // Directory-like path: try appending index.html
       if (path.endsWith('/')) {
-        cached = await cache.match(new URL(path + 'index.html', url.origin));
+        cached = await cache.match(new URL(path + 'index.html', url.origin), { ignoreSearch: true });
         if (cached) return cached;
       }
 
-      // Not published — fall through to network.
       return fetch(request);
     }),
   );
