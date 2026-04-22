@@ -607,8 +607,16 @@ async fn serve_coi_sw() -> HttpResponse {
 /// Serve embedded static assets (.css, .js) discovered at build time from trait directories.
 /// Falls back to filesystem for binary files (e.g., .wasm, .tar.gz) not embedded in build.
 async fn serve_static(req: HttpRequest) -> HttpResponse {
-    let path = req.match_info().get("path").unwrap_or("");
-    
+    let raw_path = req.match_info().get("path").unwrap_or("");
+    // Directory-index resolution: "", "foo/", "foo" (when foo/index.html exists) → foo/index.html
+    let path_owned: String;
+    let path: &str = if raw_path.is_empty() || raw_path.ends_with('/') {
+        path_owned = format!("{}index.html", raw_path);
+        &path_owned
+    } else {
+        raw_path
+    };
+
     // Try embedded assets first (JS, CSS, etc.)
     if let Some((content, content_type)) = crate::dispatcher::static_assets::get_static_asset(path) {
         return HttpResponse::Ok()
@@ -616,6 +624,22 @@ async fn serve_static(req: HttpRequest) -> HttpResponse {
             .insert_header(("Cache-Control", "public, max-age=3600"))
             .body(content);
     }
+
+    // If no extension and not resolved above, try appending /index.html (extensionless directory request)
+    let path_owned2: String;
+    let path: &str = if !path.contains('.') && !raw_path.ends_with('/') {
+        path_owned2 = format!("{}/index.html", path);
+        if crate::dispatcher::static_assets::get_static_asset(&path_owned2).is_some() {
+            let (content, content_type) = crate::dispatcher::static_assets::get_static_asset(&path_owned2).unwrap();
+            return HttpResponse::Ok()
+                .content_type(content_type)
+                .insert_header(("Cache-Control", "public, max-age=3600"))
+                .body(content);
+        }
+        &path_owned2
+    } else {
+        path
+    };
     
     // Fallback: serve from filesystem for binary/large files (wasm, tar.gz, etc.)
     // Path validation: must be under traits/www/static/
@@ -870,6 +894,58 @@ async fn serve_page(
     rate: web::Data<RateLimitData>,
 ) -> HttpResponse {
     let url_path = req.path();
+
+    // Optional root override: if TRAITS_ROOT_STATIC is set and the request is for "/",
+    // serve the named static asset instead of dispatching a page trait. This lets
+    // a single Fly app host (e.g. apptron.traits.build) surface the Apptron standalone
+    // shell at its root while the same binary still serves the landing page elsewhere.
+    // Value can be a relative key (e.g. "apptron/index.html"); it resolves against the
+    // embedded static table first, then the on-disk TRAITS_DIR/www/static directory.
+    if url_path == "/" || url_path.is_empty() {
+        if let Ok(root_static) = std::env::var("TRAITS_ROOT_STATIC") {
+            let key = root_static.trim().trim_start_matches('/');
+            if !key.is_empty() {
+                if let Some((content, content_type)) =
+                    crate::dispatcher::static_assets::get_static_asset(key)
+                {
+                    return HttpResponse::Ok()
+                        .content_type(content_type)
+                        .insert_header(("Cache-Control", "no-cache"))
+                        .body(content);
+                }
+                // Filesystem fallback: serve from TRAITS_DIR/www/static.
+                let traits_dir =
+                    std::env::var("TRAITS_DIR").unwrap_or_else(|_| "./traits".to_string());
+                let base_static = std::path::Path::new(&traits_dir).join("www/static");
+                let candidate = base_static.join(key);
+                // Directory traversal guard
+                let base_components: Vec<_> = base_static.components().collect();
+                let cand_components: Vec<_> = candidate.components().collect();
+                let within = cand_components.len() >= base_components.len()
+                    && cand_components
+                        .iter()
+                        .zip(&base_components)
+                        .all(|(a, b)| a == b);
+                if within {
+                    if let Ok(content) = std::fs::read(&candidate) {
+                        let ct = match candidate.extension().and_then(|e| e.to_str()) {
+                            Some("html") => "text/html; charset=utf-8",
+                            Some("css") => "text/css",
+                            Some("js") | Some("mjs") => "application/javascript",
+                            Some("json") => "application/json",
+                            Some("svg") => "image/svg+xml",
+                            Some("wasm") => "application/wasm",
+                            _ => "application/octet-stream",
+                        };
+                        return HttpResponse::Ok()
+                            .content_type(ct)
+                            .insert_header(("Cache-Control", "no-cache"))
+                            .body(content);
+                    }
+                }
+            }
+        }
+    }
 
     // Rate limiting for /admin, /settings, and /llm-test paths
     if url_path.starts_with("/admin") || url_path.starts_with("/settings") || url_path.starts_with("/llm-test") {

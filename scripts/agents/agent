@@ -1,0 +1,141 @@
+#!/bin/sh
+# wanix-agent v5 — OpenAI function calling, loops on tool_calls
+set -u
+
+MODEL="${AGENT_MODEL:-gpt-5.4}"
+MAX_ROUNDS="${AGENT_MAX_ROUNDS:-25}"
+KEY_FILE="${AGENT_KEY_FILE:-/home/root/.openai_key}"
+DIR="/home/root/.agent"
+LOG="$DIR/last.log"
+
+command -v python3 >/dev/null 2>&1 || { echo "need python3 on PATH"; exit 1; }
+[ -f "$KEY_FILE" ] || { echo "missing $KEY_FILE"; exit 1; }
+API_KEY=$(tr -d '\r\n[:space:]' < "$KEY_FILE")
+
+mkdir -p "$DIR"
+rm -f "$DIR"/msg.* "$DIR"/req.json "$DIR"/resp.json \
+      "$DIR"/out.txt "$DIR"/obs.txt "$DIR"/seed.txt "$LOG"
+: > "$LOG"
+
+GOAL="$*"
+[ -n "$GOAL" ] || { echo "usage: agent <goal>"; exit 1; }
+
+SYSTEM='You are an autonomous agent in Alpine Linux (BusyBox). You have ONE tool: shell(cmd). Call it repeatedly as needed. When the goal is achieved, reply with a final text message and NO tool calls. POSIX/BusyBox only, single-line commands.'
+
+# --- write helpers (wanix idbfs truncation workaround) ----------------------
+sw()    { rm -f "$1"; cat > "$1"; }
+swstr() { rm -f "$1"; printf '%s' "$2" > "$1"; }
+
+# --- JSON string escape -----------------------------------------------------
+jesc() {
+    sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/	/\\t/g' -e 's/\r//g' \
+    | awk 'BEGIN{ORS=""} {if(NR>1) printf "\\n"; print}'
+}
+
+# --- message store ----------------------------------------------------------
+# IMPORTANT: never call these through a pipe (pipes fork a subshell and lose N).
+# Use redirection: `add_user < file`  not  `cat file | add_user`.
+N=0
+mp() { printf '%s/msg.%03d.%s' "$DIR" "$N" "$1"; }
+add_system()       { N=$((N+1)); swstr "$(mp role)" system;       sw "$(mp body)"; }
+add_user()         { N=$((N+1)); swstr "$(mp role)" user;         sw "$(mp body)"; }
+add_assistant_tc() { N=$((N+1)); swstr "$(mp role)" assistant_tc; swstr "$(mp tcjson)" "$1"; }
+add_tool()         { N=$((N+1)); swstr "$(mp role)" tool; swstr "$(mp tcid)" "$1"; sw "$(mp body)"; }
+
+TOOLS='[{"type":"function","function":{"name":"shell","description":"Run a shell command, return stdout+stderr+exit.","parameters":{"type":"object","properties":{"cmd":{"type":"string"}},"required":["cmd"]}}}]'
+
+build_req() {
+    rm -f "$DIR/req.json"
+    {
+        printf '{"model":"%s","temperature":0.2,"tools":%s,"messages":[' "$MODEL" "$TOOLS"
+        first=1; i=0
+        while [ "$i" -lt "$N" ]; do
+            i=$((i+1))
+            num=$(printf '%03d' "$i")
+            rf="$DIR/msg.$num.role"
+            [ -f "$rf" ] || continue
+            role=$(cat "$rf")
+            [ "$first" = 1 ] || printf ','
+            first=0
+            case "$role" in
+                assistant_tc)
+                    printf '{"role":"assistant","content":null,"tool_calls":'
+                    cat "$DIR/msg.$num.tcjson"
+                    printf '}'
+                    ;;
+                tool)
+                    tcid=$(cat "$DIR/msg.$num.tcid")
+                    printf '{"role":"tool","tool_call_id":"%s","content":"' "$tcid"
+                    jesc < "$DIR/msg.$num.body"
+                    printf '"}'
+                    ;;
+                *)
+                    printf '{"role":"%s","content":"' "$role"
+                    jesc < "$DIR/msg.$num.body"
+                    printf '"}'
+                    ;;
+            esac
+        done
+        printf ']}'
+    } > "$DIR/req.json"
+}
+
+call_llm() {
+    build_req
+    rm -f "$DIR/resp.json"
+    curl -sS https://api.openai.com/v1/chat/completions \
+        -H "Authorization: Bearer $API_KEY" \
+        -H "Content-Type: application/json" \
+        --data-binary @"$DIR/req.json" > "$DIR/resp.json" 2>&1
+}
+
+# --- seed system + user (redirect, no pipes) --------------------------------
+swstr "$DIR/seed.txt" "$SYSTEM"
+add_system < "$DIR/seed.txt"
+swstr "$DIR/seed.txt" "GOAL: $GOAL"
+add_user < "$DIR/seed.txt"
+
+# --- main loop --------------------------------------------------------------
+i=0
+while [ "$i" -lt "$MAX_ROUNDS" ]; do
+    i=$((i+1))
+    echo "=== round $i ===" | tee -a "$LOG"
+    call_llm
+
+    # API error check
+    if ! python3 -c "import json,sys; d=json.load(open('$DIR/resp.json')); sys.exit(0 if 'choices' in d else 1)"; then
+        echo "[agent] api error:" | tee -a "$LOG"
+        cat "$DIR/resp.json" | tee -a "$LOG"
+        exit 1
+    fi
+
+    # Has tool_calls?
+    if python3 -c "import json,sys; d=json.load(open('$DIR/resp.json')); sys.exit(0 if d['choices'][0]['message'].get('tool_calls') else 1)"; then
+        tcjson=$(python3 -c "import json; d=json.load(open('$DIR/resp.json')); print(json.dumps(d['choices'][0]['message']['tool_calls']))")
+        add_assistant_tc "$tcjson"
+
+        ncalls=$(python3 -c "import json; d=json.load(open('$DIR/resp.json')); print(len(d['choices'][0]['message']['tool_calls']))")
+        k=0
+        while [ "$k" -lt "$ncalls" ]; do
+            tcid=$(python3 -c "import json; d=json.load(open('$DIR/resp.json')); print(d['choices'][0]['message']['tool_calls'][$k]['id'])")
+            cmd=$(python3  -c "import json; d=json.load(open('$DIR/resp.json')); a=json.loads(d['choices'][0]['message']['tool_calls'][$k]['function']['arguments'] or '{}'); print(a.get('cmd',''))")
+            k=$((k+1))
+            echo ">> [$tcid] $cmd" | tee -a "$LOG"
+            ( eval "$cmd" ) > "$DIR/out.txt" 2>&1
+            rc=$?
+            rm -f "$DIR/obs.txt"
+            head -c 4000 "$DIR/out.txt" > "$DIR/obs.txt"
+            printf '\n[exit %d]\n' "$rc" >> "$DIR/obs.txt"
+            tee -a "$LOG" < "$DIR/obs.txt"
+            add_tool "$tcid" < "$DIR/obs.txt"
+        done
+    else
+        text=$(python3 -c "import json; d=json.load(open('$DIR/resp.json')); print(d['choices'][0]['message'].get('content') or '')")
+        echo "<< $text" | tee -a "$LOG"
+        echo "[agent] done (no more tools)" | tee -a "$LOG"
+        exit 0
+    fi
+done
+
+echo "[agent] max rounds ($MAX_ROUNDS) reached" | tee -a "$LOG"
+exit 2

@@ -571,7 +571,7 @@
     }
 
     const PUBLIC_VIEWER_PATH = 'vm/1/fsys/home/root/public/viewer.html';
-    const PUBLIC_VIEWER_MARKER = '<!-- apptron-public-viewer:v2 -->';
+    const PUBLIC_VIEWER_MARKER = '<!-- apptron-public-viewer:v3 -->';
     const PUBLIC_VIEWER_MARKER_PREFIX = 'apptron-public-viewer:';
 
     function publicViewerTemplate() {
@@ -886,6 +886,16 @@
     function openPreview(rel, options = {}) {
       const force = !!options.force;
       activeRel = rel;
+      if (rel === 'viewer.html') {
+        previewFrame.removeAttribute('src');
+        currentPathEl.textContent = rel + ' (self-preview disabled)';
+        openCurrentEl.href = encodePublishedPath(rel);
+        openCurrentEl.textContent = 'Open ' + rel;
+        for (const row of fileListEl.querySelectorAll('.row')) {
+          row.classList.toggle('active', row.dataset.rel === rel);
+        }
+        return;
+      }
       const path = encodePublishedPath(rel);
       const currentSrc = previewFrame.getAttribute('src') || '';
       if (force || currentSrc !== path) {
@@ -919,7 +929,8 @@
         });
       }
       if (!files.some((file) => file.rel === activeRel)) {
-        activeRel = files[0].rel;
+        const defaultFile = files.find((file) => file.rel !== 'viewer.html') || files[0];
+        activeRel = defaultFile.rel;
       }
       openPreview(activeRel, { force: false });
     }
@@ -947,6 +958,17 @@
 </html>`;
     }
 
+    function isLegacySeededViewerTemplate(existing) {
+      if (typeof existing !== 'string') return false;
+      // Legacy seeded templates existed before marker versioning. We can
+      // safely migrate them if they match this unique signature.
+      return existing.includes('Apptron Public Viewer')
+        && existing.includes("const SOURCE_ROOT = 'vm/1/fsys/home/root/public';")
+        && existing.includes('setInterval(() => {')
+        && existing.includes('refreshFiles();')
+        && existing.includes('}, 5000);');
+    }
+
     async function ensurePublicViewer(rt) {
       let existing = null;
       try {
@@ -954,13 +976,14 @@
       } catch {
         existing = null;
       }
-      if (typeof existing === 'string') {
-        if (existing.includes(PUBLIC_VIEWER_MARKER)) return;
+      const existingText = existing == null ? '' : toText(existing);
+      if (existingText) {
+        if (existingText.includes(PUBLIC_VIEWER_MARKER)) return;
         // Only migrate previously seeded viewer templates.
         // Preserve user-authored custom viewer.html files.
-        if (!existing.includes(PUBLIC_VIEWER_MARKER_PREFIX)) return;
-      } else if (existing != null) {
-        return;
+        const markedTemplate = existingText.includes(PUBLIC_VIEWER_MARKER_PREFIX);
+        const legacyTemplate = isLegacySeededViewerTemplate(existingText);
+        if (!markedTemplate && !legacyTemplate) return;
       }
       try {
         await withTimeout(rt.writeFile(PUBLIC_VIEWER_PATH, publicViewerTemplate()), 2000);
