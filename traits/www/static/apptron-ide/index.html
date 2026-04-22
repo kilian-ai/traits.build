@@ -391,7 +391,7 @@
     // --- Apptron Publishing (Service Worker + VFS auto-sync) ---
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker
-        .register('/publish-sw.js', { scope: '/' })
+        .register('/static/apptron-ide/publish-sw.js', { scope: '/' })
         .then(() => console.log('[publish] SW registered'))
         .catch((err) => console.warn('[publish] SW registration failed:', err));
     }
@@ -414,10 +414,10 @@
       return Promise.race([p, new Promise((_, r) => setTimeout(() => r('timeout'), ms))]);
     }
 
-    // Recursively collect files from /public (depth-limited).
+    // Recursively collect files from /home/root/public (depth-limited).
     async function collectPublic(runtime, prefix, depth) {
       if (depth > 3) return [];
-      const base = 'vm/1/fsys/public' + (prefix ? '/' + prefix : '');
+      const base = 'vm/1/fsys/home/root/public' + (prefix ? '/' + prefix : '');
       let entries;
       try { entries = await withTimeout(runtime.readDir(base), 2000); }
       catch { return []; }
@@ -470,11 +470,10 @@
       finally { _syncing = false; }
     }
 
-    // Ensure /public exists in the guest FS (IDE boots without with_env=1, so
-    // project-fs never creates it). Files written here are memfs-only for this
-    // session but still get published through the SW cache.
+    // Ensure /home/root/public exists in the guest FS.
+    // This path is under home and persists with user storage semantics.
     async function ensurePublicDir(rt) {
-      try { await withTimeout(rt.makeDir('vm/1/fsys/public'), 2000); }
+      try { await withTimeout(rt.makeDir('vm/1/fsys/home/root/public'), 2000); }
       catch { /* already exists or not yet ready — sync loop will retry via readDir */ }
     }
 

@@ -667,10 +667,13 @@ async fn serve_static(req: HttpRequest) -> HttpResponse {
                     },
                     None => "application/octet-stream",
                 };
-                HttpResponse::Ok()
-                    .content_type(content_type)
-                    .insert_header(("Cache-Control", "public, max-age=86400"))
-                    .body(content)
+                let mut resp = HttpResponse::Ok();
+                resp.content_type(content_type)
+                    .insert_header(("Cache-Control", "public, max-age=86400"));
+                if clean_path == "apptron-ide/publish-sw.js" {
+                    resp.insert_header(("Service-Worker-Allowed", "/"));
+                }
+                resp.body(content)
             }
             Err(_) => HttpResponse::NotFound()
                 .content_type("text/plain")

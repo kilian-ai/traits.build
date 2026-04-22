@@ -284,10 +284,58 @@
       });
     }
 
+    async function setupVSCodeSettings(runtime) {
+      if (!runtime) return;
+      // NOTE: Markdown preview requires VS Code Web's sandboxed subdomains (e.g., UUID.traits.build).
+      // These subdomains must resolve via DNS (either wildcard *.traits.build or relay proxy).
+      // Without DNS resolution, markdown preview will show "server IP not found" error.
+      // 
+      // Do NOT set 'markdown.experimental.useSandbox': false as it breaks rendering entirely.
+      //
+      // Temporary limitation: markdown preview unavailable in sandboxed browser IDE until:
+      // - DNS wildcard configured for *.traits.build, OR
+      // - Relay worker proxies markdown preview subdomains, OR
+      // - Different VS Code variant used (e.g., native app vs web)
+      const vscodeSettingsPath = 'vm/1/fsys/home/root/.config/Code/User/settings.json';
+      const settingsDir = 'vm/1/fsys/home/root/.config/Code/User';
+      try {
+        // Create directory structure if needed
+        await withTimeout(runtime.makeDir('vm/1/fsys/home/root'), 1000).catch(() => {});
+        await withTimeout(runtime.makeDir('vm/1/fsys/home/root/.config'), 1000).catch(() => {});
+        await withTimeout(runtime.makeDir('vm/1/fsys/home/root/.config/Code'), 1000).catch(() => {});
+        await withTimeout(runtime.makeDir(settingsDir), 1000).catch(() => {});
+        
+        // Read existing settings if they exist
+        let settings = {};
+        try {
+          const existing = await withTimeout(runtime.readFile(vscodeSettingsPath), 1000);
+          if (existing && typeof existing === 'string') {
+            try { settings = JSON.parse(existing); } catch { }
+          }
+        } catch { }
+        
+        // Configure safe VS Code defaults (but do NOT disable sandbox)
+        const newSettings = {
+          ...settings,
+          'workbench.colorTheme': 'Default Dark Modern',
+          'editor.wordWrap': 'on',
+          'markdown.preview.fontSize': 14,
+        };
+        
+        await withTimeout(
+          runtime.writeFile(vscodeSettingsPath, JSON.stringify(newSettings, null, 2)),
+          1000
+        );
+        console.log('[IDE] VS Code settings configured');
+      } catch (error) {
+        console.warn('[IDE] Failed to set up VS Code settings:', error);
+      }
+    }
+
     window.apptron.ready = bootRuntime()
       .then((runtime) => {
-        status.textContent = 'Runtime ready, starting workbench...';
-        return runtime;
+        status.textContent = 'Runtime ready, configuring editor...';
+        return runtime && setupVSCodeSettings(runtime).then(() => runtime);
       })
       .catch((error) => {
         console.error('Wanix boot failed:', error);
@@ -343,7 +391,7 @@
     // --- Apptron Publishing (Service Worker + VFS auto-sync) ---
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker
-        .register('/publish-sw.js', { scope: '/' })
+        .register('/static/apptron-ide/publish-sw.js', { scope: '/' })
         .then(() => console.log('[publish] SW registered'))
         .catch((err) => console.warn('[publish] SW registration failed:', err));
     }
@@ -366,10 +414,10 @@
       return Promise.race([p, new Promise((_, r) => setTimeout(() => r('timeout'), ms))]);
     }
 
-    // Recursively collect files from /public (depth-limited).
+    // Recursively collect files from /home/root/public (depth-limited).
     async function collectPublic(runtime, prefix, depth) {
       if (depth > 3) return [];
-      const base = 'vm/1/fsys/public' + (prefix ? '/' + prefix : '');
+      const base = 'vm/1/fsys/home/root/public' + (prefix ? '/' + prefix : '');
       let entries;
       try { entries = await withTimeout(runtime.readDir(base), 2000); }
       catch { return []; }
@@ -422,11 +470,10 @@
       finally { _syncing = false; }
     }
 
-    // Ensure /public exists in the guest FS (IDE boots without with_env=1, so
-    // project-fs never creates it). Files written here are memfs-only for this
-    // session but still get published through the SW cache.
+    // Ensure /home/root/public exists in the guest FS.
+    // This path is under home and persists with user storage semantics.
     async function ensurePublicDir(rt) {
-      try { await withTimeout(rt.makeDir('vm/1/fsys/public'), 2000); }
+      try { await withTimeout(rt.makeDir('vm/1/fsys/home/root/public'), 2000); }
       catch { /* already exists or not yet ready — sync loop will retry via readDir */ }
     }
 
