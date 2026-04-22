@@ -570,10 +570,404 @@
       catch { /* already exists or not yet ready — sync loop will retry via readDir */ }
     }
 
+    const PUBLIC_VIEWER_PATH = 'vm/1/fsys/home/root/public/viewer.html';
+    const PUBLIC_VIEWER_MARKER = '<!-- apptron-public-viewer:v1 -->';
+
+    function publicViewerTemplate() {
+      return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Public Files</title>
+  ${PUBLIC_VIEWER_MARKER}
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0c1117;
+      --panel: #121b26;
+      --panel-strong: #182434;
+      --line: #2b4158;
+      --text: #dbe7f5;
+      --muted: #88a1bc;
+      --accent: #7dd3fc;
+      --accent-strong: #38bdf8;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 26%),
+        radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.12), transparent 28%),
+        var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      padding: 24px;
+    }
+    .shell {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+      gap: 18px;
+      min-height: calc(100vh - 48px);
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(24, 36, 52, 0.96), rgba(14, 22, 33, 0.96));
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      min-height: 0;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+    }
+    .hero, .preview-head {
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid rgba(136, 161, 188, 0.16);
+      background: linear-gradient(180deg, rgba(125, 211, 252, 0.08), rgba(125, 211, 252, 0));
+    }
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.05;
+    }
+    .sub {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    button, .link {
+      appearance: none;
+      border: 1px solid rgba(125, 211, 252, 0.28);
+      background: rgba(125, 211, 252, 0.08);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 9px 14px;
+      font: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+    }
+    button:hover, .link:hover {
+      background: rgba(125, 211, 252, 0.14);
+      border-color: rgba(125, 211, 252, 0.44);
+      transform: translateY(-1px);
+    }
+    #status {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+    #file-list {
+      list-style: none;
+      margin: 0;
+      padding: 10px;
+      overflow: auto;
+      flex: 1;
+    }
+    .empty {
+      padding: 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 14px;
+      color: inherit;
+      text-decoration: none;
+    }
+    .row:hover {
+      background: rgba(136, 161, 188, 0.08);
+    }
+    .row.active {
+      background: rgba(56, 189, 248, 0.14);
+      outline: 1px solid rgba(56, 189, 248, 0.32);
+    }
+    .name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+    .meta {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .preview {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .preview-body {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      height: 100%;
+    }
+    #current-path {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+    #preview-frame {
+      border: none;
+      width: 100%;
+      flex: 1;
+      min-height: 520px;
+      background: white;
+    }
+    .bridge {
+      position: fixed;
+      width: 1px;
+      height: 1px;
+      left: -10000px;
+      top: 0;
+      opacity: 0.001;
+      pointer-events: none;
+      border: 0;
+    }
+    @media (max-width: 960px) {
+      body { padding: 14px; }
+      .shell { grid-template-columns: 1fr; min-height: auto; }
+      #preview-frame { min-height: 360px; }
+    }
+  </style>
+</head>
+<body>
+  <iframe id="wanix-bridge" class="bridge" src="/static/apptron/index.html?embedded=true&viewer=1&cb=" title="Wanix runtime bridge"></iframe>
+  <main class="shell">
+    <section class="panel sidebar">
+      <div class="hero">
+        <div class="eyebrow">Apptron Public Viewer</div>
+        <h1>~/public</h1>
+        <p class="sub">This page reads the Wanix VFS directly from <code>/home/root/public</code> and opens files through the published Apptron IDE path.</p>
+        <div class="toolbar">
+          <button id="refresh" type="button">Refresh Files</button>
+          <a class="link" id="open-current" href="/static/apptron-ide/public/viewer.html" target="_blank" rel="noopener noreferrer">Open Current File</a>
+        </div>
+        <div id="status">Booting Wanix runtime…</div>
+      </div>
+      <ul id="file-list"></ul>
+    </section>
+    <section class="panel preview">
+      <div class="preview-head">
+        <div class="eyebrow">Preview</div>
+        <div id="current-path">Select a file from the list.</div>
+      </div>
+      <div class="preview-body">
+        <iframe id="preview-frame" title="File preview"></iframe>
+      </div>
+    </section>
+  </main>
+  <script>
+    const SOURCE_ROOT = 'vm/1/fsys/home/root/public';
+    const PUBLISHED_PREFIX = '/static/apptron-ide/public/';
+    const BRIDGE_BASE = '/static/apptron/index.html?embedded=true&viewer=1&cb=';
+    const bridge = document.getElementById('wanix-bridge');
+    const statusEl = document.getElementById('status');
+    const fileListEl = document.getElementById('file-list');
+    const previewFrame = document.getElementById('preview-frame');
+    const currentPathEl = document.getElementById('current-path');
+    const openCurrentEl = document.getElementById('open-current');
+    const refreshButton = document.getElementById('refresh');
+    let activeRel = 'viewer.html';
+
+    bridge.src = BRIDGE_BASE + Date.now();
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char] || char));
+    }
+
+    function encodePublishedPath(rel) {
+      return PUBLISHED_PREFIX + rel.split('/').map((part) => encodeURIComponent(part)).join('/');
+    }
+
+    function kindFor(rel) {
+      const ext = rel.split('.').pop().toLowerCase();
+      if (['html', 'htm'].includes(ext)) return 'html';
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'image';
+      if (['json', 'txt', 'md', 'js', 'css', 'xml'].includes(ext)) return 'text';
+      if (ext === 'pdf') return 'pdf';
+      return ext || 'file';
+    }
+
+    function byRel(a, b) {
+      return a.rel.localeCompare(b.rel, undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    async function waitForRuntime() {
+      const frameWindow = bridge.contentWindow;
+      if (!frameWindow) throw new Error('Viewer bridge frame unavailable');
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        const ready = frameWindow.apptron && frameWindow.apptron.ready;
+        if (ready) return await ready;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      throw new Error('Timed out waiting for Wanix runtime');
+    }
+
+    async function withTimeout(promise, ms) {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timed out after ' + ms + 'ms')), ms))
+      ]);
+    }
+
+    async function collectFiles(runtime, prefix, depth) {
+      if (depth > 6) return [];
+      const base = SOURCE_ROOT + (prefix ? '/' + prefix : '');
+      let entries;
+      try {
+        entries = await withTimeout(runtime.readDir(base), 2000);
+      } catch {
+        return [];
+      }
+      if (!Array.isArray(entries)) return [];
+
+      const results = [];
+      for (const name of entries) {
+        const rel = prefix ? prefix + '/' + name : name;
+        try {
+          const body = await withTimeout(runtime.readFile(base + '/' + name), 1200);
+          if (body != null) {
+            results.push({ rel, kind: kindFor(rel) });
+            continue;
+          }
+        } catch {
+        }
+        const sub = await collectFiles(runtime, rel, depth + 1);
+        results.push.apply(results, sub);
+      }
+      return results.sort(byRel);
+    }
+
+    function openPreview(rel) {
+      activeRel = rel;
+      const path = encodePublishedPath(rel);
+      previewFrame.src = path;
+      currentPathEl.textContent = rel;
+      openCurrentEl.href = path;
+      openCurrentEl.textContent = 'Open ' + rel;
+      for (const row of fileListEl.querySelectorAll('.row')) {
+        row.classList.toggle('active', row.dataset.rel === rel);
+      }
+    }
+
+    function renderFiles(files) {
+      if (!files.length) {
+        fileListEl.innerHTML = '<li class="empty">No files found in ~/public yet.</li>';
+        return;
+      }
+      fileListEl.innerHTML = files.map((file) =>
+        '<li>' +
+          '<a class="row' + (file.rel === activeRel ? ' active' : '') + '" href="' + escapeHtml(encodePublishedPath(file.rel)) + '" data-rel="' + escapeHtml(file.rel) + '">' +
+            '<span class="name">' + escapeHtml(file.rel) + '</span>' +
+            '<span class="meta">' + escapeHtml(file.kind) + '</span>' +
+          '</a>' +
+        '</li>'
+      ).join('');
+      for (const row of fileListEl.querySelectorAll('.row')) {
+        row.addEventListener('click', (event) => {
+          event.preventDefault();
+          openPreview(row.dataset.rel);
+        });
+      }
+      if (!files.some((file) => file.rel === activeRel)) {
+        activeRel = files[0].rel;
+      }
+      openPreview(activeRel);
+    }
+
+    async function refreshFiles() {
+      setStatus('Reading ~/public…');
+      try {
+        const runtime = await waitForRuntime();
+        const files = await collectFiles(runtime, '', 0);
+        renderFiles(files);
+        setStatus('Found ' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' in ~/public.');
+      } catch (error) {
+        fileListEl.innerHTML = '<li class="empty">' + escapeHtml(error && error.message ? error.message : error) + '</li>';
+        setStatus('Viewer bootstrap failed.');
+      }
+    }
+
+    refreshButton.addEventListener('click', () => {
+      refreshFiles();
+    });
+
+    setInterval(() => {
+      refreshFiles();
+    }, 5000);
+
+    refreshFiles();
+  </script>
+</body>
+</html>`;
+    }
+
+    async function ensurePublicViewer(rt) {
+      let existing = null;
+      try {
+        existing = await withTimeout(rt.readFile(PUBLIC_VIEWER_PATH), 1200);
+      } catch {
+        existing = null;
+      }
+      if (typeof existing === 'string' && existing.includes(PUBLIC_VIEWER_MARKER)) return;
+      if (existing != null) return;
+      try {
+        await withTimeout(rt.writeFile(PUBLIC_VIEWER_PATH, publicViewerTemplate()), 2000);
+        console.log('[publish] Seeded ~/public/viewer.html');
+      } catch (error) {
+        console.warn('[publish] Failed to seed ~/public/viewer.html:', error);
+      }
+    }
+
     // Start periodic sync once both runtime and SW are active.
     window.apptron.ready.then(async (rt) => {
       if (!rt || !('serviceWorker' in navigator)) return;
       await ensurePublicDir(rt);
+      await ensurePublicViewer(rt);
       window.apptronPublish = {
         now: () => syncPublish(true),
         status: () => ({ published: _published.size, scope: PUBLISH_SCOPE, prefix: PUBLISH_PREFIX, source: '/home/root/public' }),

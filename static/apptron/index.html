@@ -421,9 +421,11 @@ if(_wIS)WebAssembly.instantiateStreaming=function(s,imp){return _wIS.call(WebAss
   getCachedOrFetch(qp.get("wasm") || "./wanix.wasm").then((wasm) => runtime._loadWasm(wasm));
 
   window.apptron.instance = runtime;
+  const runtimeReady = runtime.ready();
+  window.apptron.ready = runtimeReady.then(() => runtime);
 
   try {
-    await runtime.ready();
+    await runtimeReady;
     // Stock Apptron persistence (idbfs "apptron-rev1") is already wired by
     // boot.go for /home/<username>, /project, and /public at this point.
     const terminalId = await createXtermWithRetry(runtime);
