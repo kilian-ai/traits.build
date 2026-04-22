@@ -56,7 +56,13 @@ self.addEventListener('message', (event) => {
     case 'publish-file': {
       const { path, body, contentType } = data;
       const resp = new Response(body, {
-        headers: { 'Content-Type': contentType || 'application/octet-stream' },
+        headers: {
+          'Content-Type': contentType || 'application/octet-stream',
+          'Cache-Control': 'no-store, max-age=0, must-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+          'X-Apptron-Published-At': String(Date.now()),
+        },
       });
       event.waitUntil(
         caches.open(CACHE).then((c) =>

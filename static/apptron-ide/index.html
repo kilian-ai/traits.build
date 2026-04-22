@@ -389,9 +389,13 @@
     workbench.mount();
 
     // --- Apptron Publishing (Service Worker + VFS auto-sync) ---
+    const PUBLISH_SW_URL = '/static/apptron-ide/publish-sw.js';
+    const PUBLISH_SCOPE = '/static/apptron-ide/';
+    const PUBLISH_PREFIX = '/static/apptron-ide/public/';
+    const MANUAL_TRIGGER_PATH = 'vm/1/fsys/home/root/.publish-now';
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker
-        .register('/static/apptron-ide/publish-sw.js', { scope: '/' })
+        .register(PUBLISH_SW_URL, { scope: PUBLISH_SCOPE })
         .then(() => console.log('[publish] SW registered'))
         .catch((err) => console.warn('[publish] SW registration failed:', err));
     }
@@ -438,9 +442,34 @@
       return files;
     }
 
+    function bodyDigest(body) {
+      if (typeof body === 'string') {
+        let h = 5381;
+        for (let i = 0; i < body.length; i += 1) h = ((h << 5) + h) ^ body.charCodeAt(i);
+        return `s:${body.length}:${h >>> 0}`;
+      }
+      let bytes;
+      if (body instanceof Uint8Array) {
+        bytes = body;
+      } else if (body instanceof ArrayBuffer) {
+        bytes = new Uint8Array(body);
+      } else {
+        const fallback = String(body ?? '');
+        let h = 5381;
+        for (let i = 0; i < fallback.length; i += 1) h = ((h << 5) + h) ^ fallback.charCodeAt(i);
+        return `x:${fallback.length}:${h >>> 0}`;
+      }
+      let h = 5381;
+      for (let i = 0; i < bytes.length; i += 1) h = ((h << 5) + h) ^ bytes[i];
+      return `b:${bytes.length}:${h >>> 0}`;
+    }
+
     let _syncing = false;
     let _published = new Set();
-    async function syncPublish() {
+    let _publishedDigest = new Map();
+    let _lastManualToken = '';
+
+    async function syncPublish(force = false) {
       const runtime = window.apptron.instance;
       const sw = navigator.serviceWorker?.controller;
       if (!runtime || !sw || _syncing) return;
@@ -448,26 +477,49 @@
       try {
         const files = await collectPublic(runtime, '', 0);
         const current = new Set(files.map((f) => f.rel));
+        let changed = 0;
 
         for (const { rel, body } of files) {
-          sw.postMessage({
-            type: 'publish-file', path: '/' + rel,
-            body, contentType: guessMime(rel),
-          });
+          const digest = bodyDigest(body);
+          const prev = _publishedDigest.get(rel);
+          if (force || prev !== digest) {
+            sw.postMessage({
+              type: 'publish-file', path: PUBLISH_PREFIX + rel,
+              body, contentType: guessMime(rel),
+            });
+            _publishedDigest.set(rel, digest);
+            changed += 1;
+          }
           _published.add(rel);
         }
         // Remove files that were published before but no longer exist.
         for (const rel of _published) {
           if (!current.has(rel)) {
-            sw.postMessage({ type: 'unpublish-file', path: '/' + rel });
+            sw.postMessage({ type: 'unpublish-file', path: PUBLISH_PREFIX + rel });
             _published.delete(rel);
+            _publishedDigest.delete(rel);
           }
         }
-        if (files.length) {
-          console.log(`[publish] Synced ${files.length} file(s) → ${location.origin}/`);
+        if (files.length || changed || force) {
+          console.log(`[publish] Synced ${files.length} file(s), changed ${changed}${force ? ' (forced)' : ''} → ${location.origin}${PUBLISH_PREFIX}`);
         }
       } catch { /* ignore */ }
       finally { _syncing = false; }
+    }
+
+    async function checkManualPublishTrigger(rt) {
+      let token;
+      try {
+        token = await withTimeout(rt.readFile(MANUAL_TRIGGER_PATH), 500);
+      } catch {
+        return;
+      }
+      if (token == null) return;
+      const nextToken = typeof token === 'string' ? token.trim() : String(token);
+      if (!nextToken || nextToken === _lastManualToken) return;
+      _lastManualToken = nextToken;
+      await syncPublish(true);
+      console.log(`[publish] Manual trigger executed (${nextToken})`);
     }
 
     // Ensure /home/root/public exists in the guest FS.
@@ -481,9 +533,16 @@
     window.apptron.ready.then(async (rt) => {
       if (!rt || !('serviceWorker' in navigator)) return;
       await ensurePublicDir(rt);
+      window.apptronPublish = {
+        now: () => syncPublish(true),
+        status: () => ({ published: _published.size, scope: PUBLISH_SCOPE, prefix: PUBLISH_PREFIX, source: '/home/root/public' }),
+      };
       navigator.serviceWorker.ready.then(() => {
-        syncPublish();
-        setInterval(syncPublish, 5000);
+        syncPublish(true);
+        setInterval(async () => {
+          await checkManualPublishTrigger(rt);
+          await syncPublish(false);
+        }, 5000);
       });
     });
   </script>
