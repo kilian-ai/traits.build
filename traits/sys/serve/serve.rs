@@ -905,9 +905,51 @@ async fn serve_page(
         if let Ok(root_static) = std::env::var("TRAITS_ROOT_STATIC") {
             let key = root_static.trim().trim_start_matches('/');
             if !key.is_empty() {
+                // Compute base href from the key's directory so the served HTML's
+                // relative asset URLs (./foo.js, ./bundles/x.tar.gz, etc.) resolve
+                // under /static/<dir>/ instead of the origin root.
+                let base_href = match key.rfind('/') {
+                    Some(idx) => format!("/static/{}/", &key[..idx]),
+                    None => "/static/".to_string(),
+                };
+                let tag = format!("<base href=\"{}\">", base_href);
+                let rewrite_html_str = |s: &str| -> String {
+                    let lower = s.to_lowercase();
+                    if let Some(pos) = lower.find("<head>") {
+                        let insert_at = pos + "<head>".len();
+                        let mut out = String::with_capacity(s.len() + tag.len());
+                        out.push_str(&s[..insert_at]);
+                        out.push_str(&tag);
+                        out.push_str(&s[insert_at..]);
+                        return out;
+                    } else if let Some(pos) = lower.find("<head ") {
+                        if let Some(close) = s[pos..].find('>') {
+                            let insert_at = pos + close + 1;
+                            let mut out = String::with_capacity(s.len() + tag.len());
+                            out.push_str(&s[..insert_at]);
+                            out.push_str(&tag);
+                            out.push_str(&s[insert_at..]);
+                            return out;
+                        }
+                    }
+                    s.to_string()
+                };
+                let rewrite_html_bytes = |bytes: Vec<u8>| -> Vec<u8> {
+                    match String::from_utf8(bytes) {
+                        Ok(s) => rewrite_html_str(&s).into_bytes(),
+                        Err(e) => e.into_bytes(),
+                    }
+                };
+
                 if let Some((content, content_type)) =
                     crate::dispatcher::static_assets::get_static_asset(key)
                 {
+                    if content_type.starts_with("text/html") {
+                        return HttpResponse::Ok()
+                            .content_type(content_type)
+                            .insert_header(("Cache-Control", "no-cache"))
+                            .body(rewrite_html_str(content));
+                    }
                     return HttpResponse::Ok()
                         .content_type(content_type)
                         .insert_header(("Cache-Control", "no-cache"))
@@ -937,10 +979,15 @@ async fn serve_page(
                             Some("wasm") => "application/wasm",
                             _ => "application/octet-stream",
                         };
+                        let body = if ct.starts_with("text/html") {
+                            rewrite_html_bytes(content)
+                        } else {
+                            content
+                        };
                         return HttpResponse::Ok()
                             .content_type(ct)
                             .insert_header(("Cache-Control", "no-cache"))
-                            .body(content);
+                            .body(body);
                     }
                 }
             }
