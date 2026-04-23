@@ -371,16 +371,23 @@
     // internet works. Legacy wsproxy (raw Ethernet) URLs starting with ws:// or
     // wss:// are still honored via localStorage/?relay= override.
     const netEl = document.getElementById('net');
-    // Migrate old raw-Ethernet relay URLs (which RST all TCP) to the new WISP endpoint.
+    // Migrate legacy relay URLs to the Fly.io WISP endpoint. The Cloudflare
+    // Worker relay (wisps://relay.traits.build/wisp) cannot reach CF-fronted
+    // hosts like api.openai.com due to CF's loopback-prevention block on
+    // Worker→CF-IP connect(). The Fly.io backend uses tokio::net::TcpStream
+    // and has no such restriction.
     try {
       const stored = localStorage.getItem('v86.relay-url') || '';
-      if (stored && /relay\.traits\.build\/(x\/sys|x\/net|linux\/tunnel)\/?$/.test(stored)) {
-        localStorage.setItem('v86.relay-url', 'wisps://relay.traits.build/wisp');
+      if (stored && (
+        /relay\.traits\.build\/(x\/sys|x\/net|linux\/tunnel|wisp)\/?$/.test(stored) ||
+        /^wisps?:\/\/relay\.traits\.build\/wisp\/?$/.test(stored)
+      )) {
+        localStorage.setItem('v86.relay-url', 'wss://apptron-traits-build.fly.dev/wisp');
       }
     } catch(_) {}
     const relayUrl = new URLSearchParams(location.search).get('relay')
       || localStorage.getItem('v86.relay-url')
-      || 'wisps://relay.traits.build/wisp';
+      || 'wss://apptron-traits-build.fly.dev/wisp';
     if (netEl && netEl.checked) {
       // v86 selects the backend from the URL scheme:
       //   wisp://, wisps://  → WispNetworkAdapter (TCP tunneling)
