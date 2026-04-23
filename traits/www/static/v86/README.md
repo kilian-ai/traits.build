@@ -28,6 +28,9 @@ URL params:
 | `linux3.iso` | 8.2 MB | copy.sh/v86 | Kernel 3.x + Buildroot |
 | `linux4.iso` | 7.4 MB | copy.sh/v86 | Kernel 4.16.13 + Buildroot + busybox |
 | `standalone-v86.html` | 7 KB | this repo | Terminal UI + snapshot mgmt |
+| `xterm.js` | 0.3 MB | @xterm/xterm@5.5.0 | Terminal renderer (VT/ANSI/xterm) |
+| `xterm.css` | 5 KB | @xterm/xterm@5.5.0 | Terminal styles |
+| `xterm-addon-fit.js` | 1.5 KB | @xterm/addon-fit@0.10.0 | Auto-fit to container |
 
 Total shipped: ~24 MB.
 
@@ -38,8 +41,12 @@ Total shipped: ~24 MB.
 - **Auto-save checkbox**: debounced snapshot ~3s after any serial activity — functionally
   a VFS-level persistence layer. Each save is ~54 MB in ~100 ms, rate-limited to once/5s.
   Toggle state persists via `localStorage['v86.autosave']`.
-- **Serial0 I/O**: text input dispatched as bytes, output rendered with basic ANSI stripping
-- **Ctrl keys**: `^C` `^D` `^Z` supported; also direct Ctrl+C / Ctrl+D shortcuts; Tab sends `\t`
+- **Serial0 I/O**: xterm.js renders the raw VT stream directly (full 256-color
+  support, cursor styles, scrollback, selection); input goes through xterm.js's
+  `onData` which already encodes arrows, Ctrl-keys, etc.
+- **Auto-resize + stty propagation**: FitAddon sizes xterm to the container;
+  on every resize the new `stty cols N rows M` is sent to the guest so `ls`,
+  `less`, etc. wrap correctly.
 - **Auto-boot/restore** via query string for deep-linking
 
 ## Known good

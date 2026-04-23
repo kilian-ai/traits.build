@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>v86 Standalone</title>
+<link rel="stylesheet" href="./xterm.css">
 <style>
   :root { color-scheme: dark; }
   html,body { margin:0; padding:0; background:#0b0d10; color:#d5d8dc; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; height:100%; }
@@ -13,9 +14,9 @@
   #bar button:hover:not(:disabled) { background:#2d343d; }
   #bar button:disabled { opacity:0.4; cursor:not-allowed; }
   #bar .stat { color:#888; margin-left:auto; }
-  #term { flex:1; overflow:auto; padding:10px 12px; white-space:pre-wrap; word-break:break-all; font-size:13px; line-height:1.35; background:#0b0d10; }
-  #in { width:100%; box-sizing:border-box; padding:8px 12px; background:#000; color:#0f0; border:none; border-top:1px solid #2a2f36; font:inherit; outline:none; }
-  #in::placeholder { color:#555; }
+  #term { flex:1; min-height:0; padding:6px 8px; background:#0b0d10; }
+  #term .xterm { height:100%; }
+  #term .xterm-viewport { background:#0b0d10 !important; }
   .hint { color:#6b7380; }
   .ok { color:#4ade80; }
   .err { color:#f87171; }
@@ -42,18 +43,63 @@
     <span class="stat" id="stats"></span>
   </div>
   <div id="term"></div>
-  <input id="in" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type here; Enter = send line; ^C = Ctrl-C; ^D = Ctrl-D; Tab = tab" />
 </div>
 
 <script src="./libv86.js"></script>
+<script src="./xterm.js"></script>
+<script src="./xterm-addon-fit.js"></script>
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  const termEl = $('term'), inEl = $('in'), isoEl = $('iso');
+  const termEl = $('term'), isoEl = $('iso');
   const bootBtn = $('boot'), resetBtn = $('reset'), saveBtn = $('save');
   const restoreBtn = $('restore'), clearBtn = $('clear');
   const autosaveEl = $('autosave');
   const statusEl = $('status'), statsEl = $('stats');
+
+  // ---- xterm.js terminal ----
+  const term = new Terminal({
+    cursorBlink: true,
+    cursorStyle: 'block',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: 13,
+    scrollback: 5000,
+    convertEol: false,
+    allowProposedApi: true,
+    theme: {
+      background: '#0b0d10',
+      foreground: '#d5d8dc',
+      cursor: '#d5d8dc',
+      cursorAccent: '#0b0d10',
+      selectionBackground: '#334155',
+      black: '#1e2229', red: '#f87171', green: '#4ade80', yellow: '#facc15',
+      blue: '#60a5fa', magenta: '#c084fc', cyan: '#22d3ee', white: '#d5d8dc',
+      brightBlack: '#3a424d', brightRed: '#fca5a5', brightGreen: '#86efac', brightYellow: '#fde047',
+      brightBlue: '#93c5fd', brightMagenta: '#d8b4fe', brightCyan: '#67e8f9', brightWhite: '#ffffff',
+    },
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(termEl);
+  setTimeout(() => { try { fit.fit(); } catch (_) {} }, 0);
+  const ro = new ResizeObserver(() => { try { fit.fit(); } catch (_) {} });
+  ro.observe(termEl);
+  window.addEventListener('resize', () => { try { fit.fit(); } catch (_) {} });
+
+  // When fit changes size, push it to the guest (serial has no WINCH negotiation).
+  // Debounced so rapid resizes only send one stty at end.
+  let sttyTimer = null, lastCols = 0, lastRows = 0;
+  term.onResize(({ cols, rows }) => {
+    if (cols === lastCols && rows === lastRows) return;
+    lastCols = cols; lastRows = rows;
+    clearTimeout(sttyTimer);
+    sttyTimer = setTimeout(() => {
+      if (!emulator) return;
+      const cmd = `stty cols ${cols} rows ${rows} 2>/dev/null\n`;
+      for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
+    }, 400);
+  });
+  let byteCount = 0;
 
   const setStatus = (msg, cls) => { statusEl.textContent = msg; statusEl.className = cls || 'hint'; };
 
@@ -67,32 +113,22 @@
   const qsIso = new URLSearchParams(location.search).get('iso');
   if (qsIso && [...isoEl.options].some(o => o.value === qsIso)) isoEl.value = qsIso;
 
-  // ---- Terminal output (VT/ANSI-lite) ----
-  let buf = '', pendingEsc = '', pendingRender = false, byteCount = 0;
+  // ---- Terminal output: xterm.js writes raw VT stream as-is ----
+  // v86 emits one byte at a time; we batch within a microtask so xterm.js
+  // parses multi-byte CSI sequences in a single write() rather than per byte.
+  let pendingBytes = [], pendingFlush = false;
   function pushByte(b) {
-    if (pendingEsc) {
-      pendingEsc += String.fromCharCode(b);
-      const ch = String.fromCharCode(b);
-      if (pendingEsc.length === 2 && !'[]()#'.includes(ch)) { pendingEsc = ''; return; }
-      if (pendingEsc.length > 2 && /[@-~]/.test(ch)) { pendingEsc = ''; return; }
-      if (pendingEsc.length > 96) pendingEsc = '';
-      return;
+    pendingBytes.push(b);
+    if (!pendingFlush) {
+      pendingFlush = true;
+      queueMicrotask(() => {
+        pendingFlush = false;
+        if (!pendingBytes.length) return;
+        const u8 = new Uint8Array(pendingBytes);
+        pendingBytes = [];
+        term.write(u8);
+      });
     }
-    if (b === 0x1b) { pendingEsc = '\x1b'; return; }
-    if (b === 0x08) { buf = buf.slice(0, -1); return; }
-    if (b === 0x0d || b === 0x07) return;
-    if (b < 0x20 && b !== 0x0a && b !== 0x09) return;
-    buf += String.fromCharCode(b);
-  }
-  function scheduleRender() {
-    if (pendingRender) return;
-    pendingRender = true;
-    requestAnimationFrame(() => {
-      pendingRender = false;
-      if (buf.length > 262144) buf = buf.slice(-200000);
-      termEl.textContent = buf;
-      termEl.scrollTop = termEl.scrollHeight;
-    });
   }
 
   // ---- IndexedDB snapshot persistence ----
@@ -184,7 +220,8 @@
     setStatus(doRestore ? `restoring ${iso}…` : `booting ${iso}…`);
     bootBtn.disabled = true; isoEl.disabled = true;
 
-    buf = ''; byteCount = 0; scheduleRender();
+    byteCount = 0;
+    term.reset();
 
     const cfg = {
       wasm_path: './v86.wasm',
@@ -207,14 +244,14 @@
     emulator.add_listener('emulator-ready',   () => setStatus('ready'));
     emulator.add_listener('emulator-started', () => setStatus(doRestore ? 'restored' : 'running', 'ok'));
     emulator.add_listener('emulator-stopped', () => setStatus('stopped'));
-    emulator.add_listener('serial0-output-byte', b => { byteCount++; pushByte(b); scheduleRender(); markDirty(); });
+    emulator.add_listener('serial0-output-byte', b => { byteCount++; pushByte(b); markDirty(); });
 
     resetBtn.disabled = false;
     saveBtn.disabled = false;
     restoreBtn.disabled = !(await idbHas(snapKey));
     clearBtn.disabled = restoreBtn.disabled;
 
-    inEl.focus();
+    term.focus();
   }
 
   async function shutdown() {
@@ -257,28 +294,15 @@
   };
   isoEl.dispatchEvent(new Event('change'));
 
-  // ---- Keyboard input ----
-  function sendStr(str) {
+  // ---- Keyboard input: xterm.js streams raw VT input directly ----
+  // term.onData fires with a string containing already-encoded VT sequences
+  // (arrow keys → ESC[A, Ctrl-C → \x03, etc.), so we just forward bytes.
+  term.onData(data => {
     if (!emulator) return;
-    for (let i = 0; i < str.length; i++) emulator.serial0_send(str[i]);
+    for (let i = 0; i < data.length; i++) emulator.serial0_send(data[i]);
     markDirty();
-  }
-  inEl.addEventListener('keydown', (e) => {
-    if (!emulator) return;
-    if (e.key === 'Enter') {
-      const line = inEl.value;
-      inEl.value = '';
-      const expanded = line.replace(/\^([A-Za-z?])/g, (_, c) => {
-        if (c === '?') return '\x7f';
-        return String.fromCharCode(c.toUpperCase().charCodeAt(0) - 64);
-      });
-      sendStr(expanded + '\n');
-      e.preventDefault();
-    } else if (e.key === 'Tab') { emulator.serial0_send('\t'); markDirty(); e.preventDefault(); }
-    else if (e.ctrlKey && e.key === 'c') { emulator.serial0_send('\x03'); markDirty(); e.preventDefault(); }
-    else if (e.ctrlKey && e.key === 'd') { emulator.serial0_send('\x04'); markDirty(); e.preventDefault(); }
   });
-  termEl.addEventListener('click', () => inEl.focus());
+  termEl.addEventListener('click', () => term.focus());
 
   setInterval(() => { statsEl.textContent = emulator ? `${byteCount} bytes` : ''; }, 500);
 
