@@ -16,7 +16,12 @@
   #bar .stat { color:#888; margin-left:auto; }
   #term { flex:1; min-height:0; padding:6px 8px; background:#0b0d10; }
   #term .xterm { height:100%; }
-  #term .xterm-viewport { background:#0b0d10 !important; }
+  /* Always reserve scrollbar space so xterm's fit calculation doesn't
+     oscillate by 2 cols when a scrollbar appears/disappears. */
+  #term .xterm-viewport { background:#0b0d10 !important; overflow-y: scroll !important; }
+  #term .xterm-viewport::-webkit-scrollbar { width: 10px; }
+  #term .xterm-viewport::-webkit-scrollbar-track { background: #0b0d10; }
+  #term .xterm-viewport::-webkit-scrollbar-thumb { background: #2a3240; border-radius: 5px; }
   .hint { color:#6b7380; }
   .ok { color:#4ade80; }
   .err { color:#f87171; }
@@ -28,11 +33,13 @@
     <b>v86</b>
     <label>image:
       <select id="iso">
-        <option value="linux.iso">linux.iso (5.4 MB)</option>
+        <option value="alpine.iso" selected>alpine.iso (48 MB, apk + network)</option>
+        <option value="linux4.iso">linux4.iso (7.4 MB, busybox)</option>
         <option value="linux3.iso">linux3.iso (8.2 MB)</option>
-        <option value="linux4.iso" selected>linux4.iso (7.4 MB)</option>
+        <option value="linux.iso">linux.iso (5.4 MB)</option>
       </select>
     </label>
+    <label title="enable emulated NIC tunneled over relay.traits.build WebSocket"><input type="checkbox" id="net" checked> network</label>
     <button id="boot">boot</button>
     <button id="reset" disabled>reset</button>
     <button id="save" disabled>save snapshot</button>
@@ -87,17 +94,19 @@
   window.addEventListener('resize', () => { try { fit.fit(); } catch (_) {} });
 
   // When fit changes size, push it to the guest (serial has no WINCH negotiation).
-  // Debounced so rapid resizes only send one stty at end.
-  let sttyTimer = null, lastCols = 0, lastRows = 0;
+  // Debounced (600 ms) so fit oscillations during rapid output don't spam stty.
+  let sttyTimer = null, lastCols = 0, lastRows = 0, sentCols = 0, sentRows = 0;
   term.onResize(({ cols, rows }) => {
-    if (cols === lastCols && rows === lastRows) return;
     lastCols = cols; lastRows = rows;
     clearTimeout(sttyTimer);
     sttyTimer = setTimeout(() => {
       if (!emulator) return;
-      const cmd = `stty cols ${cols} rows ${rows} 2>/dev/null\n`;
+      // Skip if size hasn't actually changed since last push.
+      if (lastCols === sentCols && lastRows === sentRows) return;
+      sentCols = lastCols; sentRows = lastRows;
+      const cmd = `stty cols ${lastCols} rows ${lastRows} 2>/dev/null\n`;
       for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
-    }, 400);
+    }, 600);
   });
   let byteCount = 0;
 
@@ -223,16 +232,28 @@
     byteCount = 0;
     term.reset();
 
+    // Alpine needs ~256 MB of RAM to run comfortably; tiny busybox ISOs run on 128 MB.
+    const isAlpine = /^alpine/i.test(iso);
     const cfg = {
       wasm_path: './v86.wasm',
       bios:     { url: './seabios.bin' },
       vga_bios: { url: './vgabios.bin' },
       cdrom:    { url: './' + iso },
-      memory_size: 128 * 1024 * 1024,
+      memory_size: (isAlpine ? 512 : 128) * 1024 * 1024,
       vga_memory_size: 4 * 1024 * 1024,
       autostart: true,
       disable_mouse: true,
     };
+    // Optional: route emulated NIC through our Cloudflare relay so `apk add`, wget, etc. work.
+    // Protocol: raw Ethernet frames over a WebSocket binary channel.
+    // Server side handles DHCP/ARP/ICMP/DNS and proxies TCP/UDP upstream.
+    const netEl = document.getElementById('net');
+    const relayUrl = new URLSearchParams(location.search).get('relay')
+      || localStorage.getItem('v86.relay-url')
+      || 'wss://relay.traits.build/linux/tunnel';
+    if (netEl && netEl.checked) {
+      cfg.network_relay_url = relayUrl;
+    }
     if (doRestore) {
       const blob = await idbGet(snapKey);
       cfg.initial_state = { buffer: blob };
