@@ -1068,15 +1068,80 @@ async function _wispTunnelWs(request) {
         };
         _wispPushStream(rec);
 
-        let sock, writer;
+        let sock, writer, reader;
         try {
+          // KNOWN LIMITATION: Cloudflare's `cloudflare:sockets.connect()`
+          // refuses to reach other Cloudflare-hosted IPs from within a Worker
+          // (loopback prevention). It fails with:
+          //   "proxy request failed, cannot connect to the specified address.
+          //    It looks like you might be trying to connect to a HTTP-based
+          //    service — consider using fetch instead"
+          // The error is port-agnostic: it triggers on 80/443 AND anything
+          // else when the upstream IP is on CF's network. The message is
+          // misleading — it's really Worker→CF loopback prevention. Egress to
+          // non-CF IPs (AWS, GitHub SSH, etc.) works fine. See
+          //   tests: github.com:22 OK, smtp.gmail.com:587 OK, httpbin.org:443 OK;
+          //          api.openai.com:443 FAIL (CF-fronted), example.com:443 FAIL (CF).
+          // Mitigation: egress CF-fronted targets via the Fly.io backend
+          // (real tokio TCP, no such restriction) — not implemented here yet.
           sock = connect({ hostname, port });
-          writer = sock.writable.getWriter();
         } catch (e) {
           _wispSendClose(server, streamId, 0x42); // unreachable
           finalizeRec(rec, 'connect_fail', 0x42);
           rec.connect_error = safeError(e);
           logTunnelEvent('wisp_connect_fail', {
+            req_id: reqId, sid: streamId, host: hostname, port, error: safeError(e),
+          });
+          return;
+        }
+
+        // Observe the `opened` promise for diagnostics but DON'T await it here
+        // (awaiting would reorder CONNECT/DATA handling).
+        try {
+          if (sock.opened && typeof sock.opened.then === 'function') {
+            sock.opened.then(
+              (info) => {
+                rec.opened_ms = Date.now() - rec.started;
+                rec.opened_info = info ? { remoteAddress: info.remoteAddress, localAddress: info.localAddress } : null;
+                logTunnelEvent('wisp_socket_opened', {
+                  req_id: reqId, sid: streamId, host: hostname, port,
+                  t_ms: rec.opened_ms, info: rec.opened_info,
+                });
+              },
+              (err) => {
+                rec.opened_error = safeError(err);
+                logTunnelEvent('wisp_socket_open_err', {
+                  req_id: reqId, sid: streamId, host: hostname, port, error: safeError(err),
+                });
+              },
+            );
+          }
+          if (sock.closed && typeof sock.closed.then === 'function') {
+            sock.closed.then(
+              () => {
+                rec.socket_closed_ms = Date.now() - rec.started;
+                logTunnelEvent('wisp_socket_closed_ok', {
+                  req_id: reqId, sid: streamId, host: hostname, port, t_ms: rec.socket_closed_ms,
+                });
+              },
+              (err) => {
+                rec.socket_closed_error = safeError(err);
+                logTunnelEvent('wisp_socket_closed_err', {
+                  req_id: reqId, sid: streamId, host: hostname, port, error: safeError(err),
+                });
+              },
+            );
+          }
+        } catch (_) {}
+
+        try {
+          reader = sock.readable.getReader();
+          writer = sock.writable.getWriter();
+        } catch (e) {
+          _wispSendClose(server, streamId, 0x42);
+          finalizeRec(rec, 'stream_attach_fail', 0x42);
+          rec.attach_error = safeError(e);
+          logTunnelEvent('wisp_stream_attach_fail', {
             req_id: reqId, sid: streamId, host: hostname, port, error: safeError(e),
           });
           return;
@@ -1092,9 +1157,7 @@ async function _wispTunnelWs(request) {
 
         // Pump socket.readable → DATA frames. Keep this async IIFE detached.
         (async () => {
-          let reader;
           try {
-            reader = sock.readable.getReader();
             while (true) {
               const { value, done } = await reader.read();
               if (done) break;
@@ -1130,7 +1193,7 @@ async function _wispTunnelWs(request) {
               error: safeError(e),
             });
           } finally {
-            try { if (reader) reader.releaseLock(); } catch(_) {}
+            try { reader.releaseLock(); } catch(_) {}
             try { sock.close(); } catch(_) {}
           }
         })();
