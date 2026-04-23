@@ -376,18 +376,24 @@
     // hosts like api.openai.com due to CF's loopback-prevention block on
     // Worker→CF-IP connect(). The Fly.io backend uses tokio::net::TcpStream
     // and has no such restriction.
+    // The Fly backend speaks WISP v1, so the URL MUST use wisps:// (secure)
+    // or wisp:// — v86's src/browser/network.js picks WispNetworkAdapter only
+    // for those schemes. A plain wss:// URL silently falls back to the legacy
+    // raw-Ethernet NetworkAdapter, which sends DHCP/ARP frames our WISP server
+    // does not understand (guest then never gets a DHCP lease).
     try {
       const stored = localStorage.getItem('v86.relay-url') || '';
       if (stored && (
         /relay\.traits\.build\/(x\/sys|x\/net|linux\/tunnel|wisp)\/?$/.test(stored) ||
-        /^wisps?:\/\/relay\.traits\.build\/wisp\/?$/.test(stored)
+        /^wisps?:\/\/relay\.traits\.build\/wisp\/?$/.test(stored) ||
+        /^wss?:\/\/apptron-traits-build\.fly\.dev\/wisp\/?$/.test(stored)
       )) {
-        localStorage.setItem('v86.relay-url', 'wss://apptron-traits-build.fly.dev/wisp');
+        localStorage.setItem('v86.relay-url', 'wisps://apptron-traits-build.fly.dev/wisp');
       }
     } catch(_) {}
     const relayUrl = new URLSearchParams(location.search).get('relay')
       || localStorage.getItem('v86.relay-url')
-      || 'wss://apptron-traits-build.fly.dev/wisp';
+      || 'wisps://apptron-traits-build.fly.dev/wisp';
     if (netEl && netEl.checked) {
       // v86 selects the backend from the URL scheme:
       //   wisp://, wisps://  → WispNetworkAdapter (TCP tunneling)
