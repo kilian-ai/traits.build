@@ -35,6 +35,9 @@ Total shipped: ~24 MB.
 
 - **Boot/reset** any of 3 Linux ISOs
 - **Save/restore snapshot** via `emulator.save_state()` / `initial_state` → IndexedDB (`v86-snapshots/snap:<iso>`)
+- **Auto-save checkbox**: debounced snapshot ~3s after any serial activity — functionally
+  a VFS-level persistence layer. Each save is ~54 MB in ~100 ms, rate-limited to once/5s.
+  Toggle state persists via `localStorage['v86.autosave']`.
 - **Serial0 I/O**: text input dispatched as bytes, output rendered with basic ANSI stripping
 - **Ctrl keys**: `^C` `^D` `^Z` supported; also direct Ctrl+C / Ctrl+D shortcuts; Tab sends `\t`
 - **Auto-boot/restore** via query string for deep-linking

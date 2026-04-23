@@ -37,6 +37,7 @@
     <button id="save" disabled>save snapshot</button>
     <button id="restore" disabled>restore</button>
     <button id="clear" disabled>clear snapshot</button>
+    <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
   </div>
@@ -51,9 +52,17 @@
   const termEl = $('term'), inEl = $('in'), isoEl = $('iso');
   const bootBtn = $('boot'), resetBtn = $('reset'), saveBtn = $('save');
   const restoreBtn = $('restore'), clearBtn = $('clear');
+  const autosaveEl = $('autosave');
   const statusEl = $('status'), statsEl = $('stats');
 
   const setStatus = (msg, cls) => { statusEl.textContent = msg; statusEl.className = cls || 'hint'; };
+
+  // Persist autosave toggle
+  autosaveEl.checked = localStorage.getItem('v86.autosave') === '1';
+  autosaveEl.onchange = () => {
+    localStorage.setItem('v86.autosave', autosaveEl.checked ? '1' : '0');
+    if (autosaveEl.checked && emulator) scheduleAutosave();
+  };
 
   const qsIso = new URLSearchParams(location.search).get('iso');
   if (qsIso && [...isoEl.options].some(o => o.value === qsIso)) isoEl.value = qsIso;
@@ -121,6 +130,48 @@
   }
   async function idbHas(key) { return (await idbGet(key)) != null; }
 
+  // ---- Auto-save: debounced snapshot after activity settles ----
+  // Live ISOs write to tmpfs, so the only way to "persist FS changes" is
+  // to snapshot full VM state. We debounce ~3s of quiet after any serial
+  // activity or user input, then save_state() → IDB. Functionally
+  // "persists on change" without manual save-button clicks.
+  const AUTOSAVE_IDLE_MS = 3000;
+  const AUTOSAVE_MIN_GAP_MS = 5000; // never save more than once per 5s
+  let autosaveTimer = null, autosaveInFlight = false, lastAutosaveAt = 0, dirty = false;
+
+  function markDirty() {
+    dirty = true;
+    if (autosaveEl.checked) scheduleAutosave();
+  }
+  function scheduleAutosave() {
+    if (!emulator || autosaveInFlight) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(runAutosave, AUTOSAVE_IDLE_MS);
+  }
+  async function runAutosave() {
+    if (!emulator || autosaveInFlight || !dirty) return;
+    const since = Date.now() - lastAutosaveAt;
+    if (since < AUTOSAVE_MIN_GAP_MS) {
+      autosaveTimer = setTimeout(runAutosave, AUTOSAVE_MIN_GAP_MS - since);
+      return;
+    }
+    autosaveInFlight = true;
+    const prevStatus = statusEl.textContent;
+    try {
+      const t0 = Date.now();
+      const st = await emulator.save_state();
+      await idbPut('snap:' + currentIso, st);
+      lastAutosaveAt = Date.now();
+      dirty = false;
+      restoreBtn.disabled = false; clearBtn.disabled = false;
+      setStatus(`auto-saved ${(st.byteLength/1048576).toFixed(1)} MB (${lastAutosaveAt - t0} ms)`, 'ok');
+      // restore prior status after 2s (unless user changed it)
+      setTimeout(() => { if (statusEl.textContent.startsWith('auto-saved')) setStatus(prevStatus); }, 2000);
+    } catch (e) {
+      setStatus('auto-save failed: ' + e.message, 'err');
+    } finally { autosaveInFlight = false; }
+  }
+
   // ---- Emulator lifecycle ----
   let emulator = null, currentIso = null;
 
@@ -156,7 +207,7 @@
     emulator.add_listener('emulator-ready',   () => setStatus('ready'));
     emulator.add_listener('emulator-started', () => setStatus(doRestore ? 'restored' : 'running', 'ok'));
     emulator.add_listener('emulator-stopped', () => setStatus('stopped'));
-    emulator.add_listener('serial0-output-byte', b => { byteCount++; pushByte(b); scheduleRender(); });
+    emulator.add_listener('serial0-output-byte', b => { byteCount++; pushByte(b); scheduleRender(); markDirty(); });
 
     resetBtn.disabled = false;
     saveBtn.disabled = false;
@@ -210,6 +261,7 @@
   function sendStr(str) {
     if (!emulator) return;
     for (let i = 0; i < str.length; i++) emulator.serial0_send(str[i]);
+    markDirty();
   }
   inEl.addEventListener('keydown', (e) => {
     if (!emulator) return;
@@ -222,9 +274,9 @@
       });
       sendStr(expanded + '\n');
       e.preventDefault();
-    } else if (e.key === 'Tab') { emulator.serial0_send('\t'); e.preventDefault(); }
-    else if (e.ctrlKey && e.key === 'c') { emulator.serial0_send('\x03'); e.preventDefault(); }
-    else if (e.ctrlKey && e.key === 'd') { emulator.serial0_send('\x04'); e.preventDefault(); }
+    } else if (e.key === 'Tab') { emulator.serial0_send('\t'); markDirty(); e.preventDefault(); }
+    else if (e.ctrlKey && e.key === 'c') { emulator.serial0_send('\x03'); markDirty(); e.preventDefault(); }
+    else if (e.ctrlKey && e.key === 'd') { emulator.serial0_send('\x04'); markDirty(); e.preventDefault(); }
   });
   termEl.addEventListener('click', () => inEl.focus());
 
