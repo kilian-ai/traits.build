@@ -889,7 +889,6 @@ async function _linuxTunnelWs(request) {
 // TCP-only in this initial implementation (UDP/WISP-0x01-extension not supported).
 
 const WISP_BUFFER = 1024 * 1024; // per-stream flow-control credits (bytes)
-const WISP_PENDING_DOWN_MAX = 4 * WISP_BUFFER; // cap queued server->client bytes per stream
 
 // ── WISP instrumentation ─────────────────────────────────────────────────────
 // Per-stream record kept in a bounded ring. Inspect via GET /wisp/debug.
@@ -988,7 +987,7 @@ async function _wispTunnelWs(request) {
   tunnelStats.wisp_connections = (tunnelStats.wisp_connections || 0) + 1;
   logTunnelEvent('wisp_open', { req_id: reqId, colo, ua: ua.slice(0, 120) });
 
-  // stream_id → { rec, socket, writer, bytesSinceCredit, outboundCredit, pendingDown, pendingDownBytes }
+  // stream_id → { rec, socket, writer, bytesSinceCredit }
   const streams = new Map();
 
   // Initial CONTINUE(stream_id=0) — signals v1-compatible server ready.
@@ -1020,41 +1019,6 @@ async function _wispTunnelWs(request) {
     try { s.socket.close(); } catch (_) {}
     _wispSendClose(server, sid, reason);
     finalizeRec(s.rec, how, reason);
-  };
-
-  // Flush queued TCP->client payloads while client-issued CONTINUE credit is available.
-  const flushDown = (sid) => {
-    const s = streams.get(sid);
-    if (!s) return;
-    while (s.pendingDown.length) {
-      const chunk = s.pendingDown[0];
-      if (!chunk || !chunk.length) {
-        s.pendingDown.shift();
-        continue;
-      }
-      if ((s.outboundCredit || 0) < chunk.length) break;
-
-      _wispSendFrame(server, 2, sid, chunk);
-      s.outboundCredit -= chunk.length;
-      s.pendingDown.shift();
-      s.pendingDownBytes = Math.max(0, (s.pendingDownBytes || 0) - chunk.length);
-
-      const rec = s.rec;
-      rec.bytes_down += chunk.length;
-      rec.frames_down += 1;
-      const nowMs = Date.now() - rec.started;
-      if (rec.first_down_ms == null) rec.first_down_ms = nowMs;
-      rec.last_down_ms = nowMs;
-      if (rec.down_samples.length < WISP_FRAME_SAMPLE) {
-        rec.down_samples.push({
-          n: rec.frames_down,
-          t_ms: nowMs,
-          len: chunk.length,
-          hex: _hexHead(chunk, 32),
-          tls: _wispClassifyTlsHead(chunk),
-        });
-      }
-    }
   };
 
   server.addEventListener('message', async (evt) => {
@@ -1097,8 +1061,6 @@ async function _wispTunnelWs(request) {
           bytes_up: 0, bytes_down: 0,
           frames_up: 0, frames_down: 0,
           credits_issued: 0,
-          credits_received: 0,
-          pending_down_peak: 0,
           first_down_ms: null, last_down_ms: null, last_up_ms: null,
           up_samples: [],   // [{ n, len, hex, tls? }]
           down_samples: [],
@@ -1184,15 +1146,7 @@ async function _wispTunnelWs(request) {
           });
           return;
         }
-        streams.set(streamId, {
-          rec,
-          socket: sock,
-          writer,
-          bytesSinceCredit: 0,
-          outboundCredit: WISP_BUFFER,
-          pendingDown: [],
-          pendingDownBytes: 0,
-        });
+        streams.set(streamId, { rec, socket: sock, writer, bytesSinceCredit: 0 });
         // Grant initial flow credits so client may start sending DATA.
         _wispSendContinue(server, streamId, WISP_BUFFER);
         rec.credits_issued += WISP_BUFFER;
@@ -1208,17 +1162,21 @@ async function _wispTunnelWs(request) {
               const { value, done } = await reader.read();
               if (done) break;
               if (value && value.length) {
-                const s = streams.get(streamId);
-                if (!s) break;
-                s.pendingDown.push(value);
-                s.pendingDownBytes = (s.pendingDownBytes || 0) + value.length;
-                if (s.pendingDownBytes > WISP_PENDING_DOWN_MAX) {
-                  rec.pending_down_peak = Math.max(rec.pending_down_peak || 0, s.pendingDownBytes);
-                  closeStream(streamId, 0x03, 'pending_down_overflow');
-                  return;
+                _wispSendFrame(server, 2, streamId, value);
+                rec.bytes_down += value.length;
+                rec.frames_down += 1;
+                const nowMs = Date.now() - rec.started;
+                if (rec.first_down_ms == null) rec.first_down_ms = nowMs;
+                rec.last_down_ms = nowMs;
+                if (rec.down_samples.length < WISP_FRAME_SAMPLE) {
+                  rec.down_samples.push({
+                    n: rec.frames_down,
+                    t_ms: nowMs,
+                    len: value.length,
+                    hex: _hexHead(value, 32),
+                    tls: _wispClassifyTlsHead(value),
+                  });
                 }
-                rec.pending_down_peak = Math.max(rec.pending_down_peak || 0, s.pendingDownBytes);
-                flushDown(streamId);
               }
             }
             _wispSendClose(server, streamId, 0x02); // voluntary
@@ -1270,21 +1228,12 @@ async function _wispTunnelWs(request) {
           _wispSendContinue(server, streamId, WISP_BUFFER);
           rec.credits_issued += WISP_BUFFER;
         }
-      } else if (type === 3) {
-        // CONTINUE client->server: grant credit for server->client DATA frames.
-        if (payload.length < 4) return;
-        const grant = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(0, true);
-        const s = streams.get(streamId);
-        if (!s) return;
-        s.outboundCredit = (s.outboundCredit || 0) + grant;
-        s.rec.credits_received = (s.rec.credits_received || 0) + grant;
-        flushDown(streamId);
       } else if (type === 4) {
         // CLOSE from client
         const reason = payload.length >= 1 ? payload[0] : 0x02;
         closeStream(streamId, reason, 'client_close');
       }
-      // type 5 (INFO) — ignored in v1.
+      // type 3 (CONTINUE) / 5 (INFO) — ignore; we don't rate-limit outbound.
     } catch (e) {
       logTunnelEvent('wisp_message_err', { req_id: reqId, error: safeError(e) });
     }

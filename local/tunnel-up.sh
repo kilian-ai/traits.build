@@ -20,7 +20,7 @@ PORTS="${*:-22 22000 8384}"
 # Install websocat if missing
 if ! command -v websocat >/dev/null 2>&1; then
     echo "[tunnel] installing websocat..."
-    apk add --no-cache websocat curl python3 >/dev/null 2>&1 \
+    apk add --no-cache websocat curl >/dev/null 2>&1 \
         || { echo "[tunnel] apk failed — install websocat manually"; exit 1; }
 fi
 
@@ -38,7 +38,8 @@ RESP=$(curl -sS -X POST "$TUNNEL_BASE/port/register" \
     -H 'Content-Type: application/json' \
     -d "{\"ports\":${PORTS_JSON}}")
 
-CODE=$(printf '%s' "$RESP" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["code"])' 2>/dev/null)
+# Parse code from JSON without python — grep/sed only
+CODE=$(printf '%s' "$RESP" | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([A-Z0-9]\{4\}\)".*/\1/p')
 if [ -z "$CODE" ]; then
     echo "[tunnel] registration failed: $RESP"
     exit 1
