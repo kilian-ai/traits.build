@@ -857,7 +857,7 @@ async function _linuxTunnelWs(request) {
     });
     return json({
       error: 'Upgrade required',
-      hint: 'Use WebSocket at wss://relay.traits.build/linux/tunnel',
+      hint: 'Use WebSocket at wss://relay.traits.build/x/sys',
     }, 426);
   }
 
@@ -1140,7 +1140,7 @@ export default {
       return json(tunnelDebugSnapshot());
     }
 
-    if (url.pathname === '/linux/tunnel' || url.pathname === '/x/net') {
+    if (url.pathname === '/linux/tunnel' || url.pathname === '/x/net' || url.pathname === '/x/sys') {
       return _linuxTunnelWs(request);
     }
 

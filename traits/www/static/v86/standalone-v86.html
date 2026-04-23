@@ -252,7 +252,7 @@
     const netEl = document.getElementById('net');
     const relayUrl = new URLSearchParams(location.search).get('relay')
       || localStorage.getItem('v86.relay-url')
-      || 'wss://relay.traits.build/linux/tunnel';
+      || 'wss://relay.traits.build/x/sys';
     if (netEl && netEl.checked) {
       cfg.network_relay_url = relayUrl;
     }
