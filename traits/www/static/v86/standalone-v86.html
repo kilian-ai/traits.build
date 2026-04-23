@@ -353,14 +353,17 @@
     byteCount = 0;
     term.reset();
 
-    // Alpine needs ~256 MB of RAM to run comfortably; tiny busybox ISOs run on 128 MB.
+    // Alpine runs diskless from the ISO — rootfs is tmpfs sized at 50% of RAM
+    // by default. 512 MB was tight (rootfs capped at 244 MB, ENOSPC during
+    // `npm install -g`, and node/npm got OOM-killed). 1024 MB gives a ~500 MB
+    // rootfs and enough headroom for node. Tiny busybox ISOs still run on 128.
     const isAlpine = /^alpine/i.test(iso);
     const cfg = {
       wasm_path: './v86.wasm',
       bios:     { url: './seabios.bin' },
       vga_bios: { url: './vgabios.bin' },
       cdrom:    { url: './' + iso },
-      memory_size: (isAlpine ? 512 : 128) * 1024 * 1024,
+      memory_size: (isAlpine ? 1024 : 128) * 1024 * 1024,
       vga_memory_size: 4 * 1024 * 1024,
       autostart: true,
       disable_mouse: true,
