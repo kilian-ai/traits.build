@@ -1,0 +1,19 @@
+[package]
+name = "fs-sync"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal 9P2000.L file server exposing a local folder over TCP"
+license = "MIT"
+
+[[bin]]
+name = "fs-sync"
+path = "src/main.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+opt-level = "z"
+
+# Isolated from the parent traits workspace.
+[workspace]
