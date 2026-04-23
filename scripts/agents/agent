@@ -1,5 +1,6 @@
 #!/bin/sh
-# wanix-agent v5 — OpenAI function calling, loops on tool_calls
+# wanix-agent v6 — OpenAI function calling, loops on tool_calls
+# Tools: shell(cmd), tunnel(port)
 set -u
 
 MODEL="${AGENT_MODEL:-gpt-5.4}"
@@ -20,7 +21,7 @@ rm -f "$DIR"/msg.* "$DIR"/req.json "$DIR"/resp.json \
 GOAL="$*"
 [ -n "$GOAL" ] || { echo "usage: agent <goal>"; exit 1; }
 
-SYSTEM='You are an autonomous agent in Alpine Linux (BusyBox). You have ONE tool: shell(cmd). Call it repeatedly as needed. When the goal is achieved, reply with a final text message and NO tool calls. POSIX/BusyBox only, single-line commands.'
+SYSTEM='You are an autonomous agent in Alpine Linux (BusyBox). You have two tools: shell(cmd) and tunnel(port). Use shell for filesystem/network commands. Use tunnel(port) to expose a local TCP port through tunnel.traits.build and get a WebSocket connect URL. When the goal is achieved, reply with a final text message and NO tool calls. POSIX/BusyBox only, single-line commands.'
 
 # --- write helpers (wanix idbfs truncation workaround) ----------------------
 sw()    { rm -f "$1"; cat > "$1"; }
@@ -42,7 +43,7 @@ add_user()         { N=$((N+1)); swstr "$(mp role)" user;         sw "$(mp body)
 add_assistant_tc() { N=$((N+1)); swstr "$(mp role)" assistant_tc; swstr "$(mp tcjson)" "$1"; }
 add_tool()         { N=$((N+1)); swstr "$(mp role)" tool; swstr "$(mp tcid)" "$1"; sw "$(mp body)"; }
 
-TOOLS='[{"type":"function","function":{"name":"shell","description":"Run a shell command, return stdout+stderr+exit.","parameters":{"type":"object","properties":{"cmd":{"type":"string"}},"required":["cmd"]}}}]'
+TOOLS='[{"type":"function","function":{"name":"shell","description":"Run a shell command, return stdout+stderr+exit.","parameters":{"type":"object","properties":{"cmd":{"type":"string"}},"required":["cmd"]}}},{"type":"function","function":{"name":"tunnel","description":"Expose a local TCP port through relay tunnel. Returns the WebSocket connect URL (use with websocat ProxyCommand for SSH, etc).","parameters":{"type":"object","properties":{"port":{"type":"integer","description":"Local TCP port to expose (e.g. 22 for sshd, 21 for ftpd)"}},"required":["port"]}}}]'
 
 build_req() {
     rm -f "$DIR/req.json"
@@ -89,6 +90,32 @@ call_llm() {
         --data-binary @"$DIR/req.json" > "$DIR/resp.json" 2>&1
 }
 
+# --- tunnel helper ----------------------------------------------------------
+# do_tunnel <port>: registers port with tunnel.traits.build, starts websocat bridge,
+# writes result to $DIR/out.txt. Returns the connect URL on stdout.
+do_tunnel() {
+    _port="$1"
+    command -v websocat >/dev/null 2>&1 || { apk add --no-cache websocat >/dev/null 2>&1; }
+    # Register port and get pairing code
+    _resp=$(curl -sS -X POST https://tunnel.traits.build/port/register \
+        -H 'Content-Type: application/json' \
+        -d "{\"ports\":[${_port}]}")
+    _code=$(printf '%s' "$_resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["code"])' 2>/dev/null)
+    if [ -z "$_code" ]; then
+        printf 'tunnel register failed: %s\n' "$_resp" > "$DIR/out.txt"
+        return 1
+    fi
+    # Start websocat bridge in background
+    websocat --binary --ping-interval 30 \
+        "wss://tunnel.traits.build/port/guest?code=${_code}&port=${_port}" \
+        "tcp:127.0.0.1:${_port}" >> "$DIR/tunnel-${_port}.log" 2>&1 &
+    _ws_pid=$!
+    printf '%s' "$_ws_pid" > "$DIR/tunnel-${_port}.pid"
+    sleep 1  # let websocat connect
+    printf 'Tunnel up: port %s → code %s\nWebSocket URL: wss://tunnel.traits.build/port/client?code=%s&port=%s\nSSH ProxyCommand: ssh -o ProxyCommand="websocat wss://tunnel.traits.build/port/client?code=%s&port=%s" root@dummy\nwebsocat bridge PID: %s\n' \
+        "$_port" "$_code" "$_code" "$_port" "$_code" "$_port" "$_ws_pid" > "$DIR/out.txt"
+}
+
 # --- seed system + user (redirect, no pipes) --------------------------------
 swstr "$DIR/seed.txt" "$SYSTEM"
 add_system < "$DIR/seed.txt"
@@ -118,11 +145,18 @@ while [ "$i" -lt "$MAX_ROUNDS" ]; do
         k=0
         while [ "$k" -lt "$ncalls" ]; do
             tcid=$(python3 -c "import json; d=json.load(open('$DIR/resp.json')); print(d['choices'][0]['message']['tool_calls'][$k]['id'])")
-            cmd=$(python3  -c "import json; d=json.load(open('$DIR/resp.json')); a=json.loads(d['choices'][0]['message']['tool_calls'][$k]['function']['arguments'] or '{}'); print(a.get('cmd',''))")
+            fname=$(python3 -c "import json; d=json.load(open('$DIR/resp.json')); print(d['choices'][0]['message']['tool_calls'][$k]['function']['name'])")
+            cmd=$(python3  -c "import json; d=json.load(open('$DIR/resp.json')); a=json.loads(d['choices'][0]['message']['tool_calls'][$k]['function']['arguments'] or '{}'); print(a.get('cmd','') if a.get('cmd') else str(a.get('port','')) )")
             k=$((k+1))
-            echo ">> [$tcid] $cmd" | tee -a "$LOG"
-            ( eval "$cmd" ) > "$DIR/out.txt" 2>&1
-            rc=$?
+            echo ">> [$tcid][$fname] $cmd" | tee -a "$LOG"
+            if [ "$fname" = 'tunnel' ]; then
+                _tport=$(python3 -c "import json; d=json.load(open('$DIR/resp.json')); a=json.loads(d['choices'][0]['message']['tool_calls'][$((k-1))]['function']['arguments'] or '{}'); print(a.get('port',''))" 2>/dev/null)
+                do_tunnel "$_tport"
+                rc=$?
+            else
+                ( eval "$cmd" ) > "$DIR/out.txt" 2>&1
+                rc=$?
+            fi
             rm -f "$DIR/obs.txt"
             head -c 4000 "$DIR/out.txt" > "$DIR/obs.txt"
             printf '\n[exit %d]\n' "$rc" >> "$DIR/obs.txt"
