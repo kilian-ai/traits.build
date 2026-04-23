@@ -888,7 +888,7 @@ async function _linuxTunnelWs(request) {
 // Uses cloudflare:sockets connect() to open real TCP from the Worker edge.
 // TCP-only in this initial implementation (UDP/WISP-0x01-extension not supported).
 
-const WISP_BUFFER = 128; // per-stream flow-control credits
+const WISP_BUFFER = 256 * 1024; // per-stream flow-control credits (bytes)
 
 function _wispSendFrame(ws, type, streamId, payload) {
   const len = payload ? payload.length : 0;
@@ -1027,8 +1027,8 @@ async function _wispTunnelWs(request) {
           closeStream(streamId, 0x03);
           return;
         }
-        // Replenish flow-control credits periodically (every ~half buffer worth of packets).
-        s.bytesSinceCredit = (s.bytesSinceCredit || 0) + 1;
+        // Replenish flow-control credits based on DATA bytes consumed.
+        s.bytesSinceCredit = (s.bytesSinceCredit || 0) + payload.length;
         if (s.bytesSinceCredit >= (WISP_BUFFER >> 1)) {
           s.bytesSinceCredit = 0;
           _wispSendContinue(server, streamId, WISP_BUFFER);
