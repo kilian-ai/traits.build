@@ -1,3 +1,5 @@
+import { connect } from 'cloudflare:sockets';
+
 /**
  * traits.build relay — Cloudflare Worker + Durable Objects
  *
@@ -90,7 +92,7 @@ function json(data, status = 200) {
 
 // ── Tunnel instrumentation (best-effort, isolate-local) ─────────────────────
 
-const RELAY_BUILD = '2026-04-21-linux-tunnel-upstream-proxy';
+const RELAY_BUILD = '2026-04-22-wisp-sockets';
 const TUNNEL_EVENT_LIMIT = 200;
 
 const tunnelStats = {
@@ -844,8 +846,9 @@ async function _linuxTunnelWs(request) {
   const cf = request.cf || {};
   const colo = String(cf.colo || 'unknown');
   const ua = String(request.headers.get('user-agent') || '');
+  const pathname = (() => { try { return new URL(request.url).pathname; } catch (_) { return ''; } })();
   tunnelStats.open_requests += 1;
-  logTunnelEvent('open_request', { req_id: reqId, colo, ua: ua.slice(0, 120) });
+  logTunnelEvent('open_request', { req_id: reqId, colo, ua: ua.slice(0, 120), pathname });
 
   const upgrade = request.headers.get('Upgrade');
   if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
@@ -861,13 +864,309 @@ async function _linuxTunnelWs(request) {
     }, 426);
   }
 
-  // Prefer upstream tunnel proxy for full TCP semantics (HTTPS/apk/wget).
-  const proxied = await _tryProxyLinuxTunnelWs(request, reqId);
-  if (proxied) return proxied;
-
-  tunnelStats.proxy_fallback_local = (tunnelStats.proxy_fallback_local || 0) + 1;
-  logTunnelEvent('proxy_fallback_local', { req_id: reqId });
+  // /x/sys is the relay-local path: always use local DHCP/ARP/ICMP/DNS(DoH) handler.
+  // /linux/tunnel and /x/net try upstream (apptron.dev) first for richer TCP semantics.
+  const forceLocal = pathname === '/x/sys';
+  if (!forceLocal) {
+    const proxied = await _tryProxyLinuxTunnelWs(request, reqId);
+    if (proxied) return proxied;
+    tunnelStats.proxy_fallback_local = (tunnelStats.proxy_fallback_local || 0) + 1;
+    logTunnelEvent('proxy_fallback_local', { req_id: reqId });
+  } else {
+    tunnelStats.proxy_skipped_local = (tunnelStats.proxy_skipped_local || 0) + 1;
+    logTunnelEvent('proxy_skipped_local', { req_id: reqId, reason: 'x/sys path' });
+  }
   return _linuxTunnelWsLocal(request, reqId, colo, ua);
+}
+
+// ── WISP v1 server (for v86 WispNetworkAdapter) ──────────────────────────────
+// Protocol: https://github.com/MercuryWorkshop/wisp-protocol (v1)
+// Each message is a binary WebSocket frame:
+//   [type:u8][stream_id:u32 LE][payload…]
+// Types: 1=CONNECT, 2=DATA, 3=CONTINUE, 4=CLOSE, 5=INFO (v2 only)
+//
+// Uses cloudflare:sockets connect() to open real TCP from the Worker edge.
+// TCP-only in this initial implementation (UDP/WISP-0x01-extension not supported).
+
+const WISP_BUFFER = 128; // per-stream flow-control credits
+
+function _wispSendFrame(ws, type, streamId, payload) {
+  const len = payload ? payload.length : 0;
+  const buf = new Uint8Array(5 + len);
+  buf[0] = type & 0xff;
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(1, streamId >>> 0, true);
+  if (payload && len) buf.set(payload, 5);
+  try { ws.send(buf); } catch (_) {}
+}
+
+function _wispSendContinue(ws, streamId, remaining) {
+  const buf = new Uint8Array(9);
+  buf[0] = 3;
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(1, streamId >>> 0, true);
+  dv.setUint32(5, remaining >>> 0, true);
+  try { ws.send(buf); } catch (_) {}
+}
+
+function _wispSendClose(ws, streamId, reason) {
+  _wispSendFrame(ws, 4, streamId, new Uint8Array([reason & 0xff]));
+}
+
+async function _wispTunnelWs(request) {
+  const reqId = crypto.randomUUID().slice(0, 8);
+  const cf = request.cf || {};
+  const colo = String(cf.colo || 'unknown');
+  const ua = String(request.headers.get('user-agent') || '');
+
+  const upgrade = request.headers.get('Upgrade');
+  if (!upgrade || upgrade.toLowerCase() !== 'websocket') {
+    return json({
+      error: 'Upgrade required',
+      hint: 'Use WebSocket (WISP protocol) at wss://relay.traits.build/wisp',
+    }, 426);
+  }
+
+  const pair = new WebSocketPair();
+  const client = pair[0];
+  const server = pair[1];
+  try { server.accept(); } catch (e) { throw e; }
+
+  tunnelStats.wisp_connections = (tunnelStats.wisp_connections || 0) + 1;
+  logTunnelEvent('wisp_open', { req_id: reqId, colo, ua: ua.slice(0, 120) });
+
+  // stream_id → { socket, writer, bytesSinceCredit }
+  const streams = new Map();
+
+  // Initial CONTINUE(stream_id=0) — signals v1-compatible server ready.
+  _wispSendContinue(server, 0, WISP_BUFFER);
+
+  const closeStream = (sid, reason = 0x02) => {
+    const s = streams.get(sid);
+    if (!s) return;
+    streams.delete(sid);
+    try { s.writer.close(); } catch (_) {}
+    try { s.socket.close(); } catch (_) {}
+    _wispSendClose(server, sid, reason);
+  };
+
+  server.addEventListener('message', async (evt) => {
+    try {
+      const data = evt.data;
+      if (typeof data === 'string') {
+        if (data === 'ping') { try { server.send('pong'); } catch(_) {} }
+        return;
+      }
+      let bytes;
+      if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+      else if (data && data.buffer instanceof ArrayBuffer) {
+        bytes = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.length || 0);
+      } else return;
+      if (bytes.length < 5) return;
+
+      const type = bytes[0];
+      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const streamId = dv.getUint32(1, true);
+      const payload = bytes.subarray(5);
+
+      if (type === 1) {
+        // CONNECT: [stream_type:u8][port:u16 LE][hostname:utf-8]
+        if (payload.length < 3) { _wispSendClose(server, streamId, 0x41); return; }
+        const streamType = payload[0];
+        const port = payload[1] | (payload[2] << 8);
+        const hostname = new TextDecoder().decode(payload.subarray(3));
+        if (streamType !== 1) {
+          // UDP (0x02) not supported yet — reject cleanly.
+          _wispSendClose(server, streamId, 0x41);
+          logTunnelEvent('wisp_reject_udp', { req_id: reqId, sid: streamId, host: hostname, port });
+          return;
+        }
+        let sock, writer;
+        try {
+          sock = connect({ hostname, port });
+          writer = sock.writable.getWriter();
+        } catch (e) {
+          _wispSendClose(server, streamId, 0x42); // unreachable
+          logTunnelEvent('wisp_connect_fail', {
+            req_id: reqId, sid: streamId, host: hostname, port, error: safeError(e),
+          });
+          return;
+        }
+        streams.set(streamId, { socket: sock, writer, bytesSinceCredit: 0 });
+        // Grant initial flow credits so client may start sending DATA.
+        _wispSendContinue(server, streamId, WISP_BUFFER);
+        logTunnelEvent('wisp_connect_ok', { req_id: reqId, sid: streamId, host: hostname, port });
+
+        // Pump socket.readable → DATA frames. Keep this async IIFE detached.
+        (async () => {
+          let reader;
+          try {
+            reader = sock.readable.getReader();
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              if (value && value.length) _wispSendFrame(server, 2, streamId, value);
+            }
+            _wispSendClose(server, streamId, 0x02); // voluntary
+          } catch (e) {
+            _wispSendClose(server, streamId, 0x03); // network error
+            logTunnelEvent('wisp_read_err', { req_id: reqId, sid: streamId, error: safeError(e) });
+          } finally {
+            streams.delete(streamId);
+            try { if (reader) reader.releaseLock(); } catch(_) {}
+            try { sock.close(); } catch(_) {}
+          }
+        })();
+      } else if (type === 2) {
+        // DATA client→server
+        const s = streams.get(streamId);
+        if (!s) return;
+        try {
+          await s.writer.write(payload);
+        } catch (e) {
+          closeStream(streamId, 0x03);
+          return;
+        }
+        // Replenish flow-control credits periodically (every ~half buffer worth of packets).
+        s.bytesSinceCredit = (s.bytesSinceCredit || 0) + 1;
+        if (s.bytesSinceCredit >= (WISP_BUFFER >> 1)) {
+          s.bytesSinceCredit = 0;
+          _wispSendContinue(server, streamId, WISP_BUFFER);
+        }
+      } else if (type === 4) {
+        // CLOSE from client
+        closeStream(streamId, 0x02);
+      }
+      // type 3 (CONTINUE) / 5 (INFO) — ignore; we don't rate-limit outbound.
+    } catch (e) {
+      logTunnelEvent('wisp_message_err', { req_id: reqId, error: safeError(e) });
+    }
+  });
+
+  server.addEventListener('close', () => {
+    for (const sid of Array.from(streams.keys())) {
+      const s = streams.get(sid);
+      if (!s) continue;
+      streams.delete(sid);
+      try { s.writer.close(); } catch (_) {}
+      try { s.socket.close(); } catch (_) {}
+    }
+    logTunnelEvent('wisp_close', { req_id: reqId });
+  });
+
+  server.addEventListener('error', (evt) => {
+    logTunnelEvent('wisp_error', { req_id: reqId, error: safeError(evt) });
+  });
+
+  return new Response(null, { status: 101, webSocket: client });
+}
+
+// ── CORS proxy (for v86 fetch backend + generic in-browser requests) ─────────
+// Usage: GET /cors?url=https://example.com/path
+// Passes method+headers+body through; strips host-sensitive request headers.
+
+async function _corsProxy(request) {
+  const url = new URL(request.url);
+  let target = url.searchParams.get('url');
+  if (!target) {
+    // Also accept suffix form: /cors/https://example.com/...
+    const prefix = '/cors/';
+    if (url.pathname.startsWith(prefix)) {
+      target = url.pathname.slice(prefix.length) + url.search;
+    }
+  }
+  if (!target) return json({ error: "missing ?url=" }, 400);
+  let targetUrl;
+  try { targetUrl = new URL(target); } catch (_) { return json({ error: "invalid url" }, 400); }
+  if (targetUrl.protocol !== 'http:' && targetUrl.protocol !== 'https:') {
+    return json({ error: "only http/https supported" }, 400);
+  }
+
+  const forwardHeaders = new Headers();
+  for (const [k, v] of request.headers) {
+    const kl = k.toLowerCase();
+    if (kl === 'host' || kl === 'origin' || kl === 'referer' || kl.startsWith('cf-') ||
+        kl.startsWith('x-forwarded-') || kl === 'x-real-ip') continue;
+    forwardHeaders.set(k, v);
+  }
+  try {
+    const upstream = await fetch(targetUrl.toString(), {
+      method: request.method,
+      headers: forwardHeaders,
+      body: (request.method === 'GET' || request.method === 'HEAD') ? undefined : request.body,
+      redirect: 'follow',
+    });
+    const headers = new Headers(upstream.headers);
+    for (const [k, v] of Object.entries(cors())) headers.set(k, v);
+    // Drop headers that would confuse the browser about the origin
+    headers.delete('content-security-policy');
+    headers.delete('content-security-policy-report-only');
+    return new Response(upstream.body, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers,
+    });
+  } catch (e) {
+    return json({ error: `cors proxy failed: ${e?.message || e}` }, 502);
+  }
+}
+
+// ── DoH (DNS-over-HTTPS) proxy ───────────────────────────────────────────────
+// Compatible with RFC 8484. v86's WispNetworkAdapter uses this for guest DNS:
+//   POST /dns-query   Content-Type: application/dns-message   body = DNS wire format
+//   GET  /dns-query?dns=<base64url-encoded DNS wire format>
+// Returns application/dns-message from Cloudflare's 1.1.1.1 resolver.
+// Needed because a direct browser fetch to cloudflare-dns.com from a file:// or
+// third-party origin fails CORS preflight (content-type: application/dns-message
+// is non-simple, and the DoH server's preflight response can be rejected). This
+// endpoint answers the preflight itself and returns full CORS headers.
+
+async function _dnsQuery(request) {
+  const url = new URL(request.url);
+  const UPSTREAM = 'https://1.1.1.1/dns-query';
+  let body;
+  let method = request.method;
+  if (method === 'GET') {
+    const dns = url.searchParams.get('dns');
+    if (!dns) return new Response('missing ?dns=', { status: 400, headers: cors() });
+    try {
+      // upstream accepts GET with ?dns=base64url directly, proxy as-is
+      const up = await fetch(`${UPSTREAM}?dns=${encodeURIComponent(dns)}`, {
+        method: 'GET',
+        headers: { 'accept': 'application/dns-message' },
+      });
+      const headers = new Headers({
+        ...cors(),
+        'content-type': up.headers.get('content-type') || 'application/dns-message',
+        'cache-control': 'no-store',
+      });
+      return new Response(up.body, { status: up.status, headers });
+    } catch (e) {
+      return new Response(`dns upstream failed: ${e?.message || e}`, { status: 502, headers: cors() });
+    }
+  }
+  if (method === 'POST') {
+    try {
+      body = await request.arrayBuffer();
+      const up = await fetch(UPSTREAM, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/dns-message',
+          'accept': 'application/dns-message',
+        },
+        body,
+      });
+      const headers = new Headers({
+        ...cors(),
+        'content-type': up.headers.get('content-type') || 'application/dns-message',
+        'cache-control': 'no-store',
+      });
+      return new Response(up.body, { status: up.status, headers });
+    } catch (e) {
+      return new Response(`dns upstream failed: ${e?.message || e}`, { status: 502, headers: cors() });
+    }
+  }
+  return new Response('method not allowed', { status: 405, headers: cors() });
 }
 
 // ── Pairing code generation ───────────────────────────────────────────────────
@@ -1138,6 +1437,24 @@ export default {
 
     if (url.pathname === '/linux/tunnel/debug' && request.method === 'GET') {
       return json(tunnelDebugSnapshot());
+    }
+
+    if (url.pathname === '/wisp' || url.pathname === '/wisp/') {
+      return _wispTunnelWs(request);
+    }
+
+    if (url.pathname === '/cors' || url.pathname.startsWith('/cors/')) {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: cors() });
+      }
+      return _corsProxy(request);
+    }
+
+    if (url.pathname === '/dns-query') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: cors() });
+      }
+      return _dnsQuery(request);
     }
 
     if (url.pathname === '/linux/tunnel' || url.pathname === '/x/net' || url.pathname === '/x/sys') {

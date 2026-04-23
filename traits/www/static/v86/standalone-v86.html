@@ -98,12 +98,15 @@
   // which can itself change xterm's row count → feedback loop. Cols is what
   // matters for line wrapping in shells/ls/pipes; full-screen TUIs (vi/less/top)
   // can set rows manually or ignore it.
-  let sttyTimer = null, lastCols = 0, sentCols = 0;
+  // Deferred until `shellReady` — otherwise xterm's initial resize fires at the
+  // ISOLINUX `boot:` prompt and `stty` gets typed there, producing a visible
+  // "Loading stty... failed" error before Linux starts.
+  let sttyTimer = null, lastCols = 0, sentCols = 0, shellReady = false;
   term.onResize(({ cols }) => {
     lastCols = cols;
     clearTimeout(sttyTimer);
     sttyTimer = setTimeout(() => {
-      if (!emulator) return;
+      if (!emulator || !shellReady) return;
       if (lastCols === sentCols) return;
       sentCols = lastCols;
       const cmd = `stty cols ${lastCols} 2>/dev/null\n`;
@@ -222,6 +225,122 @@
   // ---- Emulator lifecycle ----
   let emulator = null, currentIso = null;
 
+  // ── DNS interceptor (pure-JS UDP/53 → DoH via relay) ──────────────────────
+  // v86's built-in DoH reply injection is broken for us. We hook the emulator
+  // bus before WISP sees the packet, answer DNS ourselves via /dns-query on
+  // the relay, and inject a correctly framed Ethernet reply via net0-receive.
+  function installDnsInterceptor(em) {
+    const DNS_ENDPOINT = 'https://relay.traits.build/dns-query';
+
+    // Parse minimal fields from an outgoing Ethernet II frame to detect DNS.
+    function parseOutgoingDns(buf) {
+      if (!(buf instanceof Uint8Array) || buf.length < 14 + 20 + 8) return null;
+      const etype = (buf[12] << 8) | buf[13];
+      if (etype !== 0x0800) return null;                     // not IPv4
+      const ip0 = 14;
+      const ihl = (buf[ip0] & 0x0f) * 4;
+      if (ihl < 20) return null;
+      if (buf[ip0 + 9] !== 17) return null;                  // not UDP
+      const udp0 = ip0 + ihl;
+      if (udp0 + 8 > buf.length) return null;
+      const dport = (buf[udp0 + 2] << 8) | buf[udp0 + 3];
+      if (dport !== 53) return null;
+      const sport = (buf[udp0] << 8) | buf[udp0 + 1];
+      const ulen  = (buf[udp0 + 4] << 8) | buf[udp0 + 5];
+      if (ulen < 8 || udp0 + ulen > buf.length) return null;
+      return {
+        ethDst: buf.slice(0, 6),
+        ethSrc: buf.slice(6, 12),
+        ipSrc:  buf.slice(ip0 + 12, ip0 + 16),
+        ipDst:  buf.slice(ip0 + 16, ip0 + 20),
+        udpSport: sport,
+        dnsPayload: buf.slice(udp0 + 8, udp0 + ulen),
+      };
+    }
+
+    function checksum16(bytes, start, end) {
+      let sum = 0;
+      for (let i = start; i + 1 < end; i += 2) sum += (bytes[i] << 8) | bytes[i + 1];
+      if ((end - start) & 1) sum += bytes[end - 1] << 8;
+      while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+      return (~sum) & 0xffff;
+    }
+
+    function buildDnsReply(q, response) {
+      const ipLen  = 20 + 8 + response.length;
+      const ethLen = 14 + ipLen;
+      const out    = new Uint8Array(ethLen);
+      out.set(q.ethSrc, 0);                                  // new dst = old src
+      out.set(q.ethDst, 6);                                  // new src = old dst
+      out[12] = 0x08; out[13] = 0x00;
+      const ip = 14;
+      out[ip + 0] = 0x45; out[ip + 1] = 0x00;
+      out[ip + 2] = (ipLen >> 8) & 0xff; out[ip + 3] = ipLen & 0xff;
+      out[ip + 8] = 64; out[ip + 9] = 17;
+      out.set(q.ipDst, ip + 12);                             // src = old dst
+      out.set(q.ipSrc, ip + 16);                             // dst = old src
+      const ipc = checksum16(out, ip, ip + 20);
+      out[ip + 10] = (ipc >> 8) & 0xff; out[ip + 11] = ipc & 0xff;
+      const udp = ip + 20;
+      out[udp + 0] = 0; out[udp + 1] = 53;
+      out[udp + 2] = (q.udpSport >> 8) & 0xff; out[udp + 3] = q.udpSport & 0xff;
+      const ulen = 8 + response.length;
+      out[udp + 4] = (ulen >> 8) & 0xff; out[udp + 5] = ulen & 0xff;
+      // UDP checksum is optional for IPv4 — leave as 0.
+      out.set(response, udp + 8);
+      return out;
+    }
+
+    async function handleDnsQuery(q) {
+      try {
+        const resp = await fetch(DNS_ENDPOINT, {
+          method: 'POST',
+          headers: { 'content-type': 'application/dns-message' },
+          body: q.dnsPayload,
+        });
+        if (!resp.ok) { console.warn('[dns] upstream status', resp.status); return; }
+        const ab = await resp.arrayBuffer();
+        const reply = buildDnsReply(q, new Uint8Array(ab));
+        em.bus.send('net0-receive', reply);
+      } catch (e) {
+        console.warn('[dns] fetch failed', e);
+      }
+    }
+
+    // Hook net0-send. v86's BusConnector stores listeners as an array on
+    // `listeners[topic]` and dispatches to all of them. To avoid double-sending
+    // non-DNS packets, we REPLACE the array: save v86's existing listener,
+    // then install ours as the sole listener (which forwards to v86 for
+    // non-DNS packets).
+    const tryHook = () => {
+      if (!em.bus) return false;
+      const l = em.bus.listeners;
+      if (!l || !l['net0-send'] || !l['net0-send'].length) return false;
+      const prev = l['net0-send'][l['net0-send'].length - 1];
+      const hijacker = {
+        fn: (data) => {
+          const buf = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+          const q = parseOutgoingDns(buf);
+          if (q) { handleDnsQuery(q); return; }
+          if (prev) prev.fn.call(prev.this_value, data);
+        },
+        this_value: this,
+      };
+      l['net0-send'] = [hijacker];
+      console.log('[dns] interceptor installed, replaced v86 listener');
+      return true;
+    };
+    // The adapter registers net0-send from its constructor, which runs inside
+    // `new V86(cfg)`, so by the time we call installDnsInterceptor() the
+    // listener is already there. Retry a few times just in case.
+    if (!tryHook()) {
+      let tries = 0;
+      const iv = setInterval(() => {
+        if (tryHook() || ++tries > 20) clearInterval(iv);
+      }, 100);
+    }
+  }
+
   async function boot(opts = {}) {
     const iso = isoEl.value;
     currentIso = iso;
@@ -247,14 +366,54 @@
       disable_mouse: true,
     };
     // Optional: route emulated NIC through our Cloudflare relay so `apk add`, wget, etc. work.
-    // Protocol: raw Ethernet frames over a WebSocket binary channel.
-    // Server side handles DHCP/ARP/ICMP/DNS and proxies TCP/UDP upstream.
+    // Default backend is WISP (TCP tunneled over a single WebSocket) backed by
+    // cloudflare:sockets on the relay worker, so real TCP to anywhere on the
+    // internet works. Legacy wsproxy (raw Ethernet) URLs starting with ws:// or
+    // wss:// are still honored via localStorage/?relay= override.
     const netEl = document.getElementById('net');
+    // Migrate old raw-Ethernet relay URLs (which RST all TCP) to the new WISP endpoint.
+    try {
+      const stored = localStorage.getItem('v86.relay-url') || '';
+      if (stored && /relay\.traits\.build\/(x\/sys|x\/net|linux\/tunnel)\/?$/.test(stored)) {
+        localStorage.setItem('v86.relay-url', 'wisps://relay.traits.build/wisp');
+      }
+    } catch(_) {}
     const relayUrl = new URLSearchParams(location.search).get('relay')
       || localStorage.getItem('v86.relay-url')
-      || 'wss://relay.traits.build/x/sys';
+      || 'wisps://relay.traits.build/wisp';
     if (netEl && netEl.checked) {
-      cfg.network_relay_url = relayUrl;
+      // v86 selects the backend from the URL scheme:
+      //   wisp://, wisps://  → WispNetworkAdapter (TCP tunneling)
+      //   ws://, wss://      → NetworkAdapter (raw Ethernet wsproxy, legacy)
+      //   "fetch"            → FetchNetworkAdapter (no server, HTTP-only via CORS)
+      // NOTE: v86 only creates a NIC when net_device.type is set explicitly to
+      // "ne2k" or "virtio" (the "default to ne2k" fallback only fires when
+      // net_device is completely absent — see src/browser/starter.js and
+      // src/cpu.js). Passing a net_device object without a type silently
+      // creates NO NIC.
+      //
+      // What works with the config below:
+      //   - NIC bring-up, DHCP lease (192.168.86.100)
+      //   - ICMP (ping 1.1.1.1)
+      //   - TCP (real sockets via WISP to cloudflare:sockets)
+      //   - DNS via DoH proxied through our relay at /dns-query
+      //
+      // The relay /dns-query endpoint wraps 1.1.1.1 and adds CORS headers that
+      // satisfy the browser's preflight. A direct fetch from the page to
+      // cloudflare-dns.com would be rejected by CORS preflight in many contexts
+      // (file:// origins, private-network access), which is why the default
+      // v86 DoH path silently fails.
+      cfg.net_device = {
+        type: 'ne2k',
+        relay_url: relayUrl,
+        // Route v86's DoH through our relay. v86 builds the URL as
+        //   https://{doh_server}/dns-query
+        // so we just pass the relay's hostname here.
+        dns_method: 'doh',
+        doh_server: 'relay.traits.build',
+        // cors_proxy is only used by the "fetch" backend; safe to always set.
+        cors_proxy: 'https://relay.traits.build/cors?url=',
+      };
     }
     if (doRestore) {
       const blob = await idbGet(snapKey);
@@ -264,10 +423,55 @@
     emulator = new V86(cfg);
     window.emulator = emulator;
 
+    // ── DNS interceptor ─────────────────────────────────────────────────────
+    // v86's WispNetworkAdapter has a built-in DoH path (handle_fake_dns_doh)
+    // but its synthesised UDP reply isn't delivered to the guest resolver in
+    // the current v86 build. We bypass it entirely: peek at outbound Ethernet
+    // frames on the bus, detect UDP/53 queries, fetch DoH through our relay,
+    // and inject the reply back onto the receive side with correct framing.
+    installDnsInterceptor(emulator);
+
     emulator.add_listener('emulator-ready',   () => setStatus('ready'));
     emulator.add_listener('emulator-started', () => setStatus(doRestore ? 'restored' : 'running', 'ok'));
     emulator.add_listener('emulator-stopped', () => setStatus('stopped'));
-    emulator.add_listener('serial0-output-byte', b => { byteCount++; pushByte(b); markDirty(); });
+    // Auto-init network on first shell prompt after a fresh boot (no-op on restore).
+    // Alpine live ISO doesn't DHCP by default and leaves /etc/resolv.conf empty,
+    // so we run udhcpc + set 1.1.1.1 DNS once the root shell appears.
+    let netInited = doRestore || !(netEl && netEl.checked);
+    // On restore the shell is already up, so enable stty sync immediately.
+    if (doRestore) shellReady = true;
+    let promptTail = '';
+    const PROMPT_RE = /[#$]\s$/;
+    emulator.add_listener('serial0-output-byte', b => {
+      byteCount++; pushByte(b); markDirty();
+      if (!shellReady || !netInited) {
+        promptTail = (promptTail + String.fromCharCode(b)).slice(-24);
+        if (PROMPT_RE.test(promptTail) && /localhost|alpine|~/.test(promptTail)) {
+          if (!shellReady) {
+            shellReady = true;
+            // Prime stty with current cols now that we know we're at a shell.
+            if (lastCols && emulator) {
+              sentCols = lastCols;
+              const cmd = `stty cols ${lastCols} 2>/dev/null\n`;
+              setTimeout(() => {
+                for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
+              }, 300);
+            }
+          }
+          if (!netInited) {
+            netInited = true;
+            const cmd =
+              'ip link set eth0 up 2>/dev/null; ' +
+              'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
+              'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
+              'clear\n';
+            setTimeout(() => {
+              for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
+            }, 600);
+          }
+        }
+      }
+    });
 
     resetBtn.disabled = false;
     saveBtn.disabled = false;
@@ -282,6 +486,7 @@
     try { emulator.stop(); } catch (_) {}
     try { emulator.destroy(); } catch (_) {}
     emulator = null; window.emulator = null;
+    shellReady = false; sentCols = 0;
   }
 
   async function doReset() { await shutdown(); await boot({ restore: false }); }
