@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# fs-tunnel — bridge a local fs-sync server to the traits.build relay.
+#
+# Usage:
+#   fs-tunnel <dir> [code]
+#
+# Starts fs-sync serving <dir> on a random loopback port, then bridges it to
+# wss://relay.traits.build/fs9p/host?code=<code> so a browser-side 9P client
+# (or any WebSocket peer) can mount it.
+#
+# Dependencies: fs-sync (built from tools/fs-sync), websocat.
+#   brew install websocat      # macOS
+#   cargo install websocat     # anywhere with cargo
+set -eu
+
+here=$(cd "$(dirname "$0")" && pwd)
+bin="$here/fs-sync/target/release/fs-sync"
+[ -x "$bin" ] || bin=$(command -v fs-sync || true)
+if [ -z "${bin:-}" ] || [ ! -x "$bin" ]; then
+    echo "fs-tunnel: fs-sync binary not found" >&2
+    echo "  build it: (cd $here/fs-sync && cargo build --release)" >&2
+    exit 1
+fi
+
+command -v websocat >/dev/null 2>&1 || {
+    echo "fs-tunnel: websocat not found (brew install websocat)" >&2
+    exit 1
+}
+
+dir=${1:?usage: fs-tunnel <dir> [code]}
+code=${2:-}
+if [ -z "$code" ]; then
+    # 4 unambiguous chars, matches relay's CODE_CHARS set.
+    code=$(LC_ALL=C tr -dc 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' </dev/urandom \
+        | head -c 4)
+fi
+
+relay=${RELAY_URL:-wss://relay.traits.build}
+port=${FS_SYNC_PORT:-5640}
+
+cleanup() { [ -n "${fs_pid:-}" ] && kill "$fs_pid" 2>/dev/null || true; }
+trap cleanup EXIT INT TERM
+
+echo "fs-tunnel: serving $dir"
+echo "fs-tunnel: local fs-sync on 127.0.0.1:$port"
+"$bin" --dir "$dir" --host 127.0.0.1 --port "$port" &
+fs_pid=$!
+sleep 0.3
+
+echo "fs-tunnel: bridging to $relay/fs9p/host?code=$code"
+echo "fs-tunnel: clients connect at $relay/fs9p/client?code=$code"
+echo "fs-tunnel: code = $code"
+exec websocat --binary "$relay/fs9p/host?code=$code" "tcp:127.0.0.1:$port"
