@@ -34,6 +34,9 @@ pub async fn start(args: &[crate::types::TraitValue]) -> Result<crate::types::Tr
 
 // ── Full HTTP server implementation (moved from src/api.rs) ──
 
+#[path = "wisp.rs"]
+mod wisp;
+
 use actix_web::{web, App, HttpServer, HttpResponse, HttpRequest};
 use actix_cors::Cors;
 use actix_ws;
@@ -1543,6 +1546,9 @@ pub async fn start_server(config: crate::config::Config, port: u16) -> Result<()
             .route("/health", web::get().to(health_check))
             .route("/metrics", web::get().to(metrics))
             .route("/mcp", web::get().to(mcp_ws))
+            .route("/wisp", web::get().to(wisp::wisp_ws))
+            .route("/wisp/", web::get().to(wisp::wisp_ws))
+            .route("/wisp/debug", web::get().to(wisp::wisp_debug))
             .route("/coi-sw.js", web::get().to(serve_coi_sw))
             .route("/relay/register", web::post().to(relay_register))
             .route("/relay/poll", web::get().to(relay_poll))
