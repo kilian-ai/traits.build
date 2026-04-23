@@ -135,13 +135,26 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
                                     .send(encode_close(stream_id, CLOSE_INVALID));
                                 continue;
                             }
-                            // Spawn so a slow TCP connect doesn't block other streams.
+                            // Insert stream into map SYNCHRONOUSLY so any
+                            // DATA frames arriving while TCP connects are
+                            // buffered in this channel, not silently dropped.
+                            let (in_tx, in_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+                            {
+                                let mut guard = streams_inner.lock().await;
+                                guard.insert(
+                                    stream_id,
+                                    StreamState { tx: in_tx, bytes_since_credit: 0 },
+                                );
+                            }
+                            // Spawn the TCP connect + reader/writer tasks.
                             let out = out_tx_inner.clone();
                             let streams_h = streams_inner.clone();
                             let cid = conn_id_for_task.clone();
                             actix_rt::spawn(async move {
-                                handle_connect(stream_id, hostname, port, out, streams_h, cid)
-                                    .await;
+                                handle_connect(
+                                    stream_id, hostname, port, out, streams_h, cid, in_rx,
+                                )
+                                .await;
                             });
                         }
                         T_DATA => {
@@ -192,6 +205,7 @@ async fn handle_connect(
     out_tx: WsSender,
     streams: Arc<Mutex<HashMap<u32, StreamState>>>,
     conn_id: String,
+    mut in_rx: mpsc::UnboundedReceiver<Vec<u8>>,
 ) {
     // Bounded connect timeout (5s) to avoid piling up hung sockets.
     let connect_fut = TcpStream::connect((hostname.as_str(), port));
@@ -202,6 +216,7 @@ async fn handle_connect(
                 "WISP: connect_fail conn_id={} sid={} {}:{} {}",
                 conn_id, stream_id, hostname, port, e
             );
+            streams.lock().await.remove(&stream_id);
             let _ = out_tx.send(encode_close(stream_id, CLOSE_UNREACH));
             return;
         }
@@ -210,6 +225,7 @@ async fn handle_connect(
                 "WISP: connect_timeout conn_id={} sid={} {}:{}",
                 conn_id, stream_id, hostname, port
             );
+            streams.lock().await.remove(&stream_id);
             let _ = out_tx.send(encode_close(stream_id, CLOSE_UNREACH));
             return;
         }
@@ -217,20 +233,8 @@ async fn handle_connect(
     let _ = tcp.set_nodelay(true);
 
     let (mut rd, mut wr) = tcp.into_split();
-    let (in_tx, mut in_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
-    {
-        let mut guard = streams.lock().await;
-        guard.insert(
-            stream_id,
-            StreamState {
-                tx: in_tx,
-                bytes_since_credit: 0,
-            },
-        );
-    }
-
-    // Initial flow credit so client can start sending DATA.
+    // Flow credit so client knows connect succeeded and can send more DATA.
     let _ = out_tx.send(encode_continue(stream_id, WISP_BUFFER));
     info!(
         "WISP: connect_ok conn_id={} sid={} {}:{}",
