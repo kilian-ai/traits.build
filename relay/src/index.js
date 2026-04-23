@@ -888,7 +888,59 @@ async function _linuxTunnelWs(request) {
 // Uses cloudflare:sockets connect() to open real TCP from the Worker edge.
 // TCP-only in this initial implementation (UDP/WISP-0x01-extension not supported).
 
-const WISP_BUFFER = 256 * 1024; // per-stream flow-control credits (bytes)
+const WISP_BUFFER = 1024 * 1024; // per-stream flow-control credits (bytes)
+
+// ── WISP instrumentation ─────────────────────────────────────────────────────
+// Per-stream record kept in a bounded ring. Inspect via GET /wisp/debug.
+const WISP_STREAM_LIMIT = 64;
+const WISP_FRAME_SAMPLE = 6; // sample first N frames each direction
+const wispStreamRing = []; // { conn_id, sid, host, port, … }
+
+function _hexHead(bytes, n = 32) {
+  if (!bytes || !bytes.length) return '';
+  const take = bytes.subarray(0, Math.min(n, bytes.length));
+  let s = '';
+  for (let i = 0; i < take.length; i++) {
+    s += take[i].toString(16).padStart(2, '0');
+  }
+  return s;
+}
+
+function _wispClassifyTlsHead(bytes) {
+  // TLS record: [type:u8][ver_major:u8][ver_minor:u8][len:u16 BE]
+  // type 22 = handshake; handshake byte 5 = HandshakeType (1=ClientHello, 2=ServerHello, 11=Cert, …)
+  if (!bytes || bytes.length < 6) return null;
+  const t = bytes[0];
+  if (t < 20 || t > 24) return null;
+  const ver = `${bytes[1]}.${bytes[2]}`;
+  const len = (bytes[3] << 8) | bytes[4];
+  const names = { 20: 'ChangeCipherSpec', 21: 'Alert', 22: 'Handshake', 23: 'AppData', 24: 'Heartbeat' };
+  let hs = null;
+  if (t === 22 && bytes.length >= 6) {
+    const hsTypes = { 1: 'ClientHello', 2: 'ServerHello', 11: 'Certificate', 12: 'ServerKeyExchange', 14: 'ServerHelloDone', 15: 'CertVerify', 16: 'ClientKeyExchange', 20: 'Finished' };
+    hs = hsTypes[bytes[5]] || `hs-${bytes[5]}`;
+  }
+  return { type: names[t] || `t-${t}`, ver, len, hs };
+}
+
+function _wispPushStream(rec) {
+  wispStreamRing.push(rec);
+  if (wispStreamRing.length > WISP_STREAM_LIMIT) wispStreamRing.shift();
+}
+
+function _wispDebugSnapshot() {
+  return {
+    relay_build: RELAY_BUILD,
+    now: new Date().toISOString(),
+    wisp_buffer_bytes: WISP_BUFFER,
+    stream_count: wispStreamRing.length,
+    streams: wispStreamRing.slice().reverse().map(r => ({
+      ...r,
+      age_ms: Date.now() - r.started,
+      closed_age_ms: r.closed ? Date.now() - r.closed : null,
+    })),
+  };
+}
 
 function _wispSendFrame(ws, type, streamId, payload) {
   const len = payload ? payload.length : 0;
@@ -935,19 +987,38 @@ async function _wispTunnelWs(request) {
   tunnelStats.wisp_connections = (tunnelStats.wisp_connections || 0) + 1;
   logTunnelEvent('wisp_open', { req_id: reqId, colo, ua: ua.slice(0, 120) });
 
-  // stream_id → { socket, writer, bytesSinceCredit }
+  // stream_id → { rec, socket, writer, bytesSinceCredit }
   const streams = new Map();
 
   // Initial CONTINUE(stream_id=0) — signals v1-compatible server ready.
   _wispSendContinue(server, 0, WISP_BUFFER);
 
-  const closeStream = (sid, reason = 0x02) => {
+  const finalizeRec = (rec, how, reason) => {
+    if (rec.closed) return;
+    rec.closed = Date.now();
+    rec.close_how = how;              // 'client_close' | 'reader_done' | 'reader_err' | 'writer_err' | 'ws_close' | 'connect_fail'
+    if (reason !== undefined) rec.close_reason = reason;
+    rec.duration_ms = rec.closed - rec.started;
+    logTunnelEvent('wisp_stream_end', {
+      req_id: reqId, sid: rec.sid, host: rec.host, port: rec.port,
+      how, reason, duration_ms: rec.duration_ms,
+      bytes_up: rec.bytes_up, bytes_down: rec.bytes_down,
+      frames_up: rec.frames_up, frames_down: rec.frames_down,
+      first_down_ms: rec.first_down_ms, last_down_ms: rec.last_down_ms,
+      last_up_ms: rec.last_up_ms,
+      up_head: rec.up_samples[0] || null,
+      down_head: rec.down_samples[0] || null,
+    });
+  };
+
+  const closeStream = (sid, reason = 0x02, how = 'closeStream') => {
     const s = streams.get(sid);
     if (!s) return;
     streams.delete(sid);
     try { s.writer.close(); } catch (_) {}
     try { s.socket.close(); } catch (_) {}
     _wispSendClose(server, sid, reason);
+    finalizeRec(s.rec, how, reason);
   };
 
   server.addEventListener('message', async (evt) => {
@@ -981,21 +1052,43 @@ async function _wispTunnelWs(request) {
           logTunnelEvent('wisp_reject_udp', { req_id: reqId, sid: streamId, host: hostname, port });
           return;
         }
+        const rec = {
+          conn_id: reqId,
+          sid: streamId,
+          host: hostname,
+          port,
+          started: Date.now(),
+          bytes_up: 0, bytes_down: 0,
+          frames_up: 0, frames_down: 0,
+          credits_issued: 0,
+          first_down_ms: null, last_down_ms: null, last_up_ms: null,
+          up_samples: [],   // [{ n, len, hex, tls? }]
+          down_samples: [],
+          closed: null, close_how: null, close_reason: null, duration_ms: null,
+        };
+        _wispPushStream(rec);
+
         let sock, writer;
         try {
           sock = connect({ hostname, port });
           writer = sock.writable.getWriter();
         } catch (e) {
           _wispSendClose(server, streamId, 0x42); // unreachable
+          finalizeRec(rec, 'connect_fail', 0x42);
+          rec.connect_error = safeError(e);
           logTunnelEvent('wisp_connect_fail', {
             req_id: reqId, sid: streamId, host: hostname, port, error: safeError(e),
           });
           return;
         }
-        streams.set(streamId, { socket: sock, writer, bytesSinceCredit: 0 });
+        streams.set(streamId, { rec, socket: sock, writer, bytesSinceCredit: 0 });
         // Grant initial flow credits so client may start sending DATA.
         _wispSendContinue(server, streamId, WISP_BUFFER);
-        logTunnelEvent('wisp_connect_ok', { req_id: reqId, sid: streamId, host: hostname, port });
+        rec.credits_issued += WISP_BUFFER;
+        logTunnelEvent('wisp_connect_ok', {
+          req_id: reqId, sid: streamId, host: hostname, port,
+          credit: WISP_BUFFER,
+        });
 
         // Pump socket.readable → DATA frames. Keep this async IIFE detached.
         (async () => {
@@ -1005,14 +1098,38 @@ async function _wispTunnelWs(request) {
             while (true) {
               const { value, done } = await reader.read();
               if (done) break;
-              if (value && value.length) _wispSendFrame(server, 2, streamId, value);
+              if (value && value.length) {
+                _wispSendFrame(server, 2, streamId, value);
+                rec.bytes_down += value.length;
+                rec.frames_down += 1;
+                const nowMs = Date.now() - rec.started;
+                if (rec.first_down_ms == null) rec.first_down_ms = nowMs;
+                rec.last_down_ms = nowMs;
+                if (rec.down_samples.length < WISP_FRAME_SAMPLE) {
+                  rec.down_samples.push({
+                    n: rec.frames_down,
+                    t_ms: nowMs,
+                    len: value.length,
+                    hex: _hexHead(value, 32),
+                    tls: _wispClassifyTlsHead(value),
+                  });
+                }
+              }
             }
             _wispSendClose(server, streamId, 0x02); // voluntary
+            streams.delete(streamId);
+            finalizeRec(rec, 'reader_done', 0x02);
           } catch (e) {
             _wispSendClose(server, streamId, 0x03); // network error
-            logTunnelEvent('wisp_read_err', { req_id: reqId, sid: streamId, error: safeError(e) });
-          } finally {
             streams.delete(streamId);
+            rec.reader_error = safeError(e);
+            finalizeRec(rec, 'reader_err', 0x03);
+            logTunnelEvent('wisp_read_err', {
+              req_id: reqId, sid: streamId, host: rec.host, port: rec.port,
+              bytes_down: rec.bytes_down, frames_down: rec.frames_down,
+              error: safeError(e),
+            });
+          } finally {
             try { if (reader) reader.releaseLock(); } catch(_) {}
             try { sock.close(); } catch(_) {}
           }
@@ -1021,10 +1138,24 @@ async function _wispTunnelWs(request) {
         // DATA client→server
         const s = streams.get(streamId);
         if (!s) return;
+        const rec = s.rec;
+        rec.bytes_up += payload.length;
+        rec.frames_up += 1;
+        rec.last_up_ms = Date.now() - rec.started;
+        if (rec.up_samples.length < WISP_FRAME_SAMPLE) {
+          rec.up_samples.push({
+            n: rec.frames_up,
+            t_ms: rec.last_up_ms,
+            len: payload.length,
+            hex: _hexHead(payload, 32),
+            tls: _wispClassifyTlsHead(payload),
+          });
+        }
         try {
           await s.writer.write(payload);
         } catch (e) {
-          closeStream(streamId, 0x03);
+          rec.writer_error = safeError(e);
+          closeStream(streamId, 0x03, 'writer_err');
           return;
         }
         // Replenish flow-control credits based on DATA bytes consumed.
@@ -1032,10 +1163,12 @@ async function _wispTunnelWs(request) {
         if (s.bytesSinceCredit >= (WISP_BUFFER >> 1)) {
           s.bytesSinceCredit = 0;
           _wispSendContinue(server, streamId, WISP_BUFFER);
+          rec.credits_issued += WISP_BUFFER;
         }
       } else if (type === 4) {
         // CLOSE from client
-        closeStream(streamId, 0x02);
+        const reason = payload.length >= 1 ? payload[0] : 0x02;
+        closeStream(streamId, reason, 'client_close');
       }
       // type 3 (CONTINUE) / 5 (INFO) — ignore; we don't rate-limit outbound.
     } catch (e) {
@@ -1050,6 +1183,7 @@ async function _wispTunnelWs(request) {
       streams.delete(sid);
       try { s.writer.close(); } catch (_) {}
       try { s.socket.close(); } catch (_) {}
+      finalizeRec(s.rec, 'ws_close', null);
     }
     logTunnelEvent('wisp_close', { req_id: reqId });
   });
@@ -1511,6 +1645,10 @@ export default {
 
     if (url.pathname === '/linux/tunnel/debug' && request.method === 'GET') {
       return json(tunnelDebugSnapshot());
+    }
+
+    if (url.pathname === '/wisp/debug' && request.method === 'GET') {
+      return json(_wispDebugSnapshot());
     }
 
     if (url.pathname === '/wisp' || url.pathname === '/wisp/') {

@@ -434,6 +434,29 @@
     emulator.add_listener('emulator-ready',   () => setStatus('ready'));
     emulator.add_listener('emulator-started', () => setStatus(doRestore ? 'restored' : 'running', 'ok'));
     emulator.add_listener('emulator-stopped', () => setStatus('stopped'));
+
+    // ── Restore-path instrumentation ───────────────────────────────────────
+    // Visible in browser console. Captures WispNetworkAdapter WS lifecycle so
+    // we can see whether the tunnel reattaches cleanly on restore.
+    if (doRestore) {
+      console.log('[restore] boot invoked restore=true, snapKey=', snapKey);
+      // Peek at the adapter's internal WebSocket (v86 stashes it on
+      // emulator.network_adapter.wisp_network.wisp_url / websocket).
+      setTimeout(() => {
+        try {
+          const na = emulator.network_adapter;
+          const wn = na && (na.wisp_network || na.wisp || null);
+          const ws = wn && (wn.websocket || wn.ws || null);
+          console.log('[restore] adapter snapshot', {
+            adapter: na ? na.constructor && na.constructor.name : null,
+            wisp:    wn ? Object.keys(wn) : null,
+            ws_state: ws ? ws.readyState : null,
+            ws_url:   ws ? ws.url : null,
+            relay:    cfg.net_device && cfg.net_device.relay_url,
+          });
+        } catch (e) { console.warn('[restore] adapter peek failed', e); }
+      }, 500);
+    }
     // Auto-init network on first shell prompt after a fresh boot (no-op on restore).
     // Alpine live ISO doesn't DHCP by default and leaves /etc/resolv.conf empty,
     // so we run udhcpc + set 1.1.1.1 DNS once the root shell appears.
