@@ -976,15 +976,14 @@
       } catch {
         existing = null;
       }
-      if (typeof existing === 'string') {
-        if (existing.includes(PUBLIC_VIEWER_MARKER)) return;
+      const existingText = existing == null ? '' : toText(existing);
+      if (existingText) {
+        if (existingText.includes(PUBLIC_VIEWER_MARKER)) return;
         // Only migrate previously seeded viewer templates.
         // Preserve user-authored custom viewer.html files.
-        const markedTemplate = existing.includes(PUBLIC_VIEWER_MARKER_PREFIX);
-        const legacyTemplate = isLegacySeededViewerTemplate(existing);
+        const markedTemplate = existingText.includes(PUBLIC_VIEWER_MARKER_PREFIX);
+        const legacyTemplate = isLegacySeededViewerTemplate(existingText);
         if (!markedTemplate && !legacyTemplate) return;
-      } else if (existing != null) {
-        return;
       }
       try {
         await withTimeout(rt.writeFile(PUBLIC_VIEWER_PATH, publicViewerTemplate()), 2000);

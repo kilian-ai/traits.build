@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>v86 Standalone</title>
+<link rel="stylesheet" href="./xterm.css">
+<style>
+  :root { color-scheme: dark; }
+  html,body { margin:0; padding:0; background:#0b0d10; color:#d5d8dc; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; height:100%; }
+  #wrap { display:flex; flex-direction:column; height:100vh; }
+  #bar { padding:6px 10px; background:#161a1f; border-bottom:1px solid #2a2f36; font-size:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  #bar b { color:#fff; }
+  #bar select, #bar button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 8px; font:inherit; cursor:pointer; }
+  #bar button:hover:not(:disabled) { background:#2d343d; }
+  #bar button:disabled { opacity:0.4; cursor:not-allowed; }
+  #bar .stat { color:#888; margin-left:auto; }
+  #term { flex:1; min-height:0; padding:6px 8px; background:#0b0d10; }
+  #term .xterm { height:100%; }
+  /* Always reserve scrollbar space so xterm's fit calculation doesn't
+     oscillate by 2 cols when a scrollbar appears/disappears. */
+  #term .xterm-viewport { background:#0b0d10 !important; overflow-y: scroll !important; }
+  #term .xterm-viewport::-webkit-scrollbar { width: 10px; }
+  #term .xterm-viewport::-webkit-scrollbar-track { background: #0b0d10; }
+  #term .xterm-viewport::-webkit-scrollbar-thumb { background: #2a3240; border-radius: 5px; }
+  .hint { color:#6b7380; }
+  .ok { color:#4ade80; }
+  .err { color:#f87171; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="bar">
+    <b>v86</b>
+    <label>image:
+      <select id="iso">
+        <option value="alpine.iso" selected>alpine.iso (48 MB, apk + network)</option>
+        <option value="linux4.iso">linux4.iso (7.4 MB, busybox)</option>
+        <option value="linux3.iso">linux3.iso (8.2 MB)</option>
+        <option value="linux.iso">linux.iso (5.4 MB)</option>
+      </select>
+    </label>
+    <label title="enable emulated NIC tunneled over relay.traits.build WebSocket"><input type="checkbox" id="net" checked> network</label>
+    <button id="boot">boot</button>
+    <button id="reset" disabled>reset</button>
+    <button id="save" disabled>save snapshot</button>
+    <button id="restore" disabled>restore</button>
+    <button id="clear" disabled>clear snapshot</button>
+    <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
+    <span id="status" class="hint">idle</span>
+    <span class="stat" id="stats"></span>
+  </div>
+  <div id="term"></div>
+</div>
+
+<script src="./libv86.js"></script>
+<script src="./xterm.js"></script>
+<script src="./xterm-addon-fit.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const termEl = $('term'), isoEl = $('iso');
+  const bootBtn = $('boot'), resetBtn = $('reset'), saveBtn = $('save');
+  const restoreBtn = $('restore'), clearBtn = $('clear');
+  const autosaveEl = $('autosave');
+  const statusEl = $('status'), statsEl = $('stats');
+
+  // ---- xterm.js terminal ----
+  const term = new Terminal({
+    cursorBlink: true,
+    cursorStyle: 'block',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: 13,
+    scrollback: 5000,
+    convertEol: false,
+    allowProposedApi: true,
+    theme: {
+      background: '#0b0d10',
+      foreground: '#d5d8dc',
+      cursor: '#d5d8dc',
+      cursorAccent: '#0b0d10',
+      selectionBackground: '#334155',
+      black: '#1e2229', red: '#f87171', green: '#4ade80', yellow: '#facc15',
+      blue: '#60a5fa', magenta: '#c084fc', cyan: '#22d3ee', white: '#d5d8dc',
+      brightBlack: '#3a424d', brightRed: '#fca5a5', brightGreen: '#86efac', brightYellow: '#fde047',
+      brightBlue: '#93c5fd', brightMagenta: '#d8b4fe', brightCyan: '#67e8f9', brightWhite: '#ffffff',
+    },
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(termEl);
+  setTimeout(() => { try { fit.fit(); } catch (_) {} }, 0);
+  const ro = new ResizeObserver(() => { try { fit.fit(); } catch (_) {} });
+  ro.observe(termEl);
+  window.addEventListener('resize', () => { try { fit.fit(); } catch (_) {} });
+
+  // When fit changes size, push *cols only* to the guest (serial has no WINCH).
+  // We deliberately don't push rows: every stty line consumes a row of scrollback,
+  // which can itself change xterm's row count → feedback loop. Cols is what
+  // matters for line wrapping in shells/ls/pipes; full-screen TUIs (vi/less/top)
+  // can set rows manually or ignore it.
+  // Deferred until `shellReady` — otherwise xterm's initial resize fires at the
+  // ISOLINUX `boot:` prompt and `stty` gets typed there, producing a visible
+  // "Loading stty... failed" error before Linux starts.
+  let sttyTimer = null, lastCols = 0, sentCols = 0, shellReady = false;
+  term.onResize(({ cols }) => {
+    lastCols = cols;
+    clearTimeout(sttyTimer);
+    sttyTimer = setTimeout(() => {
+      if (!emulator || !shellReady) return;
+      if (lastCols === sentCols) return;
+      sentCols = lastCols;
+      const cmd = `stty cols ${lastCols} 2>/dev/null\n`;
+      for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
+    }, 600);
+  });
+  let byteCount = 0;
+
+  const setStatus = (msg, cls) => { statusEl.textContent = msg; statusEl.className = cls || 'hint'; };
+
+  // Persist autosave toggle
+  autosaveEl.checked = localStorage.getItem('v86.autosave') === '1';
+  autosaveEl.onchange = () => {
+    localStorage.setItem('v86.autosave', autosaveEl.checked ? '1' : '0');
+    if (autosaveEl.checked && emulator) scheduleAutosave();
+  };
+
+  const qsIso = new URLSearchParams(location.search).get('iso');
+  if (qsIso && [...isoEl.options].some(o => o.value === qsIso)) isoEl.value = qsIso;
+
+  // ---- Terminal output: xterm.js writes raw VT stream as-is ----
+  // v86 emits one byte at a time; we batch within a microtask so xterm.js
+  // parses multi-byte CSI sequences in a single write() rather than per byte.
+  let pendingBytes = [], pendingFlush = false;
+  function pushByte(b) {
+    pendingBytes.push(b);
+    if (!pendingFlush) {
+      pendingFlush = true;
+      queueMicrotask(() => {
+        pendingFlush = false;
+        if (!pendingBytes.length) return;
+        const u8 = new Uint8Array(pendingBytes);
+        pendingBytes = [];
+        term.write(u8);
+      });
+    }
+  }
+
+  // ---- IndexedDB snapshot persistence ----
+  const DB_NAME = 'v86-snapshots', DB_VER = 1, STORE = 'snaps';
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VER);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function idbGet(key) {
+    const db = await openDB();
+    return new Promise((res, rej) => {
+      const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
+      req.onsuccess = () => res(req.result || null); req.onerror = () => rej(req.error);
+    });
+  }
+  async function idbPut(key, val) {
+    const db = await openDB();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(val, key);
+      tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+    });
+  }
+  async function idbDel(key) {
+    const db = await openDB();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+    });
+  }
+  async function idbHas(key) { return (await idbGet(key)) != null; }
+
+  // ---- Auto-save: debounced snapshot after activity settles ----
+  // Live ISOs write to tmpfs, so the only way to "persist FS changes" is
+  // to snapshot full VM state. We debounce ~3s of quiet after any serial
+  // activity or user input, then save_state() → IDB. Functionally
+  // "persists on change" without manual save-button clicks.
+  const AUTOSAVE_IDLE_MS = 3000;
+  const AUTOSAVE_MIN_GAP_MS = 5000; // never save more than once per 5s
+  let autosaveTimer = null, autosaveInFlight = false, lastAutosaveAt = 0, dirty = false;
+
+  function markDirty() {
+    dirty = true;
+    if (autosaveEl.checked) scheduleAutosave();
+  }
+  function scheduleAutosave() {
+    if (!emulator || autosaveInFlight) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(runAutosave, AUTOSAVE_IDLE_MS);
+  }
+  async function runAutosave() {
+    if (!emulator || autosaveInFlight || !dirty) return;
+    const since = Date.now() - lastAutosaveAt;
+    if (since < AUTOSAVE_MIN_GAP_MS) {
+      autosaveTimer = setTimeout(runAutosave, AUTOSAVE_MIN_GAP_MS - since);
+      return;
+    }
+    autosaveInFlight = true;
+    const prevStatus = statusEl.textContent;
+    try {
+      const t0 = Date.now();
+      const st = await emulator.save_state();
+      await idbPut('snap:' + currentIso, st);
+      lastAutosaveAt = Date.now();
+      dirty = false;
+      restoreBtn.disabled = false; clearBtn.disabled = false;
+      setStatus(`auto-saved ${(st.byteLength/1048576).toFixed(1)} MB (${lastAutosaveAt - t0} ms)`, 'ok');
+      // restore prior status after 2s (unless user changed it)
+      setTimeout(() => { if (statusEl.textContent.startsWith('auto-saved')) setStatus(prevStatus); }, 2000);
+    } catch (e) {
+      setStatus('auto-save failed: ' + e.message, 'err');
+    } finally { autosaveInFlight = false; }
+  }
+
+  // ---- Emulator lifecycle ----
+  let emulator = null, currentIso = null;
+
+  // ── DNS interceptor (pure-JS UDP/53 → DoH via relay) ──────────────────────
+  // v86's built-in DoH reply injection is broken for us. We hook the emulator
+  // bus before WISP sees the packet, answer DNS ourselves via /dns-query on
+  // the relay, and inject a correctly framed Ethernet reply via net0-receive.
+  function installDnsInterceptor(em) {
+    const DNS_ENDPOINT = 'https://relay.traits.build/dns-query';
+
+    // Parse minimal fields from an outgoing Ethernet II frame to detect DNS.
+    function parseOutgoingDns(buf) {
+      if (!(buf instanceof Uint8Array) || buf.length < 14 + 20 + 8) return null;
+      const etype = (buf[12] << 8) | buf[13];
+      if (etype !== 0x0800) return null;                     // not IPv4
+      const ip0 = 14;
+      const ihl = (buf[ip0] & 0x0f) * 4;
+      if (ihl < 20) return null;
+      if (buf[ip0 + 9] !== 17) return null;                  // not UDP
+      const udp0 = ip0 + ihl;
+      if (udp0 + 8 > buf.length) return null;
+      const dport = (buf[udp0 + 2] << 8) | buf[udp0 + 3];
+      if (dport !== 53) return null;
+      const sport = (buf[udp0] << 8) | buf[udp0 + 1];
+      const ulen  = (buf[udp0 + 4] << 8) | buf[udp0 + 5];
+      if (ulen < 8 || udp0 + ulen > buf.length) return null;
+      return {
+        ethDst: buf.slice(0, 6),
+        ethSrc: buf.slice(6, 12),
+        ipSrc:  buf.slice(ip0 + 12, ip0 + 16),
+        ipDst:  buf.slice(ip0 + 16, ip0 + 20),
+        udpSport: sport,
+        dnsPayload: buf.slice(udp0 + 8, udp0 + ulen),
+      };
+    }
+
+    function checksum16(bytes, start, end) {
+      let sum = 0;
+      for (let i = start; i + 1 < end; i += 2) sum += (bytes[i] << 8) | bytes[i + 1];
+      if ((end - start) & 1) sum += bytes[end - 1] << 8;
+      while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+      return (~sum) & 0xffff;
+    }
+
+    function buildDnsReply(q, response) {
+      const ipLen  = 20 + 8 + response.length;
+      const ethLen = 14 + ipLen;
+      const out    = new Uint8Array(ethLen);
+      out.set(q.ethSrc, 0);                                  // new dst = old src
+      out.set(q.ethDst, 6);                                  // new src = old dst
+      out[12] = 0x08; out[13] = 0x00;
+      const ip = 14;
+      out[ip + 0] = 0x45; out[ip + 1] = 0x00;
+      out[ip + 2] = (ipLen >> 8) & 0xff; out[ip + 3] = ipLen & 0xff;
+      out[ip + 8] = 64; out[ip + 9] = 17;
+      out.set(q.ipDst, ip + 12);                             // src = old dst
+      out.set(q.ipSrc, ip + 16);                             // dst = old src
+      const ipc = checksum16(out, ip, ip + 20);
+      out[ip + 10] = (ipc >> 8) & 0xff; out[ip + 11] = ipc & 0xff;
+      const udp = ip + 20;
+      out[udp + 0] = 0; out[udp + 1] = 53;
+      out[udp + 2] = (q.udpSport >> 8) & 0xff; out[udp + 3] = q.udpSport & 0xff;
+      const ulen = 8 + response.length;
+      out[udp + 4] = (ulen >> 8) & 0xff; out[udp + 5] = ulen & 0xff;
+      // UDP checksum is optional for IPv4 — leave as 0.
+      out.set(response, udp + 8);
+      return out;
+    }
+
+    async function handleDnsQuery(q) {
+      try {
+        const resp = await fetch(DNS_ENDPOINT, {
+          method: 'POST',
+          headers: { 'content-type': 'application/dns-message' },
+          body: q.dnsPayload,
+        });
+        if (!resp.ok) { console.warn('[dns] upstream status', resp.status); return; }
+        const ab = await resp.arrayBuffer();
+        const reply = buildDnsReply(q, new Uint8Array(ab));
+        em.bus.send('net0-receive', reply);
+      } catch (e) {
+        console.warn('[dns] fetch failed', e);
+      }
+    }
+
+    // Hook net0-send. v86's BusConnector stores listeners as an array on
+    // `listeners[topic]` and dispatches to all of them. To avoid double-sending
+    // non-DNS packets, we REPLACE the array: save v86's existing listener,
+    // then install ours as the sole listener (which forwards to v86 for
+    // non-DNS packets).
+    const tryHook = () => {
+      if (!em.bus) return false;
+      const l = em.bus.listeners;
+      if (!l || !l['net0-send'] || !l['net0-send'].length) return false;
+      const prev = l['net0-send'][l['net0-send'].length - 1];
+      const hijacker = {
+        fn: (data) => {
+          const buf = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+          const q = parseOutgoingDns(buf);
+          if (q) { handleDnsQuery(q); return; }
+          if (prev) prev.fn.call(prev.this_value, data);
+        },
+        this_value: this,
+      };
+      l['net0-send'] = [hijacker];
+      console.log('[dns] interceptor installed, replaced v86 listener');
+      return true;
+    };
+    // The adapter registers net0-send from its constructor, which runs inside
+    // `new V86(cfg)`, so by the time we call installDnsInterceptor() the
+    // listener is already there. Retry a few times just in case.
+    if (!tryHook()) {
+      let tries = 0;
+      const iv = setInterval(() => {
+        if (tryHook() || ++tries > 20) clearInterval(iv);
+      }, 100);
+    }
+  }
+
+  async function boot(opts = {}) {
+    const iso = isoEl.value;
+    currentIso = iso;
+    const snapKey = 'snap:' + iso;
+    const doRestore = opts.restore && await idbHas(snapKey);
+
+    setStatus(doRestore ? `restoring ${iso}…` : `booting ${iso}…`);
+    bootBtn.disabled = true; isoEl.disabled = true;
+
+    byteCount = 0;
+    term.reset();
+
+    // Alpine runs diskless from the ISO — rootfs is tmpfs sized at 50% of RAM
+    // by default. 512 MB was tight (rootfs capped at 244 MB, ENOSPC during
+    // `npm install -g`, and node/npm got OOM-killed). 1024 MB gave a ~500 MB
+    // rootfs but large npm packages (openclaw has 7231 files across dozens of
+    // transitive deps) still fill it. 2048 MB gives a ~1 GB rootfs and plenty
+    // of process headroom. Tiny busybox ISOs still run on 128.
+    // Override with ?mem=<MB> for debugging.
+    const isAlpine = /^alpine/i.test(iso);
+    const memOverride = parseInt(new URLSearchParams(location.search).get('mem') || '', 10);
+    const memMB = Number.isFinite(memOverride) && memOverride > 0
+      ? memOverride
+      : (isAlpine ? 2048 : 128);
+    const cfg = {
+      wasm_path: './v86.wasm',
+      bios:     { url: './seabios.bin' },
+      vga_bios: { url: './vgabios.bin' },
+      cdrom:    { url: './' + iso },
+      memory_size: memMB * 1024 * 1024,
+      vga_memory_size: 4 * 1024 * 1024,
+      autostart: true,
+      disable_mouse: true,
+    };
+    // Optional: route emulated NIC through our Cloudflare relay so `apk add`, wget, etc. work.
+    // Default backend is WISP (TCP tunneled over a single WebSocket) backed by
+    // cloudflare:sockets on the relay worker, so real TCP to anywhere on the
+    // internet works. Legacy wsproxy (raw Ethernet) URLs starting with ws:// or
+    // wss:// are still honored via localStorage/?relay= override.
+    const netEl = document.getElementById('net');
+    // Migrate legacy relay URLs to the Fly.io WISP endpoint. The Cloudflare
+    // Worker relay (wisps://relay.traits.build/wisp) cannot reach CF-fronted
+    // hosts like api.openai.com due to CF's loopback-prevention block on
+    // Worker→CF-IP connect(). The Fly.io backend uses tokio::net::TcpStream
+    // and has no such restriction.
+    // The Fly backend speaks WISP v1, so the URL MUST use wisps:// (secure)
+    // or wisp:// — v86's src/browser/network.js picks WispNetworkAdapter only
+    // for those schemes. A plain wss:// URL silently falls back to the legacy
+    // raw-Ethernet NetworkAdapter, which sends DHCP/ARP frames our WISP server
+    // does not understand (guest then never gets a DHCP lease).
+    try {
+      const stored = localStorage.getItem('v86.relay-url') || '';
+      if (stored && (
+        /relay\.traits\.build\/(x\/sys|x\/net|linux\/tunnel|wisp)\/?$/.test(stored) ||
+        /^wisps?:\/\/relay\.traits\.build\/wisp\/?$/.test(stored) ||
+        /^wss?:\/\/apptron-traits-build\.fly\.dev\/wisp\/?$/.test(stored)
+      )) {
+        localStorage.setItem('v86.relay-url', 'wisps://apptron-traits-build.fly.dev/wisp');
+      }
+    } catch(_) {}
+    const relayUrl = new URLSearchParams(location.search).get('relay')
+      || localStorage.getItem('v86.relay-url')
+      || 'wisps://apptron-traits-build.fly.dev/wisp';
+    if (netEl && netEl.checked) {
+      // v86 selects the backend from the URL scheme:
+      //   wisp://, wisps://  → WispNetworkAdapter (TCP tunneling)
+      //   ws://, wss://      → NetworkAdapter (raw Ethernet wsproxy, legacy)
+      //   "fetch"            → FetchNetworkAdapter (no server, HTTP-only via CORS)
+      // NOTE: v86 only creates a NIC when net_device.type is set explicitly to
+      // "ne2k" or "virtio" (the "default to ne2k" fallback only fires when
+      // net_device is completely absent — see src/browser/starter.js and
+      // src/cpu.js). Passing a net_device object without a type silently
+      // creates NO NIC.
+      //
+      // What works with the config below:
+      //   - NIC bring-up, DHCP lease (192.168.86.100)
+      //   - ICMP (ping 1.1.1.1)
+      //   - TCP (real sockets via WISP to cloudflare:sockets)
+      //   - DNS via DoH proxied through our relay at /dns-query
+      //
+      // The relay /dns-query endpoint wraps 1.1.1.1 and adds CORS headers that
+      // satisfy the browser's preflight. A direct fetch from the page to
+      // cloudflare-dns.com would be rejected by CORS preflight in many contexts
+      // (file:// origins, private-network access), which is why the default
+      // v86 DoH path silently fails.
+      cfg.net_device = {
+        type: 'ne2k',
+        relay_url: relayUrl,
+        // Route v86's DoH through our relay. v86 builds the URL as
+        //   https://{doh_server}/dns-query
+        // so we just pass the relay's hostname here.
+        dns_method: 'doh',
+        doh_server: 'relay.traits.build',
+        // cors_proxy is only used by the "fetch" backend; safe to always set.
+        cors_proxy: 'https://relay.traits.build/cors?url=',
+      };
+    }
+    if (doRestore) {
+      const blob = await idbGet(snapKey);
+      cfg.initial_state = { buffer: blob };
+    }
+
+    emulator = new V86(cfg);
+    window.emulator = emulator;
+
+    // ── DNS interceptor ─────────────────────────────────────────────────────
+    // v86's WispNetworkAdapter has a built-in DoH path (handle_fake_dns_doh)
+    // but its synthesised UDP reply isn't delivered to the guest resolver in
+    // the current v86 build. We bypass it entirely: peek at outbound Ethernet
+    // frames on the bus, detect UDP/53 queries, fetch DoH through our relay,
+    // and inject the reply back onto the receive side with correct framing.
+    installDnsInterceptor(emulator);
+
+    emulator.add_listener('emulator-ready',   () => setStatus('ready'));
+    emulator.add_listener('emulator-started', () => setStatus(doRestore ? 'restored' : 'running', 'ok'));
+    emulator.add_listener('emulator-stopped', () => setStatus('stopped'));
+
+    // ── Restore-path instrumentation ───────────────────────────────────────
+    // Visible in browser console. Captures WispNetworkAdapter WS lifecycle so
+    // we can see whether the tunnel reattaches cleanly on restore.
+    if (doRestore) {
+      console.log('[restore] boot invoked restore=true, snapKey=', snapKey);
+      // Peek at the adapter's internal WebSocket (v86 stashes it on
+      // emulator.network_adapter.wisp_network.wisp_url / websocket).
+      setTimeout(() => {
+        try {
+          const na = emulator.network_adapter;
+          const wn = na && (na.wisp_network || na.wisp || null);
+          const ws = wn && (wn.websocket || wn.ws || null);
+          console.log('[restore] adapter snapshot', {
+            adapter: na ? na.constructor && na.constructor.name : null,
+            wisp:    wn ? Object.keys(wn) : null,
+            ws_state: ws ? ws.readyState : null,
+            ws_url:   ws ? ws.url : null,
+            relay:    cfg.net_device && cfg.net_device.relay_url,
+          });
+        } catch (e) { console.warn('[restore] adapter peek failed', e); }
+      }, 500);
+    }
+    // Auto-init network on first shell prompt after a fresh boot (no-op on restore).
+    // Alpine live ISO doesn't DHCP by default and leaves /etc/resolv.conf empty,
+    // so we run udhcpc + set 1.1.1.1 DNS once the root shell appears.
+    let netInited = doRestore || !(netEl && netEl.checked);
+    // On restore the shell is already up, so enable stty sync immediately.
+    if (doRestore) shellReady = true;
+    let promptTail = '';
+    const PROMPT_RE = /[#$]\s$/;
+    emulator.add_listener('serial0-output-byte', b => {
+      byteCount++; pushByte(b); markDirty();
+      if (!shellReady || !netInited) {
+        promptTail = (promptTail + String.fromCharCode(b)).slice(-24);
+        if (PROMPT_RE.test(promptTail) && /localhost|alpine|~/.test(promptTail)) {
+          if (!shellReady) {
+            shellReady = true;
+            // Prime stty with current cols now that we know we're at a shell.
+            if (lastCols && emulator) {
+              sentCols = lastCols;
+              const cmd = `stty cols ${lastCols} 2>/dev/null\n`;
+              setTimeout(() => {
+                for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
+              }, 300);
+            }
+          }
+          if (!netInited) {
+            netInited = true;
+            // Fresh Alpine live ISO ships with only /media/cdrom/apks as an
+            // apk repo and a stale libcrypto that breaks any `apk add nodejs`
+            // (EVP_MD_CTX_get_size_ex symbol mismatch). On first boot, once
+            // DHCP succeeds, wire latest-stable main+community, run
+            // `apk upgrade`, then notify the terminal. The user can then
+            // install packages normally (and save a snapshot to skip this).
+            // Opt out with ?setup=0.
+            const skipSetup = (new URLSearchParams(location.search).get('setup') === '0');
+            const setupCmd = skipSetup ? '' :
+              ' { ' +
+                'printf "%s\\n" ' +
+                  '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/main" ' +
+                  '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" ' +
+                  '> /etc/apk/repositories && ' +
+                'echo "[setup] apk update (latest-stable)…" && apk update 2>&1 | tail -2 && ' +
+                'echo "[setup] apk upgrade (rebasing libc/libcrypto)…" && ' +
+                'apk upgrade --available 2>&1 | tail -3 && ' +
+                'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."; ' +
+              '} ';
+            const cmd =
+              'ip link set eth0 up 2>/dev/null; ' +
+              'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
+              'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
+              'clear; ' + setupCmd + '\n';
+            setTimeout(() => {
+              for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
+            }, 600);
+          }
+        }
+      }
+    });
+
+     resetBtn.disabled = false;
+     saveBtn.disabled = false;
+     restoreBtn.disabled = !(await idbHas(snapKey));
+     clearBtn.disabled = restoreBtn.disabled;
+     exportBtn.disabled = false;
+
+    term.focus();
+  }
+
+   async function shutdown() {
+     if (!emulator) return;
+     try { emulator.stop(); } catch (_) {}
+     try { emulator.destroy(); } catch (_) {}
+     emulator = null; window.emulator = null;
+     shellReady = false; sentCols = 0;
+     exportBtn.disabled = true;
+   }
+
+  async function doReset() { await shutdown(); await boot({ restore: false }); }
+  async function doRestore() { await shutdown(); await boot({ restore: true }); }
+  async function doClear() {
+    await idbDel('snap:' + currentIso);
+    setStatus('snapshot cleared');
+    restoreBtn.disabled = true; clearBtn.disabled = true;
+  }
+  async function doSave() {
+    if (!emulator) return;
+    saveBtn.disabled = true;
+    setStatus('saving snapshot…');
+    try {
+      const buf = await emulator.save_state();
+      await idbPut('snap:' + currentIso, buf);
+      setStatus(`snapshot saved (${(buf.byteLength/1048576).toFixed(1)} MB)`, 'ok');
+      restoreBtn.disabled = false; clearBtn.disabled = false;
+    } catch (e) {
+      setStatus('save failed: ' + e.message, 'err');
+    } finally { saveBtn.disabled = false; }
+  }
+
+  bootBtn.onclick    = () => boot({ restore: false });
+  resetBtn.onclick   = doReset;
+  saveBtn.onclick    = doSave;
+  restoreBtn.onclick = doRestore;
+  clearBtn.onclick   = doClear;
+
+  isoEl.onchange = async () => {
+    const has = await idbHas('snap:' + isoEl.value);
+    setStatus(has ? `snapshot available for ${isoEl.value}` : 'no snapshot for this image');
+  };
+  isoEl.dispatchEvent(new Event('change'));
+
+  // ---- Keyboard input: xterm.js streams raw VT input directly ----
+  // term.onData fires with a string containing already-encoded VT sequences
+  // (arrow keys → ESC[A, Ctrl-C → \x03, etc.), so we just forward bytes.
+  term.onData(data => {
+    if (!emulator) return;
+    for (let i = 0; i < data.length; i++) emulator.serial0_send(data[i]);
+    markDirty();
+  });
+  termEl.addEventListener('click', () => term.focus());
+
+  setInterval(() => { statsEl.textContent = emulator ? `${byteCount} bytes` : ''; }, 500);
+
+  // ?autoboot=1 [&restore=1]
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('autoboot') === '1') boot({ restore: qs.get('restore') === '1' });
+})();
+</script>
+</body>
+</html>

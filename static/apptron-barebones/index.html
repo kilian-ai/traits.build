@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apptron Barebones Shell</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #101418; color: #d7e2f7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    body { position: relative; }
+    #status { position: fixed; top: 8px; right: 8px; z-index: 10; font-size: 11px; color: #8ea0c6; background: rgba(20,29,46,0.9); border: 1px solid #2d3d5f; border-radius: 6px; padding: 4px 8px; max-width: 50%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    #log { position: fixed; top: 40px; right: 8px; z-index: 10; font-size: 10px; color: #8ea0c6; background: rgba(20,29,46,0.9); border: 1px solid #2d3d5f; border-radius: 6px; padding: 4px 8px; max-width: 40%; max-height: 300px; overflow: auto; white-space: pre; }
+    .xterm { width: 100%; height: 100%; }
+    .xterm-screen, .xterm-viewport { width: 100% !important; height: 100% !important; }
+    .xterm-viewport { background-color: rgb(33,39,50) !important; }
+  </style>
+</head>
+<body>
+  <div id="status">Booting…</div>
+  <div id="log"></div>
+
+  <script type="module">
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+    const setStatus = (t) => { statusEl.textContent = t; console.log('[barebones]', t); };
+    const log = (t) => { logEl.textContent += t + '\n'; console.log('[barebones]', t); };
+
+    // Required by boot.go: window.apptron must exist before WASM starts.
+    window.apptron = {
+      origin: window.location.origin,
+      mode: 'console',
+      embedded: false,
+      user: { username: 'root', user_id: 'local' },
+      publishURL: async () => window.location.origin,
+    };
+
+    try {
+      setStatus('Importing wanix.min.js…');
+      const { WanixRuntime } = await import('/static/apptron/wanix.min.js');
+      log('WanixRuntime imported');
+
+      setStatus('Constructing runtime…');
+      const hostedOnTraits = location.hostname === 'traits.build' || location.hostname.endsWith('.traits.build');
+      const w = new WanixRuntime({
+        screen: true,
+        helpers: true,
+        debug9p: false,
+        wasm: null,
+        network: hostedOnTraits ? 'wss://relay.traits.build/linux/tunnel' : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/x/net`,
+      });
+      log('WanixRuntime constructed');
+
+      // Attach a hidden screen canvas (needed by v86)
+      const canvas = document.createElement('canvas');
+      canvas.id = 'screen';
+      canvas.style.display = 'none';
+      canvas.style.position = 'absolute';
+      document.body.appendChild(canvas);
+      w.screen = canvas.transferControlToOffscreen();
+      log('Canvas attached');
+
+      // Fetch bundle + wasm directly (like setupWanix does)
+      setStatus('Fetching bundle + wasm…');
+      const bundlePromise = fetch('/static/apptron/bundles/sys.tar.gz').then(async r => {
+        if (!r.ok) throw new Error('bundle fetch ' + r.status);
+        const ds = new DecompressionStream('gzip');
+        return new Response(r.body.pipeThrough(ds)).arrayBuffer();
+      });
+      const wasmPromise = fetch('/static/apptron/wanix.wasm').then(r => r.arrayBuffer());
+
+      w._bundle = bundlePromise;
+      w._getBundle = async (name) => {
+        const url = '/static/apptron/' + name.replace(/^\//, '');
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('bundle fetch ' + name + ' ' + r.status);
+        if (name.endsWith('.gz')) {
+          return new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+        }
+        return r.arrayBuffer();
+      };
+
+      const wasm = await wasmPromise;
+      log('wasm fetched: ' + wasm.byteLength + ' bytes');
+      w._loadWasm(wasm);
+      log('_loadWasm called');
+
+      setStatus('Waiting for runtime.ready()…');
+      await w.ready();
+      log('runtime ready');
+      window.apptron.instance = w;
+
+      // Inspect state
+      try {
+        const task_ls = await w.readDir('task');
+        log('task: ' + JSON.stringify(task_ls));
+        const t1type = await w.readText('task/1/type');
+        log('task/1/type: ' + JSON.stringify(t1type));
+        const t1cmd = await w.readText('task/1/cmd');
+        log('task/1/cmd: ' + JSON.stringify(t1cmd));
+      } catch (e) { log('inspect err: ' + e.message); }
+
+      setStatus('Allocating xterm…');
+      const xid = (await w.readText('web/dom/new/xterm')).trim();
+      log('xterm id: ' + xid);
+
+      setStatus('Binding #console/data…');
+      await w.writeFile('task/1/ctl', `bind #console/data web/dom/${xid}/data`);
+      log('bind done');
+
+      setStatus('Appending xterm to body…');
+      await w.writeFile('web/dom/body/ctl', `append-child ${xid}`);
+      log('append done');
+
+      // Kick prompt
+      try {
+        await w.writeFile(`web/dom/${xid}/data`, '\n');
+        log('newline kick sent');
+      } catch (e) { log('kick err: ' + e.message); }
+
+      setStatus('Ready');
+
+      // Post-check
+      setTimeout(async () => {
+        try {
+          const t1type = await w.readText('task/1/type');
+          const t1cmd = await w.readText('task/1/cmd');
+          log('AFTER 3s: task/1/type=' + JSON.stringify(t1type) + ' cmd=' + JSON.stringify(t1cmd));
+          const xterms = document.querySelectorAll('.xterm');
+          for (const x of xterms) log('xterm len: ' + x.innerText.length);
+        } catch (e) { log('post-check err: ' + e.message); }
+      }, 3000);
+
+    } catch (err) {
+      setStatus('ERROR: ' + err.message);
+      log('FATAL: ' + (err.stack || err.message));
+    }
+  </script>
+</body>
+</html>
