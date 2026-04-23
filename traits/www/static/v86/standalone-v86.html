@@ -93,18 +93,20 @@
   ro.observe(termEl);
   window.addEventListener('resize', () => { try { fit.fit(); } catch (_) {} });
 
-  // When fit changes size, push it to the guest (serial has no WINCH negotiation).
-  // Debounced (600 ms) so fit oscillations during rapid output don't spam stty.
-  let sttyTimer = null, lastCols = 0, lastRows = 0, sentCols = 0, sentRows = 0;
-  term.onResize(({ cols, rows }) => {
-    lastCols = cols; lastRows = rows;
+  // When fit changes size, push *cols only* to the guest (serial has no WINCH).
+  // We deliberately don't push rows: every stty line consumes a row of scrollback,
+  // which can itself change xterm's row count → feedback loop. Cols is what
+  // matters for line wrapping in shells/ls/pipes; full-screen TUIs (vi/less/top)
+  // can set rows manually or ignore it.
+  let sttyTimer = null, lastCols = 0, sentCols = 0;
+  term.onResize(({ cols }) => {
+    lastCols = cols;
     clearTimeout(sttyTimer);
     sttyTimer = setTimeout(() => {
       if (!emulator) return;
-      // Skip if size hasn't actually changed since last push.
-      if (lastCols === sentCols && lastRows === sentRows) return;
-      sentCols = lastCols; sentRows = lastRows;
-      const cmd = `stty cols ${lastCols} rows ${lastRows} 2>/dev/null\n`;
+      if (lastCols === sentCols) return;
+      sentCols = lastCols;
+      const cmd = `stty cols ${lastCols} 2>/dev/null\n`;
       for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
     }, 600);
   });
