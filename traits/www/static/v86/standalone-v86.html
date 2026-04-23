@@ -355,15 +355,22 @@
 
     // Alpine runs diskless from the ISO — rootfs is tmpfs sized at 50% of RAM
     // by default. 512 MB was tight (rootfs capped at 244 MB, ENOSPC during
-    // `npm install -g`, and node/npm got OOM-killed). 1024 MB gives a ~500 MB
-    // rootfs and enough headroom for node. Tiny busybox ISOs still run on 128.
+    // `npm install -g`, and node/npm got OOM-killed). 1024 MB gave a ~500 MB
+    // rootfs but large npm packages (openclaw has 7231 files across dozens of
+    // transitive deps) still fill it. 2048 MB gives a ~1 GB rootfs and plenty
+    // of process headroom. Tiny busybox ISOs still run on 128.
+    // Override with ?mem=<MB> for debugging.
     const isAlpine = /^alpine/i.test(iso);
+    const memOverride = parseInt(new URLSearchParams(location.search).get('mem') || '', 10);
+    const memMB = Number.isFinite(memOverride) && memOverride > 0
+      ? memOverride
+      : (isAlpine ? 2048 : 128);
     const cfg = {
       wasm_path: './v86.wasm',
       bios:     { url: './seabios.bin' },
       vga_bios: { url: './vgabios.bin' },
       cdrom:    { url: './' + iso },
-      memory_size: (isAlpine ? 1024 : 128) * 1024 * 1024,
+      memory_size: memMB * 1024 * 1024,
       vga_memory_size: 4 * 1024 * 1024,
       autostart: true,
       disable_mouse: true,
@@ -499,11 +506,30 @@
           }
           if (!netInited) {
             netInited = true;
+            // Fresh Alpine live ISO ships with only /media/cdrom/apks as an
+            // apk repo and a stale libcrypto that breaks any `apk add nodejs`
+            // (EVP_MD_CTX_get_size_ex symbol mismatch). On first boot, once
+            // DHCP succeeds, wire latest-stable main+community, run
+            // `apk upgrade`, then notify the terminal. The user can then
+            // install packages normally (and save a snapshot to skip this).
+            // Opt out with ?setup=0.
+            const skipSetup = (new URLSearchParams(location.search).get('setup') === '0');
+            const setupCmd = skipSetup ? '' :
+              ' { ' +
+                'printf "%s\\n" ' +
+                  '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/main" ' +
+                  '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" ' +
+                  '> /etc/apk/repositories && ' +
+                'echo "[setup] apk update (latest-stable)…" && apk update 2>&1 | tail -2 && ' +
+                'echo "[setup] apk upgrade (rebasing libc/libcrypto)…" && ' +
+                'apk upgrade --available 2>&1 | tail -3 && ' +
+                'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."; ' +
+              '} ';
             const cmd =
               'ip link set eth0 up 2>/dev/null; ' +
               'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
               'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
-              'clear\n';
+              'clear; ' + setupCmd + '\n';
             setTimeout(() => {
               for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
             }, 600);
