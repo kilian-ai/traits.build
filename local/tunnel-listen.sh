@@ -44,7 +44,8 @@ echo ""
 echo "  Ctrl-C to stop."
 echo "──────────────────────────────────────────────────────"
 
-# -E keeps listening after each client disconnects; -b binds to the
-# address given. The guest-side bridge respawns between connections,
-# so multiple serial SSH/SCP sessions work.
-exec websocat --binary -E -b "tcp-l:127.0.0.1:${LOCAL_PORT}" "$URL"
+# websocat opens a local TCP listener that forwards to the tunnel WS.
+# Each client connection spawns a fresh WebSocket. The guest-side bridge
+# respawns between connections (see tunnel-up.sh), so serial SSH/SCP
+# sessions work without restarting anything.
+exec websocat --binary "tcp-l:127.0.0.1:${LOCAL_PORT}" "$URL"
