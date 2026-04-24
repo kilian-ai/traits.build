@@ -1430,6 +1430,10 @@ sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
 
 **Consequence for debugging network stalls from v86:** `apk fetch` hangs, DHCP retries, and TCP timeouts inside the v86 Alpine guest must be investigated against **the Fly.io WISP server**, not the Cloudflare Worker. The CF relay's `/linux/tunnel`, `/x/net`, `/x/sys`, and `/wisp` endpoints serve `www.linux` and Apptron — not v86. Check Fly logs, WISP flow-control (`WISP_BUFFER` credits, `bytesSinceCredit` replenish), and `connect()` error codes on the Fly side first before suspecting the CF relay.
 
+### v86 snapshot-restore networking (alpine.iso)
+
+On snapshot restore the `WispNetworkAdapter` + its WebSocket are recreated fresh (they are not in the x86 snapshot). However, the NE2K driver lives in the x86 state and does **not** re-emit its `net0-mac` bus event — so the fresh adapter keeps a zero `vm_mac` and silently drops/misroutes all frames (`ping 192.168.86.1` fails 100%). Fix: `restoreNetCmd` must bounce `eth0` (`ip link set eth0 down; sleep 1; ip link set eth0 up`) which re-initializes the NE2K, re-fires `net0-mac`, and resets RX/TX ring state. Empirically the first `up` after restore sometimes silently fails (racy NE2K+adapter handshake) so wrap in a 5-try retry loop polling `/sys/class/net/eth0/operstate`. After bounce, apply **static** IPv4 config (never backgrounded `udhcpc &`): `192.168.86.100/24` + `default via 192.168.86.1` + static ARP for `52:54:00:01:02:03` + resolv.conf fallback `1.1.1.1`. Verified at commit `065f9d02`: post-restore DNS resolves to CF (172.67.x.x / 104.21.x.x / 2606:4700::) and HTTPS to `relay.traits.build` returns real HTTP responses.
+
 ### ~/public browser viewer
 
 Guest-side `tunnel-up.sh` now also auto-starts `busybox httpd -p 127.0.0.1:8080 -h $HOME/public` when port 8080 is in the requested list (included by default). This serves the guest's `~/public` directory.
