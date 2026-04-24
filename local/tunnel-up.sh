@@ -248,14 +248,14 @@ for PORT in $PORTS; do
         echo "    https://www.traits.build/#/viewer?code=${CODE}"
         echo ""
         echo "  ~/public direct HTTP proxy:"
-        echo "    curl https://tunnel.traits.build/port/http/${CODE}/8080/"
+        echo "    curl ${TUNNEL_BASE}/port/http/${CODE}/8080/"
         echo ""
     fi
-    echo "  WebSocket raw (port ${PORT}): 'wss://tunnel.traits.build/port/client?code=${CODE}&port=${PORT}'"
+    echo "  WebSocket raw (port ${PORT}): '${TUNNEL_WS}/port/client?code=${CODE}&port=${PORT}'"
 done
 echo ""
-echo "  Status:  curl -s 'https://tunnel.traits.build/port/status?code=${CODE}'"
-echo "  Debug:   curl -s 'https://tunnel.traits.build/port/debug?code=${CODE}'"
+echo "  Status:  curl -s '${TUNNEL_BASE}/port/status?code=${CODE}'"
+echo "  Debug:   curl -s '${TUNNEL_BASE}/port/debug?code=${CODE}'"
 echo "──────────────────────────────────────────────────────"
 echo ""
 echo "[tunnel] Bridges running. Press Ctrl-C to teardown."

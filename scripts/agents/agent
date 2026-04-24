@@ -91,13 +91,20 @@ call_llm() {
 }
 
 # --- tunnel helper ----------------------------------------------------------
-# do_tunnel <port>: registers port with tunnel.traits.build, starts websocat bridge,
+# do_tunnel <port>: registers port with the tunnel server, starts websocat bridge,
 # writes result to $DIR/out.txt. Returns the connect URL on stdout.
+# Override via TUNNEL_BASE / TUNNEL_WS env vars for local dev.
+TUNNEL_BASE="${TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}"
+case "$TUNNEL_BASE" in
+    https://*) TUNNEL_WS="${TUNNEL_WS:-wss://${TUNNEL_BASE#https://}}" ;;
+    http://*)  TUNNEL_WS="${TUNNEL_WS:-ws://${TUNNEL_BASE#http://}}" ;;
+    *)         TUNNEL_WS="${TUNNEL_WS:-$TUNNEL_BASE}" ;;
+esac
 do_tunnel() {
     _port="$1"
     command -v websocat >/dev/null 2>&1 || { apk add --no-cache websocat >/dev/null 2>&1; }
     # Register port and get pairing code
-    _resp=$(curl -sS -X POST https://tunnel.traits.build/port/register \
+    _resp=$(curl -sS -X POST "${TUNNEL_BASE}/port/register" \
         -H 'Content-Type: application/json' \
         -d "{\"ports\":[${_port}]}")
     _code=$(printf '%s' "$_resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["code"])' 2>/dev/null)
@@ -107,13 +114,13 @@ do_tunnel() {
     fi
     # Start websocat bridge in background
     websocat --binary --ping-interval 30 \
-        "wss://tunnel.traits.build/port/guest?code=${_code}&port=${_port}" \
+        "${TUNNEL_WS}/port/guest?code=${_code}&port=${_port}" \
         "tcp:127.0.0.1:${_port}" >> "$DIR/tunnel-${_port}.log" 2>&1 &
     _ws_pid=$!
     printf '%s' "$_ws_pid" > "$DIR/tunnel-${_port}.pid"
     sleep 1  # let websocat connect
-    printf 'Tunnel up: port %s → code %s\nWebSocket URL: wss://tunnel.traits.build/port/client?code=%s&port=%s\nSSH ProxyCommand: ssh -o ProxyCommand="websocat wss://tunnel.traits.build/port/client?code=%s&port=%s" root@dummy\nwebsocat bridge PID: %s\n' \
-        "$_port" "$_code" "$_code" "$_port" "$_code" "$_port" "$_ws_pid" > "$DIR/out.txt"
+    printf 'Tunnel up: port %s → code %s\nWebSocket URL: %s/port/client?code=%s&port=%s\nSSH ProxyCommand: ssh -o ProxyCommand="websocat %s/port/client?code=%s&port=%s" root@dummy\nwebsocat bridge PID: %s\n' \
+        "$_port" "$_code" "$TUNNEL_WS" "$_code" "$_port" "$TUNNEL_WS" "$_code" "$_port" "$_ws_pid" > "$DIR/out.txt"
 }
 
 # --- seed system + user (redirect, no pipes) --------------------------------
