@@ -102,8 +102,15 @@ for PORT in $PORTS; do
         continue
     fi
     WS_URL="wss://$(printf '%s' "$TUNNEL_BASE" | sed 's|https://||')/port/guest?code=${CODE}&port=${PORT}"
-    (websocat --binary "$WS_URL" "tcp:127.0.0.1:${PORT}" </dev/null) \
-        >> "/tmp/tunnel-${PORT}.log" 2>&1 &
+    # Respawn loop: each client disconnect tears down the bridge; restart
+    # so the next SSH connection gets a fresh TCP to sshd.
+    (
+        while :; do
+            websocat --binary "$WS_URL" "tcp:127.0.0.1:${PORT}" </dev/null
+            echo "[tunnel] bridge for port ${PORT} exited; respawning in 1s"
+            sleep 1
+        done
+    ) >> "/tmp/tunnel-${PORT}.log" 2>&1 &
     BPID=$!
     echo "[tunnel] port $PORT → bridge PID $BPID  log: /tmp/tunnel-${PORT}.log"
 done

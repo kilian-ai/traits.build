@@ -109,6 +109,10 @@ export class PortSession {
     this.clientWs = new Map();  // port → WebSocket
     this.guestAt = new Map();   // port → timestamp
     this.clientAt = new Map();  // port → timestamp
+    // Buffer guest→client data that arrives before client connects
+    // (e.g. SSH banner sent by sshd on TCP accept, dropped without buffering)
+    this.guestBuffer = new Map(); // port → Array<data>
+    this.BUFFER_MAX = 256;        // cap per port
     this.lastActivity = Date.now();
     this.IDLE_TTL_MS = 10 * 60 * 1000;
     // Restore registered ports from storage (survives hibernation)
@@ -174,6 +178,12 @@ export class PortSession {
     } else {
       this.clientWs.set(port, server);
       this.clientAt.set(port, Date.now());
+      // Flush any buffered guest→client data (e.g. SSH banner)
+      const buf = this.guestBuffer.get(port);
+      if (buf && buf.length) {
+        for (const d of buf) { try { server.send(d); } catch (_) {} }
+        this.guestBuffer.delete(port);
+      }
     }
 
     const getOther = () => role === 'guest' ? this.clientWs.get(port) : this.guestWs.get(port);
@@ -181,13 +191,26 @@ export class PortSession {
     server.addEventListener('message', (ev) => {
       this.lastActivity = Date.now();
       const peer = getOther();
-      if (!peer) return; // buffer: drop until other side joins
+      if (!peer) {
+        // Buffer guest→client data until client arrives
+        if (role === 'guest') {
+          let buf = this.guestBuffer.get(port);
+          if (!buf) { buf = []; this.guestBuffer.set(port, buf); }
+          buf.push(ev.data);
+          if (buf.length > this.BUFFER_MAX) buf.shift();
+        }
+        return;
+      }
       try { peer.send(ev.data); } catch (_) {}
     });
 
     const teardown = (code, reason) => {
-      if (role === 'guest') this.guestWs.delete(port);
-      else this.clientWs.delete(port);
+      if (role === 'guest') {
+        this.guestWs.delete(port);
+        this.guestBuffer.delete(port);
+      } else {
+        this.clientWs.delete(port);
+      }
       const peer = getOther();
       if (peer) {
         try { peer.close(code || 1000, reason || 'peer disconnected'); } catch (_) {}
