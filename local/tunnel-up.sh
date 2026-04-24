@@ -49,9 +49,34 @@ echo "[tunnel] pairing code: $CODE"
 echo "[tunnel] relay: $TUNNEL_BASE"
 echo ""
 
+# Auto-start sshd if port 22 requested and no listener
+auto_start_sshd() {
+    command -v sshd >/dev/null 2>&1 || apk add --no-cache openssh-server >/dev/null 2>&1 || return 1
+    [ -f /etc/ssh/ssh_host_rsa_key ] || ssh-keygen -A >/dev/null 2>&1
+    grep -q '^PermitRootLogin yes' /etc/ssh/sshd_config 2>/dev/null \
+        || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+    # Ensure root has a password or authorized_keys — warn if not
+    if [ ! -s /root/.ssh/authorized_keys ] && ! grep -q '^root:[^*!]' /etc/shadow 2>/dev/null; then
+        echo "[tunnel] WARNING: root has no password/authorized_keys — SSH will reject"
+    fi
+    /usr/sbin/sshd 2>/dev/null
+}
+
 # Start one websocat bridge per port
 for PORT in $PORTS; do
-    # Only bridge ports that have a local listener
+    # Quick listener check, with auto-start for port 22
+    if ! nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
+        if [ "$PORT" = "22" ]; then
+            echo "[tunnel] port 22 — no listener, starting sshd..."
+            auto_start_sshd
+            # Short retry (up to ~2s)
+            i=0
+            while [ $i -lt 10 ]; do
+                nc -z 127.0.0.1 22 2>/dev/null && break
+                i=$((i+1)); sleep 0.2 2>/dev/null || sleep 1
+            done
+        fi
+    fi
     if ! nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
         echo "[tunnel] port $PORT — no local listener, skipping bridge"
         continue
