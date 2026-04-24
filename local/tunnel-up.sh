@@ -24,6 +24,11 @@ if ! command -v websocat >/dev/null 2>&1; then
         || { echo "[tunnel] apk failed — install websocat manually"; exit 1; }
 fi
 
+# Ensure loopback is up (websocat → tcp:127.0.0.1:PORT needs it)
+if ! ip addr show lo 2>/dev/null | grep -q 'inet 127\.'; then
+    ifconfig lo 127.0.0.1 up 2>/dev/null || ip link set lo up 2>/dev/null
+fi
+
 # Build ports JSON array  e.g. "22 8384" → [22,8384]
 PORTS_JSON=$(printf '['; first=1
 for p in $PORTS; do
