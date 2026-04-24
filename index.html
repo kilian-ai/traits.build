@@ -7797,6 +7797,8 @@ const ROUTES = {
   '/terminal':   'www.apptron',
   '/testing':    'www.testing',
   '/wasm':       'www.wasm',
+  '/viewer':     'www.viewer',
+  '/shell':      'www.shell',
 };
 
 const LOCAL_ROUTE_KEY = 'traits.shell.route';
@@ -7813,6 +7815,18 @@ const STATIC_RUNTIME_ROUTES = {
   '/apptron-ide': () => {
     const base = isLocal ? './apptron-ide/index.html' : '/static/apptron-ide/index.html';
     return `${base}?spa=1&cb=${STATIC_RUNTIME_CB}`;
+  },
+  '/viewer': () => {
+    const base = isLocal ? './viewer/index.html' : '/static/viewer/index.html';
+    const hash = (typeof location !== 'undefined' && location.hash) || '';
+    // Propagate ?code=... from outer hash into the iframe src so deep-links work.
+    const m = hash.match(/[?&]code=([A-Z0-9]+)/i);
+    const codeQs = m ? `&code=${m[1].toUpperCase()}` : '';
+    return `${base}?spa=1&cb=${STATIC_RUNTIME_CB}${codeQs}`;
+  },
+  '/shell': () => {
+    const base = isLocal ? './v86/standalone-v86.html' : '/static/v86/standalone-v86.html';
+    return `${base}?autoboot=1&iso=alpine.iso&cb=${STATIC_RUNTIME_CB}`;
   },
 };
 

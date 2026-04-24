@@ -1,21 +1,23 @@
 #!/bin/sh
 # tunnel-up.sh — Expose local TCP ports through tunnel.traits.build
 # Usage: tunnel-up.sh [port1] [port2] ...
-# Defaults: sshd(22), syncthing-sync(22000), syncthing-gui(8384)
+# Defaults: sshd(22), public-http(8080 → ~/public), syncthing-sync(22000),
+#           syncthing-gui(8384)
 #
-# Requires: websocat, curl, python3
-# Install: apk add --no-cache websocat curl python3
+# Requires: websocat, curl
+# Install: apk add --no-cache websocat curl
 #
-# After running, SSH access (from any machine with websocat):
-#   ssh -o ProxyCommand="websocat wss://tunnel.traits.build/port/client?code=CODE&port=22" root@dummy
+# After running, SSH access:
+#   sh <(curl -sS https://www.traits.build/local/tunnel-ssh.sh) CODE
 #
-# Or with raw TCP gateway (Phase 3, ports.traits.build):
-#   ssh -p 2222 ports.traits.build  (with PORT_CODE=CODE env on gateway)
+# ~/public browsing (any HTTPS client):
+#   curl  https://tunnel.traits.build/port/http/CODE/8080/
+#   open  https://www.traits.build/#/viewer?code=CODE
 
 set -u
 
 TUNNEL_BASE="https://tunnel.traits.build"
-PORTS="${*:-22 22000 8384}"
+PORTS="${*:-22 8080 22000 8384}"
 
 # Install websocat if missing
 if ! command -v websocat >/dev/null 2>&1; then
@@ -73,6 +75,35 @@ auto_start_sshd() {
     /usr/sbin/sshd 2>&1 | head -5
 }
 
+# Auto-start busybox httpd serving ~/public on port 8080 if requested + no listener.
+auto_start_httpd() {
+    local dir="${HOME:-/root}/public"
+    mkdir -p "$dir"
+    if ! command -v httpd >/dev/null 2>&1; then
+        # BusyBox httpd is usually built-in; if not, install busybox-extras.
+        apk add --no-cache busybox-extras >/dev/null 2>&1 || true
+    fi
+    if ! command -v httpd >/dev/null 2>&1; then
+        echo "[tunnel]   httpd not available — skipping public viewer"
+        return 1
+    fi
+    # Seed a minimal viewer + index page if ~/public is empty.
+    if [ ! -e "$dir/index.html" ] && [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+        cat > "$dir/index.html" <<'HTML'
+<!DOCTYPE html><meta charset="utf-8"><title>~/public</title>
+<style>body{font:14px ui-monospace,monospace;padding:2em;background:#0b0d10;color:#d5d8dc}
+a{color:#4ade80;text-decoration:none}a:hover{text-decoration:underline}</style>
+<h1>~/public</h1>
+<p>Drop files here to share them via the tunnel.</p>
+<p>Served from <code>$HOME/public</code> in the guest.</p>
+HTML
+    fi
+    echo "[tunnel]   launching httpd -h $dir -p 8080 ..."
+    # -f = foreground mode when backgrounded manually with &
+    # -h = home directory (serves static files + auto-index)
+    httpd -p 127.0.0.1:8080 -h "$dir" 2>&1 | head -3
+}
+
 # Check if TCP port has a LISTEN socket via /proc/net/tcp (avoids nc hangs)
 port_listening() {
     local port_hex
@@ -93,6 +124,14 @@ for PORT in $PORTS; do
             i=0
             while [ $i -lt 15 ]; do
                 port_listening 22 && break
+                i=$((i+1)); sleep 0.2 2>/dev/null || sleep 1
+            done
+        elif [ "$PORT" = "8080" ]; then
+            echo "[tunnel] port 8080 — no listener, starting httpd on ~/public..."
+            auto_start_httpd
+            i=0
+            while [ $i -lt 15 ]; do
+                port_listening 8080 && break
                 i=$((i+1)); sleep 0.2 2>/dev/null || sleep 1
             done
         fi
@@ -124,12 +163,20 @@ for PORT in $PORTS; do
         echo "  SSH (one-liner, shell-safe):"
         echo "    sh <(curl -sS https://www.traits.build/local/tunnel-ssh.sh) ${CODE}"
         echo ""
-        echo "  SSH (manual, any shell):"
-        echo "    websocat --binary 'wss://tunnel.traits.build/port/client?code=${CODE}&port=22' &"
-        echo "    # then ssh to the pipe (requires expert setup)"
+        echo "  Plain ssh/scp/sftp via local TCP listener:"
+        echo "    sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ${CODE}"
+        echo "    ssh  -p 2222 root@localhost"
         echo ""
     fi
-    echo "  WebSocket raw: 'wss://tunnel.traits.build/port/client?code=${CODE}&port=${PORT}'"
+    if [ "$PORT" = "8080" ]; then
+        echo "  ~/public browser viewer:"
+        echo "    https://www.traits.build/#/viewer?code=${CODE}"
+        echo ""
+        echo "  ~/public direct HTTP proxy:"
+        echo "    curl https://tunnel.traits.build/port/http/${CODE}/8080/"
+        echo ""
+    fi
+    echo "  WebSocket raw (port ${PORT}): 'wss://tunnel.traits.build/port/client?code=${CODE}&port=${PORT}'"
 done
 echo ""
 echo "  Status:  curl -s 'https://tunnel.traits.build/port/status?code=${CODE}'"

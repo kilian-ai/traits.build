@@ -96,6 +96,15 @@ function parsePort(s) {
   return (n > 0 && n < 65536) ? n : null;
 }
 
+function _concat(arrays) {
+  let total = 0;
+  for (const a of arrays) total += a.byteLength;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const a of arrays) { out.set(a, off); off += a.byteLength; }
+  return out;
+}
+
 // ── PortSession Durable Object ────────────────────────────────────────────────
 // One DO instance per pairing code.
 // Holds: registeredPorts, guestWs[port], clientWs[port]
@@ -127,6 +136,7 @@ export class PortSession {
   async fetch(request) {
     this.lastActivity = Date.now();
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/http')) return this._httpProxy(request, url);
     switch (url.pathname) {
       case '/register':  return this._register(request);
       case '/guest':     return this._accept(request, 'guest', url);
@@ -246,6 +256,124 @@ export class PortSession {
     return json({ ok: true });
   }
 
+  // HTTP/1.1 proxy: sends an HTTP request over the guest WS (which is bridged
+  // to tcp:127.0.0.1:PORT inside the guest), parses the response bytes, returns
+  // a Response. Each call consumes/closes the guest WS (single-shot), so the
+  // guest-side respawn loop in tunnel-up.sh must be active for multiple calls.
+  //
+  // Requires: X-Tunnel-Port header (no URL parsing needed — main worker sets it).
+  // Uses: Connection: close so TCP terminates cleanly.
+  async _httpProxy(request, url) {
+    const port = parsePort(request.headers.get('X-Tunnel-Port'));
+    if (!port) return new Response('missing port', { status: 400, headers: cors() });
+    const guestWs = this.guestWs.get(port);
+    if (!guestWs) {
+      return new Response(`guest not connected on port ${port}`, { status: 503, headers: cors() });
+    }
+    if (this.clientWs.has(port)) {
+      return new Response(`port ${port} busy with TCP client`, { status: 409, headers: cors() });
+    }
+
+    // Derive upstream path: main worker routes to "/http" + guest path.
+    const stripped = url.pathname.replace(/^\/http/, '') || '/';
+    const guestPath = stripped + (url.search || '');
+    const method = request.method;
+    const bodyBytes = (method === 'GET' || method === 'HEAD')
+      ? null
+      : new Uint8Array(await request.arrayBuffer());
+
+    // Build HTTP/1.1 request bytes.
+    const hdrs = [];
+    hdrs.push(`${method} ${guestPath} HTTP/1.1`);
+    hdrs.push(`Host: guest.tunnel.local`);
+    hdrs.push(`Connection: close`);
+    hdrs.push(`User-Agent: traits-tunnel-proxy/1`);
+    for (const h of ['accept', 'accept-encoding', 'range', 'content-type', 'cache-control']) {
+      const v = request.headers.get(h);
+      if (v) hdrs.push(`${h}: ${v}`);
+    }
+    if (bodyBytes) hdrs.push(`Content-Length: ${bodyBytes.byteLength}`);
+    const reqHead = new TextEncoder().encode(hdrs.join('\r\n') + '\r\n\r\n');
+    const reqBytes = bodyBytes ? _concat([reqHead, bodyBytes]) : reqHead;
+
+    // Collect response bytes with idle + close detection.
+    const chunks = [];
+    let settle;
+    const done = new Promise(r => { settle = r; });
+    let idleTimer;
+    const IDLE_MS = 1500;
+    const resetIdle = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => settle('idle'), IDLE_MS); };
+
+    const onMsg = (ev) => {
+      this.lastActivity = Date.now();
+      const d = ev.data;
+      let u8;
+      if (d instanceof ArrayBuffer)       u8 = new Uint8Array(d);
+      else if (typeof d === 'string')     u8 = new TextEncoder().encode(d);
+      else if (d && d.byteLength != null) u8 = new Uint8Array(d.buffer || d);
+      else return;
+      chunks.push(u8);
+      resetIdle();
+    };
+    const onClose = () => settle('close');
+    const onError = () => settle('error');
+    guestWs.addEventListener('message', onMsg);
+    guestWs.addEventListener('close', onClose);
+    guestWs.addEventListener('error', onError);
+
+    try {
+      guestWs.send(reqBytes);
+    } catch (err) {
+      guestWs.removeEventListener('message', onMsg);
+      guestWs.removeEventListener('close', onClose);
+      guestWs.removeEventListener('error', onError);
+      return new Response('failed to send to guest', { status: 502, headers: cors() });
+    }
+    resetIdle();
+
+    // Overall timeout for the whole proxy call.
+    const timeout = new Promise(r => setTimeout(() => r('timeout'), 12000));
+    await Promise.race([done, timeout]);
+    clearTimeout(idleTimer);
+    guestWs.removeEventListener('message', onMsg);
+    guestWs.removeEventListener('close', onClose);
+    guestWs.removeEventListener('error', onError);
+
+    // Parse HTTP/1.1 response bytes.
+    const total = chunks.reduce((s, c) => s + c.byteLength, 0);
+    if (!total) return new Response('no response from guest', { status: 504, headers: cors() });
+    const buf = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) { buf.set(c, off); off += c.byteLength; }
+
+    // Find \r\n\r\n header terminator.
+    let he = -1;
+    for (let i = 0; i + 3 < buf.length; i++) {
+      if (buf[i] === 13 && buf[i + 1] === 10 && buf[i + 2] === 13 && buf[i + 3] === 10) { he = i; break; }
+    }
+    if (he < 0) return new Response('bad http response from guest', { status: 502, headers: cors() });
+
+    const headStr = new TextDecoder().decode(buf.slice(0, he));
+    const body = buf.slice(he + 4);
+    const lines = headStr.split('\r\n');
+    const statusMatch = lines[0].match(/^HTTP\/\d\.\d\s+(\d+)\s*(.*)$/);
+    const status = statusMatch ? parseInt(statusMatch[1], 10) : 502;
+
+    const outHeaders = new Headers();
+    for (let i = 1; i < lines.length; i++) {
+      const m = lines[i].match(/^([^:]+):\s*(.*)$/);
+      if (!m) continue;
+      const k = m[1].toLowerCase();
+      // Skip hop-by-hop + length fields (Response recomputes them).
+      if (['connection', 'transfer-encoding', 'keep-alive', 'content-length', 'content-encoding'].includes(k)) continue;
+      try { outHeaders.append(m[1], m[2]); } catch (_) {}
+    }
+    outHeaders.set('access-control-allow-origin', '*');
+    outHeaders.set('access-control-expose-headers', '*');
+    // HEAD has no body.
+    return new Response(method === 'HEAD' ? null : body, { status, headers: outHeaders });
+  }
+
   _debug() {
     const now = Date.now();
     const ports = {};
@@ -329,7 +457,35 @@ export default {
       );
     }
 
-    // GET /port/status?code=XXXX
+    // GET/HEAD/POST /port/http/CODE/PORT/path  → HTTP-over-WS proxy to guest
+    if (url.pathname.startsWith('/port/http/')) {
+      const rest = url.pathname.slice('/port/http/'.length);
+      // Format: CODE/PORT[/path...]
+      const slash1 = rest.indexOf('/');
+      if (slash1 < 0) return json({ error: 'expected /port/http/CODE/PORT/path' }, 400);
+      const code = normalizeCode(rest.slice(0, slash1));
+      if (!code) return json({ error: 'invalid code' }, 400);
+      const afterCode = rest.slice(slash1 + 1);
+      const slash2 = afterCode.indexOf('/');
+      const portStr = slash2 < 0 ? afterCode : afterCode.slice(0, slash2);
+      const port = parsePort(portStr);
+      if (!port) return json({ error: 'invalid port' }, 400);
+      const guestPath = slash2 < 0 ? '/' : '/' + afterCode.slice(slash2 + 1);
+
+      // Forward to DO with pathname "/http" + guest path as search/suffix.
+      const headers = new Headers(request.headers);
+      headers.set('X-Tunnel-Port', String(port));
+      const innerUrl = 'http://do/http' + guestPath + (url.search || '');
+      return env.PORT_SESSION.get(env.PORT_SESSION.idFromName(code)).fetch(
+        new Request(innerUrl, {
+          method: request.method,
+          headers,
+          body: (request.method === 'GET' || request.method === 'HEAD') ? null : request.body,
+        }),
+      );
+    }
+
+
     if (url.pathname === '/port/status' && request.method === 'GET') {
       let code = normalizeCode(url.searchParams.get('code'));
       if (!code && url.searchParams.get('token') && env.TUNNEL_SECRET) {
