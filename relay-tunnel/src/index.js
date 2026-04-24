@@ -124,13 +124,34 @@ export class PortSession {
     this.BUFFER_MAX = 256;        // cap per port
     this.lastActivity = Date.now();
     this.IDLE_TTL_MS = 10 * 60 * 1000;
-    // Restore registered ports from storage (survives hibernation)
+    // Per-port HTTP proxy call state: port → { chunks:[], resolve, resetIdle }
+    // Used to route webSocketMessage bytes into an active _httpProxy call.
+    this.proxyCalls = new Map();
+    // Restore registered ports + rehydrate hibernated WebSockets.
     this.state.blockConcurrencyWhile(async () => {
       const ports = await this.state.storage.get('registeredPorts');
       if (Array.isArray(ports)) this.registeredPorts = new Set(ports);
       const created = await this.state.storage.get('created');
       if (typeof created === 'number') this.created = created;
+      // Rehydrate WS refs from Hibernation API — survives DO eviction.
+      for (const ws of this.state.getWebSockets('guest')) {
+        const { port } = this._parseTags(ws);
+        if (port != null) { this.guestWs.set(port, ws); this.guestAt.set(port, Date.now()); }
+      }
+      for (const ws of this.state.getWebSockets('client')) {
+        const { port } = this._parseTags(ws);
+        if (port != null) { this.clientWs.set(port, ws); this.clientAt.set(port, Date.now()); }
+      }
     });
+  }
+
+  _parseTags(ws) {
+    let role = null, port = null;
+    for (const t of this.state.getTags(ws)) {
+      if (t === 'guest' || t === 'client') role = t;
+      else if (t.startsWith('port:')) port = parseInt(t.slice(5), 10);
+    }
+    return { role, port };
   }
 
   async fetch(request) {
@@ -176,11 +197,15 @@ export class PortSession {
     const existing = role === 'guest' ? this.guestWs.get(port) : this.clientWs.get(port);
     if (existing) {
       try { existing.close(1000, 'replaced'); } catch (_) {}
+      if (role === 'guest') { this.guestWs.delete(port); this.guestAt.delete(port); }
+      else                  { this.clientWs.delete(port); this.clientAt.delete(port); }
     }
 
     const pair = new WebSocketPair();
     const server = pair[1];
-    server.accept();
+    // Hibernation API: Cloudflare manages WS lifecycle across DO eviction.
+    // Tag with role + port so we can rehydrate refs after wake.
+    this.state.acceptWebSocket(server, [role, `port:${port}`]);
 
     if (role === 'guest') {
       this.guestWs.set(port, server);
@@ -196,40 +221,62 @@ export class PortSession {
       }
     }
 
-    const getOther = () => role === 'guest' ? this.clientWs.get(port) : this.guestWs.get(port);
-
-    server.addEventListener('message', (ev) => {
-      this.lastActivity = Date.now();
-      const peer = getOther();
-      if (!peer) {
-        // Buffer guest→client data until client arrives
-        if (role === 'guest') {
-          let buf = this.guestBuffer.get(port);
-          if (!buf) { buf = []; this.guestBuffer.set(port, buf); }
-          buf.push(ev.data);
-          if (buf.length > this.BUFFER_MAX) buf.shift();
-        }
-        return;
-      }
-      try { peer.send(ev.data); } catch (_) {}
-    });
-
-    const teardown = (code, reason) => {
-      if (role === 'guest') {
-        this.guestWs.delete(port);
-        this.guestBuffer.delete(port);
-      } else {
-        this.clientWs.delete(port);
-      }
-      const peer = getOther();
-      if (peer) {
-        try { peer.close(code || 1000, reason || 'peer disconnected'); } catch (_) {}
-      }
-    };
-    server.addEventListener('close', (ev) => teardown(ev.code, ev.reason));
-    server.addEventListener('error', () => teardown(1011, 'peer error'));
-
     return new Response(null, { status: 101, webSocket: pair[0] });
+  }
+
+  // Hibernation API handlers — Cloudflare invokes these for any acceptWebSocket'd
+  // WS, surviving DO eviction. All bytes flow through here.
+  async webSocketMessage(ws, message) {
+    this.lastActivity = Date.now();
+    const { role, port } = this._parseTags(ws);
+    if (port == null) return;
+
+    // If an _httpProxy call is waiting on this port, deliver bytes to it.
+    const call = this.proxyCalls.get(port);
+    if (call && role === 'guest') {
+      let u8;
+      if (message instanceof ArrayBuffer)       u8 = new Uint8Array(message);
+      else if (typeof message === 'string')     u8 = new TextEncoder().encode(message);
+      else if (message && message.byteLength != null) u8 = new Uint8Array(message.buffer || message);
+      if (u8) { call.chunks.push(u8); call.resetIdle(); }
+      return;
+    }
+
+    // Normal relay: forward to paired peer
+    const peer = role === 'guest' ? this.clientWs.get(port) : this.guestWs.get(port);
+    if (!peer) {
+      if (role === 'guest') {
+        let buf = this.guestBuffer.get(port);
+        if (!buf) { buf = []; this.guestBuffer.set(port, buf); }
+        buf.push(message);
+        if (buf.length > this.BUFFER_MAX) buf.shift();
+      }
+      return;
+    }
+    try { peer.send(message); } catch (_) {}
+  }
+
+  async webSocketClose(ws, code, reason, _wasClean) {
+    const { role, port } = this._parseTags(ws);
+    if (port == null) return;
+    if (role === 'guest') {
+      this.guestWs.delete(port);
+      this.guestAt.delete(port);
+      this.guestBuffer.delete(port);
+    } else if (role === 'client') {
+      this.clientWs.delete(port);
+      this.clientAt.delete(port);
+    }
+    const peer = role === 'guest' ? this.clientWs.get(port) : this.guestWs.get(port);
+    if (peer) {
+      try { peer.close(code || 1000, reason || 'peer disconnected'); } catch (_) {}
+    }
+    const call = this.proxyCalls.get(port);
+    if (call && role === 'guest') call.settle('close');
+  }
+
+  async webSocketError(ws, _err) {
+    return this.webSocketClose(ws, 1011, 'peer error', false);
   }
 
   _status() {
@@ -304,29 +351,14 @@ export class PortSession {
     const IDLE_MS = 1500;
     const resetIdle = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => settle('idle'), IDLE_MS); };
 
-    const onMsg = (ev) => {
-      this.lastActivity = Date.now();
-      const d = ev.data;
-      let u8;
-      if (d instanceof ArrayBuffer)       u8 = new Uint8Array(d);
-      else if (typeof d === 'string')     u8 = new TextEncoder().encode(d);
-      else if (d && d.byteLength != null) u8 = new Uint8Array(d.buffer || d);
-      else return;
-      chunks.push(u8);
-      resetIdle();
-    };
-    const onClose = () => settle('close');
-    const onError = () => settle('error');
-    guestWs.addEventListener('message', onMsg);
-    guestWs.addEventListener('close', onClose);
-    guestWs.addEventListener('error', onError);
+    // Register the call so webSocketMessage routes bytes here.
+    // (Only one _httpProxy per port at a time — client lock above prevents overlap.)
+    this.proxyCalls.set(port, { chunks, resetIdle, settle });
 
     try {
       guestWs.send(reqBytes);
     } catch (err) {
-      guestWs.removeEventListener('message', onMsg);
-      guestWs.removeEventListener('close', onClose);
-      guestWs.removeEventListener('error', onError);
+      this.proxyCalls.delete(port);
       return new Response('failed to send to guest', { status: 502, headers: cors() });
     }
     resetIdle();
@@ -335,9 +367,7 @@ export class PortSession {
     const timeout = new Promise(r => setTimeout(() => r('timeout'), 12000));
     await Promise.race([done, timeout]);
     clearTimeout(idleTimer);
-    guestWs.removeEventListener('message', onMsg);
-    guestWs.removeEventListener('close', onClose);
-    guestWs.removeEventListener('error', onError);
+    this.proxyCalls.delete(port);
 
     // Parse HTTP/1.1 response bytes.
     const total = chunks.reduce((s, c) => s + c.byteLength, 0);

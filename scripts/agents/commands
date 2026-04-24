@@ -44,3 +44,17 @@ sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) 22
 wget -qO- https://www.traits.build/local/tunnel-up.sh | sh
 #host
  sh <(curl -sS https://www.traits.build/local/tunnel-ssh.sh) ARXN
+
+ # Terminal 1: open local listener on :2222 → tunnel
+sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN
+
+# Terminal 2: use any standard client
+ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@localhost
+scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null myfile root@localhost:/tmp/
+sftp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@localhost
+rsync -e "ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" -av ./ root@localhost:/tmp/
+
+
+# Expose guest port 8384 (Syncthing GUI) as local :18384
+sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
+# then open http://localhost:18384 in browser
