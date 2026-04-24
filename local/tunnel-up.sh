@@ -65,17 +65,17 @@ done
 
 echo ""
 echo "──────────────────────────────────────────────────────"
-echo "  Connect using any of:"
+echo "  Connect using any of (single-quote URLs in zsh!):"
 echo ""
 for PORT in $PORTS; do
-    echo "  WebSocket: wss://tunnel.traits.build/port/client?code=${CODE}&port=${PORT}"
+    echo "  WebSocket: 'wss://tunnel.traits.build/port/client?code=${CODE}&port=${PORT}'"
     if [ "$PORT" = "22" ]; then
-        echo "  SSH:       ssh -o ProxyCommand=\"websocat wss://tunnel.traits.build/port/client?code=${CODE}&port=22\" root@dummy"
+        echo "  SSH:       ssh -o ProxyCommand='websocat wss://tunnel.traits.build/port/client?code=${CODE}&port=22' root@dummy"
     fi
 done
 echo ""
-echo "  Status:  curl -s $TUNNEL_BASE/port/status?code=${CODE}"
-echo "  Debug:   curl -s $TUNNEL_BASE/port/debug?code=${CODE}"
+echo "  Status:  curl -s 'https://tunnel.traits.build/port/status?code=${CODE}'"
+echo "  Debug:   curl -s 'https://tunnel.traits.build/port/debug?code=${CODE}'"
 echo "──────────────────────────────────────────────────────"
 echo ""
 echo "[tunnel] Bridges running. Press Ctrl-C to teardown."
