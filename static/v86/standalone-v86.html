@@ -497,6 +497,63 @@
     let netInited = !(netEl && netEl.checked);
     // On restore the shell is already up, so enable stty sync immediately.
     if (doRestore) shellReady = true;
+
+    // Build the net-init command (fresh boot vs snapshot restore).
+    function buildNetInitCmd() {
+      const rootfsParam = (new URLSearchParams(location.search).get('rootfs') || '').trim();
+      const rootfsSize = rootfsParam || (isAlpine ? '4G' : '');
+      const rootfsCmd = rootfsSize
+        ? `mount -o remount,size=${rootfsSize} / >/dev/null 2>&1; echo "[rootfs] remounted / as ${rootfsSize}"; `
+        : '';
+      // Fresh Alpine live ISO ships with only /media/cdrom/apks as an apk repo
+      // and a stale libcrypto that breaks any `apk add nodejs` (EVP_MD_CTX_get_size_ex
+      // symbol mismatch). On first boot, once DHCP succeeds, wire latest-stable
+      // main+community, run `apk upgrade`, then notify the terminal. Opt out with ?setup=0.
+      const skipSetup = (new URLSearchParams(location.search).get('setup') === '0');
+      const setupCmd = skipSetup ? '' :
+        ' { ' +
+          'printf "%s\\n" ' +
+            '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/main" ' +
+            '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" ' +
+            '> /etc/apk/repositories && ' +
+         'apk update &&' +
+         'echo "[setup] apk upgrade (rebasing libc/libcrypto)…" && ' +
+          'apk upgrade --available 2>&1 | tail -3 && ' +
+          'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."; ' +
+        '} ';
+      // Snapshot restore: WISP WebSocket is stale + DHCP lease is from the
+      // pre-save world. Background udhcpc with a hard 8s wall clock via
+      // `timeout` so a dead tunnel can't wedge the pipeline; even if DHCP
+      // fails we still overwrite resolv.conf so DoH-intercepted DNS works.
+      const restoreNetCmd =
+        rootfsCmd +
+        'ip link set eth0 down 2>/dev/null; ' +
+        'ip link set eth0 up 2>/dev/null; ' +
+        'killall -q udhcpc 2>/dev/null; ' +
+        'timeout -s KILL 8 udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
+        'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
+        'echo "[restore-net] DHCP + DNS refreshed"; ';
+
+      const freshBootCmd =
+        rootfsCmd +
+        'ip link set eth0 up 2>/dev/null; ' +
+        'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
+        'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
+        'clear; ' + setupCmd;
+
+      return (doRestore ? restoreNetCmd : freshBootCmd) + '\n';
+    }
+
+    function sendCmd(cmd) {
+      for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
+    }
+
+    function runNetInit() {
+      if (netInited) return;
+      netInited = true;
+      sendCmd(buildNetInitCmd());
+    }
+
     let promptTail = '';
     const PROMPT_RE = /[#$]\s$/;
     emulator.add_listener('serial0-output-byte', b => {
@@ -510,62 +567,27 @@
             if (lastCols && emulator) {
               sentCols = lastCols;
               const cmd = `stty cols ${lastCols} 2>/dev/null\n`;
-              setTimeout(() => {
-                for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
-              }, 300);
+              setTimeout(() => sendCmd(cmd), 300);
             }
           }
           if (!netInited) {
-            netInited = true;
-            const rootfsParam = (new URLSearchParams(location.search).get('rootfs') || '').trim();
-            const rootfsSize = rootfsParam || (isAlpine ? '4G' : '');
-            const rootfsCmd = rootfsSize
-              ? `mount -o remount,size=${rootfsSize} / >/dev/null 2>&1; echo "[rootfs] remounted / as ${rootfsSize}"; `
-              : '';
-            // Fresh Alpine live ISO ships with only /media/cdrom/apks as an
-            // apk repo and a stale libcrypto that breaks any `apk add nodejs`
-            // (EVP_MD_CTX_get_size_ex symbol mismatch). On first boot, once
-            // DHCP succeeds, wire latest-stable main+community, run
-            // `apk upgrade`, then notify the terminal. The user can then
-            // install packages normally (and save a snapshot to skip this).
-            // Opt out with ?setup=0.
-            const skipSetup = (new URLSearchParams(location.search).get('setup') === '0');
-            const setupCmd = skipSetup ? '' :
-              ' { ' +
-                'printf "%s\\n" ' +
-                  '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/main" ' +
-                  '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" ' +
-                  '> /etc/apk/repositories && ' +
-               // 'echo "[setup] apk update (latest-stable)…" && apk update 2>&1 | tail -2 && ' +
-               'apk update &&' +  
-               'echo "[setup] apk upgrade (rebasing libc/libcrypto)…" && ' +
-                'apk upgrade --available 2>&1 | tail -3 && ' +
-                'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."; ' +
-              '} ';
-            const restoreNetCmd =
-              rootfsCmd +
-              'ip link set eth0 down 2>/dev/null; ' +
-              'ip link set eth0 up 2>/dev/null; ' +
-              'killall udhcpc >/dev/null 2>&1; ' +
-              'udhcpc -i eth0 -q -n -f -T 2 -t 5 >/dev/null 2>&1; ' +
-              'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
-              'echo "[restore-net] DHCP + DNS refreshed"; ';
-
-            const freshBootCmd =
-              rootfsCmd +
-              'ip link set eth0 up 2>/dev/null; ' +
-              'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
-              'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
-              'clear; ' + setupCmd;
-
-            const cmd = (doRestore ? restoreNetCmd : freshBootCmd) + '\n';
-            setTimeout(() => {
-              for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
-            }, 600);
+            setTimeout(runNetInit, 600);
           }
         }
       }
     });
+
+    // On restore the guest is idle at the shell prompt (HLT) and will not
+    // emit any serial output until input wakes it up — so PROMPT_RE above
+    // never fires. Kick it directly: send a newline to surface a prompt,
+    // then run net-init on a short timer regardless of whether we saw the
+    // prompt byte. Guarded by netInited so we never run twice.
+    if (doRestore && !netInited) {
+      emulator.add_listener('emulator-started', () => {
+        setTimeout(() => { if (emulator) sendCmd('\n'); }, 400);
+        setTimeout(runNetInit, 1400);
+      });
+    }
 
     resetBtn.disabled = false;
     saveBtn.disabled = false;
