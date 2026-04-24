@@ -88,17 +88,24 @@ function parseListing(html) {
   doc.querySelectorAll("a[href]").forEach(a => {
     const href = a.getAttribute("href");
     if (!href || href.startsWith("?") || href.startsWith("#")) return;
+    // Skip absolute URLs and protocol/mailto links — not file entries
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return;
     const decoded = decodeURIComponent(href);
     // Skip parent links — we render our own up-link.
     if (decoded === "../" || decoded === "..") return;
     const isDir = decoded.endsWith("/");
     const name = isDir ? decoded.slice(0, -1) : decoded;
-    if (!name) return;
+    if (!name || name.includes("/")) return;
     out.push({ name, isDir, href });
   });
   // Dirs first, then files, both alpha-sorted.
   out.sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name));
   return out;
+}
+
+// Detect BusyBox auto-index: <title>Index of /...</title>
+function isBusyboxAutoIndex(html) {
+  return /<title>\s*Index of\s/i.test(html);
 }
 
 let state = {
@@ -128,8 +135,18 @@ async function loadDir(dir) {
     return;
   }
   const html = await resp.text();
-  const entries = parseListing(html);
+  const isListing = isBusyboxAutoIndex(html);
+  const entries = isListing ? parseListing(html) : [];
   listEl.innerHTML = "";
+
+  // If the guest returned an index.html (not a listing) at the current dir,
+  // render it in the preview pane so the user sees their page immediately.
+  if (!isListing && state.dir === "/") {
+    emptyEl.hidden = true;
+    previewEl.hidden = false;
+    previewEl.src = proxyUrl(state.code, 8080, state.dir);
+    state.selectedPath = state.dir + "index.html";
+  }
 
   // Up-link (unless at root)
   if (state.dir !== "/" && state.dir !== "") {
@@ -150,8 +167,12 @@ async function loadDir(dir) {
 
   if (!entries.length) {
     const li = document.createElement("li");
-    li.style.cssText = "padding:10px 14px;color:#8b949e;";
-    li.textContent = "(empty)";
+    li.style.cssText = "padding:10px 14px;color:#8b949e;font-size:12px;line-height:1.5;";
+    if (!isListing) {
+      li.innerHTML = "index.html rendered →<br><span style='color:#6b7280;'>(no directory listing: busybox httpd serves index.html instead of auto-index)</span>";
+    } else {
+      li.textContent = "(empty)";
+    }
     listEl.appendChild(li);
   }
 
