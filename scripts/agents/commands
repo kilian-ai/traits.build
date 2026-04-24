@@ -36,3 +36,11 @@ echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
 /usr/sbin/sshd
 # Now rerun tunnel:
 sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) 22
+
+
+
+#working!
+#guest
+wget -qO- https://www.traits.build/local/tunnel-up.sh | sh
+#host
+ sh <(curl -sS https://www.traits.build/local/tunnel-ssh.sh) ARXN

@@ -1393,31 +1393,51 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 
 ## TCP Port Tunnel Infrastructure
 
+**Status: WORKING end-to-end** (guest SSH accessible from Mac via plain `ssh`/`scp`/`sftp`).
+
 Full RFC: `docs/tcp-tunnel-rfc.md`
 
-### Confirmed existing primitives (nothing to add to running relay)
+### Quickstart (current working flow)
 
-| Component | File | Capability |
-|---|---|---|
-| `cloudflare:sockets connect()` | `relay/src/index.js:1` | Real outbound TCP from CF edge — already used in WISP |
-| `FsBridge` Durable Object | `relay/src/index.js:1528` | Bidirectional WS↔WS byte splice — exact pattern for tunnel pairing |
-| `/fs9p/host\|client` routes | `relay/src/index.js:1735` | WS-pair bridge model with `code` pairing — ready to fork |
-| WISP v1 at `/wisp` | `relay/src/index.js:882` | Full TCP mux (host→port) already working for v86 |
-| HMAC signed tokens | `relay/src/index.js:36` | Auth without re-entering codes |
-| `traits-build` Fly.io | `fly.toml` | Running app, can deploy sibling apps |
+Two commands — guest first, then host:
 
-### Service topology (isolated fork — running relay untouched)
+```sh
+# In the guest (Alpine Linux — v86 standalone or www.linux WASM):
+wget -qO- https://www.traits.build/local/tunnel-up.sh | sh
+# → prints 4-char CODE (e.g. ARXN), auto-installs openssh, brings up
+#   loopback, registers ports with tunnel.traits.build, launches
+#   per-port websocat bridge with respawn loop.
+
+# On the Mac (custom wrapper — one-off ssh with random host):
+sh <(curl -sS https://www.traits.build/local/tunnel-ssh.sh) ARXN
+
+# On the Mac (plain ssh/scp/sftp/rsync — local TCP listener mode):
+sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN   # terminal 1
+ssh  -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@localhost   # terminal 2
+scp  -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null FILE root@localhost:/tmp/
+sftp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@localhost
+# Custom port mapping: tunnel-listen.sh CODE LOCAL_PORT REMOTE_PORT
+sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
+```
+
+### Default WASM shell on traits.build
+
+**`traits/www/static/v86/standalone-v86.html?autoboot=1&iso=alpine.iso` is the default WASM shell environment on traits.build** — it auto-boots Alpine Linux in v86, the tunnel scripts are pre-validated against this image, and the above quickstart is the canonical flow. **TODO:** wire this into the main SPA (add `/v86` or `/shell` route in [traits/www/static/index.standalone.html](traits/www/static/index.standalone.html) `ROUTES` map + nav entry), so users reach the v86 Alpine shell from the main traits.build site without opening the raw HTML file.
+
+### Service topology
 
 ```
-relay/            → traits-build-relay CF Worker  → relay.traits.build   (UNCHANGED)
-relay-tunnel/     → traits-build-tunnel CF Worker → tunnel.traits.build  (NEW)
-fly-tcp-gw/       → traits-build-ports Fly app    → ports.traits.build   (NEW, Phase 3)
+relay/            → traits-build-relay CF Worker  → relay.traits.build   (existing)
+relay-tunnel/     → traits-build-tunnel CF Worker → tunnel.traits.build  (deployed)
+fly-tcp-gw/       → traits-build-ports Fly app    → ports.traits.build   (not built — unnecessary)
 ```
+
+**Phase 3 (raw TCP gateway on Fly) is NOT needed.** `tunnel-listen.sh` provides the same UX (plain ssh/scp) using a local websocat listener, at zero server cost.
 
 ### relay-tunnel CF Worker endpoints
 
 ```
-POST /port/register   { code?, ports:[22,21,22000] } → { code, token }
+POST /port/register   { code?, ports:[22,21,22000] } → { code, registered_ports }
 WS   /port/guest?code=XXXX&port=22   ← guest (websocat bridge to local port)
 WS   /port/client?code=XXXX&port=22  ← external client
 GET  /port/status?code=XXXX
@@ -1425,28 +1445,42 @@ POST /port/unregister { code }
 GET  /port/debug?code=XXXX
 ```
 
-`PortSession` Durable Object — based on `FsBridge` template, extended with `registeredPorts: Set<number>` and per-port `guestWs`/`clientWs` maps.
+`PortSession` Durable Object — per-code state:
+- `registeredPorts: Set<number>` (persisted to `state.storage` to survive hibernation on CF free plan)
+- `guestWs[port]` / `clientWs[port]` — active WebSockets
+- `guestBuffer[port]` — **buffered guest→client data** before client connects (capped at 256 messages). Essential: sshd sends the SSH banner immediately on TCP accept, before any Mac client is paired. Without this buffer, the banner was dropped and SSH hung at `kex_exchange_identification`.
 
-### Cloudflare constraint: no raw TCP listener
+### Helper scripts (all in `local/`)
 
-CF Workers can only handle HTTP/WebSocket. For **raw TCP ports** (so `ssh user@host` works without ProxyCommand):
-- Phase 1–2: WebSocket-only (`ssh -o ProxyCommand="websocat wss://tunnel.traits.build/port/client?code=XXXX&port=22 -" user@dummy`)
-- Phase 3: Fly.io TCP gateway binary bridges raw TCP → relay WS (Rust + tokio-tungstenite, ~150 lines)
+| Script | Purpose |
+|---|---|
+| [local/tunnel-up.sh](local/tunnel-up.sh) | Guest-side: register + launch websocat bridges (with respawn loop per port) |
+| [local/tunnel-ssh.sh](local/tunnel-ssh.sh) | Host-side: one-off SSH via ProxyCommand wrapper (zsh-safe, URL in temp script to avoid `&`/`?` glob) |
+| [local/tunnel-listen.sh](local/tunnel-listen.sh) | Host-side: local TCP listener forwarding to tunnel — enables plain `ssh -p`/`scp -P`/`sftp -P`/`rsync`/any TCP client |
 
-### Guest-side (Alpine Linux, v86 or www.linux)
+### Hard-won lessons (debugging findings)
 
-```sh
-apk add --no-cache websocat curl python3
+1. **zsh globs `?` and `&` inside `ProxyCommand=...` strings** even when quoted. SSH invokes the ProxyCommand via the user's login shell, and zsh rejects URLs with query strings (`no matches found: wss://.../port/client?code=X`). Fixes: (a) embed the URL construction inside a temp shell script so only the script path crosses the shell boundary; (b) use `tunnel-listen.sh` + plain `ssh -p 2222 localhost` which needs no ProxyCommand at all.
+2. **Cloudflare DOs hibernate on free plan** — any in-memory `Set`/`Map` state must be persisted to `state.storage` + restored via `state.blockConcurrencyWhile` in the constructor, or `registeredPorts` is lost between requests.
+3. **DO must buffer guest→client data** before a client WS connects. sshd emits the banner on TCP accept, and without buffering this banner was discarded.
+4. **Guest websocat bridge is 1:1 with a client connection** — after disconnect it exits and subsequent SSH attempts fail. Fix: respawn loop in `tunnel-up.sh` (`while :; do websocat ...; sleep 1; done`).
+5. **BusyBox `nc -z` hangs on v86 net stack** — use `/proc/net/tcp` LISTEN state (`0A`) check instead.
+6. **Alpine in v86 has no default loopback** — `ifconfig lo 127.0.0.1 up` before any bridge.
+7. **`ssh-keygen -A` is very slow** in v86 — generate only `-t ed25519` for sshd host key.
+8. **websocat 1.14 (Alpine apk package):** `--ping-interval` breaks background mode; background bridges need explicit `</dev/null` stdin detachment to avoid hanging.
+9. **`sshd` requires a root password or `~/.ssh/authorized_keys`** — `tunnel-up.sh` warns if neither is set (guest user must run `passwd` or drop in an authorized_keys first).
 
-CODE=$(curl -sX POST https://tunnel.traits.build/port/register \
-  -H 'Content-Type: application/json' -d '{"ports":[22]}' \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['code'])")
+### Target ports
 
-/usr/sbin/sshd
-websocat --binary "wss://tunnel.traits.build/port/guest?code=${CODE}&port=22" tcp:localhost:22 &
-```
+| Port | Service |
+|---|---|
+| 22 | sshd (auto-installed + launched by `tunnel-up.sh`) |
+| 21 | ftpd |
+| 22000 | Syncthing sync protocol |
+| 8384 | Syncthing web GUI |
+| Custom | Any user-defined service |
 
-### wanix-agent `tunnel` tool (Phase 4)
+### Future: wanix-agent `tunnel` tool
 
 Add alongside `shell` in the tools array:
 ```json
@@ -1454,21 +1488,8 @@ Add alongside `shell` in the tools array:
   "description":"Expose a local TCP port through relay tunnel. Returns public access URL.",
   "parameters":{"type":"object","properties":{"port":{"type":"integer"}},"required":["port"]}}}
 ```
-Agent calls `tunnel(22)` → registers with relay → runs websocat bridge → prints SSH ProxyCommand URL.
+Agent calls `tunnel(22)` → runs `tunnel-up.sh` → prints pairing code and ready-to-paste host commands.
 
-### Target ports
-
-| Port | Service |
-|---|---|
-| 22 | sshd |
-| 21 | ftpd |
-| 22000 | Syncthing sync protocol |
-| 8384 | Syncthing web GUI |
-| Custom | Any user-defined service |
-
-### Wanix-agent v5 (current, `/agent` selection in attached script)
-
-The guest-side agent script (`agent` file in user attachment) uses function calling with a single `shell` tool. When implementing tunnel support: add `tunnel` as a second tool in `TOOLS` JSON; implement the tunnel call as a curl to relay + websocat background process; output the connection string as the tool result so the LLM can relay it to the user.
 
 ---
 
