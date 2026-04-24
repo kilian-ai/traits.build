@@ -1,0 +1,38 @@
+ip link set eth0 down 2>/dev/null; ip link set eth0 up 2>/dev/null; killall udhcpc >/dev/null 2>&1; udhcpc -i eth0 -q -n -f -T 2 -t 5 >/dev/null 2>&1; printf "nameserver 1.1.1.1\nnameserver 1.0.0.1\n" > /etc/resolv.conf; echo "[restore-net] DHCP + DNS refreshed"
+
+Stop current install
+pkill -f "npm install -g openclaw" || true
+
+Throttle npm networking hard
+npm config set maxsockets 1
+npm config set fetch-retries 20
+npm config set fetch-retry-mintimeout 5000
+npm config set fetch-retry-maxtimeout 10000
+npm config set prefer-online true
+npm config set progress false
+
+Re-run install
+npm install -g --no-audit --no-fund openclaw@latest
+
+Watch health while it runs
+while true; do
+date
+df -h / | tail -1
+ps | grep -E "npm|node" | grep -v grep || true
+sleep 10
+done
+
+mount -o remount,size=<rootfs> / 
+
+#  In mac: 
+ssh -o ProxyCommand='websocat wss://tunnel.traits.build/port/client?code=42G4&port=22' root@dummy
+curl -s 'https://tunnel.traits.build/port/status?code=42G4'
+
+# In guest:
+apk add openssh
+ssh-keygen -A
+passwd  # set root password
+echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+/usr/sbin/sshd
+# Now rerun tunnel:
+sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) 22

@@ -1336,7 +1336,6 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **linux-wasm browser networking mode:** prefer tunnel-first proxying when available (`NetProxy.setTunnelURL(...)`), with browser emulation as fallback. Surface active mode in boot logs (`NET mode: tunnel|browser-fallback`) when changing Linux networking behavior.
 - **linux-wasm relay tunnel endpoint:** default tunnel URL is `wss://relay.traits.build/linux/tunnel` (Cloudflare Worker). Query/localStorage overrides still apply via `linux_tunnel` and `linux-wasm.tunnel-url`. **IMPORTANT: Relay tunnel initialization is DEFERRED until after SMP bring-up completes** (detected by shell-ready). This prevents interrupt handler starvation during secondary CPU initialization. Tunnel connects automatically after first shell prompt appears.
 - **relay websocket path compatibility:** the relay worker accepts both `wss://relay.traits.build/linux/tunnel` and legacy `wss://relay.traits.build/x/net` websocket paths for linux/apptron tunnel traffic.
-- **WISP v1 flow-control hardening (Fly + Worker):** both `/wisp` servers now enforce server→client credits from client `CONTINUE` frames and cap internal buffering. Fly uses bounded Tokio channels (`WS queue=2048`, per-stream writer queue `=256`) and replenishes client credits only after bytes are drained to TCP. Worker queues TCP→WS chunks per stream with a bounded pending window (`4 * WISP_BUFFER`) and flushes only when `CONTINUE` grants arrive. This prevents multi-stream package installs (`npm`, `apk`) from collapsing into unbounded queue growth and fetch timeouts.
 - **relay websocket upstream proxy mode:** `linux/tunnel` now attempts to proxy WebSocket frames to `https://apptron.dev/x/net` server-side for full network behavior while keeping the browser pinned to `relay.traits.build`; in-worker ICMP/DNS handling remains as fallback.
 - **relay upstream handshake timeout guard:** in `relay/src/index.js`, upstream `fetch("https://apptron.dev/x/net")` for websocket proxying must use a short timeout (about 1.2s) and immediately fall back to local tunnel emulation. Without this guard, upstream connect stalls can block websocket upgrade and make guest commands like `wget`/`apk` appear hung at fetch.
 - **linux-wasm SMP bring-up fix:** The relay tunnel polling was causing main-thread starvation during secondary CPU initialization, triggering "Kernel panic - not syncing: Aiee, killing interrupt handler!" panics. Fixed by deferring `NetProxy.setTunnelURL()` until `shellReady = true` (commit 3b351207). Early boot uses `browser-fallback` mode, auto-upgrades to tunnel after shell prompt.
@@ -1389,6 +1388,89 @@ Use this workflow when a guest binary fails with messages like `RuntimeError: ab
 - **kernel.cli `traits` prefix normalization:** interactive shell now treats leading `traits` as a no-op prefix (`traits cat foo` → `cat foo`) so users can reuse CLI-style commands without triggering unknown-command fallback.
 - **www.terminal unknown-command retry:** when a WASM unknown-command `llm.agent` request about files/docs/workspace returns zero tool calls, terminal.js automatically retries once with a stricter prompt that requires at least one real tool call before answering.
 - **test_runner live-LLM policy:** `traits test_runner '*'` should stay fast and non-billable by default. Feature suites that hit live OpenAI or other hosted LLMs should set top-level `skip = true` with a `skip_reason`, and be run manually by exact trait/path when validating integrations.
+
+---
+
+## TCP Port Tunnel Infrastructure
+
+Full RFC: `docs/tcp-tunnel-rfc.md`
+
+### Confirmed existing primitives (nothing to add to running relay)
+
+| Component | File | Capability |
+|---|---|---|
+| `cloudflare:sockets connect()` | `relay/src/index.js:1` | Real outbound TCP from CF edge — already used in WISP |
+| `FsBridge` Durable Object | `relay/src/index.js:1528` | Bidirectional WS↔WS byte splice — exact pattern for tunnel pairing |
+| `/fs9p/host\|client` routes | `relay/src/index.js:1735` | WS-pair bridge model with `code` pairing — ready to fork |
+| WISP v1 at `/wisp` | `relay/src/index.js:882` | Full TCP mux (host→port) already working for v86 |
+| HMAC signed tokens | `relay/src/index.js:36` | Auth without re-entering codes |
+| `traits-build` Fly.io | `fly.toml` | Running app, can deploy sibling apps |
+
+### Service topology (isolated fork — running relay untouched)
+
+```
+relay/            → traits-build-relay CF Worker  → relay.traits.build   (UNCHANGED)
+relay-tunnel/     → traits-build-tunnel CF Worker → tunnel.traits.build  (NEW)
+fly-tcp-gw/       → traits-build-ports Fly app    → ports.traits.build   (NEW, Phase 3)
+```
+
+### relay-tunnel CF Worker endpoints
+
+```
+POST /port/register   { code?, ports:[22,21,22000] } → { code, token }
+WS   /port/guest?code=XXXX&port=22   ← guest (websocat bridge to local port)
+WS   /port/client?code=XXXX&port=22  ← external client
+GET  /port/status?code=XXXX
+POST /port/unregister { code }
+GET  /port/debug?code=XXXX
+```
+
+`PortSession` Durable Object — based on `FsBridge` template, extended with `registeredPorts: Set<number>` and per-port `guestWs`/`clientWs` maps.
+
+### Cloudflare constraint: no raw TCP listener
+
+CF Workers can only handle HTTP/WebSocket. For **raw TCP ports** (so `ssh user@host` works without ProxyCommand):
+- Phase 1–2: WebSocket-only (`ssh -o ProxyCommand="websocat wss://tunnel.traits.build/port/client?code=XXXX&port=22 -" user@dummy`)
+- Phase 3: Fly.io TCP gateway binary bridges raw TCP → relay WS (Rust + tokio-tungstenite, ~150 lines)
+
+### Guest-side (Alpine Linux, v86 or www.linux)
+
+```sh
+apk add --no-cache websocat curl python3
+
+CODE=$(curl -sX POST https://tunnel.traits.build/port/register \
+  -H 'Content-Type: application/json' -d '{"ports":[22]}' \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['code'])")
+
+/usr/sbin/sshd
+websocat --binary "wss://tunnel.traits.build/port/guest?code=${CODE}&port=22" tcp:localhost:22 &
+```
+
+### wanix-agent `tunnel` tool (Phase 4)
+
+Add alongside `shell` in the tools array:
+```json
+{"type":"function","function":{"name":"tunnel",
+  "description":"Expose a local TCP port through relay tunnel. Returns public access URL.",
+  "parameters":{"type":"object","properties":{"port":{"type":"integer"}},"required":["port"]}}}
+```
+Agent calls `tunnel(22)` → registers with relay → runs websocat bridge → prints SSH ProxyCommand URL.
+
+### Target ports
+
+| Port | Service |
+|---|---|
+| 22 | sshd |
+| 21 | ftpd |
+| 22000 | Syncthing sync protocol |
+| 8384 | Syncthing web GUI |
+| Custom | Any user-defined service |
+
+### Wanix-agent v5 (current, `/agent` selection in attached script)
+
+The guest-side agent script (`agent` file in user attachment) uses function calling with a single `shell` tool. When implementing tunnel support: add `tunnel` as a second tool in `TOOLS` JSON; implement the tunnel call as a curl to relay + websocat background process; output the connection string as the tool result so the LLM can relay it to the user.
+
+---
 
 ## Trait .trait.toml Template
 

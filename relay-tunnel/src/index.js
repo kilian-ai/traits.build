@@ -102,15 +102,22 @@ function parsePort(s) {
 
 export class PortSession {
   constructor(state, _env) {
+    this.state = state;
     this.created = Date.now();
     this.registeredPorts = new Set();
     this.guestWs = new Map();   // port → WebSocket
     this.clientWs = new Map();  // port → WebSocket
     this.guestAt = new Map();   // port → timestamp
     this.clientAt = new Map();  // port → timestamp
-    // Eviction: idle TTL enforced lazily on each fetch
     this.lastActivity = Date.now();
-    this.IDLE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+    this.IDLE_TTL_MS = 10 * 60 * 1000;
+    // Restore registered ports from storage (survives hibernation)
+    this.state.blockConcurrencyWhile(async () => {
+      const ports = await this.state.storage.get('registeredPorts');
+      if (Array.isArray(ports)) this.registeredPorts = new Set(ports);
+      const created = await this.state.storage.get('created');
+      if (typeof created === 'number') this.created = created;
+    });
   }
 
   async fetch(request) {
@@ -135,6 +142,8 @@ export class PortSession {
     } catch (_) {}
     if (!ports.length) return json({ error: 'ports required (non-empty array of port numbers)' }, 400);
     for (const p of ports) this.registeredPorts.add(p);
+    await this.state.storage.put('registeredPorts', [...this.registeredPorts]);
+    await this.state.storage.put('created', this.created);
     return json({ ok: true, registered_ports: [...this.registeredPorts] });
   }
 
@@ -204,12 +213,13 @@ export class PortSession {
     });
   }
 
-  _unregister() {
+  async _unregister() {
     for (const ws of this.guestWs.values()) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
     for (const ws of this.clientWs.values()) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
     this.guestWs.clear();
     this.clientWs.clear();
     this.registeredPorts.clear();
+    await this.state.storage.deleteAll();
     return json({ ok: true });
   }
 

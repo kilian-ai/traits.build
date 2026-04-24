@@ -359,12 +359,22 @@
     // rootfs but large npm packages (openclaw has 7231 files across dozens of
     // transitive deps) still fill it. 2048 MB gives a ~1 GB rootfs and plenty
     // of process headroom. Tiny busybox ISOs still run on 128.
+    // Some browsers/v86 builds fail ISOLINUX boot at >=4096 MB, so we cap
+    // Alpine memory at 3584 MB for stability.
     // Override with ?mem=<MB> for debugging.
     const isAlpine = /^alpine/i.test(iso);
     const memOverride = parseInt(new URLSearchParams(location.search).get('mem') || '', 10);
-    const memMB = Number.isFinite(memOverride) && memOverride > 0
+    const maxStableAlpineMemMB = 3584;
+    const requestedMemMB = Number.isFinite(memOverride) && memOverride > 0
       ? memOverride
       : (isAlpine ? 2048 : 128);
+    const memMB = isAlpine
+      ? Math.min(requestedMemMB, maxStableAlpineMemMB)
+      : requestedMemMB;
+    if (isAlpine && requestedMemMB > maxStableAlpineMemMB) {
+      console.warn(`[boot] requested mem=${requestedMemMB}MB exceeds stable cap; using ${memMB}MB`);
+      setStatus(`requested ${requestedMemMB}MB; capped to ${memMB}MB for stable boot`);
+    }
     const cfg = {
       wasm_path: './v86.wasm',
       bios:     { url: './seabios.bin' },
@@ -480,10 +490,11 @@
         } catch (e) { console.warn('[restore] adapter peek failed', e); }
       }, 500);
     }
-    // Auto-init network on first shell prompt after a fresh boot (no-op on restore).
-    // Alpine live ISO doesn't DHCP by default and leaves /etc/resolv.conf empty,
-    // so we run udhcpc + set 1.1.1.1 DNS once the root shell appears.
-    let netInited = doRestore || !(netEl && netEl.checked);
+    // Auto-init network on first shell prompt.
+    // Fresh boot: full setup (DHCP + repos + apk upgrade guidance).
+    // Snapshot restore: lightweight NIC recovery (DHCP refresh + resolv.conf)
+    // to fix stale tunnel/DHCP state after restore.
+    let netInited = !(netEl && netEl.checked);
     // On restore the shell is already up, so enable stty sync immediately.
     if (doRestore) shellReady = true;
     let promptTail = '';
@@ -506,6 +517,11 @@
           }
           if (!netInited) {
             netInited = true;
+            const rootfsParam = (new URLSearchParams(location.search).get('rootfs') || '').trim();
+            const rootfsSize = rootfsParam || (isAlpine ? '4G' : '');
+            const rootfsCmd = rootfsSize
+              ? `mount -o remount,size=${rootfsSize} / >/dev/null 2>&1; echo "[rootfs] remounted / as ${rootfsSize}"; `
+              : '';
             // Fresh Alpine live ISO ships with only /media/cdrom/apks as an
             // apk repo and a stale libcrypto that breaks any `apk add nodejs`
             // (EVP_MD_CTX_get_size_ex symbol mismatch). On first boot, once
@@ -520,16 +536,29 @@
                   '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/main" ' +
                   '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" ' +
                   '> /etc/apk/repositories && ' +
-                'echo "[setup] apk update (latest-stable)…" && apk update 2>&1 | tail -2 && ' +
-                'echo "[setup] apk upgrade (rebasing libc/libcrypto)…" && ' +
+               // 'echo "[setup] apk update (latest-stable)…" && apk update 2>&1 | tail -2 && ' +
+               'apk update &&' +  
+               'echo "[setup] apk upgrade (rebasing libc/libcrypto)…" && ' +
                 'apk upgrade --available 2>&1 | tail -3 && ' +
                 'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."; ' +
               '} ';
-            const cmd =
+            const restoreNetCmd =
+              rootfsCmd +
+              'ip link set eth0 down 2>/dev/null; ' +
+              'ip link set eth0 up 2>/dev/null; ' +
+              'killall udhcpc >/dev/null 2>&1; ' +
+              'udhcpc -i eth0 -q -n -f -T 2 -t 5 >/dev/null 2>&1; ' +
+              'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
+              'echo "[restore-net] DHCP + DNS refreshed"; ';
+
+            const freshBootCmd =
+              rootfsCmd +
               'ip link set eth0 up 2>/dev/null; ' +
               'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
               'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
-              'clear; ' + setupCmd + '\n';
+              'clear; ' + setupCmd;
+
+            const cmd = (doRestore ? restoreNetCmd : freshBootCmd) + '\n';
             setTimeout(() => {
               for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
             }, 600);
