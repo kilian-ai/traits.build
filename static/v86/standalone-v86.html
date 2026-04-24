@@ -521,24 +521,29 @@
           'apk upgrade --available 2>&1 | tail -3 && ' +
           'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."; ' +
         '} ';
-      // Snapshot restore: WISP WebSocket is stale + DHCP lease is from the
-      // pre-save world. We CANNOT block the shell on any network op here:
-      //   - `ip link set eth0 down/up` waits for an RTNL reply that the
-      //     post-restore ne2k driver can take tens of seconds to produce,
-      //     and on back-to-back restores has been observed to wedge the
-      //     guest kernel indefinitely.
-      //   - foreground `udhcpc` waits for a DHCP reply over a tunnel that
-      //     may still be reconnecting.
-      // Solution: background udhcpc in a detached subshell with a hard 6s
-      // wall-clock kill, skip ip-link toggling entirely (link is already up
-      // from the snapshot), and unconditionally rewrite resolv.conf so DoH
-      // works even when DHCP silently fails.
+      // Snapshot restore: WISP WebSocket is freshly reconnected (JS adapter
+      // is not in the x86 snapshot), and the Wisp router config is known
+      // and fixed: guest IP 192.168.86.100/24, gateway 192.168.86.1, router
+      // MAC 52:54:00:01:02:03. A backgrounded `udhcpc` detached subshell
+      // never completed and left the guest with no IP and no route — so
+      // instead we apply deterministic static config in one shot. This is
+      // non-blocking (no RTNL wait, no DHCP round-trip), idempotent, and
+      // leaves the guest immediately able to open TCP streams through the
+      // freshly-registered WispNetworkAdapter. DoH `doh_server` is already
+      // handled by the adapter itself (`dns_method: 'doh'`), so resolv.conf
+      // here is only a belt-and-braces fallback for glibc/musl name lookup
+      // that bypasses the DoH interceptor.
       const restoreNetCmd =
         rootfsCmd +
         'killall -q udhcpc 2>/dev/null; ' +
-        '(timeout -s KILL 6 udhcpc -i eth0 -q -n -f -T 2 -t 2 >/dev/null 2>&1 &) ; ' +
+        'ip addr flush dev eth0 2>/dev/null; ' +
+        'ip addr add 192.168.86.100/24 dev eth0; ' +
+        'ip link set eth0 up 2>/dev/null; ' +
+        'ip route replace default via 192.168.86.1 dev eth0 2>/dev/null; ' +
+        'arp -d 192.168.86.1 2>/dev/null; ' +
+        'arp -s 192.168.86.1 52:54:00:01:02:03; ' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
-        'echo \"[restore-net] DHCP + DNS refreshed\"; ';
+        'echo "[restore-net] static config applied"; ';
 
       const freshBootCmd =
         rootfsCmd +
