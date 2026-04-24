@@ -1424,6 +1424,12 @@ sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
 
 **`traits/www/static/v86/standalone-v86.html?autoboot=1&iso=alpine.iso` is the default WASM shell environment on traits.build** — it auto-boots Alpine Linux in v86, the tunnel scripts are pre-validated against this image, and the above quickstart is the canonical flow. Wired into the SPA at `/shell` (`https://www.traits.build/#/shell`).
 
+### v86 network backend: Fly.io WISP, not Cloudflare relay
+
+**v86 does NOT use `relay.traits.build` for its NIC tunnel.** The v86 standalone page migrates any legacy relay URL to `wisps://apptron-traits-build.fly.dev/wisp` (see [traits/www/static/v86/standalone-v86.html](traits/www/static/v86/standalone-v86.html#L394-L411)) and connects v86's `WispNetworkAdapter` there. The Fly.io WISP v1 server speaks real tokio TCP and can reach CF-fronted targets that the Cloudflare Worker cannot (CF Worker `connect()` has loopback prevention — see note in [relay/src/index.js](relay/src/index.js#L1073-L1085)). **Only `/dns-query` (DoH) goes to `relay.traits.build`**; everything else (DHCP/ARP/ICMP + all TCP egress) is handled by the Fly backend.
+
+**Consequence for debugging network stalls from v86:** `apk fetch` hangs, DHCP retries, and TCP timeouts inside the v86 Alpine guest must be investigated against **the Fly.io WISP server**, not the Cloudflare Worker. The CF relay's `/linux/tunnel`, `/x/net`, `/x/sys`, and `/wisp` endpoints serve `www.linux` and Apptron — not v86. Check Fly logs, WISP flow-control (`WISP_BUFFER` credits, `bytesSinceCredit` replenish), and `connect()` error codes on the Fly side first before suspecting the CF relay.
+
 ### ~/public browser viewer
 
 Guest-side `tunnel-up.sh` now also auto-starts `busybox httpd -p 127.0.0.1:8080 -h $HOME/public` when port 8080 is in the requested list (included by default). This serves the guest's `~/public` directory.
