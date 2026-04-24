@@ -68,22 +68,31 @@ auto_start_sshd() {
     /usr/sbin/sshd 2>&1 | head -5
 }
 
+# Check if TCP port has a LISTEN socket via /proc/net/tcp (avoids nc hangs)
+port_listening() {
+    local port_hex
+    port_hex=$(printf '%04X' "$1")
+    # State 0A = TCP_LISTEN
+    grep -qE ":${port_hex} [0-9A-F:]+ 0A " /proc/net/tcp 2>/dev/null \
+        || grep -qE ":${port_hex} [0-9A-F:]+ 0A " /proc/net/tcp6 2>/dev/null
+}
+
 # Start one websocat bridge per port
 for PORT in $PORTS; do
-    # Quick listener check, with auto-start for port 22
-    if ! nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
+    echo "[tunnel] checking port $PORT ..."
+    if ! port_listening "$PORT"; then
         if [ "$PORT" = "22" ]; then
             echo "[tunnel] port 22 — no listener, starting sshd..."
             auto_start_sshd
-            # Short retry (up to ~2s)
+            # Short retry (~3s)
             i=0
-            while [ $i -lt 10 ]; do
-                nc -z 127.0.0.1 22 2>/dev/null && break
+            while [ $i -lt 15 ]; do
+                port_listening 22 && break
                 i=$((i+1)); sleep 0.2 2>/dev/null || sleep 1
             done
         fi
     fi
-    if ! nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
+    if ! port_listening "$PORT"; then
         echo "[tunnel] port $PORT — no local listener, skipping bridge"
         continue
     fi
