@@ -533,17 +533,30 @@
       // handled by the adapter itself (`dns_method: 'doh'`), so resolv.conf
       // here is only a belt-and-braces fallback for glibc/musl name lookup
       // that bypasses the DoH interceptor.
+      //
+      // CRITICAL: bounce eth0 BEFORE configuring IP. The WispNetworkAdapter
+      // learns the guest NIC's MAC via a `net0-mac` bus event that ne2k
+      // fires on driver init. On snapshot restore the ne2k driver is
+      // already loaded (x86 state) and does NOT re-emit `net0-mac`, so
+      // the fresh adapter keeps a stale/zero vm_mac and silently drops
+      // frames. `ip link down/up` re-initializes the NE2K, re-fires the
+      // MAC announcement, and resets the adapter's RX/TX ring state.
+      // Without this bounce even `ping 192.168.86.1` (virtual gateway)
+      // fails 100% post-restore.
       const restoreNetCmd =
         rootfsCmd +
         'killall -q udhcpc 2>/dev/null; ' +
+        'ip link set eth0 down 2>/dev/null; ' +
+        'sleep 1; ' +
+        'ip link set eth0 up 2>/dev/null; ' +
+        'sleep 1; ' +
         'ip addr flush dev eth0 2>/dev/null; ' +
         'ip addr add 192.168.86.100/24 dev eth0; ' +
-        'ip link set eth0 up 2>/dev/null; ' +
         'ip route replace default via 192.168.86.1 dev eth0 2>/dev/null; ' +
         'arp -d 192.168.86.1 2>/dev/null; ' +
         'arp -s 192.168.86.1 52:54:00:01:02:03; ' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
-        'echo "[restore-net] static config applied"; ';
+        'echo "[restore-net] static config applied (post-bounce)"; ';
 
       const freshBootCmd =
         rootfsCmd +
