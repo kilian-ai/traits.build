@@ -16,7 +16,16 @@
 
 set -u
 
-TUNNEL_BASE="https://tunnel.traits.build"
+# Override via env: TUNNEL_BASE=http://localhost:8787 sh tunnel-up.sh
+TUNNEL_BASE="${TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}"
+# Derive default WS URL from TUNNEL_BASE (http→ws, https→wss).
+if [ -z "${TUNNEL_WS:-}" ]; then
+    case "$TUNNEL_BASE" in
+        https://*) TUNNEL_WS="wss://${TUNNEL_BASE#https://}" ;;
+        http://*)  TUNNEL_WS="ws://${TUNNEL_BASE#http://}" ;;
+        *)         TUNNEL_WS="$TUNNEL_BASE" ;;
+    esac
+fi
 PORTS="${*:-22 8080 22000 8384}"
 
 # Install websocat if missing
@@ -206,7 +215,7 @@ for PORT in $PORTS; do
         echo "[tunnel] port $PORT — no local listener, skipping bridge"
         continue
     fi
-    WS_URL="wss://$(printf '%s' "$TUNNEL_BASE" | sed 's|https://||')/port/guest?code=${CODE}&port=${PORT}"
+    WS_URL="${TUNNEL_WS}/port/guest?code=${CODE}&port=${PORT}"
     # Respawn loop: each client disconnect tears down the bridge; restart
     # so the next SSH connection gets a fresh TCP to sshd.
     (

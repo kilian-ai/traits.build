@@ -17,6 +17,9 @@ CODE="${1:?usage: tunnel-ssh.sh CODE [user] [port]}"
 USER_AT="${2:-root}"
 PORT="${3:-22}"
 
+# Override via env: TUNNEL_WS=ws://localhost:8787 sh tunnel-ssh.sh CODE
+TUNNEL_WS="${TUNNEL_WS:-wss://traits-build-tunnel.fly.dev}"
+
 if ! command -v websocat >/dev/null 2>&1; then
     echo "[tunnel-ssh] websocat not found — install via: brew install websocat" >&2
     exit 1
@@ -25,7 +28,7 @@ fi
 WS_PROXY=$(mktemp -t tunnel-ssh-proxy.XXXXXX)
 cat > "$WS_PROXY" <<PROXY_EOF
 #!/bin/sh
-exec websocat --binary "wss://tunnel.traits.build/port/client?code=${CODE}&port=${PORT}"
+exec websocat --binary "${TUNNEL_WS}/port/client?code=${CODE}&port=${PORT}"
 PROXY_EOF
 chmod +x "$WS_PROXY"
 

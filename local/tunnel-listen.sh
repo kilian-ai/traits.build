@@ -21,12 +21,15 @@ CODE="${1:?usage: tunnel-listen.sh CODE [local_port] [remote_port]}"
 LOCAL_PORT="${2:-2222}"
 REMOTE_PORT="${3:-22}"
 
+# Override via env: TUNNEL_WS=ws://localhost:8787 sh tunnel-listen.sh CODE
+TUNNEL_WS="${TUNNEL_WS:-wss://traits-build-tunnel.fly.dev}"
+
 if ! command -v websocat >/dev/null 2>&1; then
     echo "[tunnel-listen] websocat not found — install via: brew install websocat" >&2
     exit 1
 fi
 
-URL="wss://tunnel.traits.build/port/client?code=${CODE}&port=${REMOTE_PORT}"
+URL="${TUNNEL_WS}/port/client?code=${CODE}&port=${REMOTE_PORT}"
 
 echo "──────────────────────────────────────────────────────"
 echo "  tunnel: $CODE  (guest port $REMOTE_PORT)"
