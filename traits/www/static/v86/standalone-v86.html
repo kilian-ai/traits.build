@@ -522,17 +522,23 @@
           'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."; ' +
         '} ';
       // Snapshot restore: WISP WebSocket is stale + DHCP lease is from the
-      // pre-save world. Background udhcpc with a hard 8s wall clock via
-      // `timeout` so a dead tunnel can't wedge the pipeline; even if DHCP
-      // fails we still overwrite resolv.conf so DoH-intercepted DNS works.
+      // pre-save world. We CANNOT block the shell on any network op here:
+      //   - `ip link set eth0 down/up` waits for an RTNL reply that the
+      //     post-restore ne2k driver can take tens of seconds to produce,
+      //     and on back-to-back restores has been observed to wedge the
+      //     guest kernel indefinitely.
+      //   - foreground `udhcpc` waits for a DHCP reply over a tunnel that
+      //     may still be reconnecting.
+      // Solution: background udhcpc in a detached subshell with a hard 6s
+      // wall-clock kill, skip ip-link toggling entirely (link is already up
+      // from the snapshot), and unconditionally rewrite resolv.conf so DoH
+      // works even when DHCP silently fails.
       const restoreNetCmd =
         rootfsCmd +
-        'ip link set eth0 down 2>/dev/null; ' +
-        'ip link set eth0 up 2>/dev/null; ' +
         'killall -q udhcpc 2>/dev/null; ' +
-        'timeout -s KILL 8 udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
+        '(timeout -s KILL 6 udhcpc -i eth0 -q -n -f -T 2 -t 2 >/dev/null 2>&1 &) ; ' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
-        'echo "[restore-net] DHCP + DNS refreshed"; ';
+        'echo \"[restore-net] DHCP + DNS refreshed\"; ';
 
       const freshBootCmd =
         rootfsCmd +
