@@ -51,15 +51,21 @@ echo ""
 
 # Auto-start sshd if port 22 requested and no listener
 auto_start_sshd() {
-    command -v sshd >/dev/null 2>&1 || apk add --no-cache openssh-server >/dev/null 2>&1 || return 1
-    [ -f /etc/ssh/ssh_host_rsa_key ] || ssh-keygen -A >/dev/null 2>&1
+    if ! command -v sshd >/dev/null 2>&1; then
+        echo "[tunnel]   installing openssh-server..."
+        apk add --no-cache openssh-server >/dev/null 2>&1 || { echo "[tunnel]   apk add failed"; return 1; }
+    fi
+    if [ ! -f /etc/ssh/ssh_host_rsa_key ] && [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
+        echo "[tunnel]   generating host keys (ed25519 only for speed)..."
+        ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key >/dev/null 2>&1
+    fi
     grep -q '^PermitRootLogin yes' /etc/ssh/sshd_config 2>/dev/null \
         || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
-    # Ensure root has a password or authorized_keys — warn if not
     if [ ! -s /root/.ssh/authorized_keys ] && ! grep -q '^root:[^*!]' /etc/shadow 2>/dev/null; then
-        echo "[tunnel] WARNING: root has no password/authorized_keys — SSH will reject"
+        echo "[tunnel]   WARNING: root has no password/authorized_keys — run 'passwd' first"
     fi
-    /usr/sbin/sshd 2>/dev/null
+    echo "[tunnel]   launching sshd..."
+    /usr/sbin/sshd 2>&1 | head -5
 }
 
 # Start one websocat bridge per port
