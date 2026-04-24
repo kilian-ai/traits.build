@@ -105,12 +105,17 @@ done
 
 echo ""
 echo "──────────────────────────────────────────────────────"
-echo "  Connect using any of (single-quote URLs in zsh!):"
+echo "  Connect from any machine with websocat:"
 echo ""
 for PORT in $PORTS; do
     echo "  WebSocket: 'wss://tunnel.traits.build/port/client?code=${CODE}&port=${PORT}'"
     if [ "$PORT" = "22" ]; then
-        echo "  SSH:       ssh -o ProxyCommand='websocat wss://tunnel.traits.build/port/client?code=${CODE}&port=22' root@dummy"
+        echo ""
+        echo "  SSH (bash/sh):"
+        echo "    ssh -o ProxyCommand='websocat wss://tunnel.traits.build/port/client?code=${CODE}&port=22' root@dummy"
+        echo ""
+        echo "  SSH (zsh — use noglob):"
+        echo "    noglob ssh -o ProxyCommand=\"websocat wss://tunnel.traits.build/port/client?code=${CODE}&port=22\" root@dummy"
     fi
 done
 echo ""
