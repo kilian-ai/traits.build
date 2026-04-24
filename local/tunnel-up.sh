@@ -110,18 +110,19 @@ done
 
 echo ""
 echo "──────────────────────────────────────────────────────"
-echo "  Connect from any machine with websocat:"
+echo "  Connect from any machine:"
 echo ""
 for PORT in $PORTS; do
-    echo "  WebSocket: 'wss://tunnel.traits.build/port/client?code=${CODE}&port=${PORT}'"
     if [ "$PORT" = "22" ]; then
+        echo "  SSH (one-liner, shell-safe):"
+        echo "    sh <(curl -sS https://www.traits.build/local/tunnel-ssh.sh) ${CODE}"
         echo ""
-        echo "  SSH (bash/sh):"
-        echo "    ssh -o ProxyCommand='websocat wss://tunnel.traits.build/port/client?code=${CODE}&port=22' root@dummy"
+        echo "  SSH (manual, any shell):"
+        echo "    websocat --binary 'wss://tunnel.traits.build/port/client?code=${CODE}&port=22' &"
+        echo "    # then ssh to the pipe (requires expert setup)"
         echo ""
-        echo "  SSH (zsh — use noglob):"
-        echo "    noglob ssh -o ProxyCommand=\"websocat wss://tunnel.traits.build/port/client?code=${CODE}&port=22\" root@dummy"
     fi
+    echo "  WebSocket raw: 'wss://tunnel.traits.build/port/client?code=${CODE}&port=${PORT}'"
 done
 echo ""
 echo "  Status:  curl -s 'https://tunnel.traits.build/port/status?code=${CODE}'"
