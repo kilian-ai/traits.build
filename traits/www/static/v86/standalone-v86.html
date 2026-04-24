@@ -591,16 +591,8 @@
     // misses it (observed on 2nd+ back-to-back restores). Just schedule the
     // kicker on a plain timer — `runNetInit` is idempotent via `netInited`.
     if (doRestore && !netInited) {
-      const bootId = (window._v86_boot_seq = (window._v86_boot_seq || 0) + 1);
-      console.log('[restore-kicker] scheduled, bootId=', bootId);
-      setTimeout(() => {
-        console.log('[restore-kicker] newline fire, bootId=', bootId, 'emu=', !!emulator, 'netInited=', netInited);
-        if (emulator) sendCmd('\n');
-      }, 400);
-      setTimeout(() => {
-        console.log('[restore-kicker] runNetInit fire, bootId=', bootId, 'emu=', !!emulator, 'netInited=', netInited);
-        runNetInit();
-      }, 1400);
+      setTimeout(() => { if (emulator) sendCmd('\n'); }, 400);
+      setTimeout(runNetInit, 1400);
     }
 
     resetBtn.disabled = false;
