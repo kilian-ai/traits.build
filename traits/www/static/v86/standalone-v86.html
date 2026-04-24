@@ -585,14 +585,14 @@
 
     // On restore the guest is idle at the shell prompt (HLT) and will not
     // emit any serial output until input wakes it up — so PROMPT_RE above
-    // never fires. Kick it directly: send a newline to surface a prompt,
-    // then run net-init on a short timer regardless of whether we saw the
-    // prompt byte. Guarded by netInited so we never run twice.
+    // never fires. We also can't rely on `emulator-started`: when v86 boots
+    // from a preloaded `initial_state` buffer, that event can fire before
+    // all our listeners are attached, so a listener registered later simply
+    // misses it (observed on 2nd+ back-to-back restores). Just schedule the
+    // kicker on a plain timer — `runNetInit` is idempotent via `netInited`.
     if (doRestore && !netInited) {
-      emulator.add_listener('emulator-started', () => {
-        setTimeout(() => { if (emulator) sendCmd('\n'); }, 400);
-        setTimeout(runNetInit, 1400);
-      });
+      setTimeout(() => { if (emulator) sendCmd('\n'); }, 400);
+      setTimeout(runNetInit, 1400);
     }
 
     resetBtn.disabled = false;
