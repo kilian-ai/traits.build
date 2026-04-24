@@ -1422,7 +1422,19 @@ sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
 
 ### Default WASM shell on traits.build
 
-**`traits/www/static/v86/standalone-v86.html?autoboot=1&iso=alpine.iso` is the default WASM shell environment on traits.build** — it auto-boots Alpine Linux in v86, the tunnel scripts are pre-validated against this image, and the above quickstart is the canonical flow. **TODO:** wire this into the main SPA (add `/v86` or `/shell` route in [traits/www/static/index.standalone.html](traits/www/static/index.standalone.html) `ROUTES` map + nav entry), so users reach the v86 Alpine shell from the main traits.build site without opening the raw HTML file.
+**`traits/www/static/v86/standalone-v86.html?autoboot=1&iso=alpine.iso` is the default WASM shell environment on traits.build** — it auto-boots Alpine Linux in v86, the tunnel scripts are pre-validated against this image, and the above quickstart is the canonical flow. Wired into the SPA at `/shell` (`https://www.traits.build/#/shell`).
+
+### ~/public browser viewer
+
+Guest-side `tunnel-up.sh` now also auto-starts `busybox httpd -p 127.0.0.1:8080 -h $HOME/public` when port 8080 is in the requested list (included by default). This serves the guest's `~/public` directory.
+
+Browse `~/public` from any browser without websocat or a local TCP listener:
+
+- **Pretty viewer:** `https://www.traits.build/#/viewer?code=ARXN`
+  (file tree on left, iframe preview on right — see [traits/www/static/viewer/index.html](traits/www/static/viewer/index.html))
+- **Raw HTTP proxy:** `https://tunnel.traits.build/port/http/ARXN/8080/path/to/file`
+
+This uses the new `/port/http/CODE/PORT/*path` endpoint on the tunnel worker (see endpoints table below), which speaks HTTP/1.1 over the existing guest WebSocket bridge, parses the response, and returns a CORS-enabled `Response`. No tunnel-listen.sh, no websocat needed on the Mac.
 
 ### Service topology
 
@@ -1437,13 +1449,16 @@ fly-tcp-gw/       → traits-build-ports Fly app    → ports.traits.build   (no
 ### relay-tunnel CF Worker endpoints
 
 ```
-POST /port/register   { code?, ports:[22,21,22000] } → { code, registered_ports }
-WS   /port/guest?code=XXXX&port=22   ← guest (websocat bridge to local port)
-WS   /port/client?code=XXXX&port=22  ← external client
+POST /port/register                       { code?, ports:[22,21,22000] } → { code, registered_ports }
+WS   /port/guest?code=XXXX&port=22        ← guest (websocat bridge to local port)
+WS   /port/client?code=XXXX&port=22       ← external client
+GET  /port/http/CODE/PORT/path?query...   ← HTTP-over-WS proxy (browser-friendly, CORS)
 GET  /port/status?code=XXXX
 POST /port/unregister { code }
 GET  /port/debug?code=XXXX
 ```
+
+`/port/http/...` sends an HTTP/1.1 request (with `Connection: close`) through the existing guest WebSocket, collects response bytes with a 1.5s idle + 12s hard cap, strips hop-by-hop headers, and returns a `Response` with `Access-Control-Allow-Origin: *`. Single-shot — relies on the guest `tunnel-up.sh` respawn loop for multiple calls. Returns **409** if a TCP client is currently paired on that port, **503** if no guest is connected, **502** if the response is malformed.
 
 `PortSession` Durable Object — per-code state:
 - `registeredPorts: Set<number>` (persisted to `state.storage` to survive hibernation on CF free plan)
@@ -1475,10 +1490,13 @@ GET  /port/debug?code=XXXX
 | Port | Service |
 |---|---|
 | 22 | sshd (auto-installed + launched by `tunnel-up.sh`) |
+| 8080 | busybox httpd serving `~/public` (auto-launched by `tunnel-up.sh`, seeds an index.html placeholder if dir is empty) |
 | 21 | ftpd |
 | 22000 | Syncthing sync protocol |
 | 8384 | Syncthing web GUI |
 | Custom | Any user-defined service |
+
+Default `tunnel-up.sh` ports = `22 8080 22000 8384`.
 
 ### Future: wanix-agent `tunnel` tool
 
