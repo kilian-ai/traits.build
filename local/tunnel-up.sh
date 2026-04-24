@@ -75,6 +75,58 @@ auto_start_sshd() {
     /usr/sbin/sshd 2>&1 | head -5
 }
 
+# Seed ~/public/cgi-bin/ls — JSON listing endpoint for the viewer.
+# Must run even when httpd is already up (user may have started it
+# before upgrading this script), because BusyBox httpd picks up new
+# cgi-bin scripts without a restart.
+seed_public_cgi() {
+    local dir="${HOME:-/root}/public"
+    mkdir -p "$dir/cgi-bin"
+    cat > "$dir/cgi-bin/ls" <<'CGI'
+#!/bin/sh
+printf 'Content-Type: application/json\r\n'
+printf 'Access-Control-Allow-Origin: *\r\n'
+printf '\r\n'
+qs="${QUERY_STRING:-}"
+sub=$(printf '%s' "$qs" | awk -v RS='&' -F= '$1=="dir"{print $2; exit}')
+sub="${sub:-/}"
+dec=$(printf '%s' "$sub" | sed 's/+/ /g; s/%\(..\)/\\x\1/g')
+sub=$(printf '%b' "$dec")
+case "$sub" in *..*) sub="/" ;; esac
+sub=$(printf '%s' "$sub" | sed 's|//*|/|g')
+[ "${sub#/}" = "$sub" ] && sub="/$sub"
+base="${HOME:-/root}/public"
+full="$base${sub%/}"
+[ "$sub" = "/" ] && full="$base"
+if [ ! -d "$full" ]; then
+    printf '{"error":"not a directory","dir":"%s"}' "$sub"
+    exit 0
+fi
+printf '{"dir":"'
+printf '%s' "$sub" | sed 's/\\/\\\\/g; s/"/\\"/g'
+printf '","entries":['
+first=1
+for f in "$full"/.[!.]* "$full"/..?* "$full"/*; do
+    [ -e "$f" ] || continue
+    name="${f##*/}"
+    case "$name" in .|..|.\*|\*|\.\[\!\.\]\*|\.\.?\*) continue ;; esac
+    if [ -d "$f" ]; then
+        t=dir
+        sz=0
+    else
+        t=file
+        sz=$(wc -c < "$f" 2>/dev/null | tr -d ' ' || echo 0)
+    fi
+    nj=$(printf '%s' "$name" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    [ $first -eq 1 ] || printf ','
+    first=0
+    printf '{"name":"%s","type":"%s","size":%s}' "$nj" "$t" "$sz"
+done
+printf ']}'
+CGI
+    chmod +x "$dir/cgi-bin/ls"
+}
+
 # Auto-start busybox httpd serving ~/public on port 8080 if requested + no listener.
 auto_start_httpd() {
     local dir="${HOME:-/root}/public"
@@ -102,54 +154,7 @@ HTML
     # the client can't get an auto-index of the root. /cgi-bin/ls?dir=/sub
     # returns a JSON listing so the viewer can always show files even when
     # index.html exists.
-    mkdir -p "$dir/cgi-bin"
-    cat > "$dir/cgi-bin/ls" <<'CGI'
-#!/bin/sh
-printf 'Content-Type: application/json\r\n'
-printf 'Access-Control-Allow-Origin: *\r\n'
-printf '\r\n'
-qs="${QUERY_STRING:-}"
-sub=$(printf '%s' "$qs" | awk -v RS='&' -F= '$1=="dir"{print $2; exit}')
-sub="${sub:-/}"
-# URL-decode (%XX + plus→space) using printf %b
-dec=$(printf '%s' "$sub" | sed 's/+/ /g; s/%\(..\)/\\x\1/g')
-sub=$(printf '%b' "$dec")
-# Reject traversal
-case "$sub" in *..*) sub="/" ;; esac
-# Normalize slashes
-sub=$(printf '%s' "$sub" | sed 's|//*|/|g')
-[ "${sub#/}" = "$sub" ] && sub="/$sub"
-base="${HOME:-/root}/public"
-full="$base${sub%/}"
-[ "$sub" = "/" ] && full="$base"
-if [ ! -d "$full" ]; then
-    printf '{"error":"not a directory","dir":"%s"}' "$sub"
-    exit 0
-fi
-printf '{"dir":"'
-printf '%s' "$sub" | sed 's/\\/\\\\/g; s/"/\\"/g'
-printf '","entries":['
-first=1
-# Iterate dot and non-dot entries; skip . .. and bare globs
-for f in "$full"/.[!.]* "$full"/..?* "$full"/*; do
-    [ -e "$f" ] || continue
-    name="${f##*/}"
-    case "$name" in .|..|.\*|\*|\.\[\!\.\]\*|\.\.?\*) continue ;; esac
-    if [ -d "$f" ]; then
-        t=dir
-        sz=0
-    else
-        t=file
-        sz=$(wc -c < "$f" 2>/dev/null || echo 0)
-    fi
-    nj=$(printf '%s' "$name" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    [ $first -eq 1 ] || printf ','
-    first=0
-    printf '{"name":"%s","type":"%s","size":%s}' "$nj" "$t" "$sz"
-done
-printf ']}'
-CGI
-    chmod +x "$dir/cgi-bin/ls"
+    seed_public_cgi
     echo "[tunnel]   launching httpd -h $dir -p 8080 ..."
     # -f = foreground mode when backgrounded manually with &
     # -h = home directory (serves static files + auto-index)
@@ -168,6 +173,15 @@ port_listening() {
 # Start one websocat bridge per port
 for PORT in $PORTS; do
     echo "[tunnel] checking port $PORT ..."
+    # Always (re)seed the CGI listing endpoint when 8080 is requested — even
+    # if httpd was already running from a previous tunnel-up.sh session and
+    # auto_start_httpd would be skipped, BusyBox httpd picks up new cgi-bin
+    # scripts on the next request without needing a restart.
+    if [ "$PORT" = "8080" ]; then
+        mkdir -p "${HOME:-/root}/public" 2>/dev/null
+        seed_public_cgi
+        echo "[tunnel] port 8080 — seeded ~/public/cgi-bin/ls (JSON listing endpoint)"
+    fi
     if ! port_listening "$PORT"; then
         if [ "$PORT" = "22" ]; then
             echo "[tunnel] port 22 — no listener, starting sshd..."
