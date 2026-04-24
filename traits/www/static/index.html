@@ -182,7 +182,11 @@ const ROUTES = {
   '/terminal':   'www.apptron',
   '/testing':    'www.testing',
   '/wasm':       'www.wasm',
+  '/viewer':     'www.static',
+  '/shell':      'www.static',
 };
+
+function stripQuery(r) { const i = r.indexOf('?'); return i < 0 ? r : r.slice(0, i); }
 
 const LOCAL_ROUTE_KEY = 'traits.shell.route';
 const STATIC_RUNTIME_CB = String(Date.now());
@@ -198,6 +202,15 @@ const STATIC_RUNTIME_ROUTES = {
   '/apptron-ide': () => {
     const base = isLocal ? './apptron-ide/index.html' : '/static/apptron-ide/index.html';
     return `${base}?spa=1&cb=${STATIC_RUNTIME_CB}`;
+  },
+  '/viewer': (query) => {
+    const base = isLocal ? './viewer/index.html' : '/static/viewer/index.html';
+    return `${base}${query || ''}`;
+  },
+  '/shell': (query) => {
+    const base = isLocal ? './v86/standalone-v86.html' : '/static/v86/standalone-v86.html';
+    const q = query && query.length ? query + '&' : '?';
+    return `${base}${q}autoboot=1&iso=alpine.iso`;
   },
 };
 
@@ -440,14 +453,15 @@ async function injectPage(fullHtml, route) {
 
 function currentRouteFromLocation() {
   const hash = location.hash.slice(1) || '/';
-  if (ROUTES[hash]) {
+  const bare = stripQuery(hash);
+  if (ROUTES[bare]) {
     try { sessionStorage.setItem(LOCAL_ROUTE_KEY, hash); } catch(e) {}
     return hash;
   }
   if (isLocal) {
     try {
       const storedRoute = sessionStorage.getItem(LOCAL_ROUTE_KEY);
-      if (storedRoute && ROUTES[storedRoute]) return storedRoute;
+      if (storedRoute && ROUTES[stripQuery(storedRoute)]) return storedRoute;
     } catch(e) {}
     return '/';
   }
@@ -499,8 +513,10 @@ async function navigate(route, pushState = true) {
   if (route === currentRoute) return;
   const thisNav = ++navId;
   currentRoute = route;
+  const bare = stripQuery(route);
+  const query = route.slice(bare.length);
 
-  const traitPath = ROUTES[route];
+  const traitPath = ROUTES[bare];
   if (!traitPath) {
     frame.innerHTML = '<div style="padding:4rem;text-align:center;color:var(--muted)"><h2>404</h2><p>Page not found: ' + route + '</p></div>';
     return;
@@ -509,9 +525,9 @@ async function navigate(route, pushState = true) {
   // Show a brief loading state for slow pages
   frame.style.opacity = '0.6';
 
-  const staticRouteFactory = STATIC_RUNTIME_ROUTES[route];
+  const staticRouteFactory = STATIC_RUNTIME_ROUTES[bare];
   if (staticRouteFactory) {
-    injectStaticRuntime(route, staticRouteFactory());
+    injectStaticRuntime(bare, staticRouteFactory(query));
     frame.style.opacity = '1';
     if (pushState) {
       try { sessionStorage.setItem(LOCAL_ROUTE_KEY, route); } catch(e) {}
@@ -627,7 +643,7 @@ window.addEventListener('popstate', e => {
 
 window.addEventListener('hashchange', () => {
   const hash = location.hash.slice(1);
-  if (hash && ROUTES[hash]) navigate(hash, false);
+  if (hash && ROUTES[stripQuery(hash)]) navigate(hash, false);
 });
 
 // ── Global Voice Overlay ──

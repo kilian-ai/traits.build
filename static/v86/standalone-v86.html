@@ -45,7 +45,6 @@
     <button id="save" disabled>save snapshot</button>
     <button id="restore" disabled>restore</button>
     <button id="clear" disabled>clear snapshot</button>
-    <button id="export" disabled>export</button>
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
@@ -61,7 +60,7 @@
   const $ = id => document.getElementById(id);
   const termEl = $('term'), isoEl = $('iso');
   const bootBtn = $('boot'), resetBtn = $('reset'), saveBtn = $('save');
-  const restoreBtn = $('restore'), clearBtn = $('clear'), exportBtn = $('export');
+  const restoreBtn = $('restore'), clearBtn = $('clear');
   const autosaveEl = $('autosave');
   const statusEl = $('status'), statsEl = $('stats');
 
@@ -118,29 +117,12 @@
 
   const setStatus = (msg, cls) => { statusEl.textContent = msg; statusEl.className = cls || 'hint'; };
 
-   // Persist autosave toggle
-   autosaveEl.checked = localStorage.getItem('v86.autosave') === '1';
-   autosaveEl.onchange = () => {
-     localStorage.setItem('v86.autosave', autosaveEl.checked ? '1' : '0');
-     if (autosaveEl.checked && emulator) scheduleAutosave();
-   };
-
-   // Export file from v86 FS to host
-   function exportFileFromV86(v86, vfsPath) {
-     try {
-       const data = v86.FS.readFile(vfsPath, { encoding: 'binary' });
-       const blob = new Blob([data], { type: 'text/html' });
-       const url = URL.createObjectURL(blob);
-       const a = document.createElement('a');
-       a.href = url;
-       a.download = vfsPath.split('/').pop() || 'export.html';
-       a.click();
-       URL.revokeObjectURL(url);
-     } catch (e) {
-       console.error('Export failed:', e);
-       alert('Could not read ' + vfsPath);
-     }
-   }
+  // Persist autosave toggle
+  autosaveEl.checked = localStorage.getItem('v86.autosave') === '1';
+  autosaveEl.onchange = () => {
+    localStorage.setItem('v86.autosave', autosaveEl.checked ? '1' : '0');
+    if (autosaveEl.checked && emulator) scheduleAutosave();
+  };
 
   const qsIso = new URLSearchParams(location.search).get('iso');
   if (qsIso && [...isoEl.options].some(o => o.value === qsIso)) isoEl.value = qsIso;
@@ -554,9 +536,9 @@
                   '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/main" ' +
                   '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" ' +
                   '> /etc/apk/repositories && ' +
-                //'echo "[setup] apk update (latest-stable)…" ' + 
-                'apk update' +
-                'echo "[setup] apk upgrade (rebasing libc/libcrypto)…" && ' +
+               // 'echo "[setup] apk update (latest-stable)…" && apk update 2>&1 | tail -2 && ' +
+               'apk update &&' +  
+               'echo "[setup] apk upgrade (rebasing libc/libcrypto)…" && ' +
                 'apk upgrade --available 2>&1 | tail -3 && ' +
                 'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."; ' +
               '} ';
@@ -585,24 +567,21 @@
       }
     });
 
-     resetBtn.disabled = false;
-     saveBtn.disabled = false;
-     restoreBtn.disabled = !(await idbHas(snapKey));
-     clearBtn.disabled = restoreBtn.disabled;
-     exportBtn.disabled = false;
-     exportBtn.disabled = false;
+    resetBtn.disabled = false;
+    saveBtn.disabled = false;
+    restoreBtn.disabled = !(await idbHas(snapKey));
+    clearBtn.disabled = restoreBtn.disabled;
 
     term.focus();
   }
 
-   async function shutdown() {
-     if (!emulator) return;
-     try { emulator.stop(); } catch (_) {}
-     try { emulator.destroy(); } catch (_) {}
-     emulator = null; window.emulator = null;
-     shellReady = false; sentCols = 0;
-     exportBtn.disabled = true;
-   }
+  async function shutdown() {
+    if (!emulator) return;
+    try { emulator.stop(); } catch (_) {}
+    try { emulator.destroy(); } catch (_) {}
+    emulator = null; window.emulator = null;
+    shellReady = false; sentCols = 0;
+  }
 
   async function doReset() { await shutdown(); await boot({ restore: false }); }
   async function doRestore() { await shutdown(); await boot({ restore: true }); }
@@ -625,12 +604,11 @@
     } finally { saveBtn.disabled = false; }
   }
 
-   bootBtn.onclick    = () => boot({ restore: false });
-   resetBtn.onclick   = doReset;
-   saveBtn.onclick    = doSave;
-   restoreBtn.onclick = doRestore;
-   clearBtn.onclick   = doClear;
-   exportBtn.onclick  = () => { if (emulator) exportFileFromV86(emulator, '/home/user/index.html'); };
+  bootBtn.onclick    = () => boot({ restore: false });
+  resetBtn.onclick   = doReset;
+  saveBtn.onclick    = doSave;
+  restoreBtn.onclick = doRestore;
+  clearBtn.onclick   = doClear;
 
   isoEl.onchange = async () => {
     const has = await idbHas('snap:' + isoEl.value);
