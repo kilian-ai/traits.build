@@ -98,6 +98,58 @@ a{color:#4ade80;text-decoration:none}a:hover{text-decoration:underline}</style>
 <p>Served from <code>$HOME/public</code> in the guest.</p>
 HTML
     fi
+    # CGI listing endpoint: BusyBox httpd serves index.html when present, so
+    # the client can't get an auto-index of the root. /cgi-bin/ls?dir=/sub
+    # returns a JSON listing so the viewer can always show files even when
+    # index.html exists.
+    mkdir -p "$dir/cgi-bin"
+    cat > "$dir/cgi-bin/ls" <<'CGI'
+#!/bin/sh
+printf 'Content-Type: application/json\r\n'
+printf 'Access-Control-Allow-Origin: *\r\n'
+printf '\r\n'
+qs="${QUERY_STRING:-}"
+sub=$(printf '%s' "$qs" | awk -v RS='&' -F= '$1=="dir"{print $2; exit}')
+sub="${sub:-/}"
+# URL-decode (%XX + plus→space) using printf %b
+dec=$(printf '%s' "$sub" | sed 's/+/ /g; s/%\(..\)/\\x\1/g')
+sub=$(printf '%b' "$dec")
+# Reject traversal
+case "$sub" in *..*) sub="/" ;; esac
+# Normalize slashes
+sub=$(printf '%s' "$sub" | sed 's|//*|/|g')
+[ "${sub#/}" = "$sub" ] && sub="/$sub"
+base="${HOME:-/root}/public"
+full="$base${sub%/}"
+[ "$sub" = "/" ] && full="$base"
+if [ ! -d "$full" ]; then
+    printf '{"error":"not a directory","dir":"%s"}' "$sub"
+    exit 0
+fi
+printf '{"dir":"'
+printf '%s' "$sub" | sed 's/\\/\\\\/g; s/"/\\"/g'
+printf '","entries":['
+first=1
+# Iterate dot and non-dot entries; skip . .. and bare globs
+for f in "$full"/.[!.]* "$full"/..?* "$full"/*; do
+    [ -e "$f" ] || continue
+    name="${f##*/}"
+    case "$name" in .|..|.\*|\*|\.\[\!\.\]\*|\.\.?\*) continue ;; esac
+    if [ -d "$f" ]; then
+        t=dir
+        sz=0
+    else
+        t=file
+        sz=$(wc -c < "$f" 2>/dev/null || echo 0)
+    fi
+    nj=$(printf '%s' "$name" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    [ $first -eq 1 ] || printf ','
+    first=0
+    printf '{"name":"%s","type":"%s","size":%s}' "$nj" "$t" "$sz"
+done
+printf ']}'
+CGI
+    chmod +x "$dir/cgi-bin/ls"
     echo "[tunnel]   launching httpd -h $dir -p 8080 ..."
     # -f = foreground mode when backgrounded manually with &
     # -h = home directory (serves static files + auto-index)

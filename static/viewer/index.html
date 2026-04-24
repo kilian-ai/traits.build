@@ -121,27 +121,60 @@ async function loadDir(dir) {
   listEl.innerHTML = `<li style="padding:10px 14px;color:#8b949e;"><span class="spinner"></span> loading…</li>`;
   setStatus("loading " + state.dir, "");
 
-  let resp;
+  // Preferred path: tunnel-up.sh installs /cgi-bin/ls which returns JSON
+  // listing regardless of index.html presence. Fall back to auto-index
+  // parsing if CGI is unavailable (older tunnel-up.sh on the guest).
+  let entries = null;
+  let cgiOk = false;
   try {
-    resp = await fetch(proxyUrl(state.code, 8080, state.dir), { headers: { "accept": "text/html" } });
-  } catch (e) {
-    listEl.innerHTML = "";
-    setStatus("network error: " + e.message, "err");
-    return;
+    const cgiUrl = proxyUrl(state.code, 8080, "/cgi-bin/ls?dir=" + encodeURIComponent(state.dir));
+    const r = await fetch(cgiUrl, { headers: { accept: "application/json" } });
+    if (r.ok) {
+      const ct = r.headers.get("content-type") || "";
+      if (/json/i.test(ct) || ct === "") {
+        const data = await r.json();
+        if (Array.isArray(data.entries)) {
+          entries = data.entries.map(e => ({
+            name: e.name,
+            isDir: e.type === "dir",
+            href: e.name + (e.type === "dir" ? "/" : ""),
+          }));
+          entries.sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name));
+          cgiOk = true;
+        }
+      }
+    }
+  } catch (_) { /* fall through to HTML parse */ }
+
+  let html = "";
+  let isListing = false;
+  if (!cgiOk) {
+    let resp;
+    try {
+      resp = await fetch(proxyUrl(state.code, 8080, state.dir), { headers: { accept: "text/html" } });
+    } catch (e) {
+      listEl.innerHTML = "";
+      setStatus("network error: " + e.message, "err");
+      return;
+    }
+    if (!resp.ok) {
+      listEl.innerHTML = "";
+      setStatus(`HTTP ${resp.status} ${resp.statusText || ""}`, "err");
+      return;
+    }
+    html = await resp.text();
+    isListing = isBusyboxAutoIndex(html);
+    entries = isListing ? parseListing(html) : [];
   }
-  if (!resp.ok) {
-    listEl.innerHTML = "";
-    setStatus(`HTTP ${resp.status} ${resp.statusText || ""}`, "err");
-    return;
-  }
-  const html = await resp.text();
-  const isListing = isBusyboxAutoIndex(html);
-  const entries = isListing ? parseListing(html) : [];
   listEl.innerHTML = "";
 
   // If the guest returned an index.html (not a listing) at the current dir,
   // render it in the preview pane so the user sees their page immediately.
-  if (!isListing && state.dir === "/") {
+  // Even when CGI provided a listing, still render index.html if present.
+  const hasIndex = cgiOk
+    ? entries.some(e => !e.isDir && e.name === "index.html")
+    : !isListing;
+  if (hasIndex && state.dir === "/" && !state.selectedPath) {
     emptyEl.hidden = true;
     previewEl.hidden = false;
     previewEl.src = proxyUrl(state.code, 8080, state.dir);
@@ -168,8 +201,10 @@ async function loadDir(dir) {
   if (!entries.length) {
     const li = document.createElement("li");
     li.style.cssText = "padding:10px 14px;color:#8b949e;font-size:12px;line-height:1.5;";
-    if (!isListing) {
-      li.innerHTML = "index.html rendered →<br><span style='color:#6b7280;'>(no directory listing: busybox httpd serves index.html instead of auto-index)</span>";
+    if (cgiOk) {
+      li.textContent = "(empty)";
+    } else if (!isListing) {
+      li.innerHTML = "index.html rendered →<br><span style='color:#6b7280;'>(listing unavailable: guest tunnel-up.sh is outdated — rerun <code style='color:#4ade80'>wget -qO- https://www.traits.build/local/tunnel-up.sh | sh</code> to enable /cgi-bin/ls)</span>";
     } else {
       li.textContent = "(empty)";
     }
