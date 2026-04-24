@@ -543,20 +543,29 @@
       // MAC announcement, and resets the adapter's RX/TX ring state.
       // Without this bounce even `ping 192.168.86.1` (virtual gateway)
       // fails 100% post-restore.
+      // Retry loop for the eth0 up: empirically, the first `ip link set eth0
+      // up` after snapshot restore sometimes silently fails (interface stays
+      // DOWN) because the NE2K driver + fresh WispNetworkAdapter handshake
+      // is racy. A second `up` after a longer settle always succeeds. We
+      // poll `/sys/class/net/eth0/operstate` up to 5 times and redo the up
+      // until it reports non-`down`.
       const restoreNetCmd =
         rootfsCmd +
         'killall -q udhcpc 2>/dev/null; ' +
-        'ip link set eth0 down 2>/dev/null; ' +
-        'sleep 1; ' +
-        'ip link set eth0 up 2>/dev/null; ' +
-        'sleep 1; ' +
+        'ip link set eth0 down 2>/dev/null; sleep 1; ' +
+        'for i in 1 2 3 4 5; do ' +
+          'ip link set eth0 up 2>/dev/null; sleep 1; ' +
+          'st=$(cat /sys/class/net/eth0/operstate 2>/dev/null); ' +
+          'fl=$(cat /sys/class/net/eth0/flags 2>/dev/null); ' +
+          '[ "$st" != "down" ] && break; ' +
+        'done; ' +
         'ip addr flush dev eth0 2>/dev/null; ' +
         'ip addr add 192.168.86.100/24 dev eth0; ' +
         'ip route replace default via 192.168.86.1 dev eth0 2>/dev/null; ' +
         'arp -d 192.168.86.1 2>/dev/null; ' +
         'arp -s 192.168.86.1 52:54:00:01:02:03; ' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
-        'echo "[restore-net] static config applied (post-bounce)"; ';
+        'echo "[restore-net] eth0 operstate=$st flags=$fl (retries=$i)"; ';
 
       const freshBootCmd =
         rootfsCmd +
