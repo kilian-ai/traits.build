@@ -336,7 +336,12 @@ async fn handle_connect(
         loop {
             match rd.read(&mut buf).await {
                 Ok(0) => {
-                    let _ = out_tx.send(encode_close(stream_id, CLOSE_VOLUNTARY));
+                    // EOF from upstream. CRITICAL: must .await — otherwise the
+                    // CLOSE frame is never sent and the v86 guest's TCP stack
+                    // waits forever for data that won't come (manifests as
+                    // `apk fetch` / HTTP `Connection: close` stalls that
+                    // "work after a few retries").
+                    let _ = out_tx.send(encode_close(stream_id, CLOSE_VOLUNTARY)).await;
                     streams.lock().await.remove(&stream_id);
                     return;
                 }
