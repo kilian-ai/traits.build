@@ -347,9 +347,10 @@ for PORT in $PORTS; do
     fi
     if [ "$PORT" = "21" ]; then
         echo "  FTP (control):"
-        echo "    host: localhost (via tunnel-listen)  port: 21"
+        echo "    host: localhost (via local listener helper)"
+        echo "    control port: 2121 -> guest:${PORT}"
         echo "    passive range exposed: ${FTP_PASV_MIN}-${FTP_PASV_MAX}"
-        echo "    tip: map each passive port locally if using a native FTP client"
+        echo "    sh <(curl -sS https://www.traits.build/local/tunnel-listen-ftp.sh) ${CODE} 2121 ${PORT} ${FTP_PASV_MIN} ${FTP_PASV_MAX}"
         echo ""
     fi
     echo "  WebSocket raw (port ${PORT}): '${TUNNEL_WS}/port/client?code=${CODE}&port=${PORT}'"

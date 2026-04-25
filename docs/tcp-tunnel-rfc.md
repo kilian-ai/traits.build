@@ -132,6 +132,15 @@ FTP_PASV_MIN=31000 FTP_PASV_MAX=31020 \
   sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) 21
 ```
 
+On macOS/Linux host, use the companion listener helper to map control + passive
+ports locally in one command:
+
+```sh
+sh <(curl -sS https://www.traits.build/local/tunnel-listen-ftp.sh) CODE 2121 21 30000 30010
+```
+
+Then point your FTP GUI/client to `127.0.0.1:2121` in passive mode.
+
 ### Phase 2 — Multi-port & concurrent sessions
 
 For syncthing (needs continuous connection + multi-stream) and FTP (control+data channels), Phase 1's 1:1 model is limiting. Phase 2 upgrades `PortSession` to use a connection-ID model:
