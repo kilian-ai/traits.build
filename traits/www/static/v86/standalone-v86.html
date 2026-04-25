@@ -34,7 +34,8 @@
   #viewer-tree .indent-1 { padding-left:24px; } #viewer-tree .indent-2 { padding-left:36px; } #viewer-tree .indent-3 { padding-left:48px; } #viewer-tree .indent-4 { padding-left:60px; } #viewer-tree .indent-5 { padding-left:72px; }
   #viewer-preview { flex:1; min-width:0; position:relative; background:#0b0d10; }
   #viewer-preview iframe { width:100%; height:100%; border:0; background:#fff; }
-  #viewer-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  #viewer-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+  #viewer-empty[hidden] { display:none !important; }
   /* Always reserve scrollbar space so xterm's fit calculation doesn't
      oscillate by 2 cols when a scrollbar appears/disappears. */
   #term .xterm-viewport { background:#0b0d10 !important; overflow-y: scroll !important; }
