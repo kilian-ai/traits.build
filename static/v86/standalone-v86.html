@@ -36,6 +36,30 @@
   #viewer-preview iframe { width:100%; height:100%; border:0; background:#fff; }
   #viewer-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
   #viewer-empty[hidden] { display:none !important; }
+  /* ── social overlay ── */
+  #social-overlay { position:absolute; left:0; right:0; top:36px; bottom:0; display:flex; flex-direction:column; background:#0b0d10; z-index:51; }
+  #social-overlay[hidden] { display:none; }
+  #social-hdr { display:flex; gap:8px; align-items:center; padding:6px 10px; background:#161a1f; border-bottom:1px solid #2a2f36; font-size:12px; }
+  #social-hdr button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; }
+  #social-hdr button:hover { background:#2d343d; }
+  #social-body { flex:1; min-height:0; overflow:auto; padding:12px 16px; display:flex; flex-direction:column; gap:10px; }
+  .ss { background:#161a1f; border:1px solid #2a2f36; border-radius:6px; padding:10px 14px; }
+  .ss-label { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#7a8392; margin-bottom:6px; }
+  .social-npub { font-size:11px; color:#4ade80; word-break:break-all; }
+  #social-log { margin-top:6px; font-size:11px; max-height:60px; overflow:auto; }
+  .slog-line { white-space:pre-wrap; line-height:1.4; }
+  #social-body input,#social-body select { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 8px; font:inherit; }
+  #social-body input { flex:1; }
+  #social-body button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; white-space:nowrap; }
+  #social-body button:hover:not(:disabled) { background:#2d343d; }
+  #social-body button:disabled { opacity:0.4; cursor:not-allowed; }
+  .row-flex { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  #social-list { display:flex; flex-direction:column; gap:8px; }
+  .follow-card { background:#161a1f; border:1px solid #2a2f36; border-radius:6px; padding:10px 14px; }
+  .fc-npub { font-size:11px; color:#7ab8f5; word-break:break-all; }
+  .fc-meta { font-size:10px; color:#5a6370; word-break:break-all; }
+  .fc-actions { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+  #social-search-results { font-size:11px; margin-top:4px; }
   /* Always reserve scrollbar space so xterm's fit calculation doesn't
      oscillate by 2 cols when a scrollbar appears/disappears. */
   #term .xterm-viewport { background:#0b0d10 !important; overflow-y: scroll !important; }
@@ -67,6 +91,7 @@
     <button id="clear" disabled>clear snapshot</button>
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
     <button id="viewer" disabled title="Browse files in /mnt/host (v86 9P share) directly from the host — no relay needed">viewer</button>
+    <button id="social" disabled title="Nostr social: publish /mnt/host/public, follow users, sync their content">social</button>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
   </div>
@@ -86,6 +111,45 @@
         <div id="viewer-empty" class="hint">select a file on the left</div>
         <iframe id="viewer-frame" hidden sandbox="allow-scripts allow-same-origin"></iframe>
       </div>
+    </div>
+  </div>
+  <div id="social-overlay" hidden>
+    <div id="social-hdr">
+      <b>social</b>
+      <span class="hint" style="margin-left:6px">Nostr public-folder sharing — publish /mnt/host/public, follow &amp; sync users</span>
+      <button id="social-close" style="margin-left:auto">close</button>
+    </div>
+    <div id="social-body">
+      <!-- identity + controls -->
+      <div class="ss">
+        <div class="ss-label">identity</div>
+        <div id="social-npub-display"><span class="hint">no identity — generate one below</span></div>
+        <div class="row-flex" style="margin-top:6px">
+          <button id="social-generate">generate identity</button>
+          <button id="social-publish" disabled>publish /public</button>
+          <button id="social-sync-now" disabled>sync all</button>
+          <select id="social-sync-interval">
+            <option value="0">auto-sync: off</option>
+            <option value="60000">every 1 min</option>
+            <option value="300000" selected>every 5 min</option>
+            <option value="600000">every 10 min</option>
+          </select>
+        </div>
+        <div id="social-log"></div>
+      </div>
+      <!-- follow + search -->
+      <div class="ss">
+        <div class="ss-label">follow</div>
+        <div class="row-flex">
+          <input id="social-follow-input" placeholder="npub1… paste a public key" spellcheck="false">
+          <button id="social-follow-btn">follow</button>
+          <input id="social-search-input" placeholder="search by keyword (NIP-50)" spellcheck="false" style="flex:0 1 240px">
+          <button id="social-search-btn">search</button>
+        </div>
+        <div id="social-search-results"></div>
+      </div>
+      <!-- follow list -->
+      <div id="social-list"></div>
     </div>
   </div>
 </div>
@@ -871,6 +935,406 @@
   // Toggle viewer button availability when emulator boots/stops.
   function syncViewerBtn() { viewerBtn.disabled = !emulator; }
   setInterval(syncViewerBtn, 800);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Social — Nostr public-folder sharing via /mnt/host
+  // - Identity (nsec/npub) stored in localStorage
+  // - Publish: read /mnt/host/public via fs9p, sha256 each file, sign a
+  //   kind-30000 manifest event, broadcast to Nostr relays
+  // - Follow: store npub list, create /mnt/host/following/<npub>/ in 9P
+  // - Sync: REQ kind-30000 from relays, fetch files via tunnel HTTP proxy,
+  //   write to /mnt/host/following/<npub>/
+  // - Auto-sync: setInterval
+  // ─────────────────────────────────────────────────────────────────────────
+  const SOCIAL_NSEC_KEY      = 'traits.secret.NOSTR_NSEC';
+  const SOCIAL_FOLLOWING_KEY = 'traits.nostr.following';
+  const NOSTR_RELAYS = [
+    'wss://relay.damus.io',
+    'wss://nos.lol',
+    'wss://relay.nostr.band',
+  ];
+  let socialSyncTimer = null;
+
+  // social.nostr REST dispatch
+  async function nostrRest(action, ...args) {
+    const res = await fetch('https://traits-build.fly.dev/traits/social/nostr', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ args: [action, ...args] }),
+    });
+    const j = await res.json();
+    if (j && j.result !== undefined) return j.result;
+    return j;
+  }
+
+  // Try WASM SDK (when loaded in SPA) first, fall back to REST
+  async function nostrCall(action, ...args) {
+    try {
+      const sdk = window._traitsSDK;
+      if (sdk) {
+        const r = await sdk.call('social.nostr', [action, ...args]);
+        if (r !== null && r !== undefined) return r;
+      }
+    } catch (_) {}
+    return nostrRest(action, ...args);
+  }
+
+  // Minimal NIP-01 REQ — returns array of matching events from all relays
+  function nostrReq(relays, filter, timeoutMs = 7000) {
+    return new Promise(resolve => {
+      const events = [];
+      let done = 0;
+      const total = relays.length;
+      if (!total) { resolve([]); return; }
+      const finish = () => { if (++done >= total) resolve(events); };
+      const subId = Math.random().toString(36).slice(2, 9);
+      for (const url of relays) {
+        let ws;
+        const timer = setTimeout(() => { try { ws.close(); } catch (_) {} }, timeoutMs);
+        try {
+          ws = new WebSocket(url);
+          ws.onopen = () => ws.send(JSON.stringify(['REQ', subId, filter]));
+          ws.onmessage = e => {
+            try {
+              const msg = JSON.parse(e.data);
+              if (msg[0] === 'EVENT' && msg[1] === subId) events.push(msg[2]);
+              if (msg[0] === 'EOSE'  && msg[1] === subId) { clearTimeout(timer); ws.close(); }
+            } catch (_) {}
+          };
+          ws.onclose = () => { clearTimeout(timer); finish(); };
+          ws.onerror = () => { clearTimeout(timer); try { ws.close(); } catch (_) {} };
+        } catch (_) { finish(); }
+      }
+    });
+  }
+
+  // Broadcast a signed event to all relays
+  function nostrPublish(relays, event) {
+    return Promise.all(relays.map(url => new Promise(resolve => {
+      let ws;
+      const timer = setTimeout(() => { try { ws.close(); } catch (_) {} resolve(); }, 7000);
+      try {
+        ws = new WebSocket(url);
+        ws.onopen  = () => ws.send(JSON.stringify(['EVENT', event]));
+        ws.onmessage = () => { clearTimeout(timer); ws.close(); resolve(); };
+        ws.onclose = ws.onerror = () => { clearTimeout(timer); resolve(); };
+      } catch (_) { resolve(); }
+    })));
+  }
+
+  async function sha256hex(data) {
+    // crypto.subtle.digest accepts any BufferSource (Uint8Array, ArrayBuffer, …)
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // ── DOM refs
+  const socialBtn      = $('social');
+  const socialOverlay  = $('social-overlay');
+  const socialCloseBtn = $('social-close');
+  const npubDisplay    = $('social-npub-display');
+  const generateBtn    = $('social-generate');
+  const publishBtn     = $('social-publish');
+  const syncNowBtn     = $('social-sync-now');
+  const syncIntervalEl = $('social-sync-interval');
+  const socialLogEl    = $('social-log');
+  const followInput    = $('social-follow-input');
+  const followBtnEl    = $('social-follow-btn');
+  const searchInput    = $('social-search-input');
+  const searchBtnEl    = $('social-search-btn');
+  const searchResults  = $('social-search-results');
+  const socialList     = $('social-list');
+
+  function sLog(msg, cls = '') {
+    const d = document.createElement('div');
+    d.className = 'slog-line ' + (cls || 'hint');
+    d.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+    socialLogEl.appendChild(d);
+    socialLogEl.scrollTop = socialLogEl.scrollHeight;
+  }
+
+  function getFollowing() {
+    try { return JSON.parse(localStorage.getItem(SOCIAL_FOLLOWING_KEY) || '[]'); } catch (_) { return []; }
+  }
+  function saveFollowing(list) { localStorage.setItem(SOCIAL_FOLLOWING_KEY, JSON.stringify(list)); }
+
+  function truncNpub(n) {
+    if (!n || n.length < 16) return n || '';
+    return n.slice(0, 12) + '…' + n.slice(-6);
+  }
+
+  // Refresh identity display and enable/disable action buttons
+  async function socialInit() {
+    const nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
+    if (!nsec) {
+      npubDisplay.innerHTML = '<span class="hint">no identity — generate one below</span>';
+      publishBtn.disabled = true;
+      syncNowBtn.disabled = true;
+    } else {
+      try {
+        const res = await nostrCall('pubkey', nsec);
+        const pubkey = typeof res === 'string' ? res : (res.pubkey || String(res));
+        const enc = await nostrCall('encode_npub', pubkey);
+        const npub = typeof enc === 'string' ? enc : JSON.stringify(enc);
+        localStorage.setItem('traits.nostr.npub', npub);
+        npubDisplay.innerHTML =
+          `<span class="social-npub">${truncNpub(npub)}</span>` +
+          ` <span class="hint" style="font-size:10px">${pubkey.slice(0, 16)}…</span>`;
+        publishBtn.disabled = !emulator;
+        syncNowBtn.disabled = false;
+      } catch (e) {
+        npubDisplay.innerHTML = `<span class="err">key error: ${e.message}</span>`;
+      }
+    }
+    renderFollowList();
+  }
+
+  function renderFollowList() {
+    const following = getFollowing();
+    if (!following.length) {
+      socialList.innerHTML =
+        '<div class="hint" style="font-size:12px;padding:4px 0">no followed users yet — paste a npub above and click follow</div>';
+      return;
+    }
+    socialList.innerHTML = following.map(npub =>
+      `<div class="follow-card" data-npub="${npub}">
+        <div class="fc-npub">${truncNpub(npub)}</div>
+        <div class="fc-meta">${npub}</div>
+        <div class="fc-actions">
+          <button class="fc-sync-btn" data-npub="${npub}">sync</button>
+          <button class="fc-view-btn" data-npub="${npub}">view files</button>
+          <button class="fc-unfollow-btn" data-npub="${npub}" style="margin-left:auto;color:#f87171">unfollow</button>
+        </div>
+      </div>`
+    ).join('');
+  }
+
+  async function doFollow(npub) {
+    npub = npub.trim();
+    if (!npub.startsWith('npub1') || npub.length < 30) {
+      sLog('invalid npub — must start with npub1 and be at least 30 chars', 'err'); return;
+    }
+    const following = getFollowing();
+    if (following.includes(npub)) { sLog('already following ' + truncNpub(npub)); return; }
+    following.push(npub);
+    saveFollowing(following);
+    sLog('following ' + truncNpub(npub), 'ok');
+    // Create directory in 9P share: /following/<npub>
+    const fs = emulator && emulator.fs9p;
+    if (fs) {
+      try { fs.create_directory('/following'); } catch (_) {}
+      try { fs.create_directory('/following/' + npub); sLog('created /mnt/host/following/' + truncNpub(npub), 'ok'); }
+      catch (e) { sLog('note: 9P dir creation: ' + e.message, 'hint'); }
+    }
+    renderFollowList();
+  }
+
+  async function doSyncOne(npub) {
+    npub = npub.trim();
+    sLog('syncing ' + truncNpub(npub) + '…');
+    let pubkeyHex;
+    try {
+      const res = await nostrCall('decode_npub', npub);
+      pubkeyHex = typeof res === 'string' ? res : (res.pubkey || JSON.stringify(res));
+    } catch (e) { sLog('decode_npub failed: ' + e.message, 'err'); return; }
+
+    const events = await nostrReq(NOSTR_RELAYS, {
+      kinds: [30000], authors: [pubkeyHex], '#d': ['public-folder'], limit: 5,
+    });
+    if (!events.length) { sLog('no manifest found for ' + truncNpub(npub), 'hint'); return; }
+
+    const ev = events.sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+    let manifest;
+    try { manifest = JSON.parse(ev.content); }
+    catch (e) { sLog('invalid manifest: ' + e.message, 'err'); return; }
+    if (!manifest.base || !Array.isArray(manifest.files)) {
+      sLog('manifest missing base/files', 'err'); return;
+    }
+    sLog('manifest: ' + manifest.files.length + ' file(s) from ' + manifest.base);
+
+    const fs = emulator && emulator.fs9p;
+    let synced = 0;
+    for (const f of manifest.files) {
+      try {
+        const url = manifest.base.replace(/\/+$/, '') + '/' + f.p.replace(/^\/+/, '');
+        const resp = await fetch(url);
+        if (!resp.ok) { sLog('fetch ' + f.p + ' → ' + resp.status, 'hint'); continue; }
+        const buf = await resp.arrayBuffer();
+        // Verify hash if provided
+        if (f.h && f.h.startsWith('sha256:')) {
+          const got = 'sha256:' + (await sha256hex(buf));
+          if (got !== f.h) { sLog('hash mismatch: ' + f.p, 'err'); continue; }
+        }
+        // Write to 9P share under /following/<npub>/
+        if (fs) {
+          const dest = '/following/' + npub + '/' + f.p.replace(/^\/+/, '');
+          // Create parent directories
+          const parts = dest.split('/').filter(Boolean);
+          let cur = '';
+          for (let i = 0; i < parts.length - 1; i++) {
+            cur += '/' + parts[i];
+            try { fs.create_directory(cur); } catch (_) {}
+          }
+          await fs.write_file(dest, new Uint8Array(buf));
+        }
+        synced++;
+      } catch (e) { sLog('error on ' + f.p + ': ' + e.message, 'err'); }
+    }
+    sLog(`synced ${synced}/${manifest.files.length} for ${truncNpub(npub)}`, synced > 0 ? 'ok' : 'hint');
+  }
+
+  async function doSyncAll() {
+    const following = getFollowing();
+    if (!following.length) { sLog('no followed users to sync'); return; }
+    sLog('syncing ' + following.length + ' user(s)…');
+    for (const npub of following) await doSyncOne(npub);
+    sLog('sync complete', 'ok');
+  }
+
+  async function doPublish() {
+    const nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
+    if (!nsec) { sLog('no identity — generate one first', 'err'); return; }
+    const fs = emulator && emulator.fs9p;
+    if (!fs) { sLog('9P share not available — boot v86 first', 'err'); return; }
+
+    // Read tunnel base URL from /mnt/host/.social.tunnel (guest writes this)
+    let baseUrl;
+    try {
+      const data = await fs.read_file('/.social.tunnel');
+      baseUrl = new TextDecoder().decode(data).trim();
+    } catch (_) {
+      sLog('no /mnt/host/.social.tunnel — run social tunnel-up in the guest first', 'err');
+      sLog('  wget -qO- https://www.traits.build/local/social.sh | sh', 'hint');
+      sLog('  social tunnel-up 8080', 'hint');
+      return;
+    }
+
+    // Walk /mnt/host/public via fs9p, compute sha256 of each file
+    sLog('reading /mnt/host/public…');
+    const files = [];
+    async function walkPublic(dir) {
+      for (const e of listDir(dir)) {
+        if (e.dir) { await walkPublic(e.path); }
+        else {
+          try {
+            const data = await fs.read_file(e.path);
+            if (!data) continue;
+            const h = 'sha256:' + (await sha256hex(data));
+            const relPath = e.path.replace(/^\/public\/?/, '');
+            files.push({ p: relPath, h, s: data.byteLength || data.length });
+          } catch (e2) { sLog('skip ' + e.path + ': ' + e2.message, 'hint'); }
+        }
+      }
+    }
+    await walkPublic('/public');
+
+    if (!files.length) { sLog('no files in /mnt/host/public', 'hint'); return; }
+    sLog('found ' + files.length + ' file(s) — signing manifest…');
+
+    const content  = JSON.stringify({ v: 1, base: baseUrl, files });
+    const tagsJson = JSON.stringify([['d', 'public-folder'], ['r', baseUrl]]);
+    const now      = String(Math.floor(Date.now() / 1000));
+
+    let event;
+    try {
+      const res = await nostrCall('sign_event', nsec, '30000', content, tagsJson, now);
+      event = typeof res === 'string' ? JSON.parse(res) : res;
+    } catch (e) { sLog('sign_event failed: ' + e.message, 'err'); return; }
+
+    sLog('broadcasting to ' + NOSTR_RELAYS.length + ' relays…');
+    await nostrPublish(NOSTR_RELAYS, event);
+    sLog('published! id: ' + (event.id || '').slice(0, 16) + '…', 'ok');
+  }
+
+  async function doSearch(query) {
+    query = query.trim();
+    if (!query) return;
+    sLog('searching "' + query + '"…');
+    searchResults.innerHTML = '<span class="hint">searching…</span>';
+    const events = await nostrReq(NOSTR_RELAYS, {
+      kinds: [30000], '#d': ['public-folder'], search: query, limit: 10,
+    }, 9000);
+    if (!events.length) {
+      searchResults.innerHTML = '<span class="hint">no results</span>';
+      sLog('no results for "' + query + '"', 'hint');
+      return;
+    }
+    sLog('found ' + events.length + ' result(s)', 'ok');
+    searchResults.innerHTML = events.map(ev => {
+      let base = '';
+      try { base = JSON.parse(ev.content).base || ''; } catch (_) {}
+      return `<div class="row-flex" style="margin-top:4px">
+        <span class="hint" style="word-break:break-all;flex:1">${ev.pubkey.slice(0, 16)}… ${base ? '→ ' + base.slice(0, 48) : ''}</span>
+        <button class="search-follow-btn" data-pubkey="${ev.pubkey}">follow</button>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Event handlers
+  generateBtn.onclick = async () => {
+    if (!confirm('Generate a new Nostr identity? Existing key in localStorage will be overwritten.')) return;
+    sLog('generating keypair…');
+    try {
+      const res = await nostrCall('keygen');
+      const d = typeof res === 'string' ? JSON.parse(res) : res;
+      const nsec = d.nsec || d.secret_key || d[0] || '';
+      if (!nsec) throw new Error('keygen returned no nsec: ' + JSON.stringify(d));
+      localStorage.setItem(SOCIAL_NSEC_KEY, nsec);
+      sLog('identity generated!', 'ok');
+      await socialInit();
+    } catch (e) { sLog('keygen failed: ' + e.message, 'err'); }
+  };
+
+  publishBtn.onclick  = doPublish;
+  syncNowBtn.onclick  = doSyncAll;
+
+  syncIntervalEl.onchange = () => {
+    clearInterval(socialSyncTimer);
+    const ms = parseInt(syncIntervalEl.value);
+    if (ms > 0) {
+      socialSyncTimer = setInterval(doSyncAll, ms);
+      sLog('auto-sync every ' + (ms / 60000) + ' min', 'ok');
+    } else { sLog('auto-sync disabled'); }
+  };
+
+  followBtnEl.onclick = () => { doFollow(followInput.value); followInput.value = ''; };
+  followInput.onkeydown = e => { if (e.key === 'Enter') followBtnEl.onclick(); };
+  searchBtnEl.onclick = () => doSearch(searchInput.value);
+  searchInput.onkeydown = e => { if (e.key === 'Enter') searchBtnEl.onclick(); };
+
+  socialList.addEventListener('click', e => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    const npub = btn.dataset.npub;
+    if (btn.classList.contains('fc-sync-btn'))     doSyncOne(npub);
+    if (btn.classList.contains('fc-view-btn')) {
+      // Open viewer overlay on /following/<npub>
+      if (pathEl) pathEl.value = '/following/' + npub;
+      overlay.hidden = false; renderTree(); vSet('ready');
+    }
+    if (btn.classList.contains('fc-unfollow-btn')) {
+      if (!confirm('Unfollow ' + truncNpub(npub) + '?')) return;
+      saveFollowing(getFollowing().filter(n => n !== npub));
+      sLog('unfollowed ' + truncNpub(npub));
+      renderFollowList();
+    }
+  });
+
+  searchResults.addEventListener('click', e => {
+    const btn = e.target.closest('.search-follow-btn'); if (!btn) return;
+    nostrCall('encode_npub', btn.dataset.pubkey).then(res => {
+      doFollow(typeof res === 'string' ? res : JSON.stringify(res));
+    }).catch(err => sLog('encode_npub: ' + err.message, 'err'));
+  });
+
+  socialBtn.onclick = () => {
+    if (!emulator) { setStatus('boot v86 first', 'err'); return; }
+    socialOverlay.hidden = false;
+    socialInit();
+  };
+  socialCloseBtn.onclick = () => { socialOverlay.hidden = true; term.focus(); };
+
+  // Keep social button in sync with emulator state
+  setInterval(() => { socialBtn.disabled = !emulator; }, 800);
 
   // ?autoboot=1 [&restore=1]
   const qs = new URLSearchParams(location.search);
