@@ -391,6 +391,7 @@ export TUNNEL_CODE="$CODE"
 trap '
     echo ""
     echo "[tunnel] unregistering $CODE ..."
+    [ -n "${RECLAIM_PID:-}" ] && kill "$RECLAIM_PID" 2>/dev/null
     curl -sS -X POST "$TUNNEL_BASE/port/unregister" \
         -H "Content-Type: application/json" \
         -d "{\"code\":\"$CODE\"}" > /dev/null
@@ -398,6 +399,58 @@ trap '
     echo "[tunnel] done."
     exit 0
 ' INT TERM
+
+# Reclaim watchdog ────────────────────────────────────────────────────────
+# The relay may forget our code at any time:
+#   - Fly tunnel-server keeps sessions in memory only; every redeploy
+#     wipes them.
+#   - Cloudflare Durable Object hibernation can evict idle sessions.
+#   - Network partitions / proxy 502s can drop the session view.
+# When that happens, the websocat respawn loops keep dialing
+# /port/guest?code=... and the relay returns 403 ("code not found"),
+# so traffic silently stops.
+#
+# This loop polls /port/status?code=$CODE and re-POSTs /port/register
+# with the SAME {code, ports} body to reclaim it. Both backends accept
+# `code` in the register body and idempotently restore the session
+# (CF maps code → DO via idFromName(code); Fly stores by the code
+# string). The websocat respawn loops then succeed on their next
+# iteration without changing $CODE — so SSH/SFTP/HTTP clients holding
+# the old code keep working after a Fly redeploy.
+#
+# Override poll interval with TUNNEL_RECLAIM_INTERVAL=N (seconds, default 20).
+RECLAIM_INTERVAL="${TUNNEL_RECLAIM_INTERVAL:-20}"
+(
+    trap '' HUP
+    while :; do
+        sleep "$RECLAIM_INTERVAL" 2>/dev/null || sleep 30
+        STATUS=$(curl -sS --max-time 5 "$TUNNEL_BASE/port/status?code=$CODE" 2>/dev/null)
+        # Both backends report inactive sessions as either:
+        #   {"active":false,"error":"code not found"}   (Fly)
+        #   {"active":false,...}                         (CF, after eviction)
+        # Or status may fail entirely (curl error → empty STATUS) on full
+        # relay outage. In all those cases, attempt re-register; if the
+        # relay is healthy and we just had a transient curl error, the
+        # re-register is a cheap no-op (server returns same code/ports).
+        case "$STATUS" in
+            *'"active":true'*) continue ;;
+        esac
+        echo "[tunnel] reclaim: relay forgot $CODE (status=${STATUS:-<no response>}), re-registering ..."
+        RECLAIM_RESP=$(curl -sS --max-time 8 -X POST "$TUNNEL_BASE/port/register" \
+            -H 'Content-Type: application/json' \
+            -d "{\"code\":\"$CODE\",\"ports\":${PORTS_JSON}}" 2>&1)
+        case "$RECLAIM_RESP" in
+            *'"registered_ports"'*|*'"ok":true'*)
+                echo "[tunnel] reclaim: $CODE reclaimed — bridges will reconnect on next respawn"
+                ;;
+            *)
+                echo "[tunnel] reclaim: failed (resp=$RECLAIM_RESP) — will retry in ${RECLAIM_INTERVAL}s"
+                ;;
+        esac
+    done
+) &
+RECLAIM_PID=$!
+echo "[tunnel] reclaim watchdog PID $RECLAIM_PID (every ${RECLAIM_INTERVAL}s)"
 
 # Keep alive (background bridges continue)
 while :; do sleep 30; done
