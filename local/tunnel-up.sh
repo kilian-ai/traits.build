@@ -3,6 +3,8 @@
 # Usage: tunnel-up.sh [port1] [port2] ...
 # Defaults: sshd(22), public-http(8080 → ~/public), syncthing-sync(22000),
 #           syncthing-gui(8384)
+# FTP note: if port 21 is requested, this script auto-adds a passive range
+# (default 30000-30010) so FTP data channels can traverse relay too.
 #
 # Requires: websocat, curl
 # Install: apk add --no-cache websocat curl
@@ -32,6 +34,32 @@ if [ -z "${TUNNEL_WS:-}" ]; then
     esac
 fi
 PORTS="${*:-22 8080 22000 8384}"
+FTP_PASV_MIN="${FTP_PASV_MIN:-30000}"
+FTP_PASV_MAX="${FTP_PASV_MAX:-30010}"
+
+has_port() {
+    local target="$1"
+    for p in $PORTS; do
+        [ "$p" = "$target" ] && return 0
+    done
+    return 1
+}
+
+append_port() {
+    local p="$1"
+    has_port "$p" || PORTS="$PORTS $p"
+}
+
+add_ftp_passive_ports_if_needed() {
+    has_port 21 || return 0
+    local p="$FTP_PASV_MIN"
+    while [ "$p" -le "$FTP_PASV_MAX" ]; do
+        append_port "$p"
+        p=$((p + 1))
+    done
+}
+
+add_ftp_passive_ports_if_needed
 
 # Install websocat if missing
 if ! command -v websocat >/dev/null 2>&1; then
@@ -175,6 +203,46 @@ HTML
     httpd -p 127.0.0.1:8080 -h "$dir" 2>&1 | head -3
 }
 
+# Auto-start FTP on port 21 with a fixed passive range so relay can proxy
+# both control and data connections.
+auto_start_ftpd() {
+    if ! command -v vsftpd >/dev/null 2>&1; then
+        echo "[tunnel]   installing vsftpd..."
+        apk add --no-cache vsftpd >/dev/null 2>&1 || {
+            echo "[tunnel]   vsftpd install failed"
+            return 1
+        }
+    fi
+
+    if [ ! -f /etc/vsftpd/vsftpd.conf ] && [ ! -f /etc/vsftpd.conf ]; then
+        mkdir -p /etc/vsftpd 2>/dev/null || true
+    fi
+
+    cat > /tmp/vsftpd-tunnel.conf <<EOF
+listen=YES
+listen_address=127.0.0.1
+listen_port=21
+background=YES
+anonymous_enable=NO
+local_enable=YES
+write_enable=YES
+local_umask=022
+pasv_enable=YES
+pasv_min_port=${FTP_PASV_MIN}
+pasv_max_port=${FTP_PASV_MAX}
+pasv_address=127.0.0.1
+userlist_enable=NO
+seccomp_sandbox=NO
+xferlog_enable=YES
+EOF
+
+    echo "[tunnel]   launching vsftpd (passive ${FTP_PASV_MIN}-${FTP_PASV_MAX})..."
+    vsftpd /tmp/vsftpd-tunnel.conf >/tmp/tunnel-ftpd.log 2>&1 || {
+        echo "[tunnel]   failed to launch vsftpd (see /tmp/tunnel-ftpd.log)"
+        return 1
+    }
+}
+
 # Check if TCP port has a LISTEN socket via /proc/net/tcp (avoids nc hangs)
 port_listening() {
     local port_hex
@@ -212,6 +280,14 @@ for PORT in $PORTS; do
             i=0
             while [ $i -lt 15 ]; do
                 port_listening 8080 && break
+                i=$((i+1)); sleep 0.2 2>/dev/null || sleep 1
+            done
+        elif [ "$PORT" = "21" ]; then
+            echo "[tunnel] port 21 — no listener, starting ftpd (vsftpd)..."
+            auto_start_ftpd
+            i=0
+            while [ $i -lt 15 ]; do
+                port_listening 21 && break
                 i=$((i+1)); sleep 0.2 2>/dev/null || sleep 1
             done
         fi
@@ -267,6 +343,13 @@ for PORT in $PORTS; do
         echo ""
         echo "  ~/public direct HTTP proxy:"
         echo "    curl ${TUNNEL_BASE}/port/http/${CODE}/8080/"
+        echo ""
+    fi
+    if [ "$PORT" = "21" ]; then
+        echo "  FTP (control):"
+        echo "    host: localhost (via tunnel-listen)  port: 21"
+        echo "    passive range exposed: ${FTP_PASV_MIN}-${FTP_PASV_MAX}"
+        echo "    tip: map each passive port locally if using a native FTP client"
         echo ""
     fi
     echo "  WebSocket raw (port ${PORT}): '${TUNNEL_WS}/port/client?code=${CODE}&port=${PORT}'"

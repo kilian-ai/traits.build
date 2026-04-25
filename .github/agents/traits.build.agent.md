@@ -1494,6 +1494,7 @@ GET  /port/debug?code=XXXX
 7. **`ssh-keygen -A` is very slow** in v86 — generate only `-t ed25519` for sshd host key.
 8. **websocat 1.14 (Alpine apk package):** `--ping-interval` breaks background mode; background bridges need explicit `</dev/null` stdin detachment to avoid hanging.
 9. **`sshd` requires a root password or `~/.ssh/authorized_keys`** — `tunnel-up.sh` warns if neither is set (guest user must run `passwd` or drop in an authorized_keys first).
+10. **FTP via tunnel requires passive ports.** `local/tunnel-up.sh` now auto-adds passive ports when `21` is requested (`FTP_PASV_MIN..FTP_PASV_MAX`, default `30000-30010`) and auto-starts `vsftpd` bound to `127.0.0.1` with that fixed passive range.
 
 ### Target ports
 
@@ -1501,7 +1502,8 @@ GET  /port/debug?code=XXXX
 |---|---|
 | 22 | sshd (auto-installed + launched by `tunnel-up.sh`) |
 | 8080 | busybox httpd serving `~/public` (auto-launched by `tunnel-up.sh`, seeds an index.html placeholder if dir is empty) |
-| 21 | ftpd |
+| 21 | FTP control channel (`vsftpd`, auto-launched when requested) |
+| 30000-30010 | FTP passive data range (auto-added when port `21` is requested; override via `FTP_PASV_MIN/FTP_PASV_MAX`) |
 | 22000 | Syncthing sync protocol |
 | 8384 | Syncthing web GUI |
 | Custom | Any user-defined service |

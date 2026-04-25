@@ -118,6 +118,20 @@ echo "SSH tunnel: ssh -o ProxyCommand='websocat wss://tunnel.traits.build/port/c
 
 ---
 
+### FTP note (implemented helper behavior)
+
+`local/tunnel-up.sh` now treats FTP as a multi-port service:
+
+- If port `21` is requested, it auto-adds passive ports `FTP_PASV_MIN..FTP_PASV_MAX` (defaults `30000-30010`) to the registration set.
+- It auto-starts `vsftpd` on `127.0.0.1:21` with that fixed passive range, so control + data channels can both traverse relay.
+
+Use environment overrides for custom ranges:
+
+```sh
+FTP_PASV_MIN=31000 FTP_PASV_MAX=31020 \
+  sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) 21
+```
+
 ### Phase 2 — Multi-port & concurrent sessions
 
 For syncthing (needs continuous connection + multi-stream) and FTP (control+data channels), Phase 1's 1:1 model is limiting. Phase 2 upgrades `PortSession` to use a connection-ID model:
