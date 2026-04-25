@@ -7,7 +7,7 @@
 <style>
   :root { color-scheme: dark; }
   html,body { margin:0; padding:0; background:#0b0d10; color:#d5d8dc; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; height:100%; }
-  #wrap { display:flex; flex-direction:column; height:100vh; }
+  #wrap { display:flex; flex-direction:column; height:100vh; position:relative; }
   #bar { padding:6px 10px; background:#161a1f; border-bottom:1px solid #2a2f36; font-size:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   #bar b { color:#fff; }
   #bar select, #bar button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 8px; font:inherit; cursor:pointer; }
@@ -16,6 +16,25 @@
   #bar .stat { color:#888; margin-left:auto; }
   #term { flex:1; min-height:0; padding:6px 8px; background:#0b0d10; }
   #term .xterm { height:100%; }
+  /* viewer overlay sits above #term, fills the same flex slot */
+  #viewer-overlay { position:absolute; left:0; right:0; top:36px; bottom:0; display:flex; flex-direction:column; background:#0b0d10; z-index:50; }
+  #viewer-overlay[hidden] { display:none; }
+  #viewer-bar { display:flex; gap:8px; align-items:center; padding:6px 10px; background:#161a1f; border-bottom:1px solid #2a2f36; font-size:12px; }
+  #viewer-bar input { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 8px; font:inherit; flex:0 1 320px; }
+  #viewer-bar button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; }
+  #viewer-bar button:hover { background:#2d343d; }
+  #viewer-body { flex:1; min-height:0; display:flex; }
+  #viewer-tree { width:280px; overflow:auto; border-right:1px solid #2a2f36; padding:6px 0; font-size:12px; }
+  #viewer-tree .row { padding:3px 12px; cursor:pointer; white-space:nowrap; user-select:none; }
+  #viewer-tree .row:hover { background:#1a1f25; }
+  #viewer-tree .row.sel { background:#22303f; color:#fff; }
+  #viewer-tree .dir::before { content:"▸ "; color:#7a8392; }
+  #viewer-tree .dir.open::before { content:"▾ "; color:#7a8392; }
+  #viewer-tree .file::before { content:"· "; color:#5a6371; }
+  #viewer-tree .indent-1 { padding-left:24px; } #viewer-tree .indent-2 { padding-left:36px; } #viewer-tree .indent-3 { padding-left:48px; } #viewer-tree .indent-4 { padding-left:60px; } #viewer-tree .indent-5 { padding-left:72px; }
+  #viewer-preview { flex:1; min-width:0; position:relative; background:#0b0d10; }
+  #viewer-preview iframe { width:100%; height:100%; border:0; background:#fff; }
+  #viewer-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
   /* Always reserve scrollbar space so xterm's fit calculation doesn't
      oscillate by 2 cols when a scrollbar appears/disappears. */
   #term .xterm-viewport { background:#0b0d10 !important; overflow-y: scroll !important; }
@@ -46,10 +65,28 @@
     <button id="restore" disabled>restore</button>
     <button id="clear" disabled>clear snapshot</button>
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
+    <button id="viewer" disabled title="Browse files in /mnt/host (v86 9P share) directly from the host — no relay needed">viewer</button>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
   </div>
   <div id="term"></div>
+  <div id="viewer-overlay" hidden>
+    <div id="viewer-bar">
+      <b>viewer</b>
+      <span class="hint" style="margin-left:6px">9P share → /mnt/host (in guest)</span>
+      <input id="viewer-path" value="/" spellcheck="false" title="path inside the 9P share">
+      <button id="viewer-refresh" title="reload listing">refresh</button>
+      <span class="hint" id="viewer-status"></span>
+      <button id="viewer-close" style="margin-left:auto">close</button>
+    </div>
+    <div id="viewer-body">
+      <div id="viewer-tree"></div>
+      <div id="viewer-preview">
+        <div id="viewer-empty" class="hint">select a file on the left</div>
+        <iframe id="viewer-frame" hidden sandbox="allow-scripts allow-same-origin"></iframe>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="./libv86.js"></script>
@@ -384,6 +421,12 @@
       vga_memory_size: 4 * 1024 * 1024,
       autostart: true,
       disable_mouse: true,
+      // Empty 9P virtio filesystem. Mounts in the guest as the virtio tag
+      // `host9p`. We use it to expose files between guest and host browser:
+      // the guest writes to /mnt/host/* and the host reads via
+      // emulator.fs9p.read_dir() / read_file() — no relay or websocat
+      // needed. The viewer overlay button uses this directly.
+      filesystem: {},
     };
     // Optional: route emulated NIC through our Cloudflare relay so `apk add`, wget, etc. work.
     // Default backend is WISP (TCP tunneled over a single WebSocket) backed by
@@ -549,8 +592,22 @@
       // is racy. A second `up` after a longer settle always succeeds. We
       // poll `/sys/class/net/eth0/operstate` up to 5 times and redo the up
       // until it reports non-`down`.
+      // Mount the v86 9P share at /mnt/host so the host browser viewer can
+      // read files written by the guest without going through the relay.
+      // - msize: 8KB chunks (small but reliable; v86 9P doesn't like big msize)
+      // - cache=loose: avoids excessive flushes for write-heavy workloads
+      // - access=any: don't require uid/gid mapping
+      // The symlink puts a `~/host` shortcut in $HOME for ergonomic access.
+      const mount9pCmd =
+        'mkdir -p /mnt/host 2>/dev/null; ' +
+        'mountpoint -q /mnt/host || ' +
+          'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any host9p /mnt/host 2>/dev/null; ' +
+        'ln -sfn /mnt/host /home/root/host 2>/dev/null; ' +
+        'mkdir -p /mnt/host/public 2>/dev/null; ';
+
       const restoreNetCmd =
         rootfsCmd +
+        mount9pCmd +
         'killall -q udhcpc 2>/dev/null; ' +
         'ip link set eth0 down 2>/dev/null; sleep 1; ' +
         'for i in 1 2 3 4 5; do ' +
@@ -569,6 +626,7 @@
 
       const freshBootCmd =
         rootfsCmd +
+        mount9pCmd +
         'ip link set eth0 up 2>/dev/null; ' +
         'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +
@@ -682,6 +740,121 @@
   termEl.addEventListener('click', () => term.focus());
 
   setInterval(() => { statsEl.textContent = emulator ? `${byteCount} bytes` : ''; }, 500);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Viewer overlay — browse files in the v86 9P share directly from the host.
+  // No relay/tunnel/websocat needed. Files the guest writes to /mnt/host/*
+  // appear here on the next refresh.
+  // ─────────────────────────────────────────────────────────────────────────
+  const viewerBtn   = $('viewer');
+  const overlay     = $('viewer-overlay');
+  const treeEl      = $('viewer-tree');
+  const frameEl     = $('viewer-frame');
+  const emptyEl     = $('viewer-empty');
+  const pathEl      = $('viewer-path');
+  const refreshBtn  = $('viewer-refresh');
+  const closeBtn    = $('viewer-close');
+  const vStatusEl   = $('viewer-status');
+  let lastBlobUrl   = null;
+  const expanded    = new Set(['/']);
+
+  function vSet(msg, cls) { vStatusEl.textContent = msg || ''; vStatusEl.className = 'hint ' + (cls || ''); }
+
+  function fs9p() { return emulator && emulator.fs9p; }
+  function joinPath(base, name) {
+    if (base === '/' || base === '') return '/' + name;
+    return base.replace(/\/+$/, '') + '/' + name;
+  }
+  function isDir(path) {
+    const fs = fs9p(); if (!fs) return false;
+    const r = fs.SearchPath(path);
+    if (!r || r.id === -1) return false;
+    return fs.IsDirectory(r.id);
+  }
+  function listDir(path) {
+    const fs = fs9p(); if (!fs) return [];
+    const names = fs.read_dir(path) || [];
+    return names.map(n => {
+      const p = joinPath(path, n);
+      return { name: n, path: p, dir: isDir(p) };
+    }).sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
+  }
+
+  function renderTree() {
+    if (!fs9p()) { treeEl.innerHTML = '<div class="row hint" style="padding:8px 12px">9P share not ready</div>'; return; }
+    const root = (pathEl.value || '/').replace(/\/+$/, '') || '/';
+    if (!isDir(root)) {
+      treeEl.innerHTML = `<div class="row hint" style="padding:8px 12px">not a directory: ${root}</div>`;
+      return;
+    }
+    expanded.add(root);
+    const out = [];
+    function walk(dirPath, depth) {
+      for (const e of listDir(dirPath)) {
+        const cls = e.dir ? ('dir' + (expanded.has(e.path) ? ' open' : '')) : 'file';
+        const indent = depth > 5 ? 5 : depth;
+        out.push(`<div class="row ${cls} indent-${indent}" data-path="${e.path}" data-dir="${e.dir ? 1 : 0}">${e.name}</div>`);
+        if (e.dir && expanded.has(e.path)) walk(e.path, depth + 1);
+      }
+    }
+    walk(root, 1);
+    treeEl.innerHTML = out.join('') || '<div class="row hint" style="padding:8px 12px">empty</div>';
+  }
+
+  function mimeFor(path) {
+    const ext = (path.split('.').pop() || '').toLowerCase();
+    return ({
+      html:'text/html', htm:'text/html',
+      js:'text/javascript', mjs:'text/javascript',
+      css:'text/css', json:'application/json',
+      svg:'image/svg+xml', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg',
+      gif:'image/gif', webp:'image/webp', ico:'image/x-icon',
+      txt:'text/plain', md:'text/plain', log:'text/plain',
+      pdf:'application/pdf', wasm:'application/wasm',
+    })[ext] || 'text/plain;charset=utf-8';
+  }
+
+  async function openFile(path) {
+    const fs = fs9p(); if (!fs) return;
+    vSet('loading ' + path);
+    let data;
+    try { data = await fs.read_file(path); } catch (e) { vSet('error: ' + e.message, 'err'); return; }
+    if (!data) { vSet('empty or missing: ' + path, 'err'); return; }
+    if (lastBlobUrl) { try { URL.revokeObjectURL(lastBlobUrl); } catch (_) {} lastBlobUrl = null; }
+    const blob = new Blob([data], { type: mimeFor(path) });
+    lastBlobUrl = URL.createObjectURL(blob);
+    frameEl.src = lastBlobUrl;
+    frameEl.hidden = false;
+    emptyEl.hidden = true;
+    vSet(`${path} (${data.length} bytes)`, 'ok');
+  }
+
+  treeEl.addEventListener('click', e => {
+    const row = e.target.closest('.row'); if (!row) return;
+    const path = row.dataset.path;
+    if (row.dataset.dir === '1') {
+      if (expanded.has(path)) expanded.delete(path); else expanded.add(path);
+      renderTree();
+    } else {
+      treeEl.querySelectorAll('.row.sel').forEach(r => r.classList.remove('sel'));
+      row.classList.add('sel');
+      openFile(path);
+    }
+  });
+  refreshBtn.onclick = () => { renderTree(); vSet('reloaded'); };
+  pathEl.onkeydown = e => { if (e.key === 'Enter') { renderTree(); } };
+  closeBtn.onclick = () => { overlay.hidden = true; term.focus(); };
+  viewerBtn.onclick = () => {
+    if (!fs9p()) { setStatus('9P share not available — boot v86 first', 'err'); return; }
+    // Default to the public seed dir if it exists, otherwise root.
+    if (pathEl.value === '/' && isDir('/public')) pathEl.value = '/public';
+    overlay.hidden = false;
+    renderTree();
+    vSet('ready');
+  };
+  // Toggle viewer button availability when emulator boots/stops.
+  function syncViewerBtn() { viewerBtn.disabled = !emulator; }
+  setInterval(syncViewerBtn, 800);
 
   // ?autoboot=1 [&restore=1]
   const qs = new URLSearchParams(location.search);
