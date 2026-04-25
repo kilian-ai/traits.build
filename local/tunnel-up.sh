@@ -62,6 +62,12 @@ add_ftp_passive_ports_if_needed() {
 
 add_ftp_passive_ports_if_needed
 
+is_ftp_passive_port() {
+    local candidate_port="$1"
+    has_port 21 || return 1
+    [ "$candidate_port" -ge "$FTP_PASV_MIN" ] && [ "$candidate_port" -le "$FTP_PASV_MAX" ]
+}
+
 # Install websocat if missing
 if ! command -v websocat >/dev/null 2>&1; then
     echo "[tunnel] installing websocat..."
@@ -291,9 +297,13 @@ for PORT in $PORTS; do
                 port_listening 21 && break
                 i=$((i+1)); sleep 0.2 2>/dev/null || sleep 1
             done
+        elif is_ftp_passive_port "$PORT"; then
+            # FTP passive sockets are opened on demand by vsftpd.
+            # Keep relay bridge loops alive even if the port is closed now.
+            echo "[tunnel] port $PORT — FTP passive (on-demand), starting bridge loop without pre-listen check"
         fi
     fi
-    if ! port_listening "$PORT"; then
+    if ! port_listening "$PORT" && ! is_ftp_passive_port "$PORT"; then
         echo "[tunnel] port $PORT — no local listener, skipping bridge"
         continue
     fi
