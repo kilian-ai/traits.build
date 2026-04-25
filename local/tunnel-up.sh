@@ -221,22 +221,30 @@ for PORT in $PORTS; do
         continue
     fi
     WS_URL="${TUNNEL_WS}/port/guest?code=${CODE}&port=${PORT}"
-    # Respawn loop: each client disconnect tears down the bridge; restart
-    # so the next SSH connection gets a fresh TCP to sshd.
-    # --ping-interval 25: keep the WS alive across NAT/CDN idle timeouts
-    #   (Fly's edge proxy and many corporate NATs drop idle WS at ~60s).
-    # trap '' HUP: subshell must independently ignore SIGHUP so backgrounding
-    #   tunnel-up.sh & + closing the terminal does not kill bridges.
-    (
-        trap '' HUP
-        while :; do
-            websocat --binary --ping-interval 25 "$WS_URL" "tcp:127.0.0.1:${PORT}" </dev/null
-            echo "[tunnel] bridge for port ${PORT} exited; respawning in 1s"
-            sleep 1
-        done
-    ) >> "/tmp/tunnel-${PORT}.log" 2>&1 &
-    BPID=$!
-    echo "[tunnel] port $PORT → bridge PID $BPID  log: /tmp/tunnel-${PORT}.log"
+    # Each HTTP request burns a bridge (HTTP Connection: close → TCP FIN →
+    # WS close → websocat exits), so we run a small POOL of parallel bridges
+    # per port. Concurrent requests then don't queue waiting for respawn.
+    # TUNNEL_BRIDGES_PER_PORT=N to override (default 3).
+    POOL_SIZE="${TUNNEL_BRIDGES_PER_PORT:-3}"
+    n=0
+    while [ "$n" -lt "$POOL_SIZE" ]; do
+        n=$((n+1))
+        # --ping-interval 25: keep WS alive across NAT/CDN idle timeouts
+        #   (Fly edge proxy and many corporate NATs drop idle WS at ~60s).
+        # trap '' HUP: subshell must independently ignore SIGHUP so backgrounding
+        #   tunnel-up.sh & + closing the terminal does not kill bridges.
+        # No sleep on respawn: lost time = dropped requests during the gap.
+        (
+            trap '' HUP
+            while :; do
+                websocat --binary --ping-interval 25 "$WS_URL" "tcp:127.0.0.1:${PORT}" </dev/null
+                # tiny jitter to avoid tight loop if TCP refused
+                sleep 0.1 2>/dev/null || sleep 1
+            done
+        ) >> "/tmp/tunnel-${PORT}.log" 2>&1 &
+        BPID=$!
+        echo "[tunnel] port $PORT → bridge $n/$POOL_SIZE PID $BPID  log: /tmp/tunnel-${PORT}.log"
+    done
 done
 
 echo ""

@@ -108,30 +108,42 @@ class PortSession {
     this.created = Date.now();
     this.lastActivity = Date.now();
     this.registeredPorts = new Set();
-    this.guestWs = new Map();   // port → ws
+    this.guestWs = new Map();   // port → Set<ws>  (pool of idle bridges)
     this.clientWs = new Map();  // port → ws
-    this.guestAt = new Map();
+    this.guestAt = new Map();   // port → ts of most-recent guest
     this.clientAt = new Map();
     this.guestBuffer = new Map(); // port → Array<Buffer> buffered before client attaches
     this.BUFFER_MAX = 256;
-    this.proxyCalls = new Map();  // port → { chunks, resetIdle, settle }
+    this.proxyCalls = new Map();  // port → { ws, chunks, resetIdle, settle }
   }
 
   touch() { this.lastActivity = Date.now(); }
 
+  // Pick the most recently-arrived idle bridge for this port.
+  // Used by both HTTP proxy and TCP client pairing.
+  pickGuest(port) {
+    const pool = this.guestWs.get(port);
+    if (!pool || !pool.size) return null;
+    // Return any open one (Set iteration order = insertion order).
+    for (const ws of pool) {
+      if (ws.readyState === 1) return ws;
+    }
+    return null;
+  }
+
   addGuest(port, ws) {
     this.touch();
-    const existing = this.guestWs.get(port);
-    if (existing) { try { existing.close(1000, 'replaced'); } catch (_) {} }
-    this.guestWs.set(port, ws);
+    let pool = this.guestWs.get(port);
+    if (!pool) { pool = new Set(); this.guestWs.set(port, pool); }
+    pool.add(ws);
     this.guestAt.set(port, Date.now());
 
     ws.on('message', (data, isBinary) => {
       this.touch();
       const buf = isBinary ? data : Buffer.from(data);
-      // Route to active HTTP proxy call, if any
+      // Route to active HTTP proxy call bound to THIS specific ws, if any
       const call = this.proxyCalls.get(port);
-      if (call) { call.chunks.push(buf); call.resetIdle(); return; }
+      if (call && call.ws === ws) { call.chunks.push(buf); call.resetIdle(); return; }
       // Otherwise forward to paired client
       const peer = this.clientWs.get(port);
       if (!peer || peer.readyState !== 1) {
@@ -145,15 +157,22 @@ class PortSession {
     });
 
     ws.on('close', (code, reason) => {
-      if (this.guestWs.get(port) === ws) {
-        this.guestWs.delete(port);
-        this.guestAt.delete(port);
-        this.guestBuffer.delete(port);
+      const p = this.guestWs.get(port);
+      if (p) {
+        p.delete(ws);
+        if (!p.size) {
+          this.guestWs.delete(port);
+          this.guestAt.delete(port);
+          this.guestBuffer.delete(port);
+        }
       }
-      const peer = this.clientWs.get(port);
-      if (peer) { try { peer.close(code || 1000, String(reason || 'peer disconnected')); } catch (_) {} }
+      // Tear down paired TCP client only if no other bridge is live.
+      if (!this.pickGuest(port)) {
+        const peer = this.clientWs.get(port);
+        if (peer) { try { peer.close(code || 1000, String(reason || 'peer disconnected')); } catch (_) {} }
+      }
       const call = this.proxyCalls.get(port);
-      if (call) call.settle('close');
+      if (call && call.ws === ws) call.settle('close');
     });
     ws.on('error', () => {
       try { ws.close(1011, 'error'); } catch (_) {}
@@ -176,8 +195,8 @@ class PortSession {
 
     ws.on('message', (data, isBinary) => {
       this.touch();
-      const peer = this.guestWs.get(port);
-      if (!peer || peer.readyState !== 1) return;
+      const peer = this.pickGuest(port);
+      if (!peer) return;
       try { peer.send(isBinary ? data : Buffer.from(data), { binary: true }); } catch (_) {}
     });
     ws.on('close', (code, reason) => {
@@ -185,7 +204,7 @@ class PortSession {
         this.clientWs.delete(port);
         this.clientAt.delete(port);
       }
-      const peer = this.guestWs.get(port);
+      const peer = this.pickGuest(port);
       if (peer) { try { peer.close(code || 1000, String(reason || 'peer disconnected')); } catch (_) {} }
     });
     ws.on('error', () => {
@@ -228,7 +247,9 @@ class PortSession {
   }
 
   destroy() {
-    for (const ws of this.guestWs.values())  { try { ws.close(1000, 'unregistered'); } catch (_) {} }
+    for (const pool of this.guestWs.values()) {
+      for (const ws of pool) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
+    }
     for (const ws of this.clientWs.values()) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
     this.guestWs.clear();
     this.clientWs.clear();
@@ -269,9 +290,10 @@ async function httpProxy(req, res, session, port, guestPath) {
   // requests (viewer loading index + listing + files) race and hit 503.
   const RECONNECT_WAIT_MS = 3500;
   const waitStart = Date.now();
+  let guestWs = null;
   while (true) {
-    const gw = session.guestWs.get(port);
-    if (gw && gw.readyState === 1) break;
+    guestWs = session.pickGuest(port);
+    if (guestWs) break;
     if (Date.now() - waitStart > RECONNECT_WAIT_MS) {
       cors(res);
       res.writeHead(503);
@@ -280,7 +302,6 @@ async function httpProxy(req, res, session, port, guestPath) {
     }
     await new Promise(r => setTimeout(r, 100));
   }
-  const guestWs = session.guestWs.get(port);
   if (session.clientWs.has(port)) {
     cors(res);
     res.writeHead(409);
@@ -315,7 +336,9 @@ async function httpProxy(req, res, session, port, guestPath) {
   let idleTimer;
   const IDLE_MS = 1500;
   const resetIdle = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => settle('idle'), IDLE_MS); };
-  session.proxyCalls.set(port, { chunks, resetIdle, settle });
+  // Bind this call to the specific bridge we picked, so other bridges in the
+  // pool don't drop their inter-request bytes into our response buffer.
+  session.proxyCalls.set(port, { ws: guestWs, chunks, resetIdle, settle });
 
   try { guestWs.send(reqBytes, { binary: true }); }
   catch (_) {

@@ -112,15 +112,28 @@ do_tunnel() {
         printf 'tunnel register failed: %s\n' "$_resp" > "$DIR/out.txt"
         return 1
     fi
-    # Start websocat bridge in background
-    websocat --binary --ping-interval 30 \
-        "${TUNNEL_WS}/port/guest?code=${_code}&port=${_port}" \
-        "tcp:127.0.0.1:${_port}" >> "$DIR/tunnel-${_port}.log" 2>&1 &
-    _ws_pid=$!
-    printf '%s' "$_ws_pid" > "$DIR/tunnel-${_port}.pid"
-    sleep 1  # let websocat connect
-    printf 'Tunnel up: port %s → code %s\nWebSocket URL: %s/port/client?code=%s&port=%s\nSSH ProxyCommand: ssh -o ProxyCommand="websocat %s/port/client?code=%s&port=%s" root@dummy\nwebsocat bridge PID: %s\n' \
-        "$_port" "$_code" "$TUNNEL_WS" "$_code" "$_port" "$TUNNEL_WS" "$_code" "$_port" "$_ws_pid" > "$DIR/out.txt"
+    # Start a POOL of websocat bridges with respawn loops. Each HTTP request
+    # through the proxy burns one bridge (HTTP Connection: close → TCP FIN →
+    # WS close → websocat exits), so a single bridge dies after the first
+    # call. Pool of N=3 + auto-respawn keeps capacity warm.
+    : > "$DIR/tunnel-${_port}.pid"
+    _n=0
+    while [ "$_n" -lt 3 ]; do
+        _n=$((_n+1))
+        (
+            trap '' HUP
+            while :; do
+                websocat --binary --ping-interval 25 \
+                    "${TUNNEL_WS}/port/guest?code=${_code}&port=${_port}" \
+                    "tcp:127.0.0.1:${_port}" </dev/null
+                sleep 0.1 2>/dev/null || sleep 1
+            done
+        ) >> "$DIR/tunnel-${_port}.log" 2>&1 &
+        printf '%s ' "$!" >> "$DIR/tunnel-${_port}.pid"
+    done
+    sleep 1  # let bridges connect
+    printf 'Tunnel up: port %s → code %s\nWebSocket URL: %s/port/client?code=%s&port=%s\nSSH ProxyCommand: ssh -o ProxyCommand="websocat %s/port/client?code=%s&port=%s" root@dummy\nwebsocat bridge PIDs: %s\n' \
+        "$_port" "$_code" "$TUNNEL_WS" "$_code" "$_port" "$TUNNEL_WS" "$_code" "$_port" "$(cat "$DIR/tunnel-${_port}.pid")" > "$DIR/out.txt"
 }
 
 # --- seed system + user (redirect, no pipes) --------------------------------
