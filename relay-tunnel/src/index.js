@@ -211,7 +211,14 @@ export class PortSession {
     const existing = role === 'guest' ? this.guestWs.get(port) : this.clientWs.get(port);
     if (existing) {
       try { existing.close(1000, 'replaced'); } catch (_) {}
-      if (role === 'guest') { this.guestWs.delete(port); this.guestAt.delete(port); }
+      if (role === 'guest') {
+        this.guestWs.delete(port);
+        this.guestAt.delete(port);
+        // Drop any buffered bytes from the replaced guest's tcp:PORT accept.
+        // Those bytes belong to a now-dead sshd/ftpd/etc. accept; mixing them
+        // with the new bridge's fresh banner produces SSH KEX corruption.
+        this.guestBuffer.delete(port);
+      }
       else                  { this.clientWs.delete(port); this.clientAt.delete(port); }
     }
 
@@ -278,13 +285,31 @@ export class PortSession {
   async webSocketClose(ws, code, reason, _wasClean) {
     const { role, port } = this._parseTags(ws);
     if (port == null) return;
+    // IMPORTANT: only clear map entries if the closing WS is still the current
+    // one for this (role, port). When _accept replaces an existing WS via
+    // close(1000,'replaced'), the OLD ws's close handler fires asynchronously
+    // — by then the NEW ws is already registered in the map. Unconditionally
+    // deleting would clobber the new entry, leaving guestWs/clientWs empty
+    // and stranding the live connection (status shows guest:true but bytes
+    // never flow). This also caused the SSH banner corruption we observed:
+    // bridge thrash + buffer clears mid-handshake left the next client peer
+    // staring at mid-stream KEX-INIT bytes.
     if (role === 'guest') {
-      this.guestWs.delete(port);
-      this.guestAt.delete(port);
-      this.guestBuffer.delete(port);
+      if (this.guestWs.get(port) === ws) {
+        this.guestWs.delete(port);
+        this.guestAt.delete(port);
+        this.guestBuffer.delete(port);
+      } else {
+        // Replaced WS closing — leave the new entry intact.
+        return;
+      }
     } else if (role === 'client') {
-      this.clientWs.delete(port);
-      this.clientAt.delete(port);
+      if (this.clientWs.get(port) === ws) {
+        this.clientWs.delete(port);
+        this.clientAt.delete(port);
+      } else {
+        return;
+      }
     }
     const peer = role === 'guest' ? this.clientWs.get(port) : this.guestWs.get(port);
     if (peer) {

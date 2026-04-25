@@ -190,7 +190,40 @@ class PortSession {
     this.clientWs.set(port, ws);
     this.clientAt.set(port, Date.now());
 
-    // Flush buffered guest→client data (e.g. SSH banner)
+    // Defense against multi-bridge guests (legacy tunnel-up.sh POOL_SIZE>1):
+    // each guest bridge opens its OWN tcp:127.0.0.1:PORT connection to the
+    // local service (sshd, ftpd, ...), so each one received its own protocol
+    // banner from a distinct accept(). Those banners all land in the SAME
+    // guestBuffer, and on client pair we'd flush banner1+banner2+banner3
+    // concatenated — sshd KEX-INIT corruption / SFTP "invalid format" /
+    // FTP double-220-greeting all reproduce from this. Mitigate by keeping
+    // exactly one bridge alive and discarding the polluted buffer; the
+    // tunnel-up.sh respawn loop will reconnect the closed ones (now usually
+    // a no-op since POOL_SIZE defaults to 1), and the surviving bridge's
+    // service connection streams a clean banner directly to the now-paired
+    // client (live forward in addGuest's message handler).
+    const pool = this.guestWs.get(port);
+    if (pool && pool.size > 1) {
+      const wsArr = [...pool];
+      // Keep newest (last added) as the survivor; close the rest.
+      const survivor = wsArr[wsArr.length - 1];
+      for (const g of wsArr) {
+        if (g === survivor) continue;
+        try { g.close(1000, 'pool-collapse'); } catch (_) {}
+        pool.delete(g);
+      }
+      this.guestBuffer.delete(port);
+      // Close survivor too so we get a guaranteed-fresh accept on respawn.
+      // Without this, the survivor's already-buffered banner has been
+      // dropped above, and sshd has already finished its banner write —
+      // the client would hang waiting for a banner that already left.
+      try { survivor.close(1000, 'pool-collapse-fresh'); } catch (_) {}
+      pool.delete(survivor);
+      if (!pool.size) this.guestWs.delete(port);
+    }
+
+    // Flush buffered guest→client data (e.g. SSH banner) — only meaningful
+    // for the clean POOL_SIZE=1 case after the collapse above no-op'd.
     const buf = this.guestBuffer.get(port);
     if (buf && buf.length) {
       for (const d of buf) { try { ws.send(d, { binary: true }); } catch (_) {} }

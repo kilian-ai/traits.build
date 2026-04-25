@@ -308,11 +308,21 @@ for PORT in $PORTS; do
         continue
     fi
     WS_URL="${TUNNEL_WS}/port/guest?code=${CODE}&port=${PORT}"
-    # Each HTTP request burns a bridge (HTTP Connection: close → TCP FIN →
-    # WS close → websocat exits), so we run a small POOL of parallel bridges
-    # per port. Concurrent requests then don't queue waiting for respawn.
-    # TUNNEL_BRIDGES_PER_PORT=N to override (default 3).
-    POOL_SIZE="${TUNNEL_BRIDGES_PER_PORT:-3}"
+    # POOL_SIZE: how many parallel guest WS bridges to keep open per port.
+    # Default 1 — required for TCP tunneling (SSH/SFTP/FTP/Syncthing). The
+    # relay enforces 1:1 pairing per (code, port, role): when a second guest
+    # WS connects, it boots the prior one via close(1000,'replaced'). With
+    # POOL_SIZE>1, the bridges constantly kill each other, leaving partial
+    # bytes from killed sshd/ftpd accepts in the relay's guestBuffer. Those
+    # mixed bytes then flush to the next client and corrupt the SSH banner
+    # (host sees raw KEX-INIT bytes instead of "SSH-2.0-...").
+    #
+    # For HTTP burst workloads where concurrent requests benefit from a
+    # pool, override with TUNNEL_BRIDGES_PER_PORT=N. The /port/http proxy
+    # endpoint is single-shot anyway and consumes one bridge per request,
+    # so only set N>1 if you have many parallel HTTP-over-tunnel callers
+    # AND none of the registered ports carry persistent TCP traffic.
+    POOL_SIZE="${TUNNEL_BRIDGES_PER_PORT:-1}"
     n=0
     while [ "$n" -lt "$POOL_SIZE" ]; do
         n=$((n+1))

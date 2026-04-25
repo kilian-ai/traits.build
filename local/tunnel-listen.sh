@@ -116,8 +116,16 @@ echo ""
 echo "  Ctrl-C to stop."
 echo "──────────────────────────────────────────────────────"
 
-# websocat opens a local TCP listener that forwards to the tunnel WS.
-# Use -E to close the WS cleanly on client disconnect; without this,
-# serial SSH/SFTP sessions can inherit stale stream state and fail with
-# MAC/bad-packet errors.
-exec websocat --binary -E "tcp-l:127.0.0.1:${LOCAL_PORT}" "$URL"
+# Respawn loop: each local TCP client gets a fresh upstream WSS connection.
+# Why: websocat in tcp-l: mode with -E (--exit-on-eof) is single-shot — after
+# the first client disconnects, websocat exits and port LOCAL_PORT goes away.
+# Without -E, sequential SSH/SFTP sessions can reuse a polluted WS stream
+# (banner + KEX-INIT bytes from a prior session leak through). Wrapping in
+# a respawn loop gives us BOTH a persistent local listener AND a clean
+# upstream pipe per client connection.
+trap 'echo "[tunnel-listen] stopping"; exit 0' INT TERM
+while :; do
+    websocat --binary -E "tcp-l:127.0.0.1:${LOCAL_PORT}" "$URL" || true
+    # Brief pause to avoid a tight loop if upstream is unreachable.
+    sleep 0.2 2>/dev/null || sleep 1
+done
