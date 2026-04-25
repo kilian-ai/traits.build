@@ -101,6 +101,19 @@ async function readBodyJson(req) {
 }
 
 // ── PortSession (in-memory equivalent of the Durable Object) ───────────────
+//
+// Multi-pair queue model (matches relay-tunnel/src/index.js):
+//   guestWs:  port → Set<ws>     (FIFO-ish pool of guest bridges)
+//   pairs:    ws → ws            (bidirectional client↔guest map)
+//
+// Each guest bridge wraps exactly ONE tcp:127.0.0.1:PORT accept on the guest
+// side, so it can serve at most one client end-to-end. tunnel-up.sh keeps a
+// pool of standby bridges per port; each new client attach pulls a fresh,
+// unpaired bridge from the pool. This supports protocols that open multiple
+// concurrent TCP connections on the same port (Filezilla parallel SFTP,
+// FTP control + data channels, HTTP/1.1 keep-alive bursts, etc.). The old
+// 1:1 design closed each "existing" client/guest on attach — which mid-killed
+// any active parallel transfer with "socket unexpectedly closed".
 
 class PortSession {
   constructor(code) {
@@ -108,41 +121,28 @@ class PortSession {
     this.created = Date.now();
     this.lastActivity = Date.now();
     this.registeredPorts = new Set();
-    this.guestWs = new Map();   // port → Set<ws>  (pool of idle bridges)
-    this.clientWs = new Map();  // port → ws
-    this.guestAt = new Map();   // port → ts of most-recent guest
-    this.clientAt = new Map();
-    this.guestBuffer = new Map(); // port → Array<Buffer> buffered before client attaches
+    this.guestWs = new Map();   // port → Set<ws>  (idle + paired guests)
+    this.clientWs = new Map();  // port → Set<ws>  (paired clients)
+    this.pairs = new Map();     // ws → ws  (bidirectional pair lookup)
+    this.guestAt = new Map();   // port → ts of most-recent guest attach
+    this.clientAt = new Map();  // port → ts of most-recent client attach
+    // Pre-pair buffer: bytes received from a guest before any client has
+    // dequeued it (e.g. sshd banner sent on TCP accept). Keyed by guest WS
+    // so each bridge has its own buffer; flushed on pair, dropped on close.
+    this.guestBuffer = new WeakMap();
     this.BUFFER_MAX = 256;
-    this.proxyCalls = new Map();  // ws → { chunks, resetIdle, settle }
-                                  // (keyed by ws so concurrent requests on the
-                                  //  same port don't collide)
-    this.usedGuests = new WeakSet(); // guest WS instances that have already been
-                                      // paired with at least one client. Each
-                                      // guest bridge wraps a SINGLE TCP
-                                      // connection to the local service (sshd,
-                                      // ftpd, …) — once consumed, the service
-                                      // banner has been emitted and the
-                                      // protocol is mid-flight. Reusing the
-                                      // bridge for a second client gives them
-                                      // an exhausted pipe (no banner, garbage
-                                      // KEX) → "Bad packet length" / SFTP
-                                      // "socket unexpectedly closed". On every
-                                      // new client attach we close all used
-                                      // guests so the guest-side respawn loop
-                                      // produces a fresh accept().
+    this.proxyCalls = new Map();  // guest ws → { chunks, resetIdle, settle }
   }
 
   touch() { this.lastActivity = Date.now(); }
 
-  // Pick an OPEN, IDLE bridge for this port. A bridge is "idle" if it has no
-  // in-flight HTTP proxy call. This prevents two concurrent requests from
-  // picking the same bridge and intermixing response bytes.
-  pickGuest(port) {
+  // Pick a fresh, OPEN, unpaired, idle (no in-flight HTTP proxy) guest WS
+  // for this port. Used by both addClient (TCP pairing) and httpProxy.
+  pickFreshGuest(port) {
     const pool = this.guestWs.get(port);
     if (!pool || !pool.size) return null;
     for (const ws of pool) {
-      if (ws.readyState === 1 && !this.proxyCalls.has(ws)) return ws;
+      if (ws.readyState === 1 && !this.pairs.has(ws) && !this.proxyCalls.has(ws)) return ws;
     }
     return null;
   }
@@ -157,19 +157,20 @@ class PortSession {
     ws.on('message', (data, isBinary) => {
       this.touch();
       const buf = isBinary ? data : Buffer.from(data);
-      // Route to the in-flight HTTP proxy call bound to THIS ws, if any
+      // Route to in-flight HTTP proxy call bound to this ws, if any.
       const call = this.proxyCalls.get(ws);
       if (call) { call.chunks.push(buf); call.resetIdle(); return; }
-      // Otherwise forward to paired TCP client
-      const peer = this.clientWs.get(port);
-      if (!peer || peer.readyState !== 1) {
-        let b = this.guestBuffer.get(port);
-        if (!b) { b = []; this.guestBuffer.set(port, b); }
-        b.push(buf);
-        if (b.length > this.BUFFER_MAX) b.shift();
+      // Forward to paired client if pair exists.
+      const peer = this.pairs.get(ws);
+      if (peer && peer.readyState === 1) {
+        try { peer.send(buf, { binary: true }); } catch (_) {}
         return;
       }
-      try { peer.send(buf, { binary: true }); } catch (_) {}
+      // Unpaired: buffer for the eventual pair (sshd banner case).
+      let b = this.guestBuffer.get(ws);
+      if (!b) { b = []; this.guestBuffer.set(ws, b); }
+      b.push(buf);
+      if (b.length > this.BUFFER_MAX) b.shift();
     });
 
     ws.on('close', (code, reason) => {
@@ -179,18 +180,18 @@ class PortSession {
         if (!p.size) {
           this.guestWs.delete(port);
           this.guestAt.delete(port);
-          this.guestBuffer.delete(port);
         }
       }
-      // Settle any in-flight proxy call bound to this ws so the caller
-      // doesn't hang on `await done`.
+      this.guestBuffer.delete(ws);
       const call = this.proxyCalls.get(ws);
       if (call) call.settle('close');
-      // Tear down paired TCP client only if no other bridge is live.
-      if (!this.pickGuest(port) && (this.guestWs.get(port)?.size ?? 0) === 0) {
-        const peer = this.clientWs.get(port);
-        if (peer) { try { peer.close(code || 1000, String(reason || 'peer disconnected')); } catch (_) {} }
+      // Break only this specific pair; siblings on the same port survive.
+      const peer = this.pairs.get(ws);
+      if (peer) {
+        this.pairs.delete(peer);
+        try { peer.close(code || 1000, String(reason || 'peer disconnected')); } catch (_) {}
       }
+      this.pairs.delete(ws);
     });
     ws.on('error', () => {
       try { ws.close(1011, 'error'); } catch (_) {}
@@ -199,93 +200,55 @@ class PortSession {
 
   addClient(port, ws) {
     this.touch();
-    const existing = this.clientWs.get(port);
-    if (existing) { try { existing.close(1000, 'replaced'); } catch (_) {} }
-    this.clientWs.set(port, ws);
+
+    // Pop a fresh, unpaired guest from the pool. Each new client always
+    // gets its OWN bridge — concurrent clients on the same port are
+    // independent end-to-end.
+    const guest = this.pickFreshGuest(port);
+    if (!guest) {
+      // No standby bridge available. Close this client immediately so
+      // the local listener (tunnel-listen.sh) gets EOF and reports a
+      // connect failure, prompting the user/guest to restart bridges.
+      try { ws.close(1013, 'no guest bridge available — guest pool drained'); } catch (_) {}
+      return;
+    }
+
+    let cpool = this.clientWs.get(port);
+    if (!cpool) { cpool = new Set(); this.clientWs.set(port, cpool); }
+    cpool.add(ws);
     this.clientAt.set(port, Date.now());
+    this.pairs.set(ws, guest);
+    this.pairs.set(guest, ws);
 
-    // Force a fresh guest TCP accept for every new client. Each guest
-    // bridge wraps exactly one tcp:127.0.0.1:PORT connection — once the
-    // first client has been served, sshd/ftpd has already emitted its
-    // banner into that pipe and is mid-protocol. A second client picking
-    // up the same bridge sees no banner and protocol garbage. Close any
-    // "used" guest bridges here so the guest-side respawn loop opens a
-    // brand-new accept and re-emits a clean banner before pairing below.
-    const usedPool = this.guestWs.get(port);
-    if (usedPool && usedPool.size) {
-      const stale = [];
-      for (const g of usedPool) {
-        if (this.usedGuests.has(g)) stale.push(g);
-      }
-      if (stale.length) {
-        for (const g of stale) {
-          try { g.close(1000, 'guest-recycle-fresh'); } catch (_) {}
-          usedPool.delete(g);
-        }
-        this.guestBuffer.delete(port);
-        if (!usedPool.size) this.guestWs.delete(port);
-      }
-    }
-
-    // Defense against multi-bridge guests (legacy tunnel-up.sh POOL_SIZE>1):
-    // each guest bridge opens its OWN tcp:127.0.0.1:PORT connection to the
-    // local service (sshd, ftpd, ...), so each one received its own protocol
-    // banner from a distinct accept(). Those banners all land in the SAME
-    // guestBuffer, and on client pair we'd flush banner1+banner2+banner3
-    // concatenated — sshd KEX-INIT corruption / SFTP "invalid format" /
-    // FTP double-220-greeting all reproduce from this. Mitigate by keeping
-    // exactly one bridge alive and discarding the polluted buffer; the
-    // tunnel-up.sh respawn loop will reconnect the closed ones (now usually
-    // a no-op since POOL_SIZE defaults to 1), and the surviving bridge's
-    // service connection streams a clean banner directly to the now-paired
-    // client (live forward in addGuest's message handler).
-    const pool = this.guestWs.get(port);
-    if (pool && pool.size > 1) {
-      const wsArr = [...pool];
-      // Keep newest (last added) as the survivor; close the rest.
-      const survivor = wsArr[wsArr.length - 1];
-      for (const g of wsArr) {
-        if (g === survivor) continue;
-        try { g.close(1000, 'pool-collapse'); } catch (_) {}
-        pool.delete(g);
-      }
-      this.guestBuffer.delete(port);
-      // Close survivor too so we get a guaranteed-fresh accept on respawn.
-      // Without this, the survivor's already-buffered banner has been
-      // dropped above, and sshd has already finished its banner write —
-      // the client would hang waiting for a banner that already left.
-      try { survivor.close(1000, 'pool-collapse-fresh'); } catch (_) {}
-      pool.delete(survivor);
-      if (!pool.size) this.guestWs.delete(port);
-    }
-
-    // Flush buffered guest→client data (e.g. SSH banner) — only meaningful
-    // for the clean POOL_SIZE=1 case after the collapse above no-op'd.
-    const buf = this.guestBuffer.get(port);
+    // Flush any pre-pair buffered bytes from the dequeued guest.
+    const buf = this.guestBuffer.get(guest);
     if (buf && buf.length) {
+      this.guestBuffer.delete(guest);
       for (const d of buf) { try { ws.send(d, { binary: true }); } catch (_) {} }
-      this.guestBuffer.delete(port);
     }
-
-    // Mark every currently-attached guest on this port as "used" — they're
-    // about to start streaming protocol bytes to this client and become
-    // unsuitable for any subsequent client (see usedGuests comment above).
-    const livePool = this.guestWs.get(port);
-    if (livePool) { for (const g of livePool) this.usedGuests.add(g); }
 
     ws.on('message', (data, isBinary) => {
       this.touch();
-      const peer = this.pickGuest(port);
-      if (!peer) return;
+      const peer = this.pairs.get(ws);
+      if (!peer || peer.readyState !== 1) return;
       try { peer.send(isBinary ? data : Buffer.from(data), { binary: true }); } catch (_) {}
     });
     ws.on('close', (code, reason) => {
-      if (this.clientWs.get(port) === ws) {
-        this.clientWs.delete(port);
-        this.clientAt.delete(port);
+      const cp = this.clientWs.get(port);
+      if (cp) {
+        cp.delete(ws);
+        if (!cp.size) {
+          this.clientWs.delete(port);
+          this.clientAt.delete(port);
+        }
       }
-      const peer = this.pickGuest(port);
-      if (peer) { try { peer.close(code || 1000, String(reason || 'peer disconnected')); } catch (_) {} }
+      // Break only this pair; close the peer guest (single-use anyway).
+      const peer = this.pairs.get(ws);
+      if (peer) {
+        this.pairs.delete(peer);
+        try { peer.close(code || 1000, String(reason || 'peer disconnected')); } catch (_) {}
+      }
+      this.pairs.delete(ws);
     });
     ws.on('error', () => {
       try { ws.close(1011, 'error'); } catch (_) {}
@@ -296,11 +259,21 @@ class PortSession {
     const now = Date.now();
     const guestPorts = [...this.guestWs.keys()];
     const clientPorts = [...this.clientWs.keys()];
+    const guestQueueDepth = {};
+    for (const [p, pool] of this.guestWs.entries()) {
+      let idle = 0;
+      for (const g of pool) if (!this.pairs.has(g) && g.readyState === 1) idle++;
+      guestQueueDepth[p] = idle;
+    }
+    const activePairs = {};
+    for (const [p, pool] of this.clientWs.entries()) activePairs[p] = pool.size;
     return {
       registered_ports: [...this.registeredPorts],
       guest_ports: guestPorts,
       client_ports: clientPorts,
-      paired_ports: guestPorts.filter(p => this.clientWs.has(p)),
+      paired_ports: clientPorts.filter(p => this.guestWs.has(p)),
+      guest_queue_depth: guestQueueDepth,
+      active_pairs: activePairs,
       age_s: Math.floor((now - this.created) / 1000),
       idle_s: Math.floor((now - this.lastActivity) / 1000),
       active: true,
@@ -311,9 +284,14 @@ class PortSession {
     const now = Date.now();
     const ports = {};
     for (const p of this.registeredPorts) {
+      const gpool = this.guestWs.get(p);
+      const cpool = this.clientWs.get(p);
+      let idle = 0, paired = 0;
+      if (gpool) for (const g of gpool) (this.pairs.has(g) ? paired++ : idle++);
       ports[p] = {
-        guest: this.guestWs.has(p),
-        client: this.clientWs.has(p),
+        guest_queue_depth: idle,
+        active_pairs: cpool ? cpool.size : 0,
+        guest_paired: paired,
         guest_age_s: this.guestAt.has(p) ? Math.floor((now - this.guestAt.get(p)) / 1000) : null,
         client_age_s: this.clientAt.has(p) ? Math.floor((now - this.clientAt.get(p)) / 1000) : null,
       };
@@ -322,6 +300,7 @@ class PortSession {
       created: new Date(this.created).toISOString(),
       age_s: Math.floor((now - this.created) / 1000),
       idle_s: Math.floor((now - this.lastActivity) / 1000),
+      total_pairs: this.pairs.size / 2,
       ports,
     };
   }
@@ -330,7 +309,9 @@ class PortSession {
     for (const pool of this.guestWs.values()) {
       for (const ws of pool) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
     }
-    for (const ws of this.clientWs.values()) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
+    for (const pool of this.clientWs.values()) {
+      for (const ws of pool) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
+    }
     this.guestWs.clear();
     this.clientWs.clear();
     this.registeredPorts.clear();
@@ -373,7 +354,7 @@ async function httpProxy(req, res, session, port, guestPath) {
   const waitStart = Date.now();
   let guestWs = null;
   while (true) {
-    guestWs = session.pickGuest(port);
+    guestWs = session.pickFreshGuest(port);
     if (guestWs) break;
     if (Date.now() - waitStart > RECONNECT_WAIT_MS) {
       cors(res);
@@ -383,12 +364,9 @@ async function httpProxy(req, res, session, port, guestPath) {
     }
     await new Promise(r => setTimeout(r, 100));
   }
-  if (session.clientWs.has(port)) {
-    cors(res);
-    res.writeHead(409);
-    res.end(`port ${port} busy with TCP client`);
-    return;
-  }
+  // Note: with the multi-pair design, TCP clients on this port have their
+  // own dedicated bridges. The HTTP proxy just dequeues an unpaired bridge,
+  // so it never collides with active SSH/SFTP/etc. sessions.
 
   const method = req.method;
   let bodyBytes = null;

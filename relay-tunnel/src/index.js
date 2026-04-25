@@ -107,50 +107,58 @@ function _concat(arrays) {
 
 // ── PortSession Durable Object ────────────────────────────────────────────────
 // One DO instance per pairing code.
-// Holds: registeredPorts, guestWs[port], clientWs[port]
+//
+// Multi-pair queue model:
+//   guestQueue:  port → Array<WS>  (FIFO of idle guest bridges, not yet paired)
+//   pairs:       WS → WS           (bidirectional pair map: client↔guest)
+//
+// Each guest WS on the tunnel wraps exactly ONE tcp:127.0.0.1:PORT accept on
+// the guest side, so it can serve at most ONE client end-to-end. tunnel-up.sh
+// maintains a pool of standby bridges per port (POOL_SIZE, default 4); each
+// new client dequeues one fresh bridge here. The guest's respawn loop refills
+// the pool as bridges are consumed.
+//
+// This multi-pair design is required for parallel-capable protocols:
+//   - SFTP (Filezilla opens 2+ concurrent SSH connections for parallel xfers)
+//   - FTP control + multiple data sockets
+//   - HTTP/1.1 keep-alive across overlapping requests
+//
+// The previous 1:1-per-port design closed any "existing" client/guest on a
+// new client attach, which mid-killed the first parallel SFTP transfer with
+// "Could not read from socket, socket unexpectedly closed".
 
 export class PortSession {
   constructor(state, _env) {
     this.state = state;
     this.created = Date.now();
     this.registeredPorts = new Set();
-    this.guestWs = new Map();   // port → WebSocket
-    this.clientWs = new Map();  // port → WebSocket
-    this.guestAt = new Map();   // port → timestamp
-    this.clientAt = new Map();  // port → timestamp
-    // Buffer guest→client data that arrives before client connects
-    // (e.g. SSH banner sent by sshd on TCP accept, dropped without buffering)
-    this.guestBuffer = new Map(); // port → Array<data>
-    this.BUFFER_MAX = 256;        // cap per port
+    this.guestQueue = new Map();   // port → Array<WS>  (idle guests, FIFO)
+    this.pairs = new Map();        // WS → WS  (bidirectional)
+    // Pre-pair buffer: bytes received from a guest before any client has
+    // dequeued it (e.g. sshd banner sent eagerly on TCP accept). Keyed by
+    // guest WS so each bridge has its own buffer; flushed to the client on
+    // pair, discarded on guest close.
+    this.guestBuffer = new WeakMap();
+    this.BUFFER_MAX = 256;
     this.lastActivity = Date.now();
     this.IDLE_TTL_MS = 10 * 60 * 1000;
-    // Per-port HTTP proxy call state: port → { chunks:[], resolve, resetIdle }
-    // Used to route webSocketMessage bytes into an active _httpProxy call.
+    // Per-WS HTTP proxy call state: ws → { chunks:[], resolve, resetIdle }
+    // Used to route webSocketMessage bytes into an active _httpProxy call
+    // (the call dequeues a guest and consumes it single-shot).
     this.proxyCalls = new Map();
-    // Per-port "used guest" tracker: each guest WS wraps exactly one
-    // tcp:127.0.0.1:PORT connection on the guest side. Once the first
-    // client has paired, sshd/ftpd has already streamed its banner into
-    // that pipe and is mid-protocol. Any subsequent client picking up the
-    // same guest sees an empty buffer and protocol garbage ("Bad packet
-    // length", "socket unexpectedly closed", SFTP upload failures). On
-    // every NEW client attach we close the existing guest if the port has
-    // already served a client — the guest-side respawn loop reopens a
-    // fresh tcp accept and re-emits a clean banner before pairing.
-    this.usedPorts = new Set();
-    // Restore registered ports + rehydrate hibernated WebSockets.
+
     this.state.blockConcurrencyWhile(async () => {
       const ports = await this.state.storage.get('registeredPorts');
       if (Array.isArray(ports)) this.registeredPorts = new Set(ports);
       const created = await this.state.storage.get('created');
       if (typeof created === 'number') this.created = created;
-      // Rehydrate WS refs from Hibernation API — survives DO eviction.
-      for (const ws of this.state.getWebSockets('guest')) {
-        const { port } = this._parseTags(ws);
-        if (port != null) { this.guestWs.set(port, ws); this.guestAt.set(port, Date.now()); }
-      }
-      for (const ws of this.state.getWebSockets('client')) {
-        const { port } = this._parseTags(ws);
-        if (port != null) { this.clientWs.set(port, ws); this.clientAt.set(port, Date.now()); }
+      // Force-reset any hibernated WSes — pair state isn't persisted to DO
+      // storage, and CF DO hibernation only triggers after extended idle
+      // (tunnel-up.sh's --ping-interval 25 keeps active sessions hot, so
+      // hibernation cannot interrupt a live transfer). Closing hibernated
+      // WS triggers tunnel-up.sh respawn → fresh bridges enqueued cleanly.
+      for (const ws of this.state.getWebSockets()) {
+        try { ws.close(1000, 'rehydrate'); } catch (_) {}
       }
     });
   }
@@ -217,62 +225,52 @@ export class PortSession {
       return new Response('WebSocket upgrade required', { status: 426 });
     }
 
-    // Boot any existing WS on the same role+port (1:1 pairing)
-    const existing = role === 'guest' ? this.guestWs.get(port) : this.clientWs.get(port);
-    if (existing) {
-      try { existing.close(1000, 'replaced'); } catch (_) {}
-      if (role === 'guest') {
-        this.guestWs.delete(port);
-        this.guestAt.delete(port);
-        // Drop any buffered bytes from the replaced guest's tcp:PORT accept.
-        // Those bytes belong to a now-dead sshd/ftpd/etc. accept; mixing them
-        // with the new bridge's fresh banner produces SSH KEX corruption.
-        this.guestBuffer.delete(port);
+    if (role === 'client') {
+      // Pop a fresh OPEN guest from the queue. Each guest WS = one TCP accept
+      // on the guest side, single-use. Filezilla-style parallel SFTP transfers
+      // open multiple SSH connections to the same port — each one dequeues
+      // its own bridge here, paired independently.
+      const q = this.guestQueue.get(port);
+      let guest = null;
+      while (q && q.length) {
+        const candidate = q.shift();
+        if (candidate.readyState === 1 /* OPEN */) { guest = candidate; break; }
       }
-      else                  { this.clientWs.delete(port); this.clientAt.delete(port); }
-    }
-
-    // Force-fresh guest on every NEW client attach for already-used ports
-    // (see usedPorts comment in constructor). Skip on the very first client
-    // to avoid kicking the only live bridge before it has done its job.
-    if (role === 'client' && this.usedPorts.has(port)) {
-      const stale = this.guestWs.get(port);
-      if (stale) {
-        try { stale.close(1000, 'guest-recycle-fresh'); } catch (_) {}
-        this.guestWs.delete(port);
-        this.guestAt.delete(port);
-        this.guestBuffer.delete(port);
+      if (q && !q.length) this.guestQueue.delete(port);
+      if (!guest) {
+        return new Response(
+          `no guest bridge available on port ${port} (pool drained — guest must respawn)`,
+          { status: 503 },
+        );
       }
-    }
 
-    const pair = new WebSocketPair();
-    const server = pair[1];
-    // Hibernation API: Cloudflare manages WS lifecycle across DO eviction.
-    // Tag with role + port so we can rehydrate refs after wake.
-    this.state.acceptWebSocket(server, [role, `port:${port}`]);
+      const pair = new WebSocketPair();
+      const client = pair[1];
+      this.state.acceptWebSocket(client, ['client', `port:${port}`]);
+      this.pairs.set(client, guest);
+      this.pairs.set(guest, client);
 
-    if (role === 'guest') {
-      this.guestWs.set(port, server);
-      this.guestAt.set(port, Date.now());
-    } else {
-      this.clientWs.set(port, server);
-      this.clientAt.set(port, Date.now());
-      // Mark this port as having served a client. The next client attach
-      // will recycle the guest above before pairing.
-      this.usedPorts.add(port);
-      // Flush any buffered guest→client data (e.g. SSH banner)
-      const buf = this.guestBuffer.get(port);
+      // Flush any pre-pair buffered bytes (e.g. SSH banner sent eagerly by
+      // sshd on TCP accept, before this client dequeued the bridge).
+      const buf = this.guestBuffer.get(guest);
       if (buf && buf.length) {
+        this.guestBuffer.delete(guest);
         const buffered = [...buf];
-        this.guestBuffer.delete(port);
         setTimeout(() => {
-          for (const d of buffered) {
-            try { server.send(d); } catch (_) {}
-          }
+          for (const d of buffered) { try { client.send(d); } catch (_) {} }
         }, 0);
       }
+
+      return new Response(null, { status: 101, webSocket: pair[0] });
     }
 
+    // role === 'guest': enqueue in the per-port standby pool.
+    const pair = new WebSocketPair();
+    const guest = pair[1];
+    this.state.acceptWebSocket(guest, ['guest', `port:${port}`]);
+    let q = this.guestQueue.get(port);
+    if (!q) { q = []; this.guestQueue.set(port, q); }
+    q.push(guest);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
@@ -280,11 +278,10 @@ export class PortSession {
   // WS, surviving DO eviction. All bytes flow through here.
   async webSocketMessage(ws, message) {
     this.lastActivity = Date.now();
-    const { role, port } = this._parseTags(ws);
-    if (port == null) return;
+    const { role } = this._parseTags(ws);
 
-    // If an _httpProxy call is waiting on this port, deliver bytes to it.
-    const call = this.proxyCalls.get(port);
+    // If an _httpProxy call owns this guest WS, deliver bytes to it.
+    const call = this.proxyCalls.get(ws);
     if (call && role === 'guest') {
       let u8;
       if (message instanceof ArrayBuffer)       u8 = new Uint8Array(message);
@@ -294,57 +291,48 @@ export class PortSession {
       return;
     }
 
-    // Normal relay: forward to paired peer
-    const peer = role === 'guest' ? this.clientWs.get(port) : this.guestWs.get(port);
-    if (!peer) {
-      if (role === 'guest') {
-        let buf = this.guestBuffer.get(port);
-        if (!buf) { buf = []; this.guestBuffer.set(port, buf); }
-        buf.push(this._cloneWsPayload(message));
-        if (buf.length > this.BUFFER_MAX) buf.shift();
-      }
+    // Forward to paired peer if pair exists.
+    const peer = this.pairs.get(ws);
+    if (peer && peer.readyState === 1) {
+      try { peer.send(message); } catch (_) {}
       return;
     }
-    try { peer.send(message); } catch (_) {}
+
+    // Unpaired guest receiving bytes (e.g. sshd banner on TCP accept before
+    // any client has dequeued this bridge): buffer for the eventual pair.
+    if (role === 'guest') {
+      let buf = this.guestBuffer.get(ws);
+      if (!buf) { buf = []; this.guestBuffer.set(ws, buf); }
+      buf.push(this._cloneWsPayload(message));
+      if (buf.length > this.BUFFER_MAX) buf.shift();
+    }
   }
 
   async webSocketClose(ws, code, reason, _wasClean) {
     const { role, port } = this._parseTags(ws);
-    if (port == null) return;
-    // IMPORTANT: only clear map entries if the closing WS is still the current
-    // one for this (role, port). When _accept replaces an existing WS via
-    // close(1000,'replaced'), the OLD ws's close handler fires asynchronously
-    // — by then the NEW ws is already registered in the map. Unconditionally
-    // deleting would clobber the new entry, leaving guestWs/clientWs empty
-    // and stranding the live connection (status shows guest:true but bytes
-    // never flow). This also caused the SSH banner corruption we observed:
-    // bridge thrash + buffer clears mid-handshake left the next client peer
-    // staring at mid-stream KEX-INIT bytes.
-    if (role === 'guest') {
-      if (this.guestWs.get(port) === ws) {
-        this.guestWs.delete(port);
-        this.guestAt.delete(port);
-        this.guestBuffer.delete(port);
-        // Forget "used" marker — the next guest that pairs is fresh.
-        this.usedPorts.delete(port);
-      } else {
-        // Replaced WS closing — leave the new entry intact.
-        return;
-      }
-    } else if (role === 'client') {
-      if (this.clientWs.get(port) === ws) {
-        this.clientWs.delete(port);
-        this.clientAt.delete(port);
-      } else {
-        return;
+    // If still queued (unpaired guest disconnected), splice out.
+    if (role === 'guest' && port != null) {
+      const q = this.guestQueue.get(port);
+      if (q) {
+        const i = q.indexOf(ws);
+        if (i >= 0) q.splice(i, 1);
+        if (!q.length) this.guestQueue.delete(port);
       }
     }
-    const peer = role === 'guest' ? this.clientWs.get(port) : this.guestWs.get(port);
+    this.guestBuffer.delete(ws);
+
+    // Break the specific pair only — other concurrent pairs on the same
+    // port are unaffected. This is the key change vs the old 1:1 design:
+    // a closed Filezilla transfer #1 no longer kills transfer #2.
+    const peer = this.pairs.get(ws);
     if (peer) {
-      try { peer.close(code || 1000, reason || 'peer disconnected'); } catch (_) {}
+      this.pairs.delete(peer);
+      try { peer.close(code || 1000, String(reason || 'peer disconnected')); } catch (_) {}
     }
-    const call = this.proxyCalls.get(port);
-    if (call && role === 'guest') call.settle('close');
+    this.pairs.delete(ws);
+
+    const call = this.proxyCalls.get(ws);
+    if (call) call.settle('close');
   }
 
   async webSocketError(ws, _err) {
@@ -353,44 +341,59 @@ export class PortSession {
 
   _status() {
     const now = Date.now();
-    const guestPorts = [...this.guestWs.keys()];
-    const clientPorts = [...this.clientWs.keys()];
+    const guestQueueDepth = {};
+    for (const [p, q] of this.guestQueue.entries()) guestQueueDepth[p] = q.length;
+    // Count active pairs per port.
+    const pairsPerPort = {};
+    for (const ws of this.pairs.keys()) {
+      const { role, port } = this._parseTags(ws);
+      if (role === 'client' && port != null) {
+        pairsPerPort[port] = (pairsPerPort[port] || 0) + 1;
+      }
+    }
     return json({
       registered_ports: [...this.registeredPorts],
-      guest_ports: guestPorts,
-      client_ports: clientPorts,
-      paired_ports: guestPorts.filter(p => this.clientWs.has(p)),
+      guest_queue_depth: guestQueueDepth,
+      active_pairs: pairsPerPort,
+      // Legacy compatibility fields (used by tunnel-up.sh reclaim watchdog
+      // to detect "session lost"): non-empty if any guest is registered or
+      // paired on the port.
+      guest_ports: [...new Set([...Object.keys(guestQueueDepth).map(Number), ...Object.keys(pairsPerPort).map(Number)])],
+      client_ports: Object.keys(pairsPerPort).map(Number),
+      paired_ports: Object.keys(pairsPerPort).map(Number),
       age_s: Math.floor((now - this.created) / 1000),
       idle_s: Math.floor((now - this.lastActivity) / 1000),
     });
   }
 
   async _unregister() {
-    for (const ws of this.guestWs.values()) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
-    for (const ws of this.clientWs.values()) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
-    this.guestWs.clear();
-    this.clientWs.clear();
+    for (const q of this.guestQueue.values()) {
+      for (const ws of q) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
+    }
+    for (const ws of this.pairs.keys()) { try { ws.close(1000, 'unregistered'); } catch (_) {} }
+    this.guestQueue.clear();
+    this.pairs.clear();
     this.registeredPorts.clear();
     await this.state.storage.deleteAll();
     return json({ ok: true });
   }
 
-  // HTTP/1.1 proxy: sends an HTTP request over the guest WS (which is bridged
-  // to tcp:127.0.0.1:PORT inside the guest), parses the response bytes, returns
-  // a Response. Each call consumes/closes the guest WS (single-shot), so the
-  // guest-side respawn loop in tunnel-up.sh must be active for multiple calls.
-  //
-  // Requires: X-Tunnel-Port header (no URL parsing needed — main worker sets it).
-  // Uses: Connection: close so TCP terminates cleanly.
+  // HTTP/1.1 proxy: dequeues a guest from the standby pool, sends an HTTP
+  // request over it (the guest bridges to tcp:127.0.0.1:PORT internally),
+  // parses the response bytes, returns a Response. Single-shot — the guest's
+  // tunnel-up.sh respawn loop refills the pool for subsequent calls.
   async _httpProxy(request, url) {
     const port = parsePort(request.headers.get('X-Tunnel-Port'));
     if (!port) return new Response('missing port', { status: 400, headers: cors() });
-    const guestWs = this.guestWs.get(port);
+    const q = this.guestQueue.get(port);
+    let guestWs = null;
+    while (q && q.length) {
+      const candidate = q.shift();
+      if (candidate.readyState === 1) { guestWs = candidate; break; }
+    }
+    if (q && !q.length) this.guestQueue.delete(port);
     if (!guestWs) {
       return new Response(`guest not connected on port ${port}`, { status: 503, headers: cors() });
-    }
-    if (this.clientWs.has(port)) {
-      return new Response(`port ${port} busy with TCP client`, { status: 409, headers: cors() });
     }
 
     // Derive upstream path: main worker routes to "/http" + guest path.
@@ -423,14 +426,15 @@ export class PortSession {
     const IDLE_MS = 1500;
     const resetIdle = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => settle('idle'), IDLE_MS); };
 
-    // Register the call so webSocketMessage routes bytes here.
-    // (Only one _httpProxy per port at a time — client lock above prevents overlap.)
-    this.proxyCalls.set(port, { chunks, resetIdle, settle });
+    // Register the call keyed by the dequeued guest WS so webSocketMessage
+    // routes its bytes here (multiple concurrent proxy calls on the same
+    // port are now safe — each owns its own bridge).
+    this.proxyCalls.set(guestWs, { chunks, resetIdle, settle });
 
     try {
       guestWs.send(reqBytes);
     } catch (err) {
-      this.proxyCalls.delete(port);
+      this.proxyCalls.delete(guestWs);
       return new Response('failed to send to guest', { status: 502, headers: cors() });
     }
     resetIdle();
@@ -439,7 +443,10 @@ export class PortSession {
     const timeout = new Promise(r => setTimeout(() => r('timeout'), 12000));
     await Promise.race([done, timeout]);
     clearTimeout(idleTimer);
-    this.proxyCalls.delete(port);
+    this.proxyCalls.delete(guestWs);
+    // Single-shot: close the consumed bridge so the guest respawn loop
+    // refills the standby pool for subsequent calls.
+    try { guestWs.close(1000, 'http-proxy-done'); } catch (_) {}
 
     // Parse HTTP/1.1 response bytes.
     const total = chunks.reduce((s, c) => s + c.byteLength, 0);
@@ -479,18 +486,25 @@ export class PortSession {
   _debug() {
     const now = Date.now();
     const ports = {};
+    const pairsPerPort = {};
+    for (const ws of this.pairs.keys()) {
+      const { role, port } = this._parseTags(ws);
+      if (role === 'client' && port != null) {
+        pairsPerPort[port] = (pairsPerPort[port] || 0) + 1;
+      }
+    }
     for (const p of this.registeredPorts) {
+      const q = this.guestQueue.get(p);
       ports[p] = {
-        guest: this.guestWs.has(p),
-        client: this.clientWs.has(p),
-        guest_age_s: this.guestAt.has(p) ? Math.floor((now - this.guestAt.get(p)) / 1000) : null,
-        client_age_s: this.clientAt.has(p) ? Math.floor((now - this.clientAt.get(p)) / 1000) : null,
+        guest_queue_depth: q ? q.length : 0,
+        active_pairs: pairsPerPort[p] || 0,
       };
     }
     return json({
       created: new Date(this.created).toISOString(),
       age_s: Math.floor((now - this.created) / 1000),
       idle_s: Math.floor((now - this.lastActivity) / 1000),
+      total_pairs: this.pairs.size / 2,
       ports,
     });
   }
