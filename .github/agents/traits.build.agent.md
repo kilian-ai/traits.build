@@ -1482,6 +1482,52 @@ GET  /port/debug?code=XXXX
 | [local/tunnel-up.sh](local/tunnel-up.sh) | Guest-side: register + launch websocat bridges (with respawn loop per port) |
 | [local/tunnel-ssh.sh](local/tunnel-ssh.sh) | Host-side: one-off SSH via ProxyCommand wrapper (zsh-safe, URL in temp script to avoid `&`/`?` glob) |
 | [local/tunnel-listen.sh](local/tunnel-listen.sh) | Host-side: local TCP listener forwarding to tunnel — enables plain `ssh -p`/`scp -P`/`sftp -P`/`rsync`/any TCP client |
+| [local/social.sh](local/social.sh) | Guest-side: Nostr-backed public folder publish/follow/sync over the 9P share (`/mnt/host/public` ↔ `/mnt/host/following/<npub>/`) |
+
+### social.sh — Nostr public-folder follow/sync (Apr 2026)
+
+Layered on top of `tunnel-up.sh` (port 8080 = busybox httpd serving `~/public`) and the `social.nostr` trait. Run inside the v86 Alpine guest:
+
+```sh
+# one-time
+apk add curl jq websocat
+wget -O /usr/local/bin/social https://www.traits.build/local/social.sh
+chmod +x /usr/local/bin/social
+
+# identity
+social init                                  # generate keypair → /mnt/host/.nsec + .npub
+social tunnel-up 8080                        # registers tunnel; caches base_url to /mnt/host/.social.tunnel
+
+# publishing
+echo "hi" > /mnt/host/public/note.txt
+social publish                               # signs kind-30000 d="public-folder" event with ["r", base_url] tag, broadcasts to relays
+
+# following
+social follow npub1...
+social sync                                  # one-shot: fetch each followed user's manifest event from relays, mirror files via wget
+social sync --watch 60                       # daemon loop
+social search "alice"                        # NIP-50 keyword search across configured relays
+```
+
+Guest convention (single source of truth = full `npub` as folder name):
+
+```
+/mnt/host/public/                    your published content (visible to host via 9P)
+/mnt/host/.nsec                      your private key (hex)
+/mnt/host/.npub                      cached bech32 pubkey
+/mnt/host/.social.tunnel             cached base URL for serving public/
+/mnt/host/following/.list            npubs you follow (one per line)
+/mnt/host/following/<npub>/          mirrored files
+/mnt/host/following/<npub>/.manifest.json   raw kind-30000 event for inspection
+```
+
+Manifest event schema (kind=30000, d-tag="public-folder"):
+- `tags`: `[["d","public-folder"], ["r", base_url]]`
+- `content` (JSON): `{"v":1, "base":"https://tunnel.traits.build/port/http/CODE/8080", "files":[{"p":"path","h":"sha256:HEX","s":bytes}, ...]}`
+
+**Crypto delegation:** `social.sh` calls `https://traits-build.fly.dev/traits/social/nostr` (REST) for keygen/sign/verify/decode_npub. The guest does not need any Rust binary — only `curl`, `jq`, `websocat`, `sha256sum`, `wget`, `find`. Default relays: `relay.damus.io`, `nos.lol`, `relay.nostr.band` (override via `SOCIAL_RELAYS`).
+
+**Why HTTP for files (not Nostr blossom/blobs):** the existing tunnel infrastructure already exposes `~/public` over `https://tunnel.traits.build/port/http/CODE/8080/` with CORS headers. Nostr only carries the small manifest (hashes + paths), keeping relay payloads tiny while large files flow peer-to-peer through the tunnel CDN.
 
 ### Hard-won lessons (debugging findings)
 
