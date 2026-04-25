@@ -114,19 +114,21 @@ class PortSession {
     this.clientAt = new Map();
     this.guestBuffer = new Map(); // port → Array<Buffer> buffered before client attaches
     this.BUFFER_MAX = 256;
-    this.proxyCalls = new Map();  // port → { ws, chunks, resetIdle, settle }
+    this.proxyCalls = new Map();  // ws → { chunks, resetIdle, settle }
+                                  // (keyed by ws so concurrent requests on the
+                                  //  same port don't collide)
   }
 
   touch() { this.lastActivity = Date.now(); }
 
-  // Pick the most recently-arrived idle bridge for this port.
-  // Used by both HTTP proxy and TCP client pairing.
+  // Pick an OPEN, IDLE bridge for this port. A bridge is "idle" if it has no
+  // in-flight HTTP proxy call. This prevents two concurrent requests from
+  // picking the same bridge and intermixing response bytes.
   pickGuest(port) {
     const pool = this.guestWs.get(port);
     if (!pool || !pool.size) return null;
-    // Return any open one (Set iteration order = insertion order).
     for (const ws of pool) {
-      if (ws.readyState === 1) return ws;
+      if (ws.readyState === 1 && !this.proxyCalls.has(ws)) return ws;
     }
     return null;
   }
@@ -141,10 +143,10 @@ class PortSession {
     ws.on('message', (data, isBinary) => {
       this.touch();
       const buf = isBinary ? data : Buffer.from(data);
-      // Route to active HTTP proxy call bound to THIS specific ws, if any
-      const call = this.proxyCalls.get(port);
-      if (call && call.ws === ws) { call.chunks.push(buf); call.resetIdle(); return; }
-      // Otherwise forward to paired client
+      // Route to the in-flight HTTP proxy call bound to THIS ws, if any
+      const call = this.proxyCalls.get(ws);
+      if (call) { call.chunks.push(buf); call.resetIdle(); return; }
+      // Otherwise forward to paired TCP client
       const peer = this.clientWs.get(port);
       if (!peer || peer.readyState !== 1) {
         let b = this.guestBuffer.get(port);
@@ -166,13 +168,15 @@ class PortSession {
           this.guestBuffer.delete(port);
         }
       }
+      // Settle any in-flight proxy call bound to this ws so the caller
+      // doesn't hang on `await done`.
+      const call = this.proxyCalls.get(ws);
+      if (call) call.settle('close');
       // Tear down paired TCP client only if no other bridge is live.
-      if (!this.pickGuest(port)) {
+      if (!this.pickGuest(port) && (this.guestWs.get(port)?.size ?? 0) === 0) {
         const peer = this.clientWs.get(port);
         if (peer) { try { peer.close(code || 1000, String(reason || 'peer disconnected')); } catch (_) {} }
       }
-      const call = this.proxyCalls.get(port);
-      if (call && call.ws === ws) call.settle('close');
     });
     ws.on('error', () => {
       try { ws.close(1011, 'error'); } catch (_) {}
@@ -284,11 +288,12 @@ setInterval(() => {
 // ── HTTP-over-WS proxy ─────────────────────────────────────────────────────
 
 async function httpProxy(req, res, session, port, guestPath) {
-  // Wait briefly for guest to (re)connect. The guest-side websocat bridge is
-  // one-shot — each HTTP proxy call closes the WS, and the respawn loop in
-  // tunnel-up.sh takes ~1s to reconnect. Without this wait, back-to-back
-  // requests (viewer loading index + listing + files) race and hit 503.
-  const RECONNECT_WAIT_MS = 3500;
+  // Wait for an idle bridge in the pool. Each HTTP call burns one bridge
+  // (HTTP Connection: close → TCP FIN → WS close → websocat exits + respawn),
+  // so a burst of N concurrent requests on a pool of N bridges leaves the
+  // (N+1)th waiting for one to come back. Guest respawn is usually <500ms
+  // but can spike on slow guests (v86, WASM Linux); 8s gives headroom.
+  const RECONNECT_WAIT_MS = 8000;
   const waitStart = Date.now();
   let guestWs = null;
   while (true) {
@@ -336,13 +341,14 @@ async function httpProxy(req, res, session, port, guestPath) {
   let idleTimer;
   const IDLE_MS = 1500;
   const resetIdle = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => settle('idle'), IDLE_MS); };
-  // Bind this call to the specific bridge we picked, so other bridges in the
-  // pool don't drop their inter-request bytes into our response buffer.
-  session.proxyCalls.set(port, { ws: guestWs, chunks, resetIdle, settle });
+  // Bind this call to the specific bridge we picked. Keying by ws (not port)
+  // lets concurrent requests on the same port use different bridges from the
+  // pool without overwriting each other's response state.
+  session.proxyCalls.set(guestWs, { chunks, resetIdle, settle });
 
   try { guestWs.send(reqBytes, { binary: true }); }
   catch (_) {
-    session.proxyCalls.delete(port);
+    session.proxyCalls.delete(guestWs);
     cors(res);
     res.writeHead(502);
     res.end('failed to send to guest');
@@ -354,7 +360,12 @@ async function httpProxy(req, res, session, port, guestPath) {
   await done;
   clearTimeout(timer);
   clearTimeout(idleTimer);
-  session.proxyCalls.delete(port);
+  session.proxyCalls.delete(guestWs);
+  // The guest's websocat already closes this bridge after HTTP
+  // Connection: close, but proactively close it here too so the
+  // server-side pool entry is gone before the next pickGuest() call —
+  // avoids picking a half-dead bridge that's mid-FIN.
+  try { guestWs.close(1000, 'http call complete'); } catch (_) {}
 
   const total = chunks.reduce((n, c) => n + c.length, 0);
   if (!total) {
