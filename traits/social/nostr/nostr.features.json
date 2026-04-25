@@ -1,0 +1,72 @@
+{
+  "trait": "social.nostr",
+  "description": "Stateless Nostr (NIP-01) crypto + manifest builder for WASM-only public-folder follow/sync",
+  "features": [
+    {
+      "name": "encode_npub round-trip",
+      "description": "encode_npub then decode_npub returns the original hex pubkey",
+      "tests": [
+        {
+          "name": "encode_npub",
+          "type": "command",
+          "command": "./target/release/traits call social.nostr encode_npub 1111111111111111111111111111111111111111111111111111111111111111 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "npub1" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "import_nsec from hex",
+      "description": "32-byte hex secret key produces deterministic npub and pubkey",
+      "tests": [
+        {
+          "name": "import_nsec",
+          "type": "command",
+          "command": "./target/release/traits call social.nostr import_nsec 1111111111111111111111111111111111111111111111111111111111111111 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "3c06f2c165d0835c54020e593ad054e384b7941a885a30b3f378fc88119637d5" },
+            { "type": "contains", "expected": "nsec1" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sign_event round-trip",
+      "description": "sign_event then verify_event with kind=1, content='round-trip', tags=[]",
+      "tests": [
+        {
+          "name": "sign_event",
+          "type": "command",
+          "command": "./target/release/traits call social.nostr sign_event 1111111111111111111111111111111111111111111111111111111111111111 1 round-trip '[]' 1700000000 2>/dev/null",
+          "checks": [
+            { "type": "exit_code", "expected": 0 },
+            { "type": "contains", "expected": "\"ok\": true" },
+            { "type": "contains", "expected": "\"sig\":" },
+            { "type": "contains", "expected": "\"id\":" },
+            { "type": "contains", "expected": "round-trip" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unknown action error",
+      "description": "Unknown action returns ok:false with error",
+      "tests": [
+        {
+          "name": "unknown action",
+          "type": "command",
+          "command": "./target/release/traits call social.nostr bogus_action 2>/dev/null",
+          "checks": [
+            { "type": "contains", "expected": "\"ok\": false" },
+            { "type": "contains", "expected": "unknown action" }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+[trait]
+description = "Nostr protocol (NIP-01) — pure crypto + manifest helpers. Stateless: keys and relay I/O are managed by the JS/SPA layer. Actions: keygen | pubkey | import_nsec | encode_npub | decode_npub | event_id | sign_event | verify_event | manifest_build"
+version = "v260425.194730"
+checksum = "bad92de6d08364f8a7ec837150cb3a32e5a42352d794d3edc3b4a068be0fc7d2"
+epoch = 0
+author = "system"
+tags = ["social", "nostr", "p2p", "crypto"]
+provides = ["social/nostr"]
+
+[[signature.params]]
+name = "action"
+type = "string"
+description = "Action name"
+example = "keygen"
+
+[[signature.params]]
+name = "arg1"
+type = "string"
+description = "First positional argument (varies by action)"
+optional = true
+example = ""
+
+[[signature.params]]
+name = "arg2"
+type = "string"
+description = "Second positional argument"
+optional = true
+example = ""
+
+[[signature.params]]
+name = "arg3"
+type = "string"
+description = "Third positional argument"
+optional = true
+example = ""
+
+[[signature.params]]
+name = "arg4"
+type = "string"
+description = "Fourth positional argument"
+optional = true
+example = ""
+
+[[signature.params]]
+name = "arg5"
+type = "string"
+description = "Fifth positional argument"
+optional = true
+example = ""
+
+[signature.returns]
+type = "object"
+description = "Result varies by action"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "nostr"
+wasm = true
+helper_preferred = false
