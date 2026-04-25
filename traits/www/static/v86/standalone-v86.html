@@ -183,6 +183,13 @@
   }
 
   // ---- IndexedDB snapshot persistence ----
+  // Snapshot key is versioned by device topology. Bump SNAP_VER whenever
+  // the v86 cfg adds/removes/reorders devices (NIC, 9P filesystem, drives,
+  // etc.) — v86 serializes device state into the snapshot, and loading a
+  // snapshot taken with a different device set causes a silent boot hang.
+  // v2: added `filesystem: {}` (9P virtio share for in-page viewer).
+  const SNAP_VER = 'v2';
+  const snapKeyFor = iso => 'snap:' + iso + ':' + SNAP_VER;
   const DB_NAME = 'v86-snapshots', DB_VER = 1, STORE = 'snaps';
   function openDB() {
     return new Promise((resolve, reject) => {
@@ -247,7 +254,7 @@
     try {
       const t0 = Date.now();
       const st = await emulator.save_state();
-      await idbPut('snap:' + currentIso, st);
+      await idbPut(snapKeyFor(currentIso), st);
       lastAutosaveAt = Date.now();
       dirty = false;
       restoreBtn.disabled = false; clearBtn.disabled = false;
@@ -381,7 +388,7 @@
   async function boot(opts = {}) {
     const iso = isoEl.value;
     currentIso = iso;
-    const snapKey = 'snap:' + iso;
+    const snapKey = snapKeyFor(iso);
     const doRestore = opts.restore && await idbHas(snapKey);
 
     setStatus(doRestore ? `restoring ${iso}…` : `booting ${iso}…`);
@@ -699,7 +706,7 @@
   async function doReset() { await shutdown(); await boot({ restore: false }); }
   async function doRestore() { await shutdown(); await boot({ restore: true }); }
   async function doClear() {
-    await idbDel('snap:' + currentIso);
+    await idbDel(snapKeyFor(currentIso));
     setStatus('snapshot cleared');
     restoreBtn.disabled = true; clearBtn.disabled = true;
   }
@@ -709,7 +716,7 @@
     setStatus('saving snapshot…');
     try {
       const buf = await emulator.save_state();
-      await idbPut('snap:' + currentIso, buf);
+      await idbPut(snapKeyFor(currentIso), buf);
       setStatus(`snapshot saved (${(buf.byteLength/1048576).toFixed(1)} MB)`, 'ok');
       restoreBtn.disabled = false; clearBtn.disabled = false;
     } catch (e) {
@@ -724,7 +731,7 @@
   clearBtn.onclick   = doClear;
 
   isoEl.onchange = async () => {
-    const has = await idbHas('snap:' + isoEl.value);
+    const has = await idbHas(snapKeyFor(isoEl.value));
     setStatus(has ? `snapshot available for ${isoEl.value}` : 'no snapshot for this image');
   };
   isoEl.dispatchEvent(new Event('change'));
