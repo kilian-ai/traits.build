@@ -616,7 +616,7 @@
       const mount9pCmd =
         'mkdir -p /mnt/host 2>/dev/null; ' +
         'mountpoint -q /mnt/host || ' +
-          'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any host9p /mnt/host 2>/dev/null; ' +
+          'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,rw host9p /mnt/host 2>/dev/null; ' +
         'ln -sfn /mnt/host /home/root/host 2>/dev/null; ' +
         'mkdir -p /mnt/host/public 2>/dev/null; ';
 
