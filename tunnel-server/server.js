@@ -263,13 +263,24 @@ setInterval(() => {
 // ── HTTP-over-WS proxy ─────────────────────────────────────────────────────
 
 async function httpProxy(req, res, session, port, guestPath) {
-  const guestWs = session.guestWs.get(port);
-  if (!guestWs || guestWs.readyState !== 1) {
-    cors(res);
-    res.writeHead(503);
-    res.end(`guest not connected on port ${port}`);
-    return;
+  // Wait briefly for guest to (re)connect. The guest-side websocat bridge is
+  // one-shot — each HTTP proxy call closes the WS, and the respawn loop in
+  // tunnel-up.sh takes ~1s to reconnect. Without this wait, back-to-back
+  // requests (viewer loading index + listing + files) race and hit 503.
+  const RECONNECT_WAIT_MS = 3500;
+  const waitStart = Date.now();
+  while (true) {
+    const gw = session.guestWs.get(port);
+    if (gw && gw.readyState === 1) break;
+    if (Date.now() - waitStart > RECONNECT_WAIT_MS) {
+      cors(res);
+      res.writeHead(503);
+      res.end(`guest not connected on port ${port}`);
+      return;
+    }
+    await new Promise(r => setTimeout(r, 100));
   }
+  const guestWs = session.guestWs.get(port);
   if (session.clientWs.has(port)) {
     cors(res);
     res.writeHead(409);
@@ -352,6 +363,10 @@ async function httpProxy(req, res, session, port, guestPath) {
     if (!m) continue;
     const k = m[1].toLowerCase();
     if (['connection', 'transfer-encoding', 'keep-alive', 'content-length', 'content-encoding'].includes(k)) continue;
+    // Drop any CORS headers from the guest — we set our own below. Letting
+    // the guest emit e.g. `Access-Control-Allow-Origin: *` on top of ours
+    // produces the duplicate-value error that browsers reject.
+    if (k.startsWith('access-control-')) continue;
     outHeaders[m[1]] = m[2];
   }
   outHeaders['access-control-allow-origin'] = '*';
