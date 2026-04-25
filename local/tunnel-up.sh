@@ -16,6 +16,11 @@
 
 set -u
 
+# Survive shell logout / backgrounding. Without this, putting the script
+# under '&' and exiting the parent terminal sends SIGHUP and kills every
+# bridge subshell within seconds.
+trap '' HUP
+
 # Override via env: TUNNEL_BASE=http://localhost:8787 sh tunnel-up.sh
 TUNNEL_BASE="${TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}"
 # Derive default WS URL from TUNNEL_BASE (http→ws, https→wss).
@@ -218,9 +223,14 @@ for PORT in $PORTS; do
     WS_URL="${TUNNEL_WS}/port/guest?code=${CODE}&port=${PORT}"
     # Respawn loop: each client disconnect tears down the bridge; restart
     # so the next SSH connection gets a fresh TCP to sshd.
+    # --ping-interval 25: keep the WS alive across NAT/CDN idle timeouts
+    #   (Fly's edge proxy and many corporate NATs drop idle WS at ~60s).
+    # trap '' HUP: subshell must independently ignore SIGHUP so backgrounding
+    #   tunnel-up.sh & + closing the terminal does not kill bridges.
     (
+        trap '' HUP
         while :; do
-            websocat --binary "$WS_URL" "tcp:127.0.0.1:${PORT}" </dev/null
+            websocat --binary --ping-interval 25 "$WS_URL" "tcp:127.0.0.1:${PORT}" </dev/null
             echo "[tunnel] bridge for port ${PORT} exited; respawning in 1s"
             sleep 1
         done
