@@ -201,18 +201,34 @@ class PortSession {
   addClient(port, ws) {
     this.touch();
 
-    // Pop a fresh, unpaired guest from the pool. Each new client always
-    // gets its OWN bridge — concurrent clients on the same port are
-    // independent end-to-end.
+    // Try to pop a fresh, unpaired guest from the pool. Each new client
+    // always gets its OWN bridge — concurrent clients on the same port
+    // are independent end-to-end.
     const guest = this.pickFreshGuest(port);
-    if (!guest) {
-      // No standby bridge available. Close this client immediately so
-      // the local listener (tunnel-listen.sh) gets EOF and reports a
-      // connect failure, prompting the user/guest to restart bridges.
-      try { ws.close(1013, 'no guest bridge available — guest pool drained'); } catch (_) {}
-      return;
-    }
+    if (guest) return this._completeClientPair(port, ws, guest);
 
+    // Pool is drained — but a tunnel-up.sh respawn loop is typically
+    // refilling within ~100ms. Instead of failing immediately (which
+    // surfaces to Filezilla as "socket unexpectedly closed" on the very
+    // first parallel SFTP connection), wait briefly for a respawn before
+    // giving up. This makes small POOL_SIZE values (incl. legacy 1)
+    // forgiving for parallel-capable protocols.
+    const start = Date.now();
+    const deadline = 2500;
+    const retry = () => {
+      if (ws.readyState !== 1) return;  // client gave up
+      const g = this.pickFreshGuest(port);
+      if (g) return this._completeClientPair(port, ws, g);
+      if (Date.now() - start > deadline) {
+        try { ws.close(1013, 'no guest bridge available — guest pool drained'); } catch (_) {}
+        return;
+      }
+      setTimeout(retry, 100);
+    };
+    setTimeout(retry, 100);
+  }
+
+  _completeClientPair(port, ws, guest) {
     let cpool = this.clientWs.get(port);
     if (!cpool) { cpool = new Set(); this.clientWs.set(port, cpool); }
     cpool.add(ws);
@@ -220,11 +236,17 @@ class PortSession {
     this.pairs.set(ws, guest);
     this.pairs.set(guest, ws);
 
-    // Flush any pre-pair buffered bytes from the dequeued guest.
+    // Flush any pre-pair buffered bytes from the dequeued guest. Defer with
+    // setImmediate so the client WS open frame is fully delivered before we
+    // start sending data — synchronous ws.send() right after handleUpgrade
+    // can race the client-side handshake completion and drop the early frame.
     const buf = this.guestBuffer.get(guest);
     if (buf && buf.length) {
       this.guestBuffer.delete(guest);
-      for (const d of buf) { try { ws.send(d, { binary: true }); } catch (_) {} }
+      const buffered = [...buf];
+      setImmediate(() => {
+        for (const d of buffered) { try { ws.send(d, { binary: true }); } catch (_) {} }
+      });
     }
 
     ws.on('message', (data, isBinary) => {

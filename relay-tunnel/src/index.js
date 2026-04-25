@@ -214,7 +214,7 @@ export class PortSession {
     return json({ ok: true, registered_ports: [...this.registeredPorts] });
   }
 
-  _accept(request, role, url) {
+  async _accept(request, role, url) {
     const port = parsePort(url.searchParams.get('port'));
     if (!port) return new Response('missing or invalid port', { status: 400 });
     if (this.registeredPorts.size > 0 && !this.registeredPorts.has(port)) {
@@ -230,13 +230,31 @@ export class PortSession {
       // on the guest side, single-use. Filezilla-style parallel SFTP transfers
       // open multiple SSH connections to the same port — each one dequeues
       // its own bridge here, paired independently.
-      const q = this.guestQueue.get(port);
-      let guest = null;
-      while (q && q.length) {
-        const candidate = q.shift();
-        if (candidate.readyState === 1 /* OPEN */) { guest = candidate; break; }
+      const popFreshGuest = () => {
+        const q = this.guestQueue.get(port);
+        while (q && q.length) {
+          const candidate = q.shift();
+          if (candidate.readyState === 1 /* OPEN */) {
+            if (!q.length) this.guestQueue.delete(port);
+            return candidate;
+          }
+        }
+        if (q && !q.length) this.guestQueue.delete(port);
+        return null;
+      };
+      let guest = popFreshGuest();
+      // Pool may be momentarily empty between guest respawns. Wait briefly
+      // for tunnel-up.sh's respawn loop to refill (typical refill ~100ms),
+      // so small POOL_SIZE values still tolerate parallel-capable clients.
+      if (!guest) {
+        const start = Date.now();
+        const deadline = 2500;
+        while (Date.now() - start < deadline) {
+          await new Promise(r => setTimeout(r, 100));
+          guest = popFreshGuest();
+          if (guest) break;
+        }
       }
-      if (q && !q.length) this.guestQueue.delete(port);
       if (!guest) {
         return new Response(
           `no guest bridge available on port ${port} (pool drained — guest must respawn)`,
