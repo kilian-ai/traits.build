@@ -154,6 +154,20 @@ export class PortSession {
     return { role, port };
   }
 
+  _cloneWsPayload(message) {
+    if (message instanceof ArrayBuffer) {
+      return message.slice(0);
+    }
+    if (typeof message === 'string') {
+      return message;
+    }
+    if (message && message.byteLength != null) {
+      const u8 = new Uint8Array(message.buffer || message, message.byteOffset || 0, message.byteLength);
+      return u8.slice();
+    }
+    return message;
+  }
+
   async fetch(request) {
     this.lastActivity = Date.now();
     const url = new URL(request.url);
@@ -216,8 +230,13 @@ export class PortSession {
       // Flush any buffered guest→client data (e.g. SSH banner)
       const buf = this.guestBuffer.get(port);
       if (buf && buf.length) {
-        for (const d of buf) { try { server.send(d); } catch (_) {} }
+        const buffered = [...buf];
         this.guestBuffer.delete(port);
+        setTimeout(() => {
+          for (const d of buffered) {
+            try { server.send(d); } catch (_) {}
+          }
+        }, 0);
       }
     }
 
@@ -248,7 +267,7 @@ export class PortSession {
       if (role === 'guest') {
         let buf = this.guestBuffer.get(port);
         if (!buf) { buf = []; this.guestBuffer.set(port, buf); }
-        buf.push(message);
+        buf.push(this._cloneWsPayload(message));
         if (buf.length > this.BUFFER_MAX) buf.shift();
       }
       return;

@@ -127,6 +127,7 @@ echo "SSH tunnel: ssh -o ProxyCommand='websocat wss://tunnel.traits.build/port/c
 - Regression note (fixed): a shell variable-shadowing bug could collapse passive registration to repeated `21` values, which made `pwd` work but caused `ls`/`mkdir`/`put`/`get` to hang. `local/tunnel-up.sh` now emits the correct registration list (`[21,30000..30010]`).
 - `local/tunnel-listen-ftp.sh` now performs a relay preflight (`/port/status`) and fails fast if control or passive ports are missing from the pairing code.
 - Passive bridge note (fixed): passive sockets are opened lazily by `vsftpd`, so `tunnel-up.sh` now keeps passive bridge loops running even when those ports are not yet listening. Without this, `ls`/`mkdir` could hang despite correct registration.
+- `local/tunnel-listen.sh` now performs relay preflight as well: it fails fast for inactive/expired codes and missing remote-port registration, and warns when guest bridge is currently disconnected. This avoids opaque SSH/SFTP errors from stale codes.
 
 Use environment overrides for custom ranges:
 

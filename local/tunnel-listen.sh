@@ -22,11 +22,56 @@ LOCAL_PORT="${2:-2222}"
 REMOTE_PORT="${3:-22}"
 
 # Override via env: TUNNEL_WS=ws://localhost:8787 sh tunnel-listen.sh CODE
-TUNNEL_WS="${TUNNEL_WS:-wss://traits-build-tunnel.fly.dev}"
+TUNNEL_WS="${TUNNEL_WS:-wss://tunnel.traits.build}"
 
 if ! command -v websocat >/dev/null 2>&1; then
     echo "[tunnel-listen] websocat not found — install via: brew install websocat" >&2
     exit 1
+fi
+
+relay_status_json() {
+    curl -fsS "https://${TUNNEL_WS#*://}/port/status?code=${CODE}" 2>/dev/null || true
+}
+
+has_registered_port() {
+    check_port="$1"
+    status_json="$2"
+    printf '%s' "$status_json" | grep -q "\"registered_ports\"" || return 1
+    printf '%s' "$status_json" | grep -q "\[$check_port\(,\|]\)" && return 0
+    printf '%s' "$status_json" | grep -q ",$check_port\(,\|]\)" && return 0
+    return 1
+}
+
+has_guest_port() {
+    check_port="$1"
+    status_json="$2"
+    printf '%s' "$status_json" | grep -q "\"guest_ports\"" || return 1
+    printf '%s' "$status_json" | grep -q "\"guest_ports\"[[:space:]]*:[[:space:]]*\[[^]]*$check_port" && return 0
+    return 1
+}
+
+status_json="$(relay_status_json)"
+if [ -z "$status_json" ]; then
+    echo "[tunnel-listen] unable to fetch relay status for code ${CODE}" >&2
+    echo "[tunnel-listen] verify the code and relay endpoint, then retry" >&2
+    exit 1
+fi
+
+if printf '%s' "$status_json" | grep -q '"active"[[:space:]]*:[[:space:]]*false'; then
+    echo "[tunnel-listen] code ${CODE} is inactive/expired" >&2
+    echo "[tunnel-listen] generate a fresh code on the guest via tunnel-up.sh and retry" >&2
+    exit 1
+fi
+
+if ! has_registered_port "$REMOTE_PORT" "$status_json"; then
+    echo "[tunnel-listen] code ${CODE} is missing registered guest port ${REMOTE_PORT}" >&2
+    echo "[tunnel-listen] restart guest tunnel-up with port ${REMOTE_PORT} and retry" >&2
+    exit 1
+fi
+
+if ! has_guest_port "$REMOTE_PORT" "$status_json"; then
+    echo "[tunnel-listen] warning: guest is not currently connected on port ${REMOTE_PORT}" >&2
+    echo "[tunnel-listen] listener will start, but connections may fail until guest bridge is up" >&2
 fi
 
 URL="${TUNNEL_WS}/port/client?code=${CODE}&port=${REMOTE_PORT}"
