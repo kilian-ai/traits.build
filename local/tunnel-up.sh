@@ -39,23 +39,24 @@ FTP_PASV_MAX="${FTP_PASV_MAX:-30010}"
 
 has_port() {
     local target="$1"
-    for p in $PORTS; do
-        [ "$p" = "$target" ] && return 0
+    local existing_port
+    for existing_port in $PORTS; do
+        [ "$existing_port" = "$target" ] && return 0
     done
     return 1
 }
 
 append_port() {
-    local p="$1"
-    has_port "$p" || PORTS="$PORTS $p"
+    local candidate_port="$1"
+    has_port "$candidate_port" || PORTS="$PORTS $candidate_port"
 }
 
 add_ftp_passive_ports_if_needed() {
     has_port 21 || return 0
-    local p="$FTP_PASV_MIN"
-    while [ "$p" -le "$FTP_PASV_MAX" ]; do
-        append_port "$p"
-        p=$((p + 1))
+    local pasv_port="$FTP_PASV_MIN"
+    while [ "$pasv_port" -le "$FTP_PASV_MAX" ]; do
+        append_port "$pasv_port"
+        pasv_port=$((pasv_port + 1))
     done
 }
 

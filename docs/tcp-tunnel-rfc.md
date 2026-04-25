@@ -124,6 +124,8 @@ echo "SSH tunnel: ssh -o ProxyCommand='websocat wss://tunnel.traits.build/port/c
 
 - If port `21` is requested, it auto-adds passive ports `FTP_PASV_MIN..FTP_PASV_MAX` (defaults `30000-30010`) to the registration set.
 - It auto-starts `vsftpd` on `127.0.0.1:21` with that fixed passive range, so control + data channels can both traverse relay.
+- Regression note (fixed): a shell variable-shadowing bug could collapse passive registration to repeated `21` values, which made `pwd` work but caused `ls`/`mkdir`/`put`/`get` to hang. `local/tunnel-up.sh` now emits the correct registration list (`[21,30000..30010]`).
+- `local/tunnel-listen-ftp.sh` now performs a relay preflight (`/port/status`) and fails fast if control or passive ports are missing from the pairing code.
 
 Use environment overrides for custom ranges:
 

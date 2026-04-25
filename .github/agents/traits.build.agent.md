@@ -1496,6 +1496,7 @@ GET  /port/debug?code=XXXX
 9. **`sshd` requires a root password or `~/.ssh/authorized_keys`** — `tunnel-up.sh` warns if neither is set (guest user must run `passwd` or drop in an authorized_keys first).
 10. **FTP via tunnel requires passive ports.** `local/tunnel-up.sh` now auto-adds passive ports when `21` is requested (`FTP_PASV_MIN..FTP_PASV_MAX`, default `30000-30010`) and auto-starts `vsftpd` bound to `127.0.0.1` with that fixed passive range.
 11. **Host-side FTP local mapping helper exists.** `local/tunnel-listen-ftp.sh` opens a local control port plus the passive range in one command (`CODE [local_control] [remote_control] [pasv_min] [pasv_max]`) so GUI FTP clients can connect to `127.0.0.1` in passive mode without manually starting many `tunnel-listen.sh` instances.
+12. **FTP passive registration regression fixed (Apr 2026).** In `local/tunnel-up.sh`, shell variable shadowing (`p`) could register `[21,21,...]` instead of `[21,30000..30010]`, leading to `pwd` success but `ls`/`mkdir` hangs. Helper vars are now disambiguated, and `local/tunnel-listen-ftp.sh` preflights `/port/status` and exits early when passive ports are missing for the selected code.
 
 ### Target ports
 

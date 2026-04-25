@@ -62,6 +62,43 @@ if [ "$PASV_MIN" -gt "$PASV_MAX" ]; then
     exit 1
 fi
 
+relay_status_json() {
+    curl -fsS "https://${TUNNEL_WS#*://}/port/status?code=${CODE}" 2>/dev/null || true
+}
+
+ensure_remote_port_registered() {
+    check_port="$1"
+    status_json="$2"
+    printf '%s' "$status_json" | grep -q "\"registered_ports\"" || return 1
+    printf '%s' "$status_json" | grep -q "\[$check_port\(,\|]\)" && return 0
+    printf '%s' "$status_json" | grep -q ",$check_port\(,\|]\)" && return 0
+    return 1
+}
+
+status_json="$(relay_status_json)"
+if [ -n "$status_json" ]; then
+    if ! ensure_remote_port_registered "$REMOTE_CTRL_PORT" "$status_json"; then
+        echo "[tunnel-listen-ftp] relay code ${CODE} is missing control port ${REMOTE_CTRL_PORT} registration" >&2
+        echo "[tunnel-listen-ftp] re-run guest side: sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) ${REMOTE_CTRL_PORT}" >&2
+        exit 1
+    fi
+
+    missing_pasv=""
+    p="$PASV_MIN"
+    while [ "$p" -le "$PASV_MAX" ]; do
+        if ! ensure_remote_port_registered "$p" "$status_json"; then
+            missing_pasv="$missing_pasv $p"
+        fi
+        p=$((p + 1))
+    done
+    if [ -n "$missing_pasv" ]; then
+        echo "[tunnel-listen-ftp] relay code ${CODE} is missing passive ports:${missing_pasv}" >&2
+        echo "[tunnel-listen-ftp] ls/mkdir/put/get will fail without passive registration" >&2
+        echo "[tunnel-listen-ftp] re-run guest side with updated script: sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) ${REMOTE_CTRL_PORT}" >&2
+        exit 1
+    fi
+fi
+
 PIDS=""
 
 start_listener() {
