@@ -1027,6 +1027,48 @@
     'wss://relay.nostr.band',
   ];
   let socialSyncTimer = null;
+  const SOCIAL_FOLLOW_ROOT_KEY = 'traits.nostr.follow_root';
+  const FOLLOW_ROOT_CANDIDATES = ['/following', '/following_new', '/social_following'];
+  let socialFollowRoot = null;
+
+  function getFollowRoot() {
+    return socialFollowRoot || localStorage.getItem(SOCIAL_FOLLOW_ROOT_KEY) || '/following';
+  }
+
+  async function canUseFollowRoot(fs, root) {
+    try { fs.create_directory(root); } catch (_) {}
+    const probeDir = root + '/.tb_probe';
+    try { fs.create_directory(probeDir); } catch (_) {}
+    const probeFile = probeDir + '/writable.txt';
+    try {
+      await fs.write_file(probeFile, new TextEncoder().encode(String(Date.now())));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function resolveFollowRoot(fs) {
+    if (!fs) return '/following';
+    if (socialFollowRoot) return socialFollowRoot;
+
+    const candidates = [];
+    const saved = localStorage.getItem(SOCIAL_FOLLOW_ROOT_KEY);
+    if (saved) candidates.push(saved);
+    for (const p of FOLLOW_ROOT_CANDIDATES) if (!candidates.includes(p)) candidates.push(p);
+
+    for (const root of candidates) {
+      if (await canUseFollowRoot(fs, root)) {
+        socialFollowRoot = root;
+        localStorage.setItem(SOCIAL_FOLLOW_ROOT_KEY, root);
+        if (root !== '/following') {
+          sLog('using fallback follow dir: /mnt/host' + root, 'hint');
+        }
+        return root;
+      }
+    }
+    throw new Error('no writable follow directory on /mnt/host');
+  }
 
   // social.nostr REST dispatch
   async function nostrRest(action, ...args) {
@@ -1220,12 +1262,17 @@
     following.push(npub);
     saveFollowing(following);
     sLog('following ' + truncNpub(npub), 'ok');
-    // Create directory in 9P share: /following/<npub>
+    // Create directory in 9P share: <follow_root>/<npub>
     const fs = emulator && emulator.fs9p;
     if (fs) {
-      try { fs.create_directory('/following'); } catch (_) {}
-      try { fs.create_directory('/following/' + npub); sLog('created /mnt/host/following/' + truncNpub(npub), 'ok'); }
-      catch (e) { sLog('note: 9P dir creation: ' + e.message, 'hint'); }
+      try {
+        const followRoot = await resolveFollowRoot(fs);
+        try { fs.create_directory(followRoot); } catch (_) {}
+        fs.create_directory(followRoot + '/' + npub);
+        sLog('created /mnt/host' + followRoot + '/' + truncNpub(npub), 'ok');
+      } catch (e) {
+        sLog('note: follow dir creation failed: ' + e.message, 'hint');
+      }
     }
     renderFollowList();
   }
@@ -1254,6 +1301,15 @@
     sLog('manifest: ' + manifest.files.length + ' file(s) from ' + manifest.base);
 
     const fs = emulator && emulator.fs9p;
+    let followRoot = '/following';
+    if (fs) {
+      try {
+        followRoot = await resolveFollowRoot(fs);
+      } catch (e) {
+        sLog('sync blocked: ' + e.message, 'err');
+        return;
+      }
+    }
     let synced = 0;
     for (const f of manifest.files) {
       try {
@@ -1266,9 +1322,9 @@
           const got = 'sha256:' + (await sha256hex(buf));
           if (got !== f.h) { sLog('hash mismatch: ' + f.p, 'err'); continue; }
         }
-        // Write to 9P share under /following/<npub>/
+        // Write to 9P share under <follow_root>/<npub>/
         if (fs) {
-          const dest = '/following/' + npub + '/' + f.p.replace(/^\/+/, '');
+          const dest = followRoot + '/' + npub + '/' + f.p.replace(/^\/+/, '');
           // Create parent directories
           const parts = dest.split('/').filter(Boolean);
           let cur = '';
@@ -1408,8 +1464,8 @@
     const npub = btn.dataset.npub;
     if (btn.classList.contains('fc-sync-btn'))     doSyncOne(npub);
     if (btn.classList.contains('fc-view-btn')) {
-      // Open viewer overlay on /following/<npub>
-      if (pathEl) pathEl.value = '/following/' + npub;
+      // Open viewer overlay on <follow_root>/<npub>
+      if (pathEl) pathEl.value = getFollowRoot() + '/' + npub;
       overlay.hidden = false; renderTree(); vSet('ready');
     }
     if (btn.classList.contains('fc-unfollow-btn')) {
