@@ -1,23 +1,31 @@
 #!/bin/sh
 # tunnel-listen-ftp.sh — Open local FTP control + passive listeners to a tunnel code.
 #
+# USAGE FLOW:
+#   1. In guest shell: sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) 21
+#      → outputs pairing CODE (e.g., P52Y)
+#   2. On Mac: sh <(curl -sS https://www.traits.build/local/tunnel-listen-ftp.sh) P52Y
+#      → opens local FTP listeners on 127.0.0.1:2121 + passive range
+#   3. In FTP client: Connect to 127.0.0.1 port 2121 (NOT port 21)
+#
 # Usage:
 #   tunnel-listen-ftp.sh CODE [local_control_port] [remote_control_port] [pasv_min] [pasv_max]
 #
 # Defaults:
-#   local_control_port = 2121
-#   remote_control_port = 21
+#   local_control_port = 2121 (use this port in your FTP client!)
+#   remote_control_port = 21 (guest FTP server port)
 #   pasv_min = 30000
 #   pasv_max = 30010
 #
 # One-liner:
 #   sh <(curl -sS https://www.traits.build/local/tunnel-listen-ftp.sh) CODE
 #
-# Then configure FTP client:
+# FTP client settings (lftp, Transmit, FileZilla, etc):
 #   Host: 127.0.0.1
-#   Port: 2121
-#   Passive mode: ON
-#   Passive ports: 30000-30010
+#   Port: 2121 (or your custom local_control_port)
+#   Passive mode: ON (required)
+#   Username: root
+#   Password: (set in guest via `passwd` or authorized_keys)
 
 set -u
 

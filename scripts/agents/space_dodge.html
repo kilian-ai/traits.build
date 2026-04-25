@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Space Dodge</title>
+<style>
+html,body{margin:0;padding:0;background:#050816;color:#fff;font-family:Arial,sans-serif;overflow:hidden}
+canvas{display:block;background:radial-gradient(circle at top,#0b1633,#03050d 70%)}
+#ui{position:fixed;top:10px;left:10px;z-index:2;background:rgba(0,0,0,.35);padding:10px 14px;border:1px solid rgba(255,255,255,.15);border-radius:10px;backdrop-filter:blur(4px);line-height:1.45}
+#msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:3;background:rgba(0,0,0,.45);text-align:center;padding:20px}
+button{padding:10px 16px;border:0;border-radius:8px;background:#4fd1ff;color:#00111a;font-weight:700;cursor:pointer}
+button:hover{filter:brightness(1.08)}
+.small{font-size:14px;opacity:.85}
+.power{color:#9dffb0}
+.warn{color:#ffd36b}
+.boss{color:#ff8ea1}
+</style>
+</head>
+<body>
+<div id="ui">
+  Score: <span id="score">0</span><br>
+  Best: <span id="best">0</span><br>
+  Lives: <span id="lives">3</span><br>
+  Level: <span id="level">1</span>/10<br>
+  Boss: <span id="boss" class="boss">No</span><br>
+  Power: <span id="power" class="power">None</span>
+  <div class="small">Move: ← → ↑ ↓ or A D W S<br>Shoot: Space</div>
+</div>
+<div id="msg"><h1>Space Dodge</h1><p>Move anywhere on screen, clear 10 levels, and defeat a boss at the end of each level.</p><button id="start">Start Game</button></div>
+<canvas id="game"></canvas>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const scoreEl=document.getElementById('score'),bestEl=document.getElementById('best'),livesEl=document.getElementById('lives'),powerEl=document.getElementById('power'),levelEl=document.getElementById('level'),bossEl=document.getElementById('boss');
+const msg=document.getElementById('msg'),startBtn=document.getElementById('start');
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight}addEventListener('resize',resize);resize();
+const keys={};
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys[k]=true;if(k===' '||e.code==='Space')e.preventDefault()});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+let stars=[],asteroids=[],bullets=[],enemyBullets=[],powerups=[],particles=[],player,score,best=+localStorage.spaceDodgeBest||0,spawnTick,running,lastTime,shootCooldown,invuln,level,levelAsteroids,levelTarget,boss,bossCooldown,gameWon;
+bestEl.textContent=best;
+function reset(){
+  stars=Array.from({length:120},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*2+0.5,s:Math.random()*0.6+0.2}));
+  asteroids=[];bullets=[];enemyBullets=[];powerups=[];particles=[];boss=null;
+  player={x:canvas.width/2,y:canvas.height-70,w:44,h:24,speed:7,lives:3,rapid:0,spread:0,shield:0};
+  score=0;spawnTick=0;running=true;lastTime=0;shootCooldown=0;invuln=0;level=1;levelAsteroids=0;levelTarget=8;bossCooldown=0;gameWon=false;
+  scoreEl.textContent=0;livesEl.textContent=player.lives;levelEl.textContent=level;bossEl.textContent='No';powerEl.textContent='None';msg.style.display='none';
+  requestAnimationFrame(loop);
+}
+function updatePowerText(){
+  const list=[];if(player.shield>0)list.push('Shield');if(player.rapid>0)list.push('Rapid Fire');if(player.spread>0)list.push('Spread Shot');
+  powerEl.textContent=list.join(', ')||'None';
+}
+function spawnAsteroid(size=3,x=Math.random()*(canvas.width-80)+40,y=-60){
+  const radius=size===3?24+Math.random()*14:size===2?16+Math.random()*8:9+Math.random()*5;
+  asteroids.push({x,y,r:radius,size,vx:(Math.random()-.5)*(1.8+level*.15),vy:1.4+Math.random()*1.8+(4-size)*0.35+level*.18,rot:Math.random()*6.28,vr:(Math.random()-.5)*0.08,hp:1});
+}
+function spawnBoss(){
+  boss={x:canvas.width/2,y:110,w:140,h:80,hp:10+level*4,maxHp:10+level*4,vx:2.2+level*.15,dir:1,phase:0};
+  bossEl.textContent='Yes';
+}
+function spawnPowerup(x,y){
+  if(Math.random()>.24)return;
+  const types=['life','rapid','spread','shield'];
+  const type=types[(Math.random()*types.length)|0];
+  powerups.push({x,y,r:12,vy:2.2,type,pulse:0});
+}
+function shoot(){
+  if(shootCooldown>0)return;
+  const speed=10;
+  const shots=player.spread>0?[-0.35,0,0.35]:[0];
+  shots.forEach(a=>bullets.push({x:player.x,y:player.y-18,vx:Math.sin(a)*speed,vy:-Math.cos(a)*speed,r:3,from:'player'}));
+  shootCooldown=player.rapid>0?6:12;
+}
+function bossShoot(){
+  if(!boss)return;
+  const dx=player.x-boss.x,dy=player.y-boss.y,mag=Math.sqrt(dx*dx+dy*dy)||1;
+  const speed=4+level*.2;
+  [-0.25,0,0.25].forEach(a=>{const cs=Math.cos(a),sn=Math.sin(a);const vx=(dx/mag)*cs*speed-(dy/mag)*sn*speed,vy=(dx/mag)*sn*speed+(dy/mag)*cs*speed;enemyBullets.push({x:boss.x,y:boss.y+boss.h/2,vx,vy,r:5})});
+}
+function burst(x,y,color,count){for(let i=0;i<count;i++)particles.push({x,y,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,r:2+Math.random()*2,life:20+Math.random()*20,color})}
+function drawShip(){
+  ctx.save();
+  ctx.translate(player.x,player.y);
+  if(invuln>0&&Math.floor(invuln/4)%2===0)ctx.globalAlpha=.45;
+  ctx.fillStyle='#d7f0ff';
+  ctx.beginPath();ctx.moveTo(0,-18);ctx.lineTo(18,16);ctx.lineTo(0,8);ctx.lineTo(-18,16);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#4fd1ff';ctx.fillRect(-8,2,16,10);
+  ctx.fillStyle='#ff8a5b';ctx.beginPath();ctx.moveTo(-7,16);ctx.lineTo(-2,26);ctx.lineTo(0,16);ctx.fill();ctx.beginPath();ctx.moveTo(7,16);ctx.lineTo(2,26);ctx.lineTo(0,16);ctx.fill();
+  if(player.shield>0){ctx.strokeStyle='rgba(120,255,180,.8)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,4,26,0,6.28);ctx.stroke()}
+  ctx.restore();
+}
+function drawAsteroid(a){
+  ctx.save();ctx.translate(a.x,a.y);ctx.rotate(a.rot);ctx.fillStyle='#7f8899';ctx.beginPath();
+  for(let i=0;i<8;i++){const ang=i/8*6.28,rad=a.r*(.78+Math.sin(i*1.7+a.r)*.18+Math.random()*.08);ctx.lineTo(Math.cos(ang)*rad,Math.sin(ang)*rad)}
+  ctx.closePath();ctx.fill();ctx.restore();
+}
+function drawBoss(){
+  if(!boss)return;
+  ctx.save();ctx.translate(boss.x,boss.y);
+  ctx.fillStyle='#7a1f35';ctx.fillRect(-boss.w/2,-boss.h/2,boss.w,boss.h);
+  ctx.fillStyle='#c93d63';ctx.fillRect(-boss.w/2+12,-boss.h/2+10,boss.w-24,boss.h-20);
+  ctx.fillStyle='#ffd36b';ctx.fillRect(-20,-10,40,20);
+  ctx.fillStyle='#ff8ea1';ctx.fillRect(-boss.w/2,-8,18,16);ctx.fillRect(boss.w/2-18,-8,18,16);
+  ctx.restore();
+  ctx.fillStyle='rgba(255,255,255,.2)';ctx.fillRect(canvas.width/2-120,20,240,12);
+  ctx.fillStyle='#ff5f7a';ctx.fillRect(canvas.width/2-120,20,240*(boss.hp/boss.maxHp),12);
+  ctx.strokeStyle='rgba(255,255,255,.5)';ctx.strokeRect(canvas.width/2-120,20,240,12);
+}
+function drawPowerup(p){
+  ctx.save();ctx.translate(p.x,p.y);ctx.scale(1+Math.sin(p.pulse)*.08,1+Math.sin(p.pulse)*.08);
+  ctx.fillStyle=p.type==='life'?'#ff6b6b':p.type==='rapid'?'#ffd36b':p.type==='spread'?'#8affc1':'#7db2ff';
+  ctx.beginPath();ctx.arc(0,0,p.r,0,6.28);ctx.fill();ctx.fillStyle='#08111f';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(p.type[0].toUpperCase(),0,1);
+  ctx.restore();
+}
+function hitPlayer(){
+  if(invuln>0)return;
+  if(player.shield>0){player.shield=0;updatePowerText();invuln=45;burst(player.x,player.y,'#9dffb0',18);return}
+  player.lives--;livesEl.textContent=player.lives;invuln=90;burst(player.x,player.y,'#ff6b6b',24);
+  if(player.lives<=0)endGame(false);
+}
+function endGame(win){
+  running=false;gameWon=win;
+  if(score>best){best=score;localStorage.spaceDodgeBest=best;bestEl.textContent=best}
+  msg.innerHTML=win?'<h1>You Win!</h1><p>You defeated all 10 bosses.</p><button id="start">Play Again</button>':'<h1>Game Over</h1><p>You reached level '+level+' with score '+score+'.</p><button id="start">Retry</button>';
+  msg.style.display='flex';document.getElementById('start').onclick=reset;
+}
+function nextLevel(){
+  level++;
+  if(level>10){endGame(true);return}
+  levelAsteroids=0;levelTarget=6+level*2;boss=null;bossCooldown=0;bossEl.textContent='No';levelEl.textContent=level;burst(canvas.width/2,canvas.height/2,'#4fd1ff',40);
+}
+function update(){
+  stars.forEach(s=>{s.y+=s.s;if(s.y>canvas.height){s.y=0;s.x=Math.random()*canvas.width}});
+  if((keys['arrowleft']||keys['a']))player.x-=player.speed;
+  if((keys['arrowright']||keys['d']))player.x+=player.speed;
+  if((keys['arrowup']||keys['w']))player.y-=player.speed;
+  if((keys['arrowdown']||keys['s']))player.y+=player.speed;
+  player.x=Math.max(player.w/2,Math.min(canvas.width-player.w/2,player.x));
+  player.y=Math.max(player.h/2,Math.min(canvas.height-player.h/2,player.y));
+  if(keys[' ']||keys['spacebar'])shoot();
+  if(shootCooldown>0)shootCooldown--;
+  if(invuln>0)invuln--;
+  if(player.rapid>0)player.rapid--;if(player.spread>0)player.spread--;if(player.shield>0)player.shield--;updatePowerText();
+  if(!boss&&levelAsteroids<levelTarget){spawnTick++;if(spawnTick>Math.max(18,60-level*3)){spawnAsteroid(3);spawnTick=0;levelAsteroids++}}
+  if(!boss&&levelAsteroids>=levelTarget&&asteroids.length===0){bossCooldown++;if(bossCooldown>50)spawnBoss()}
+  asteroids.forEach(a=>{a.x+=a.vx;a.y+=a.vy;a.rot+=a.vr});
+  asteroids=asteroids.filter(a=>a.y<a.r+canvas.height+40&&a.x>-80&&a.x<canvas.width+80);
+  bullets.forEach(b=>{b.x+=b.vx;b.y+=b.vy});
+  bullets=bullets.filter(b=>b.y>-30&&b.x>-30&&b.x<canvas.width+30);
+  enemyBullets.forEach(b=>{b.x+=b.vx;b.y+=b.vy});
+  enemyBullets=enemyBullets.filter(b=>b.y<canvas.height+30&&b.x>-30&&b.x<canvas.width+30);
+  powerups.forEach(p=>{p.y+=p.vy;p.pulse+=.15});
+  powerups=powerups.filter(p=>p.y<canvas.height+30);
+  particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;p.vx*=.98;p.vy*=.98});
+  particles=particles.filter(p=>p.life>0);
+  if(boss){boss.x+=boss.vx*boss.dir;if(boss.x<boss.w/2||boss.x>canvas.width-boss.w/2)boss.dir*=-1;boss.phase++;if(boss.phase%(70-Math.min(30,level*2))===0)bossShoot()}
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i];let removed=false;
+    for(let j=asteroids.length-1;j>=0;j--){const a=asteroids[j];const dx=b.x-a.x,dy=b.y-a.y;if(dx*dx+dy*dy<(a.r+b.r)*(a.r+b.r)){bullets.splice(i,1);removed=true;asteroids.splice(j,1);score+=10*a.size;scoreEl.textContent=score;burst(a.x,a.y,'#cfd8e6',14);spawnPowerup(a.x,a.y);if(a.size>1){spawnAsteroid(a.size-1,a.x-8,a.y);spawnAsteroid(a.size-1,a.x+8,a.y)}break}}
+    if(removed)continue;
+    if(boss&&b.x>boss.x-boss.w/2&&b.x<boss.x+boss.w/2&&b.y>boss.y-boss.h/2&&b.y<boss.y+boss.h/2){bullets.splice(i,1);boss.hp--;score+=5;scoreEl.textContent=score;burst(b.x,b.y,'#ff8ea1',6);if(boss.hp<=0){score+=200*level;scoreEl.textContent=score;burst(boss.x,boss.y,'#ff5f7a',40);spawnPowerup(boss.x,boss.y);nextLevel()} }
+  }
+  for(let i=powerups.length-1;i>=0;i--){const p=powerups[i];const dx=player.x-p.x,dy=player.y-p.y;if(dx*dx+dy*dy<(24+p.r)*(24+p.r)){powerups.splice(i,1);if(p.type==='life')player.lives++;if(p.type==='rapid')player.rapid=600;if(p.type==='spread')player.spread=600;if(p.type==='shield')player.shield=900;livesEl.textContent=player.lives;updatePowerText();burst(p.x,p.y,'#9dffb0',16)}}
+  asteroids.forEach(a=>{const dx=Math.max(Math.abs(player.x-a.x)-player.w/2,0),dy=Math.max(Math.abs(player.y-a.y)-player.h/2,0);if(dx*dx+dy*dy<a.r*a.r){a.y=canvas.height+200;hitPlayer()}});
+  enemyBullets.forEach((b,i)=>{const dx=Math.abs(player.x-b.x),dy=Math.abs(player.y-b.y);if(dx<player.w/2+b.r&&dy<player.h/2+b.r){enemyBullets.splice(i,1);hitPlayer()}});
+  if(boss&&Math.abs(player.x-boss.x)<player.w/2+boss.w/2&&Math.abs(player.y-boss.y)<player.h/2+boss.h/2)hitPlayer();
+}
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  stars.forEach(s=>{ctx.fillStyle='rgba(255,255,255,.8)';ctx.fillRect(s.x,s.y,s.r,s.r)});
+  bullets.forEach(b=>{ctx.fillStyle='#4fd1ff';ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,6.28);ctx.fill()});
+  enemyBullets.forEach(b=>{ctx.fillStyle='#ff8ea1';ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,6.28);ctx.fill()});
+  asteroids.forEach(drawAsteroid);
+  powerups.forEach(drawPowerup);
+  particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.life/40);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.28);ctx.fill();ctx.globalAlpha=1});
+  drawBoss();
+  drawShip();
+}
+function loop(t){if(!running)return;update();draw();requestAnimationFrame(loop)}
+startBtn.onclick=reset;
+</script>
+</body>
+</html>
