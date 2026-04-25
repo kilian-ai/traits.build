@@ -947,6 +947,79 @@
   // - Auto-sync: setInterval
   // ─────────────────────────────────────────────────────────────────────────
   const SOCIAL_NSEC_KEY      = 'traits.secret.NOSTR_NSEC';
+    // ── Local JS Nostr crypto (secp256k1 schnorr + bech32) — no server needed ──
+    (function() {
+      const P  = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F');
+      const N  = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141');
+      const Gx = BigInt('0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798');
+      const Gy = BigInt('0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8');
+      const mod = (a, m = P) => { const r = a % m; return r < 0n ? r + m : r; };
+      const pow = (b, e, m) => { let r = 1n; b %= m; while (e > 0n) { if (e & 1n) r = r * b % m; e >>= 1n; b = b * b % m; } return r; };
+      const inv = (n, m = P) => pow(mod(n, m), m - 2n, m);
+      const b2h = b => Array.from(b).map(x => x.toString(16).padStart(2,'0')).join('');
+      const h2b = h => Uint8Array.from(h.match(/.{2}/g).map(c => parseInt(c,16)));
+      const n2b = n => h2b(n.toString(16).padStart(64,'0'));
+      const b2n = b => BigInt('0x' + b2h(b));
+      class Pt {
+        constructor(x,y,z=1n){this.x=x;this.y=y;this.z=z;}
+        static Z = new Pt(0n,1n,0n);
+        static G = new Pt(Gx,Gy);
+        af(){if(this.z===1n)return this;const iz=inv(this.z);return new Pt(mod(this.x*iz),mod(this.y*iz));}
+        dbl(){const{x,y,z}=this,YY=mod(y*y),S=mod(4n*x*YY),M=mod(3n*x*x),x2=mod(M*M-2n*S),y2=mod(M*(S-x2)-8n*YY*YY),z2=mod(2n*y*z);return new Pt(x2,y2,z2);}
+        add(Q){if(!this.z)return Q;if(!Q.z)return this;const{x:X1,y:Y1,z:Z1}=this,{x:X2,y:Y2,z:Z2}=Q,U1=mod(X1*Z2*Z2),U2=mod(X2*Z1*Z1),S1=mod(Y1*Z2*Z2*Z2),S2=mod(Y2*Z1*Z1*Z1),H=mod(U2-U1),R=mod(S2-S1);if(!H)return R?Pt.Z:this.dbl();const H2=mod(H*H),H3=mod(H*H2),x3=mod(R*R-H3-2n*U1*H2),y3=mod(R*(U1*H2-x3)-S1*H3),z3=mod(H*Z1*Z2);return new Pt(x3,y3,z3);}
+        mul(k){let n=mod(k,N),Q=Pt.Z,P=this;while(n>0n){if(n&1n)Q=Q.add(P);P=P.dbl();n>>=1n;}return Q;}
+        get xo(){return this.af().x;}
+        get ya(){return this.af().y;}
+      }
+      const sha256 = async b => new Uint8Array(await crypto.subtle.digest('SHA-256', b));
+      // bech32
+      const CS='qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+      const GN=[0x3b6a57b2,0x26508e6d,0x1ea119fa,0x3d4233dd,0x2a1462b3];
+      function b32poly(v){let c=1;for(const x of v){const t=c>>25;c=(c&0x1ffffff)<<5^x;for(let i=0;i<5;i++)if((t>>i)&1)c^=GN[i];}return c;}
+      function b32hrp(s){const r=[];for(const c of s)r.push(c.charCodeAt(0)>>5);r.push(0);for(const c of s)r.push(c.charCodeAt(0)&31);return r;}
+      function b32enc(hrp,ws){const c=[...ws,0,0,0,0,0,0],ck=b32poly([...b32hrp(hrp),...c])^1,cs=Array.from({length:6},(_,i)=>(ck>>(5*(5-i)))&31);return hrp+'1'+[...ws,...cs].map(d=>CS[d]).join('');}
+      function b32dec(s){s=s.toLowerCase();const p=s.lastIndexOf('1'),ws=s.slice(p+1).split('').map(c=>CS.indexOf(c));return{hrp:s.slice(0,p),words:ws.slice(0,-6)};}
+      function b2w(bytes){let a=0,b=0;const r=[];for(const x of bytes){a=(a<<8)|x;b+=8;while(b>=5){b-=5;r.push((a>>b)&31);}}if(b>0)r.push((a<<(5-b))&31);return r;}
+      function w2b(ws){let a=0,b=0;const r=[];for(const w of ws){a=(a<<5)|w;b+=5;while(b>=8){b-=8;r.push((a>>b)&0xff);}}return new Uint8Array(r);}
+      // schnorr sign (BIP-340)
+      async function schnorrSign(privHex, msgBytes) {
+        const d = b2n(h2b(privHex));
+        const P0 = Pt.G.mul(d);
+        // deterministic nonce: SHA256(privkey || msg)
+        const k0 = mod(b2n(await sha256(new Uint8Array([...n2b(d), ...msgBytes]))), N);
+        const k = k0 === 0n ? 1n : k0;
+        const R = Pt.G.mul(k);
+        const kf = R.ya % 2n !== 0n ? N - k : k;
+        const rx = R.xo;
+        const px = P0.xo;
+        const eIn = new Uint8Array([...n2b(rx), ...n2b(px), ...msgBytes]);
+        const e = mod(b2n(await sha256(eIn)), N);
+        const s = mod(kf + e * d, N);
+        return new Uint8Array([...n2b(rx), ...n2b(s)]);
+      }
+      window._nostrLocalCrypto = {
+        async keygen() {
+          const priv = new Uint8Array(32); crypto.getRandomValues(priv);
+          // ensure scalar < N (rejection sampling would be purer but this is safe enough for 32 bytes)
+          const privKey = mod(b2n(priv), N - 1n) + 1n;
+          const pub = Pt.G.mul(privKey).xo;
+          return { nsec: n2b(privKey).reduce((s,x)=>s+x.toString(16).padStart(2,'0'),''), npub: n2b(pub).reduce((s,x)=>s+x.toString(16).padStart(2,'0'),'') };
+        },
+        async pubkey(nsecHex) { return n2b(Pt.G.mul(b2n(h2b(nsecHex))).xo).reduce((s,x)=>s+x.toString(16).padStart(2,'0'),''); },
+        async encode_npub(pubHex) { return b32enc('npub', b2w(h2b(pubHex))); },
+        async decode_npub(npub) { const {words} = b32dec(npub); return b2h(w2b(words)); },
+        async sign_event(nsecHex, kind, content, tagsJson, createdAt) {
+          const pubHex = await this.pubkey(nsecHex);
+          const kindInt = parseInt(kind), tags = JSON.parse(tagsJson), ts = parseInt(createdAt) || Math.floor(Date.now()/1000);
+          const canonical = JSON.stringify([0, pubHex, ts, kindInt, tags, content]);
+          const idBytes = await sha256(new TextEncoder().encode(canonical));
+          const id = b2h(idBytes);
+          const sig = b2h(await schnorrSign(nsecHex, idBytes));
+          return { id, pubkey: pubHex, created_at: ts, kind: kindInt, tags, content, sig };
+        },
+      };
+    })();
+
   const SOCIAL_FOLLOWING_KEY = 'traits.nostr.following';
   const NOSTR_RELAYS = [
     'wss://relay.damus.io',
@@ -967,8 +1040,12 @@
     return j;
   }
 
-  // Try WASM SDK (when loaded in SPA) first, fall back to REST
+  // Try local JS crypto (offline, no server) → WASM SDK → REST fallback
   async function nostrCall(action, ...args) {
+    const local = window._nostrLocalCrypto;
+    if (local && typeof local[action] === 'function') {
+      try { return await local[action](...args); } catch (e) { console.warn('nostr local err:', e); }
+    }
     try {
       const sdk = window._traitsSDK;
       if (sdk) {
