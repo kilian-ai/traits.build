@@ -117,7 +117,7 @@ echo "  Ctrl-C to stop."
 echo "──────────────────────────────────────────────────────"
 
 # websocat opens a local TCP listener that forwards to the tunnel WS.
-# Each client connection spawns a fresh WebSocket. The guest-side bridge
-# respawns between connections (see tunnel-up.sh), so serial SSH/SCP
-# sessions work without restarting anything.
-exec websocat --binary "tcp-l:127.0.0.1:${LOCAL_PORT}" "$URL"
+# Use -E to close the WS cleanly on client disconnect; without this,
+# serial SSH/SFTP sessions can inherit stale stream state and fail with
+# MAC/bad-packet errors.
+exec websocat --binary -E "tcp-l:127.0.0.1:${LOCAL_PORT}" "$URL"
