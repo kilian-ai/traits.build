@@ -51,30 +51,53 @@ need() {
 }
 
 ensure_dirs() {
-    # 9P virtio passes host UIDs through. If a dir was pre-created by the
-    # host as a different uid (often shows as `nobody` in guest), root inside
-    # the guest still can't write to it. Self-heal by chmod'ing, or—if the
-    # dir is empty and unwritable—removing and recreating it under the
-    # current user.
-    for d in "$PUBLIC_DIR" "$FOLLOW_DIR"; do
-        if [ ! -d "$d" ]; then
-            mkdir -p "$d" 2>/dev/null || true
+    # 9P virtio passes host UIDs through verbatim; chmod often fails with
+    # EOVERFLOW ("Value too large for data type") when the host uid doesn't
+    # fit the guest's 9P uid type. The reliable fix is rmdir + mkdir as long
+    # as the dir is empty and the *parent* is writable.
+    #
+    # `[ -w DIR ]` lies under 9P (root passes the access check even when an
+    # actual write fails), so we use a real write probe.
+    probe_writable() {
+        _t="$1/.social.probe.$$"
+        if (: > "$_t") 2>/dev/null; then
+            rm -f "$_t" 2>/dev/null
+            return 0
         fi
-        if [ -d "$d" ] && [ ! -w "$d" ]; then
+        return 1
+    }
+    for d in "$PUBLIC_DIR" "$FOLLOW_DIR"; do
+        [ -d "$d" ] || mkdir -p "$d" 2>/dev/null || true
+        if [ -d "$d" ] && ! probe_writable "$d"; then
+            # Try chmod (often EOVERFLOW on 9P, ignore failure).
             chmod 777 "$d" 2>/dev/null || true
-            if [ ! -w "$d" ]; then
-                # Empty? safe to recreate. Otherwise warn.
+            if ! probe_writable "$d"; then
+                # Empty and parent writable? rmdir + mkdir as current uid.
                 if [ -z "$(ls -A "$d" 2>/dev/null)" ]; then
-                    rmdir "$d" 2>/dev/null && mkdir -p "$d" 2>/dev/null || true
-                else
-                    log "warning: $d not writable and not empty (9P uid mismatch?)"
+                    rmdir "$d" 2>/dev/null || rm -rf "$d" 2>/dev/null || true
+                    mkdir -p "$d" 2>/dev/null || true
                 fi
             fi
         fi
-        [ -d "$d" ] || die "cannot create $d (parent not writable?)"
-        [ -w "$d" ] || die "cannot write to $d — try: chmod 777 $d (on host)"
+        [ -d "$d" ] || die "cannot create $d"
+        if ! probe_writable "$d"; then
+            cat >&2 <<EOF
+social: $d is not writable from inside the guest.
+
+This usually means a 9P uid mismatch from the v86 host.
+Try ONE of:
+
+  1) Restart the v86 guest after deleting the bad dir on the host:
+       rm -rf '$d' on host, then restart.
+  2) Set SOCIAL_HOME to a path inside the guest that is writable
+     (e.g. /root/social) and bind-mount or rsync to /mnt/host later:
+       export SOCIAL_HOME=/root/social
+       social init
+EOF
+            exit 1
+        fi
     done
-    [ -f "$FOLLOW_LIST" ] || : > "$FOLLOW_LIST" 2>/dev/null || die "cannot create $FOLLOW_LIST"
+    [ -f "$FOLLOW_LIST" ] || : > "$FOLLOW_LIST"
 }
 
 # Call social.nostr trait via REST. Args: action arg1 arg2 ...
