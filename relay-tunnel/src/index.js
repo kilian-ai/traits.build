@@ -127,6 +127,16 @@ export class PortSession {
     // Per-port HTTP proxy call state: port → { chunks:[], resolve, resetIdle }
     // Used to route webSocketMessage bytes into an active _httpProxy call.
     this.proxyCalls = new Map();
+    // Per-port "used guest" tracker: each guest WS wraps exactly one
+    // tcp:127.0.0.1:PORT connection on the guest side. Once the first
+    // client has paired, sshd/ftpd has already streamed its banner into
+    // that pipe and is mid-protocol. Any subsequent client picking up the
+    // same guest sees an empty buffer and protocol garbage ("Bad packet
+    // length", "socket unexpectedly closed", SFTP upload failures). On
+    // every NEW client attach we close the existing guest if the port has
+    // already served a client — the guest-side respawn loop reopens a
+    // fresh tcp accept and re-emits a clean banner before pairing.
+    this.usedPorts = new Set();
     // Restore registered ports + rehydrate hibernated WebSockets.
     this.state.blockConcurrencyWhile(async () => {
       const ports = await this.state.storage.get('registeredPorts');
@@ -222,6 +232,19 @@ export class PortSession {
       else                  { this.clientWs.delete(port); this.clientAt.delete(port); }
     }
 
+    // Force-fresh guest on every NEW client attach for already-used ports
+    // (see usedPorts comment in constructor). Skip on the very first client
+    // to avoid kicking the only live bridge before it has done its job.
+    if (role === 'client' && this.usedPorts.has(port)) {
+      const stale = this.guestWs.get(port);
+      if (stale) {
+        try { stale.close(1000, 'guest-recycle-fresh'); } catch (_) {}
+        this.guestWs.delete(port);
+        this.guestAt.delete(port);
+        this.guestBuffer.delete(port);
+      }
+    }
+
     const pair = new WebSocketPair();
     const server = pair[1];
     // Hibernation API: Cloudflare manages WS lifecycle across DO eviction.
@@ -234,6 +257,9 @@ export class PortSession {
     } else {
       this.clientWs.set(port, server);
       this.clientAt.set(port, Date.now());
+      // Mark this port as having served a client. The next client attach
+      // will recycle the guest above before pairing.
+      this.usedPorts.add(port);
       // Flush any buffered guest→client data (e.g. SSH banner)
       const buf = this.guestBuffer.get(port);
       if (buf && buf.length) {
@@ -299,6 +325,8 @@ export class PortSession {
         this.guestWs.delete(port);
         this.guestAt.delete(port);
         this.guestBuffer.delete(port);
+        // Forget "used" marker — the next guest that pairs is fresh.
+        this.usedPorts.delete(port);
       } else {
         // Replaced WS closing — leave the new entry intact.
         return;

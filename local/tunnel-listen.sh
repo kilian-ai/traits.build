@@ -117,15 +117,67 @@ echo "  Ctrl-C to stop."
 echo "──────────────────────────────────────────────────────"
 
 # Respawn loop: each local TCP client gets a fresh upstream WSS connection.
-# Why: websocat in tcp-l: mode with -E (--exit-on-eof) is single-shot — after
-# the first client disconnects, websocat exits and port LOCAL_PORT goes away.
-# Without -E, sequential SSH/SFTP sessions can reuse a polluted WS stream
-# (banner + KEX-INIT bytes from a prior session leak through). Wrapping in
-# a respawn loop gives us BOTH a persistent local listener AND a clean
-# upstream pipe per client connection.
-trap 'echo "[tunnel-listen] stopping"; exit 0' INT TERM
-while :; do
-    websocat --binary -E "tcp-l:127.0.0.1:${LOCAL_PORT}" "$URL" || true
-    # Brief pause to avoid a tight loop if upstream is unreachable.
-    sleep 0.2 2>/dev/null || sleep 1
-done
+# Forking TCP listener: accepts unlimited concurrent clients, each gets its
+# OWN fresh websocat → upstream WS connection. Required for SFTP/Filezilla
+# (parallel transfers open additional TCP connections to the same port) and
+# for any client that overlaps a control session with data sessions.
+#
+# Prior single-shot design (websocat --binary -E tcp-l:...) handled only one
+# client at a time; the second concurrent connection would queue in the kernel
+# backlog and time out with "socket unexpectedly closed".
+#
+# Implementation: prefer socat (cleanest), fall back to Python (always on
+# macOS), then last-resort to single-shot websocat respawn loop.
+trap 'echo "[tunnel-listen] stopping"; kill 0 2>/dev/null; exit 0' INT TERM
+
+if command -v socat >/dev/null 2>&1; then
+    echo "[tunnel-listen] using socat fork-listener (multi-client)"
+    exec socat "TCP-LISTEN:${LOCAL_PORT},bind=127.0.0.1,reuseaddr,fork" \
+        "EXEC:websocat --binary ${URL},nofork"
+elif command -v python3 >/dev/null 2>&1; then
+    echo "[tunnel-listen] using python3 fork-listener (multi-client)"
+    exec python3 - "$LOCAL_PORT" "$URL" <<'PYEOF'
+import os, sys, socket, signal
+port = int(sys.argv[1])
+url  = sys.argv[2]
+# Auto-reap finished children on POSIX so we don't accumulate zombies.
+try: signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+except Exception: pass
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(("127.0.0.1", port))
+srv.listen(128)
+while True:
+    try:
+        conn, _addr = srv.accept()
+    except (KeyboardInterrupt, SystemExit):
+        break
+    except OSError:
+        continue
+    pid = os.fork()
+    if pid == 0:
+        # Child: replace stdio with the accepted socket and exec websocat.
+        # `-E` makes the child exit cleanly on EOF from either side; the
+        # parent keeps accepting unrelated clients in parallel.
+        try: srv.close()
+        except Exception: pass
+        fd = conn.fileno()
+        os.dup2(fd, 0)
+        os.dup2(fd, 1)
+        try: conn.close()
+        except Exception: pass
+        os.execvp("websocat", ["websocat", "--binary", "-E", "-", url])
+        os._exit(127)
+    else:
+        # Parent: child has its own dup of the socket; we don't need ours.
+        try: conn.close()
+        except Exception: pass
+PYEOF
+else
+    echo "[tunnel-listen] WARNING: socat and python3 unavailable; falling back to" >&2
+    echo "[tunnel-listen] single-shot websocat (parallel SFTP transfers may fail)" >&2
+    while :; do
+        websocat --binary -E "tcp-l:127.0.0.1:${LOCAL_PORT}" "$URL" || true
+        sleep 0.2 2>/dev/null || sleep 1
+    done
+fi

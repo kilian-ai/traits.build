@@ -117,6 +117,20 @@ class PortSession {
     this.proxyCalls = new Map();  // ws → { chunks, resetIdle, settle }
                                   // (keyed by ws so concurrent requests on the
                                   //  same port don't collide)
+    this.usedGuests = new WeakSet(); // guest WS instances that have already been
+                                      // paired with at least one client. Each
+                                      // guest bridge wraps a SINGLE TCP
+                                      // connection to the local service (sshd,
+                                      // ftpd, …) — once consumed, the service
+                                      // banner has been emitted and the
+                                      // protocol is mid-flight. Reusing the
+                                      // bridge for a second client gives them
+                                      // an exhausted pipe (no banner, garbage
+                                      // KEX) → "Bad packet length" / SFTP
+                                      // "socket unexpectedly closed". On every
+                                      // new client attach we close all used
+                                      // guests so the guest-side respawn loop
+                                      // produces a fresh accept().
   }
 
   touch() { this.lastActivity = Date.now(); }
@@ -190,6 +204,29 @@ class PortSession {
     this.clientWs.set(port, ws);
     this.clientAt.set(port, Date.now());
 
+    // Force a fresh guest TCP accept for every new client. Each guest
+    // bridge wraps exactly one tcp:127.0.0.1:PORT connection — once the
+    // first client has been served, sshd/ftpd has already emitted its
+    // banner into that pipe and is mid-protocol. A second client picking
+    // up the same bridge sees no banner and protocol garbage. Close any
+    // "used" guest bridges here so the guest-side respawn loop opens a
+    // brand-new accept and re-emits a clean banner before pairing below.
+    const usedPool = this.guestWs.get(port);
+    if (usedPool && usedPool.size) {
+      const stale = [];
+      for (const g of usedPool) {
+        if (this.usedGuests.has(g)) stale.push(g);
+      }
+      if (stale.length) {
+        for (const g of stale) {
+          try { g.close(1000, 'guest-recycle-fresh'); } catch (_) {}
+          usedPool.delete(g);
+        }
+        this.guestBuffer.delete(port);
+        if (!usedPool.size) this.guestWs.delete(port);
+      }
+    }
+
     // Defense against multi-bridge guests (legacy tunnel-up.sh POOL_SIZE>1):
     // each guest bridge opens its OWN tcp:127.0.0.1:PORT connection to the
     // local service (sshd, ftpd, ...), so each one received its own protocol
@@ -229,6 +266,12 @@ class PortSession {
       for (const d of buf) { try { ws.send(d, { binary: true }); } catch (_) {} }
       this.guestBuffer.delete(port);
     }
+
+    // Mark every currently-attached guest on this port as "used" — they're
+    // about to start streaming protocol bytes to this client and become
+    // unsuitable for any subsequent client (see usedGuests comment above).
+    const livePool = this.guestWs.get(port);
+    if (livePool) { for (const g of livePool) this.usedGuests.add(g); }
 
     ws.on('message', (data, isBinary) => {
       this.touch();
