@@ -1,6 +1,6 @@
 [package]
 name = "traits-plugin-api"
-version = "0.260425.200407"
+version = "0.260425.201108"
 edition = "2021"
 description = "C ABI wrapper for trait cdylib plugins"
 authors = ["kilian"]

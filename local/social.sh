@@ -51,8 +51,30 @@ need() {
 }
 
 ensure_dirs() {
-    mkdir -p "$PUBLIC_DIR" "$FOLLOW_DIR"
-    [ -f "$FOLLOW_LIST" ] || : > "$FOLLOW_LIST"
+    # 9P virtio passes host UIDs through. If a dir was pre-created by the
+    # host as a different uid (often shows as `nobody` in guest), root inside
+    # the guest still can't write to it. Self-heal by chmod'ing, or—if the
+    # dir is empty and unwritable—removing and recreating it under the
+    # current user.
+    for d in "$PUBLIC_DIR" "$FOLLOW_DIR"; do
+        if [ ! -d "$d" ]; then
+            mkdir -p "$d" 2>/dev/null || true
+        fi
+        if [ -d "$d" ] && [ ! -w "$d" ]; then
+            chmod 777 "$d" 2>/dev/null || true
+            if [ ! -w "$d" ]; then
+                # Empty? safe to recreate. Otherwise warn.
+                if [ -z "$(ls -A "$d" 2>/dev/null)" ]; then
+                    rmdir "$d" 2>/dev/null && mkdir -p "$d" 2>/dev/null || true
+                else
+                    log "warning: $d not writable and not empty (9P uid mismatch?)"
+                fi
+            fi
+        fi
+        [ -d "$d" ] || die "cannot create $d (parent not writable?)"
+        [ -w "$d" ] || die "cannot write to $d — try: chmod 777 $d (on host)"
+    done
+    [ -f "$FOLLOW_LIST" ] || : > "$FOLLOW_LIST" 2>/dev/null || die "cannot create $FOLLOW_LIST"
 }
 
 # Call social.nostr trait via REST. Args: action arg1 arg2 ...
