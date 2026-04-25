@@ -128,6 +128,7 @@ echo "SSH tunnel: ssh -o ProxyCommand='websocat wss://tunnel.traits.build/port/c
 - `local/tunnel-listen-ftp.sh` now performs a relay preflight (`/port/status`) and fails fast if control or passive ports are missing from the pairing code.
 - Passive bridge note (fixed): passive sockets are opened lazily by `vsftpd`, so `tunnel-up.sh` now keeps passive bridge loops running even when those ports are not yet listening. Without this, `ls`/`mkdir` could hang despite correct registration.
 - `local/tunnel-listen.sh` now performs relay preflight as well: it fails fast for inactive/expired codes and missing remote-port registration, and warns when guest bridge is currently disconnected. This avoids opaque SSH/SFTP errors from stale codes.
+- Listener endpoint fallback: `local/tunnel-listen.sh` and `local/tunnel-listen-ftp.sh` now probe both `tunnel.traits.build` and `traits-build-tunnel.fly.dev` status endpoints and automatically use whichever endpoint currently owns the pairing code. This avoids false "missing port" failures when helper scripts are run from mixed versions.
 
 Use environment overrides for custom ranges:
 

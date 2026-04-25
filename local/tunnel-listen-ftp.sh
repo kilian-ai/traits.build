@@ -37,6 +37,7 @@ PASV_MAX="${5:-30010}"
 
 # Override via env: TUNNEL_WS=ws://localhost:8787 sh tunnel-listen-ftp.sh CODE
 TUNNEL_WS="${TUNNEL_WS:-wss://traits-build-tunnel.fly.dev}"
+TUNNEL_WS_FALLBACK="wss://tunnel.traits.build"
 
 if ! command -v websocat >/dev/null 2>&1; then
     echo "[tunnel-listen-ftp] websocat not found — install via: brew install websocat" >&2
@@ -62,8 +63,9 @@ if [ "$PASV_MIN" -gt "$PASV_MAX" ]; then
     exit 1
 fi
 
-relay_status_json() {
-    curl -fsS "https://${TUNNEL_WS#*://}/port/status?code=${CODE}" 2>/dev/null || true
+relay_status_json_for_ws() {
+    ws_base="$1"
+    curl -fsS "https://${ws_base#*://}/port/status?code=${CODE}" 2>/dev/null || true
 }
 
 ensure_remote_port_registered() {
@@ -75,7 +77,41 @@ ensure_remote_port_registered() {
     return 1
 }
 
-status_json="$(relay_status_json)"
+is_complete_registration() {
+    status_json="$1"
+    if ! ensure_remote_port_registered "$REMOTE_CTRL_PORT" "$status_json"; then
+        return 1
+    fi
+    p="$PASV_MIN"
+    while [ "$p" -le "$PASV_MAX" ]; do
+        if ! ensure_remote_port_registered "$p" "$status_json"; then
+            return 1
+        fi
+        p=$((p + 1))
+    done
+    return 0
+}
+
+status_primary="$(relay_status_json_for_ws "$TUNNEL_WS")"
+status_fallback=""
+if [ "$TUNNEL_WS" != "$TUNNEL_WS_FALLBACK" ]; then
+    status_fallback="$(relay_status_json_for_ws "$TUNNEL_WS_FALLBACK")"
+fi
+
+if [ -n "$status_primary" ] && is_complete_registration "$status_primary"; then
+    status_json="$status_primary"
+elif [ -n "$status_fallback" ] && is_complete_registration "$status_fallback"; then
+    TUNNEL_WS="$TUNNEL_WS_FALLBACK"
+    status_json="$status_fallback"
+elif [ -n "$status_primary" ]; then
+    status_json="$status_primary"
+elif [ -n "$status_fallback" ]; then
+    TUNNEL_WS="$TUNNEL_WS_FALLBACK"
+    status_json="$status_fallback"
+else
+    status_json=""
+fi
+
 if [ -n "$status_json" ]; then
     if ! ensure_remote_port_registered "$REMOTE_CTRL_PORT" "$status_json"; then
         echo "[tunnel-listen-ftp] relay code ${CODE} is missing control port ${REMOTE_CTRL_PORT} registration" >&2

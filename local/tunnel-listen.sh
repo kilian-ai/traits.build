@@ -23,14 +23,16 @@ REMOTE_PORT="${3:-22}"
 
 # Override via env: TUNNEL_WS=ws://localhost:8787 sh tunnel-listen.sh CODE
 TUNNEL_WS="${TUNNEL_WS:-wss://tunnel.traits.build}"
+TUNNEL_WS_FALLBACK="wss://traits-build-tunnel.fly.dev"
 
 if ! command -v websocat >/dev/null 2>&1; then
     echo "[tunnel-listen] websocat not found — install via: brew install websocat" >&2
     exit 1
 fi
 
-relay_status_json() {
-    curl -fsS "https://${TUNNEL_WS#*://}/port/status?code=${CODE}" 2>/dev/null || true
+relay_status_json_for_ws() {
+    ws_base="$1"
+    curl -fsS "https://${ws_base#*://}/port/status?code=${CODE}" 2>/dev/null || true
 }
 
 has_registered_port() {
@@ -50,12 +52,34 @@ has_guest_port() {
     return 1
 }
 
-status_json="$(relay_status_json)"
-if [ -z "$status_json" ]; then
+status_json=""
+selected_ws="$TUNNEL_WS"
+
+status_primary="$(relay_status_json_for_ws "$TUNNEL_WS")"
+status_fallback=""
+if [ "$TUNNEL_WS" != "$TUNNEL_WS_FALLBACK" ]; then
+    status_fallback="$(relay_status_json_for_ws "$TUNNEL_WS_FALLBACK")"
+fi
+
+if [ -n "$status_primary" ] && has_registered_port "$REMOTE_PORT" "$status_primary"; then
+    selected_ws="$TUNNEL_WS"
+    status_json="$status_primary"
+elif [ -n "$status_fallback" ] && has_registered_port "$REMOTE_PORT" "$status_fallback"; then
+    selected_ws="$TUNNEL_WS_FALLBACK"
+    status_json="$status_fallback"
+elif [ -n "$status_primary" ]; then
+    selected_ws="$TUNNEL_WS"
+    status_json="$status_primary"
+elif [ -n "$status_fallback" ]; then
+    selected_ws="$TUNNEL_WS_FALLBACK"
+    status_json="$status_fallback"
+else
     echo "[tunnel-listen] unable to fetch relay status for code ${CODE}" >&2
     echo "[tunnel-listen] verify the code and relay endpoint, then retry" >&2
     exit 1
 fi
+
+TUNNEL_WS="$selected_ws"
 
 if printf '%s' "$status_json" | grep -q '"active"[[:space:]]*:[[:space:]]*false'; then
     echo "[tunnel-listen] code ${CODE} is inactive/expired" >&2

@@ -1499,6 +1499,7 @@ GET  /port/debug?code=XXXX
 12. **FTP passive registration regression fixed (Apr 2026).** In `local/tunnel-up.sh`, shell variable shadowing (`p`) could register `[21,21,...]` instead of `[21,30000..30010]`, leading to `pwd` success but `ls`/`mkdir` hangs. Helper vars are now disambiguated, and `local/tunnel-listen-ftp.sh` preflights `/port/status` and exits early when passive ports are missing for the selected code.
 13. **FTP passive bridge startup fix (Apr 2026).** `vsftpd` opens passive sockets lazily, so pre-checking `port_listening` on passive ports can incorrectly skip bridge startup. `local/tunnel-up.sh` now always starts relay bridge loops for ports in `FTP_PASV_MIN..FTP_PASV_MAX` when port `21` is requested, even if those ports are not listening yet.
 14. **SSH listener preflight guard (Apr 2026).** `local/tunnel-listen.sh` now checks `/port/status` before opening localhost listeners: inactive/expired codes and missing `remote_port` registration fail fast with actionable guidance; guest-disconnected state prints a warning to avoid ambiguous SSH/SFTP banner/MAC errors.
+15. **Tunnel endpoint split mitigation (Apr 2026).** Pairing codes may exist on either `tunnel.traits.build` or `traits-build-tunnel.fly.dev` during mixed script rollouts. `local/tunnel-listen.sh` and `local/tunnel-listen-ftp.sh` now probe both status endpoints and auto-select the endpoint that owns the code/ports before opening listeners.
 
 ### Target ports
 
