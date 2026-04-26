@@ -1512,19 +1512,31 @@
     const localNpub = (localStorage.getItem('traits.nostr.npub') || '').trim();
     const localFollowing = getFollowing();
 
-    try { fs.create_directory(SOCIAL_VFS_ROOT); } catch (_) {}
+    try { fs.create_directory(SOCIAL_VFS_ROOT); } catch (e) {
+      console.warn('[syncSocialStateToGuest] failed to create /vfs:', e && e.message);
+    }
     try { fs.create_directory(DEFAULT_FOLLOW_ROOT); } catch (_) {}
 
     const maybeWrite = async (path, value) => {
       if (!value) return;
       if (fillMissingOnly && hasPathInFs(fs, path)) return;
-      await guestWriteText(fs, path, value.endsWith('\n') ? value : value + '\n');
+      try {
+        await guestWriteText(fs, path, value.endsWith('\n') ? value : value + '\n');
+        console.log('[syncSocialStateToGuest] wrote ' + path + ': ' + (value.length > 50 ? value.slice(0, 50) + '...' : value));
+      } catch (err) {
+        console.warn('[syncSocialStateToGuest] failed to write ' + path + ':', err && err.message);
+      }
     };
 
     await maybeWrite(SOCIAL_VFS_ROOT + '/.nsec', localNsec);
     await maybeWrite(SOCIAL_VFS_ROOT + '/.npub', localNpub);
     if (localFollowing.length && !(fillMissingOnly && hasPathInFs(fs, DEFAULT_FOLLOW_ROOT + '/.list'))) {
-      await guestWriteText(fs, DEFAULT_FOLLOW_ROOT + '/.list', localFollowing.join('\n') + '\n');
+      try {
+        await guestWriteText(fs, DEFAULT_FOLLOW_ROOT + '/.list', localFollowing.join('\n') + '\n');
+        console.log('[syncSocialStateToGuest] wrote following list: ' + localFollowing.length + ' entries');
+      } catch (err) {
+        console.warn('[syncSocialStateToGuest] failed to write following list:', err && err.message);
+      }
     }
   }
 
