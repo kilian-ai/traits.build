@@ -1506,7 +1506,18 @@
 
   async function syncSocialStateToGuest({ fillMissingOnly = false } = {}) {
     const fs = emulator && emulator.fs9p;
-    if (!fs) return;
+      if (!fs) {
+        console.log('[syncSocialStateToGuest] 9P filesystem not available, skipping VFS sync');
+        return;
+      }
+
+      // Test if 9P is actually usable by trying to read root
+      try {
+        fs.SearchPath && fs.SearchPath('/');
+      } catch (e) {
+        console.warn('[syncSocialStateToGuest] 9P filesystem not ready:', e && e.message);
+        return;
+      }
 
     const localNsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
     const localNpub = (localStorage.getItem('traits.nostr.npub') || '').trim();
