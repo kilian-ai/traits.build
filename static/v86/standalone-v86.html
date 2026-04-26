@@ -1261,6 +1261,35 @@
     return { ok: false, state: 'timeout' };
   }
 
+  async function readGuestRunOutput(runId, timeoutMs = 1200) {
+    const fs = emulator && emulator.fs9p;
+    if (!fs || !runId) return '';
+    const outPath = SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.out';
+    const started = Date.now();
+    while ((Date.now() - started) < timeoutMs) {
+      try {
+        const bytes = await Promise.race([
+          fs.read_file(outPath),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
+        ]);
+        if (typeof bytes === 'string') return bytes;
+        return new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+      } catch (_) {}
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+    return '';
+  }
+
+  function extractNostrIdentityFromText(text) {
+    const body = String(text || '');
+    const npubMatch = body.match(/\bnpub1[023456789acdefghjklmnpqrstuvwxyz]+\b/i);
+    const nsecMatch = body.match(/\bnsec1[023456789acdefghjklmnpqrstuvwxyz]+\b/i);
+    return {
+      npub: npubMatch ? npubMatch[0] : '',
+      nsec: nsecMatch ? nsecMatch[0] : '',
+    };
+  }
+
   async function runGuestCommand(options) {
     const fs = emulator && emulator.fs9p;
     if (!emulator) return false;
@@ -1270,7 +1299,8 @@
     const afterRun = options && typeof options.afterRun === 'function'
       ? async () => {
           const runStatus = await waitForGuestRunStatus(runId, (options && options.statusTimeoutMs) || 25000);
-          await options.afterRun({ fs, binary: null, runStatus, runId });
+          const runOutput = await readGuestRunOutput(runId, (options && options.outputTimeoutMs) || 1500);
+          await options.afterRun({ fs, binary: null, runStatus, runId, runOutput });
         }
       : null;
 
@@ -1286,7 +1316,10 @@
       'mkdir -p /mnt/vfs/.guest-runner /mnt/host/vfs/.guest-runner >/dev/null 2>&1',
       `_tb_status_guest=/mnt/vfs/.guest-runner/${runId}.status`,
       `_tb_status_host=/mnt/host/vfs/.guest-runner/${runId}.status`,
+      `_tb_out_guest=/mnt/vfs/.guest-runner/${runId}.out`,
+      `_tb_out_host=/mnt/host/vfs/.guest-runner/${runId}.out`,
       'rm -f "$_tb_status_guest" "$_tb_status_host" >/dev/null 2>&1 || true',
+      'rm -f "$_tb_out_guest" "$_tb_out_host" >/dev/null 2>&1 || true',
     ].join('; ');
     const beforeShellRaw = (options && options.beforeShell) ? String(options.beforeShell).trim() : '';
     const beforeShell = [statusShell, beforeShellRaw].filter(Boolean).join('; ');
@@ -1295,9 +1328,10 @@
     const cmd = `${envPrefix ? envPrefix + ' ' : ''}"$_tb_cmd"${argString ? ' ' + argString : ''}`;
     const executeShell = [
       'if [ -z "$_tb_cmd" ]; then',
+      'printf "[guest-runner] command not found\\n" > "$_tb_out_guest"; cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true;',
       'printf "missing\\n" > "$_tb_status_guest"; cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;',
       'else',
-      cmd + '; _tb_rc=$?; printf "rc:%s\\n" "$_tb_rc" > "$_tb_status_guest"; cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;',
+      '{ ' + cmd + '; } > "$_tb_out_guest" 2>&1; _tb_rc=$?; cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true; printf "rc:%s\\n" "$_tb_rc" > "$_tb_status_guest"; cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;',
       'fi',
     ].join(' ');
     const fullCmd = [beforeShell, resolver, executeShell, afterShell].filter(Boolean).join('; ');
@@ -1380,11 +1414,17 @@
   async function runGuestSocialCommand(args, label, options = {}) {
     const afterRun = async (ctx) => {
       const status = (ctx && ctx.runStatus) || {};
+      const output = String((ctx && ctx.runOutput) || '');
+      const parsed = extractNostrIdentityFromText(output);
+      if (parsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
+      if (parsed.npub) localStorage.setItem('traits.nostr.npub', parsed.npub);
       if (status.state === 'missing') {
         sLog('guest social command missing; install it in guest with:', 'err');
         sLog('  wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/local/bin/social', 'hint');
       } else if (status.state === 'exit' && status.exitCode !== 0) {
         sLog('guest social command exited with code ' + status.exitCode + ' (see terminal output)', 'hint');
+      } else if (status.state === 'exit' && status.exitCode === 0 && parsed.npub) {
+        sLog('guest identity detected: ' + truncNpub(parsed.npub), 'ok');
       } else if (status.state === 'timeout') {
         sLog('guest social command is still running or hung (status timeout)', 'hint');
       }
@@ -1408,6 +1448,7 @@
       afterRun,
       afterDelayMs: options.afterDelayMs == null ? 350 : options.afterDelayMs,
       statusTimeoutMs: options.statusTimeoutMs,
+      outputTimeoutMs: options.outputTimeoutMs,
     });
   }
 
@@ -1618,10 +1659,12 @@
   // Refresh identity display and enable/disable action buttons
   async function socialInit() {
     let nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
+    let npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
     if (!nsec) {
       // First try to hydrate from mirrored guest files before declaring no identity.
       await hydrateSocialStateFromGuest();
       nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
+      npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
     }
     if (!nsec) {
       if (!socialIdentityProbeDone) {
@@ -1639,6 +1682,15 @@
           syncNowBtn.disabled = true;
           return;
         }
+      }
+      if (npubOnly) {
+        npubDisplay.innerHTML =
+          `<span class="social-npub">${truncNpub(npubOnly)}</span>` +
+          ` <span class="hint" style="font-size:10px">(guest identity; nsec not mirrored)</span>`;
+        publishBtn.disabled = !emulator;
+        syncNowBtn.disabled = false;
+        renderFollowList();
+        return;
       }
       npubDisplay.innerHTML = '<span class="hint">no identity — generate one below</span>';
       publishBtn.disabled = true;
