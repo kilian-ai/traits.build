@@ -1171,7 +1171,7 @@
     if (fallbackName) {
       lines.push(`[ -n "$_tb_cmd" ] || _tb_cmd=$(command -v ${shQuote(fallbackName)} 2>/dev/null || true)`);
     }
-    lines.push('[ -n "$_tb_cmd" ] || { echo "[guest-runner] command not found" >&2; exit 127; }');
+    lines.push('[ -n "$_tb_cmd" ] || echo "[guest-runner] command not found" >&2');
     return lines.join('; ');
   }
 
@@ -1224,12 +1224,54 @@
     await fsWriteFileCompat(fs, path, new TextEncoder().encode(String(value)));
   }
 
+  function parseGuestRunStatus(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return { ok: false, state: 'empty', raw: text };
+    if (text === 'missing') return { ok: false, state: 'missing', missing: true, raw: text };
+    if (text.startsWith('rc:')) {
+      const code = Number(text.slice(3));
+      return {
+        ok: Number.isFinite(code) ? code === 0 : false,
+        state: 'exit',
+        exitCode: Number.isFinite(code) ? code : null,
+        raw: text,
+      };
+    }
+    return { ok: false, state: 'unknown', raw: text };
+  }
+
+  async function waitForGuestRunStatus(runId, timeoutMs = 25000) {
+    const fs = emulator && emulator.fs9p;
+    if (!fs || !runId) return { ok: false, state: 'unavailable' };
+    const statusPath = SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.status';
+    const started = Date.now();
+    while ((Date.now() - started) < timeoutMs) {
+      try {
+        const bytes = await Promise.race([
+          fs.read_file(statusPath),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
+        ]);
+        const text = (typeof bytes === 'string')
+          ? bytes
+          : new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+        return parseGuestRunStatus(text);
+      } catch (_) {}
+      await new Promise(resolve => setTimeout(resolve, 220));
+    }
+    return { ok: false, state: 'timeout' };
+  }
+
   async function runGuestCommand(options) {
     const fs = emulator && emulator.fs9p;
     if (!emulator) return false;
 
+    const runId = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
+
     const afterRun = options && typeof options.afterRun === 'function'
-      ? async () => { await options.afterRun({ fs, binary: null }); }
+      ? async () => {
+          const runStatus = await waitForGuestRunStatus(runId, (options && options.statusTimeoutMs) || 25000);
+          await options.afterRun({ fs, binary: null, runStatus, runId });
+        }
       : null;
 
     if (options && typeof options.beforeRun === 'function') {
@@ -1240,11 +1282,25 @@
       .map(([name, value]) => shAssign(name, value))
       .join(' ');
     const argString = ((options && options.args) || []).map(shQuote).join(' ');
-    const beforeShell = (options && options.beforeShell) ? String(options.beforeShell).trim() : '';
+    const statusShell = [
+      'mkdir -p /mnt/vfs/.guest-runner /mnt/host/vfs/.guest-runner >/dev/null 2>&1',
+      `_tb_status_guest=/mnt/vfs/.guest-runner/${runId}.status`,
+      `_tb_status_host=/mnt/host/vfs/.guest-runner/${runId}.status`,
+      'rm -f "$_tb_status_guest" "$_tb_status_host" >/dev/null 2>&1 || true',
+    ].join('; ');
+    const beforeShellRaw = (options && options.beforeShell) ? String(options.beforeShell).trim() : '';
+    const beforeShell = [statusShell, beforeShellRaw].filter(Boolean).join('; ');
     const afterShell = (options && options.afterShell) ? String(options.afterShell).trim() : '';
     const resolver = resolveGuestBinaryShell(options || {});
     const cmd = `${envPrefix ? envPrefix + ' ' : ''}"$_tb_cmd"${argString ? ' ' + argString : ''}`;
-    const fullCmd = [beforeShell, resolver, cmd, afterShell].filter(Boolean).join('; ');
+    const executeShell = [
+      'if [ -z "$_tb_cmd" ]; then',
+      'printf "missing\\n" > "$_tb_status_guest"; cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;',
+      'else',
+      cmd + '; _tb_rc=$?; printf "rc:%s\\n" "$_tb_rc" > "$_tb_status_guest"; cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;',
+      'fi',
+    ].join(' ');
+    const fullCmd = [beforeShell, resolver, executeShell, afterShell].filter(Boolean).join('; ');
     dispatchGuestCommand(fullCmd, options && options.label, {
       afterRun,
       afterDelayMs: options && options.afterDelayMs,
@@ -1322,9 +1378,21 @@
   }
 
   async function runGuestSocialCommand(args, label, options = {}) {
-    const afterRun = options.afterRun || (async () => {
+    const afterRun = async (ctx) => {
+      const status = (ctx && ctx.runStatus) || {};
+      if (status.state === 'missing') {
+        sLog('guest social command missing; install it in guest with:', 'err');
+        sLog('  wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/local/bin/social', 'hint');
+      } else if (status.state === 'exit' && status.exitCode !== 0) {
+        sLog('guest social command exited with code ' + status.exitCode + ' (see terminal output)', 'hint');
+      } else if (status.state === 'timeout') {
+        sLog('guest social command is still running or hung (status timeout)', 'hint');
+      }
       await hydrateSocialStateFromGuest();
-    });
+      if (typeof options.afterRun === 'function') {
+        await options.afterRun(ctx || {});
+      }
+    };
     return runGuestCommand({
       candidates: ['/usr/local/bin/social', '/usr/bin/social'],
       commandName: 'social',
@@ -1338,7 +1406,8 @@
       beforeShell: socialMirrorToGuestSnippet(),
       afterShell: socialMirrorFromGuestSnippet(),
       afterRun,
-      afterDelayMs: options.afterDelayMs,
+      afterDelayMs: options.afterDelayMs == null ? 350 : options.afterDelayMs,
+      statusTimeoutMs: options.statusTimeoutMs,
     });
   }
 

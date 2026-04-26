@@ -27,6 +27,7 @@
 - Social overlay now attempts guest→host mirror hydration before showing a no-identity state, reducing false "no identity" UI states when keys already exist under `/mnt/vfs`.
 - Social overlay includes a `debug pubkey` button that executes guest `social pubkey`, then logs hydrated identity state (`localStorage` + `/mnt/vfs/.npub`) to help diagnose CLI↔UI mirror issues.
 - v86 guest-command queuing must treat Alpine `login:` as a separate state from a real shell prompt. For Social/open-on-boot flows, detect `login:` explicitly, send `root` once when queued guest work is waiting, and only mark the guest ready after a root-style prompt ending in `# ` appears; otherwise echoed shell variables like `$_tb_cmd ` can be misclassified as readiness and commands get sprayed into the login prompt.
+- v86 Social guest command execution now writes per-run status markers under `/mnt/vfs/.guest-runner/*.status` (mirrored to `/mnt/host/vfs/.guest-runner`) so UI actions can distinguish `missing` command state from normal exits. Status polling in the browser must use bounded `fs.read_file` timeouts (`Promise.race`) because missing files may hang reads in some v86 sessions.
 
 ---
 
