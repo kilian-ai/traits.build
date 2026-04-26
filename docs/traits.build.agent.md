@@ -20,6 +20,7 @@
 - In the v86 Social overlay, button actions prefer running guest `social.sh` (`init`, `follow`, `publish`, `sync`, `search`) with `SOCIAL_HOME=/mnt/vfs` when the script is installed in the guest, and fall back to in-browser JS behavior otherwise.
 - The preferred UI→guest integration pattern in `standalone-v86.html` is now a generic `runGuestCommand(...)` helper with `beforeRun`/`afterRun` hooks. Social uses it to sync local UI state into guest files before invoking the guest CLI, then hydrate UI state back from guest after command completion.
 - Root cause for earlier Social identity mismatch: browser UI was reading/writing the host-visible `/vfs` mirror (9P-backed), while guest `social.sh` read guest tmpfs `/mnt/vfs`. Fix: mirror key Social state files (`.nsec`, `.npub`, `.social.tunnel`, `following/.list`) between `/mnt/host/vfs` and `/mnt/vfs` before/after guest command execution, and also when opening the Social overlay.
+- `local/social.sh` now supports resilient API calling for flaky guest networking: retries with bounded timeouts, tries `--http1.1` + `--tlsv1.2`, and can fail over across space-separated `SOCIAL_API_CANDIDATES` endpoints.
 
 ---
 

@@ -1092,6 +1092,20 @@
     return `${name}=${shQuote(value)}`;
   }
 
+  async function fsWriteFileCompat(fs, path, bytes) {
+    if (!fs) throw new Error('fs unavailable');
+    if (typeof fs.write_file === 'function') {
+      return fs.write_file(path, bytes);
+    }
+    if (typeof fs.writeFile === 'function') {
+      return fs.writeFile(path, bytes);
+    }
+    if (typeof fs.CreateBinaryFile === 'function') {
+      return fs.CreateBinaryFile(path, bytes);
+    }
+    throw new Error('fs.write_file is not a function');
+  }
+
   function runGuestShellSnippet(snippet, label) {
     if (!snippet || !shellReady || !emulator) return false;
     sendCmd(snippet.replace(/\s+$/,'') + '\n');
@@ -1106,7 +1120,7 @@
       current += '/' + parts[index];
       try { fs.create_directory(current); } catch (_) {}
     }
-    await fs.write_file(path, new TextEncoder().encode(String(value)));
+    await fsWriteFileCompat(fs, path, new TextEncoder().encode(String(value)));
   }
 
   async function runGuestCommand(options) {
@@ -1258,7 +1272,7 @@
     try { fs.create_directory(probeDir); } catch (_) {}
     const probeFile = probeDir + '/writable.txt';
     try {
-      await fs.write_file(probeFile, new TextEncoder().encode(String(Date.now())));
+      await fsWriteFileCompat(fs, probeFile, new TextEncoder().encode(String(Date.now())));
       return true;
     } catch (_) {
       return false;
@@ -1551,7 +1565,7 @@
             cur += '/' + parts[i];
             try { fs.create_directory(cur); } catch (_) {}
           }
-          try { await fs.write_file(cachePath, payload); } catch (_) {}
+          try { await fsWriteFileCompat(fs, cachePath, payload); } catch (_) {}
         }
       } catch (e) {
         sLog('invalid manifest: ' + e.message, 'err');
@@ -1609,7 +1623,7 @@
             cur += '/' + parts[i];
             try { fs.create_directory(cur); } catch (_) {}
           }
-          await fs.write_file(dest, new Uint8Array(buf));
+          await fsWriteFileCompat(fs, dest, new Uint8Array(buf));
         }
         synced++;
       } catch (e) { sLog('error on ' + f.p + ': ' + e.message, 'err'); }
@@ -1686,8 +1700,8 @@
     // Keep a local copy for offline/self testing and relay-miss fallback.
     try {
       const payload = new TextEncoder().encode(JSON.stringify(manifestObj, null, 2));
-      await fs.write_file(SOCIAL_PUBLIC_ROOT + '/.manifest.json', payload);
-      await fs.write_file(SOCIAL_PUBLIC_ROOT + '/manifest.json', payload);
+      await fsWriteFileCompat(fs, SOCIAL_PUBLIC_ROOT + '/.manifest.json', payload);
+      await fsWriteFileCompat(fs, SOCIAL_PUBLIC_ROOT + '/manifest.json', payload);
       sLog('wrote local manifest: ' + socialGuestPath(SOCIAL_PUBLIC_ROOT + '/.manifest.json'), 'ok');
     } catch (e) {
       sLog('could not write local manifest file: ' + e.message, 'hint');

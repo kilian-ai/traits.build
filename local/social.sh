@@ -32,6 +32,7 @@
 set -eu
 
 API="${SOCIAL_API:-https://traits-build.fly.dev/traits/social/nostr}"
+API_CANDIDATES="${SOCIAL_API_CANDIDATES:-$API}"
 RELAYS="${SOCIAL_RELAYS:-wss://relay.damus.io wss://nos.lol wss://relay.nostr.band}"
 
 auto_home_dir() {
@@ -127,7 +128,60 @@ api_call() {
         args="$args,\"$esc\""
     done
     body="{\"args\":[$args]}"
-    curl -sS -X POST "$API" -H 'Content-Type: application/json' -d "$body"
+
+    tmp_out=$(mktemp /tmp/social-api-out.XXXXXX)
+    tmp_err=$(mktemp /tmp/social-api-err.XXXXXX)
+    last_err=""
+    last_body=""
+
+    # Try configured API endpoints with transport fallbacks. Some guest networks
+    # intermittently fail TLS handshakes, so we retry with HTTP/1.1 + TLSv1.2 and
+    # a final plain HTTP downgrade.
+    for endpoint in $API_CANDIDATES; do
+        for opts in "" "--http1.1" "--http1.1 --tlsv1.2"; do
+            if curl -sS --connect-timeout 8 --max-time 25 --retry 1 --retry-all-errors \
+                $opts -X POST "$endpoint" -H 'Content-Type: application/json' -d "$body" \
+                >"$tmp_out" 2>"$tmp_err"; then
+                resp=$(cat "$tmp_out")
+                if [ -n "$resp" ]; then
+                    if printf '%s' "$resp" | grep -q '"error"'; then
+                        last_body="$resp"
+                    else
+                        rm -f "$tmp_out" "$tmp_err"
+                        printf '%s\n' "$resp"
+                        return 0
+                    fi
+                fi
+            fi
+            [ -s "$tmp_err" ] && last_err=$(cat "$tmp_err")
+        done
+
+        case "$endpoint" in
+            https://*)
+                endpoint_http="http://${endpoint#https://}"
+                if curl -sS --connect-timeout 8 --max-time 25 --retry 1 --retry-all-errors \
+                    --http1.1 -X POST "$endpoint_http" -H 'Content-Type: application/json' -d "$body" \
+                    >"$tmp_out" 2>"$tmp_err"; then
+                    resp=$(cat "$tmp_out")
+                    if [ -n "$resp" ]; then
+                        if printf '%s' "$resp" | grep -q '"error"'; then
+                            last_body="$resp"
+                        else
+                            rm -f "$tmp_out" "$tmp_err"
+                            printf '%s\n' "$resp"
+                            return 0
+                        fi
+                    fi
+                fi
+                [ -s "$tmp_err" ] && last_err=$(cat "$tmp_err")
+                ;;
+        esac
+    done
+
+    rm -f "$tmp_out" "$tmp_err"
+    [ -n "$last_body" ] && log "api responded with error payload: $last_body"
+    [ -n "$last_err" ] && log "api request failed: $last_err"
+    return 1
 }
 
 # Extract a JSON field via jq if available, else crude grep fallback.
@@ -146,10 +200,10 @@ cmd_init() {
     if [ -n "${1:-}" ]; then
         # Import provided nsec
         log "importing nsec..."
-        resp=$(api_call import_nsec "$1") || die "API error: $resp"
+        resp=$(api_call import_nsec "$1") || die "API request failed for import_nsec (set SOCIAL_API or SOCIAL_API_CANDIDATES)"
     else
         log "generating new keypair..."
-        resp=$(api_call keygen) || die "API error: $resp"
+        resp=$(api_call keygen) || die "API request failed for keygen (set SOCIAL_API or SOCIAL_API_CANDIDATES)"
     fi
     nsec=$(printf '%s' "$resp" | json_field '.nsec')
     npub=$(printf '%s' "$resp" | json_field '.npub')
@@ -166,8 +220,9 @@ cmd_pubkey() {
     [ -f "$NPUB_FILE" ] && { cat "$NPUB_FILE"; return; }
     [ -f "$NSEC_FILE" ] || die "no identity yet — run 'social.sh init'"
     nsec=$(cat "$NSEC_FILE")
-    resp=$(api_call pubkey "$nsec")
+    resp=$(api_call pubkey "$nsec") || die "API request failed for pubkey"
     npub=$(printf '%s' "$resp" | json_field '.npub')
+    [ -n "$npub" ] || die "no npub in response: $resp"
     printf '%s\n' "$npub" > "$NPUB_FILE"
     echo "$npub"
 }
@@ -298,7 +353,7 @@ cmd_sync_one() {
     npub="$1"
     log "sync: $npub"
     # Decode npub → hex
-    resp=$(api_call decode_npub "$npub")
+    resp=$(api_call decode_npub "$npub" || true)
     hex=$(printf '%s' "$resp" | json_field '.pubkey_hex')
     [ -n "$hex" ] || { log "  decode failed: $resp"; return 1; }
 
@@ -394,7 +449,7 @@ cmd_search() {
                 if command -v jq >/dev/null 2>&1; then
                     pk=$(printf '%s' "$line" | jq -r '.[2].pubkey')
                     name=$(printf '%s' "$line" | jq -r '.[2].content' | jq -r '.name // .display_name // "?"' 2>/dev/null || echo "?")
-                    npub=$(api_call encode_npub "$pk" | json_field '.npub')
+                    npub=$(api_call encode_npub "$pk" 2>/dev/null | json_field '.npub')
                     echo "$npub  $name"
                 else
                     echo "$line"

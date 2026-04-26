@@ -1531,6 +1531,8 @@ Manifest event schema (kind=30000, d-tag="public-folder"):
 
 **Crypto delegation:** `social.sh` calls `https://traits-build.fly.dev/traits/social/nostr` (REST) for keygen/sign/verify/decode_npub. The guest does not need any Rust binary — only `curl`, `jq`, `websocat`, `sha256sum`, `wget`, `find`. Default relays: `relay.damus.io`, `nos.lol`, `relay.nostr.band` (override via `SOCIAL_RELAYS`).
 
+**API resilience:** `social.sh` supports `SOCIAL_API_CANDIDATES` (space-separated endpoint list) and retries each endpoint with bounded curl timeouts plus transport fallbacks (`--http1.1`, `--tlsv1.2`, and final HTTP downgrade) to mitigate intermittent guest TLS EOF/handshake failures.
+
 **Why HTTP for files (not Nostr blossom/blobs):** the existing tunnel infrastructure already exposes `~/public` over `https://tunnel.traits.build/port/http/CODE/8080/` with CORS headers. Nostr only carries the small manifest (hashes + paths), keeping relay payloads tiny while large files flow peer-to-peer through the tunnel CDN.
 
 ### Hard-won lessons (debugging findings)
