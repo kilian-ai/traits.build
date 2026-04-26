@@ -91,7 +91,7 @@
     <button id="clear" disabled>clear snapshot</button>
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
     <button id="viewer" disabled title="Browse files in /mnt/host (v86 9P share) directly from the host — no relay needed">viewer</button>
-    <button id="social" disabled title="Nostr social: publish /mnt/host/public, follow users, sync their content">social</button>
+    <button id="social" disabled title="Nostr social: publish /mnt/vfs/public, follow users, sync their content">social</button>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
   </div>
@@ -116,7 +116,7 @@
   <div id="social-overlay" hidden>
     <div id="social-hdr">
       <b>social</b>
-      <span class="hint" style="margin-left:6px">Nostr public-folder sharing — publish /mnt/host/public, follow &amp; sync users</span>
+      <span class="hint" style="margin-left:6px">Nostr public-folder sharing — publish /mnt/vfs/public, follow &amp; sync users</span>
       <button id="social-close" style="margin-left:auto">close</button>
     </div>
     <div id="social-body">
@@ -126,7 +126,7 @@
         <div id="social-npub-display"><span class="hint">no identity — generate one below</span></div>
         <div class="row-flex" style="margin-top:6px">
           <button id="social-generate">generate identity</button>
-          <button id="social-publish" disabled>publish /public</button>
+          <button id="social-publish" disabled>publish /vfs/public</button>
           <button id="social-sync-now" disabled>sync all</button>
           <select id="social-sync-interval">
             <option value="0">auto-sync: off</option>
@@ -688,7 +688,9 @@
         'ln -sfn /mnt/host /home/root/host 2>/dev/null; ' +
         'umask 000; ' +
         'mkdir -p -m 0777 /mnt/host/public /mnt/host/public/.following /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null; ' +
-        'chmod 0777 /mnt/host/public /mnt/host/public/.following /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null || true; ';
+        'mkdir -p -m 0777 /mnt/host/vfs/public /mnt/host/vfs/public/.following /mnt/host/vfs/following /mnt/host/vfs/following_new /mnt/host/vfs/social_following 2>/dev/null; ' +
+        'chmod 0777 /mnt/host/public /mnt/host/public/.following /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null || true; ' +
+        'chmod 0777 /mnt/host/vfs/public /mnt/host/vfs/public/.following /mnt/host/vfs/following /mnt/host/vfs/following_new /mnt/host/vfs/social_following 2>/dev/null || true; ';
 
       // Guest-local open-permission VFS (tmpfs) for workflows that should not
       // depend on 9P UID metadata semantics. Keep /mnt/host as optional bridge.
@@ -954,13 +956,13 @@
   setInterval(syncViewerBtn, 800);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Social — Nostr public-folder sharing via /mnt/host
+  // Social — Nostr public-folder sharing via /vfs (maps to guest /mnt/vfs)
   // - Identity (nsec/npub) stored in localStorage
-  // - Publish: read /mnt/host/public via fs9p, sha256 each file, sign a
+  // - Publish: read /vfs/public via fs9p, sha256 each file, sign a
   //   kind-30000 manifest event, broadcast to Nostr relays
-  // - Follow: store npub list, create /mnt/host/following/<npub>/ in 9P
+  // - Follow: store npub list, create /vfs/following/<npub>/ in 9P
   // - Sync: REQ kind-30000 from relays, fetch files via tunnel HTTP proxy,
-  //   write to /mnt/host/following/<npub>/
+  //   write to /vfs/following/<npub>/
   // - Auto-sync: setInterval
   // ─────────────────────────────────────────────────────────────────────────
   const SOCIAL_NSEC_KEY      = 'traits.secret.NOSTR_NSEC';
@@ -1044,12 +1046,31 @@
     'wss://relay.nostr.band',
   ];
   let socialSyncTimer = null;
+  const SOCIAL_VFS_ROOT = '/vfs';
+  const SOCIAL_PUBLIC_ROOT = SOCIAL_VFS_ROOT + '/public';
+  const DEFAULT_FOLLOW_ROOT = SOCIAL_VFS_ROOT + '/following';
   const SOCIAL_FOLLOW_ROOT_KEY = 'traits.nostr.follow_root';
-  const FOLLOW_ROOT_CANDIDATES = ['/public/.following', '/following', '/following_new', '/social_following'];
+  const FOLLOW_ROOT_CANDIDATES = [
+    SOCIAL_PUBLIC_ROOT + '/.following',
+    SOCIAL_VFS_ROOT + '/following',
+    SOCIAL_VFS_ROOT + '/following_new',
+    SOCIAL_VFS_ROOT + '/social_following',
+    // Legacy roots kept for migration from older sessions.
+    '/public/.following',
+    '/following',
+    '/following_new',
+    '/social_following',
+  ];
   let socialFollowRoot = null;
 
+  function socialGuestPath(fsPath) {
+    if (typeof fsPath !== 'string' || !fsPath.startsWith('/')) return fsPath;
+    if (fsPath.startsWith('/vfs')) return '/mnt/vfs' + fsPath.slice(4);
+    return '/mnt/host' + fsPath;
+  }
+
   function getFollowRoot() {
-    return socialFollowRoot || localStorage.getItem(SOCIAL_FOLLOW_ROOT_KEY) || '/following';
+    return socialFollowRoot || localStorage.getItem(SOCIAL_FOLLOW_ROOT_KEY) || DEFAULT_FOLLOW_ROOT;
   }
 
   async function canUseFollowRoot(fs, root) {
@@ -1066,7 +1087,7 @@
   }
 
   async function resolveFollowRoot(fs) {
-    if (!fs) return '/following';
+    if (!fs) return DEFAULT_FOLLOW_ROOT;
     if (socialFollowRoot) return socialFollowRoot;
 
     const candidates = [];
@@ -1078,13 +1099,13 @@
       if (await canUseFollowRoot(fs, root)) {
         socialFollowRoot = root;
         localStorage.setItem(SOCIAL_FOLLOW_ROOT_KEY, root);
-        if (root !== '/following') {
-          sLog('using fallback follow dir: /mnt/host' + root, 'hint');
+        if (root !== DEFAULT_FOLLOW_ROOT) {
+          sLog('using fallback follow dir: ' + socialGuestPath(root), 'hint');
         }
         return root;
       }
     }
-    throw new Error('no writable follow directory on /mnt/host');
+    throw new Error('no writable follow directory under ' + SOCIAL_VFS_ROOT);
   }
 
   // social.nostr REST dispatch
@@ -1286,7 +1307,7 @@
         const followRoot = await resolveFollowRoot(fs);
         try { fs.create_directory(followRoot); } catch (_) {}
         fs.create_directory(followRoot + '/' + npub);
-        sLog('created /mnt/host' + followRoot + '/' + truncNpub(npub), 'ok');
+        sLog('created ' + socialGuestPath(followRoot) + '/' + truncNpub(npub), 'ok');
       } catch (e) {
         sLog('note: follow dir creation failed: ' + e.message, 'hint');
       }
@@ -1318,7 +1339,7 @@
     sLog('manifest: ' + manifest.files.length + ' file(s) from ' + manifest.base);
 
     const fs = emulator && emulator.fs9p;
-    let followRoot = '/following';
+    let followRoot = DEFAULT_FOLLOW_ROOT;
     if (fs) {
       try {
         followRoot = await resolveFollowRoot(fs);
@@ -1371,20 +1392,25 @@
     const fs = emulator && emulator.fs9p;
     if (!fs) { sLog('9P share not available — boot v86 first', 'err'); return; }
 
-    // Read tunnel base URL from /mnt/host/.social.tunnel (guest writes this)
+    // Read tunnel base URL from /mnt/vfs/.social.tunnel (fallback to legacy root path)
     let baseUrl;
     try {
-      const data = await fs.read_file('/.social.tunnel');
+      const data = await fs.read_file(SOCIAL_VFS_ROOT + '/.social.tunnel');
       baseUrl = new TextDecoder().decode(data).trim();
     } catch (_) {
-      sLog('no /mnt/host/.social.tunnel — run social tunnel-up in the guest first', 'err');
-      sLog('  wget -qO- https://www.traits.build/local/social.sh | sh', 'hint');
-      sLog('  social tunnel-up 8080', 'hint');
-      return;
+      try {
+        const legacy = await fs.read_file('/.social.tunnel');
+        baseUrl = new TextDecoder().decode(legacy).trim();
+      } catch (_) {
+        sLog('no /mnt/vfs/.social.tunnel — run social tunnel-up in the guest first', 'err');
+        sLog('  wget -qO- https://www.traits.build/local/social.sh | sh', 'hint');
+        sLog('  social tunnel-up 8080', 'hint');
+        return;
+      }
     }
 
-    // Walk /mnt/host/public via fs9p, compute sha256 of each file
-    sLog('reading /mnt/host/public…');
+    // Walk /vfs/public via fs9p, compute sha256 of each file
+    sLog('reading ' + socialGuestPath(SOCIAL_PUBLIC_ROOT) + '…');
     const files = [];
     async function walkPublic(dir) {
       for (const e of listDir(dir)) {
@@ -1394,15 +1420,17 @@
             const data = await fs.read_file(e.path);
             if (!data) continue;
             const h = 'sha256:' + (await sha256hex(data));
-            const relPath = e.path.replace(/^\/public\/?/, '');
+            const relPath = e.path
+              .replace(/^\/vfs\/public\/?/, '')
+              .replace(/^\/public\/?/, '');
             files.push({ p: relPath, h, s: data.byteLength || data.length });
           } catch (e2) { sLog('skip ' + e.path + ': ' + e2.message, 'hint'); }
         }
       }
     }
-    await walkPublic('/public');
+    await walkPublic(SOCIAL_PUBLIC_ROOT);
 
-    if (!files.length) { sLog('no files in /mnt/host/public', 'hint'); return; }
+    if (!files.length) { sLog('no files in ' + socialGuestPath(SOCIAL_PUBLIC_ROOT), 'hint'); return; }
     sLog('found ' + files.length + ' file(s) — signing manifest…');
 
     const content  = JSON.stringify({ v: 1, base: baseUrl, files });

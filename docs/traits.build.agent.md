@@ -13,6 +13,7 @@
 - Seed social directories (`/mnt/host/public`, `/mnt/host/public/.following`, `/mnt/host/following`, `/mnt/host/following_new`, `/mnt/host/social_following`) with mode `0777` on boot.
 - Social sync should prefer `/mnt/host/public/.following` first, then fall back to legacy roots.
 - Also mount guest-local tmpfs at `/mnt/vfs` (mode `0777`, size `512m`) and export `SOCIAL_HOME=/mnt/vfs` on boot so social workflows can run without 9P permission semantics; keep `/mnt/host` as optional bridge/export path.
+- Browser social overlay now uses `/vfs/*` roots inside the 9P tree (`/vfs/public`, `/vfs/following`, etc.) and logs guest-facing paths as `/mnt/vfs/*`; legacy follow roots remain as fallback candidates for existing sessions.
 
 ---
 
