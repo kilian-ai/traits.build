@@ -22,6 +22,8 @@
 - Root cause for earlier Social identity mismatch: browser UI was reading/writing the host-visible `/vfs` mirror (9P-backed), while guest `social.sh` read guest tmpfs `/mnt/vfs`. Fix: mirror key Social state files (`.nsec`, `.npub`, `.social.tunnel`, `following/.list`) between `/mnt/host/vfs` and `/mnt/vfs` before/after guest command execution, and also when opening the Social overlay.
 - `local/social.sh` now supports resilient API calling for flaky guest networking: retries with bounded timeouts, tries `--http1.1` + `--tlsv1.2`, and can fail over across space-separated `SOCIAL_API_CANDIDATES` endpoints.
 - SPA `/shell` route now appends `cb=${STATIC_RUNTIME_CB}` to the `standalone-v86.html` iframe URL so fresh deploys pick up updated social/UI JS immediately instead of serving stale CDN-cached iframe content.
+- `local/social.sh` field parsing accepts both direct and wrapped REST payloads (`{"nsec":...}` and `{"result":{"nsec":...}}`) for keygen/pubkey/decode/sign_event flows.
+- Social overlay identity discovery now probes guest CLI `social pubkey` once when local identity is missing, then hydrates mirrored files back into UI state.
 
 ---
 

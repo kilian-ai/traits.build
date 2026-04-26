@@ -195,6 +195,18 @@ json_field() {
     fi
 }
 
+# Extract common response fields from either direct or wrapped result payloads:
+#   {"nsec":"..."}
+#   {"result":{"nsec":"..."}}
+json_pick() {
+    key="$1"
+    if command -v jq >/dev/null 2>&1; then
+        jq -r ".${key} // .result.${key} // empty" 2>/dev/null
+    else
+        grep -o "\"$key\":\"[^\"]*\"" | head -1 | sed 's/^[^:]*:"//; s/"$//'
+    fi
+}
+
 cmd_init() {
     ensure_dirs
     if [ -n "${1:-}" ]; then
@@ -205,8 +217,8 @@ cmd_init() {
         log "generating new keypair..."
         resp=$(api_call keygen) || die "API request failed for keygen (set SOCIAL_API or SOCIAL_API_CANDIDATES)"
     fi
-    nsec=$(printf '%s' "$resp" | json_field '.nsec')
-    npub=$(printf '%s' "$resp" | json_field '.npub')
+    nsec=$(printf '%s' "$resp" | json_pick 'nsec')
+    npub=$(printf '%s' "$resp" | json_pick 'npub')
     [ -n "$nsec" ] || die "no nsec in response: $resp"
     [ -n "$npub" ] || die "no npub in response: $resp"
     printf '%s\n' "$nsec" > "$NSEC_FILE"
@@ -221,7 +233,7 @@ cmd_pubkey() {
     [ -f "$NSEC_FILE" ] || die "no identity yet — run 'social.sh init'"
     nsec=$(cat "$NSEC_FILE")
     resp=$(api_call pubkey "$nsec") || die "API request failed for pubkey"
-    npub=$(printf '%s' "$resp" | json_field '.npub')
+    npub=$(printf '%s' "$resp" | json_pick 'npub')
     [ -n "$npub" ] || die "no npub in response: $resp"
     printf '%s\n' "$npub" > "$NPUB_FILE"
     echo "$npub"
@@ -293,7 +305,7 @@ cmd_publish() {
     now=$(date +%s)
     log "signing event (kind 30000)..."
     resp=$(api_call sign_event "$nsec" "30000" "$content" "$tags" "$now")
-    event=$(printf '%s' "$resp" | (command -v jq >/dev/null 2>&1 && jq -c '.event' || sed -n 's/.*"event":\({.*}\).*/\1/p'))
+    event=$(printf '%s' "$resp" | (command -v jq >/dev/null 2>&1 && jq -c '.event // .result.event' || sed -n 's/.*"event":\({.*}\).*/\1/p'))
     [ -n "$event" ] && [ "$event" != "null" ] || die "sign failed: $resp"
 
     msg='["EVENT",'"$event"']'
@@ -354,7 +366,7 @@ cmd_sync_one() {
     log "sync: $npub"
     # Decode npub → hex
     resp=$(api_call decode_npub "$npub" || true)
-    hex=$(printf '%s' "$resp" | json_field '.pubkey_hex')
+    hex=$(printf '%s' "$resp" | json_pick 'pubkey_hex')
     [ -n "$hex" ] || { log "  decode failed: $resp"; return 1; }
 
     # Try each relay until we get an event
@@ -449,7 +461,7 @@ cmd_search() {
                 if command -v jq >/dev/null 2>&1; then
                     pk=$(printf '%s' "$line" | jq -r '.[2].pubkey')
                     name=$(printf '%s' "$line" | jq -r '.[2].content' | jq -r '.name // .display_name // "?"' 2>/dev/null || echo "?")
-                    npub=$(api_call encode_npub "$pk" 2>/dev/null | json_field '.npub')
+                    npub=$(api_call encode_npub "$pk" 2>/dev/null | json_pick 'npub')
                     echo "$npub  $name"
                 else
                     echo "$line"

@@ -1425,10 +1425,28 @@
     return n.slice(0, 12) + '…' + n.slice(-6);
   }
 
+  let socialIdentityProbeDone = false;
+
   // Refresh identity display and enable/disable action buttons
   async function socialInit() {
     const nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
     if (!nsec) {
+      if (!socialIdentityProbeDone) {
+        socialIdentityProbeDone = true;
+        const ran = await runGuestSocialCommand(['pubkey'], 'social pubkey', {
+          afterRun: async () => {
+            await hydrateSocialStateFromGuest();
+            await socialInit();
+          },
+          afterDelayMs: 900,
+        });
+        if (ran) {
+          npubDisplay.innerHTML = '<span class="hint">checking guest identity via social pubkey…</span>';
+          publishBtn.disabled = true;
+          syncNowBtn.disabled = true;
+          return;
+        }
+      }
       npubDisplay.innerHTML = '<span class="hint">no identity — generate one below</span>';
       publishBtn.disabled = true;
       syncNowBtn.disabled = true;
