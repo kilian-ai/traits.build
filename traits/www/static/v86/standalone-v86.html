@@ -679,19 +679,31 @@
       // - access=any: avoid strict per-uid server-side permission checks
       // - seed social dirs as 0777 so first-write works even if uid metadata
       //   is reported as overflow/nobody by the 9P bridge on fresh tabs
+      // - always remount: snapshot restore can keep stale old mount options
       // The symlink puts a `~/host` shortcut in $HOME for ergonomic access.
       const mount9pCmd =
         'mkdir -p /mnt/host 2>/dev/null; ' +
-        'mountpoint -q /mnt/host || ' +
-          'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,rw host9p /mnt/host 2>/dev/null; ' +
+        'mountpoint -q /mnt/host && (umount /mnt/host 2>/dev/null || umount -l /mnt/host 2>/dev/null || true); ' +
+        'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,rw host9p /mnt/host 2>/dev/null; ' +
         'ln -sfn /mnt/host /home/root/host 2>/dev/null; ' +
         'umask 000; ' +
         'mkdir -p -m 0777 /mnt/host/public /mnt/host/public/.following /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null; ' +
         'chmod 0777 /mnt/host/public /mnt/host/public/.following /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null || true; ';
 
+      // Guest-local open-permission VFS (tmpfs) for workflows that should not
+      // depend on 9P UID metadata semantics. Keep /mnt/host as optional bridge.
+      const mountGuestVfsCmd =
+        'mkdir -p /mnt/vfs 2>/dev/null; ' +
+        'mountpoint -q /mnt/vfs || mount -t tmpfs -o size=512m,mode=0777 tmpfs /mnt/vfs 2>/dev/null; ' +
+        'mkdir -p -m 0777 /mnt/vfs/public /mnt/vfs/following /mnt/vfs/following_new /mnt/vfs/social_following 2>/dev/null; ' +
+        'chmod 0777 /mnt/vfs/public /mnt/vfs/following /mnt/vfs/following_new /mnt/vfs/social_following 2>/dev/null || true; ' +
+        'ln -sfn /mnt/vfs /home/root/vfs 2>/dev/null; ' +
+        'export SOCIAL_HOME=/mnt/vfs; ';
+
       const restoreNetCmd =
         rootfsCmd +
         mount9pCmd +
+        mountGuestVfsCmd +
         'killall -q udhcpc 2>/dev/null; ' +
         'ip link set eth0 down 2>/dev/null; sleep 1; ' +
         'for i in 1 2 3 4 5; do ' +
@@ -711,6 +723,7 @@
       const freshBootCmd =
         rootfsCmd +
         mount9pCmd +
+        mountGuestVfsCmd +
         'ip link set eth0 up 2>/dev/null; ' +
         'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1; ' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf; ' +

@@ -9,8 +9,10 @@
 ### Fresh Tab 9P Ownership Note
 
 - In `traits/www/static/v86/standalone-v86.html`, the `/mnt/host` 9P mount boot command should use `access=any` (plus `dfltuid=0,dfltgid=0`) to reduce strict per-uid server-side checks that can surface as `Permission denied` when metadata appears as `nobody`.
+- Boot flow should force a remount (`umount`/`umount -l` then `mount`) so restored snapshots cannot keep stale legacy mount options (`access=0`, `cache=f`, etc.).
 - Seed social directories (`/mnt/host/public`, `/mnt/host/public/.following`, `/mnt/host/following`, `/mnt/host/following_new`, `/mnt/host/social_following`) with mode `0777` on boot.
 - Social sync should prefer `/mnt/host/public/.following` first, then fall back to legacy roots.
+- Also mount guest-local tmpfs at `/mnt/vfs` (mode `0777`, size `512m`) and export `SOCIAL_HOME=/mnt/vfs` on boot so social workflows can run without 9P permission semantics; keep `/mnt/host` as optional bridge/export path.
 
 ---
 
