@@ -855,7 +855,19 @@
   const closeBtn    = $('viewer-close');
   const vStatusEl   = $('viewer-status');
   let lastBlobUrl   = null;
-  const expanded    = new Set(['/']);
+  const VIEWER_ROOT = '/vfs';
+  const expanded    = new Set([VIEWER_ROOT]);
+
+  function normalizeViewerPath(raw) {
+    let path = String(raw || '').trim();
+    if (!path) return VIEWER_ROOT;
+    if (!path.startsWith('/')) path = '/' + path;
+    path = path.replace(/\/+/g, '/');
+    path = path.replace(/\/$/, '');
+    if (!path || path === '/') return VIEWER_ROOT;
+    if (path === VIEWER_ROOT || path.startsWith(VIEWER_ROOT + '/')) return path;
+    return VIEWER_ROOT;
+  }
 
   function vSet(msg, cls) { vStatusEl.textContent = msg || ''; vStatusEl.className = 'hint ' + (cls || ''); }
 
@@ -881,7 +893,8 @@
 
   function renderTree() {
     if (!fs9p()) { treeEl.innerHTML = '<div class="row hint" style="padding:8px 12px">9P share not ready</div>'; return; }
-    const root = (pathEl.value || '/').replace(/\/+$/, '') || '/';
+    const root = normalizeViewerPath(pathEl.value);
+    pathEl.value = root;
     if (!isDir(root)) {
       treeEl.innerHTML = `<div class="row hint" style="padding:8px 12px">not a directory: ${root}</div>`;
       return;
@@ -942,11 +955,14 @@
   });
   refreshBtn.onclick = () => { renderTree(); vSet('reloaded'); };
   pathEl.onkeydown = e => { if (e.key === 'Enter') { renderTree(); } };
+  pathEl.onblur = () => { pathEl.value = normalizeViewerPath(pathEl.value); };
   closeBtn.onclick = () => { overlay.hidden = true; term.focus(); };
   viewerBtn.onclick = () => {
     if (!fs9p()) { setStatus('9P share not available — boot v86 first', 'err'); return; }
     // Default to the vfs public seed dir if it exists.
-    if ((pathEl.value === '/' || pathEl.value === '/vfs') && isDir('/vfs/public')) pathEl.value = '/vfs/public';
+    const normalized = normalizeViewerPath(pathEl.value);
+    if (normalized === VIEWER_ROOT && isDir('/vfs/public')) pathEl.value = '/vfs/public';
+    else pathEl.value = normalized;
     overlay.hidden = false;
     renderTree();
     vSet('ready');
