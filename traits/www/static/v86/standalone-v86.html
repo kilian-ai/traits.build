@@ -1840,6 +1840,15 @@
       await hydrateSocialStateFromGuest();
       nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
       npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
+      if (npubOnly) {
+        npubDisplay.innerHTML =
+          `<span class="social-npub">${truncNpub(npubOnly)}</span>` +
+          ` <span class="hint" style="font-size:10px">(guest identity; nsec not mirrored)</span>`;
+        publishBtn.disabled = !emulator;
+        syncNowBtn.disabled = false;
+        renderFollowList();
+        return;
+      }
     }
     if (!nsec) {
       if (socialStepDebugMode) {
