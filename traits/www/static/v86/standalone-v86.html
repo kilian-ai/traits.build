@@ -768,7 +768,7 @@
         'mkdir -p -m 0777 /mnt/vfs/public /mnt/vfs/following /mnt/vfs/following_new /mnt/vfs/social_following 2>/dev/null; ' +
         'chmod 0777 /mnt/vfs/public /mnt/vfs/following /mnt/vfs/following_new /mnt/vfs/social_following 2>/dev/null || true; ' +
         'ln -sfn /mnt/vfs /home/root/vfs 2>/dev/null; ' +
-        'export SOCIAL_HOME=/mnt/vfs; ';
+        'export SOCIAL_HOME=/mnt/host; ';
 
       const restoreNetCmd =
         rootfsCmd +
@@ -1558,15 +1558,13 @@
     return runGuestCommand({
       candidates: ['/usr/local/bin/social', '/usr/bin/social'],
       commandName: 'social',
-      env: { SOCIAL_HOME: '/mnt/vfs' },
+      env: { SOCIAL_HOME: '/mnt/host' },
       args,
       label,
       beforeRun: async () => {
         await syncSocialStateToGuest({ fillMissingOnly: true });
         if (typeof options.beforeRun === 'function') await options.beforeRun();
       },
-      beforeShell: socialMirrorToGuestSnippet(),
-      afterShell: socialMirrorFromGuestSnippet(),
       afterRun,
       afterDelayMs: options.afterDelayMs == null ? 350 : options.afterDelayMs,
       statusTimeoutMs: options.statusTimeoutMs,
@@ -1577,7 +1575,7 @@
   function socialGuestPath(fsPath) {
     if (typeof fsPath !== 'string' || !fsPath.startsWith('/')) return fsPath;
     const suffix = fsPath.startsWith('/vfs') ? fsPath.slice(4) : fsPath;
-    return '/mnt/vfs' + suffix;
+      return '/mnt/host' + suffix;
   }
   const FOLLOW_ROOT_CANDIDATES = [
     SOCIAL_PUBLIC_ROOT + '/.following',
@@ -1781,7 +1779,7 @@
     sLog('debug: running guest social pubkey…');
     const tailStart = serialTextTail.length;
     if (shellReady) {
-      dispatchGuestCommand('SOCIAL_HOME=/mnt/vfs social pubkey', 'social pubkey (direct)');
+      dispatchGuestCommand('SOCIAL_HOME=/mnt/host social pubkey', 'social pubkey (direct)');
       await new Promise(resolve => setTimeout(resolve, 900));
       await hydrateSocialStateFromGuest();
       const directTail = serialTextTail.slice(tailStart);
