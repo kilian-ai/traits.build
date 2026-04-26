@@ -676,18 +676,18 @@
       // read files written by the guest without going through the relay.
       // - msize: 8KB chunks (small but reliable; v86 9P doesn't like big msize)
       // - cache=loose: avoids excessive flushes for write-heavy workloads
-      // - access=0 + uid/gid/uname: prefer root identity in guest view
+      // - access=any: avoid strict per-uid server-side permission checks
       // - seed social dirs as 0777 so first-write works even if uid metadata
       //   is reported as overflow/nobody by the 9P bridge on fresh tabs
       // The symlink puts a `~/host` shortcut in $HOME for ergonomic access.
       const mount9pCmd =
         'mkdir -p /mnt/host 2>/dev/null; ' +
         'mountpoint -q /mnt/host || ' +
-          'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=0,uid=0,gid=0,uname=root,aname=/,dfltuid=0,dfltgid=0,rw host9p /mnt/host 2>/dev/null; ' +
+          'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,rw host9p /mnt/host 2>/dev/null; ' +
         'ln -sfn /mnt/host /home/root/host 2>/dev/null; ' +
         'umask 000; ' +
-        'mkdir -p -m 0777 /mnt/host/public /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null; ' +
-        'chmod 0777 /mnt/host/public /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null || true; ';
+        'mkdir -p -m 0777 /mnt/host/public /mnt/host/public/.following /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null; ' +
+        'chmod 0777 /mnt/host/public /mnt/host/public/.following /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null || true; ';
 
       const restoreNetCmd =
         rootfsCmd +
@@ -1032,7 +1032,7 @@
   ];
   let socialSyncTimer = null;
   const SOCIAL_FOLLOW_ROOT_KEY = 'traits.nostr.follow_root';
-  const FOLLOW_ROOT_CANDIDATES = ['/following', '/following_new', '/social_following'];
+  const FOLLOW_ROOT_CANDIDATES = ['/public/.following', '/following', '/following_new', '/social_following'];
   let socialFollowRoot = null;
 
   function getFollowRoot() {

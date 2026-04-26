@@ -8,8 +8,9 @@
 
 ### Fresh Tab 9P Ownership Note
 
-- In `traits/www/static/v86/standalone-v86.html`, the `/mnt/host` 9P mount boot command should prefer root identity (`access=0,uid=0,gid=0,uname=root,dfltuid=0,dfltgid=0`) and seed social directories (`/mnt/host/public`, `/mnt/host/following`, `/mnt/host/following_new`, `/mnt/host/social_following`) with mode `0777` on boot.
-- This mitigates fresh-tab cases where 9P metadata appears as `nobody` and nested mkdir/write fails with `Permission denied`.
+- In `traits/www/static/v86/standalone-v86.html`, the `/mnt/host` 9P mount boot command should use `access=any` (plus `dfltuid=0,dfltgid=0`) to reduce strict per-uid server-side checks that can surface as `Permission denied` when metadata appears as `nobody`.
+- Seed social directories (`/mnt/host/public`, `/mnt/host/public/.following`, `/mnt/host/following`, `/mnt/host/following_new`, `/mnt/host/social_following`) with mode `0777` on boot.
+- Social sync should prefer `/mnt/host/public/.following` first, then fall back to legacy roots.
 
 ---
 
