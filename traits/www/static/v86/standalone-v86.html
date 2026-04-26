@@ -1326,12 +1326,22 @@
     const afterShell = (options && options.afterShell) ? String(options.afterShell).trim() : '';
     const resolver = resolveGuestBinaryShell(options || {});
     const cmd = `${envPrefix ? envPrefix + ' ' : ''}"$_tb_cmd"${argString ? ' ' + argString : ''}`;
+    const runOutTmp = `/tmp/.tb-run-${runId}.out`;
+    const executeKnownCommand =
+      `_tb_out_tmp=${shQuote(runOutTmp)}; { ` + cmd + '; } > "$_tb_out_tmp" 2>&1; ' +
+      '_tb_rc=$?; cp "$_tb_out_tmp" "$_tb_out_guest" 2>/dev/null || true; ' +
+      'cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true; ' +
+      'cat "$_tb_out_tmp" 2>/dev/null || true; ' +
+      'rm -f "$_tb_out_tmp" 2>/dev/null || true; ' +
+      'printf "rc:%s\\n" "$_tb_rc" > "$_tb_status_guest"; ' +
+      'cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;';
     const executeShell = [
       'if [ -z "$_tb_cmd" ]; then',
       'printf "[guest-runner] command not found\\n" > "$_tb_out_guest"; cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true;',
+      'cat "$_tb_out_guest" 2>/dev/null || true;',
       'printf "missing\\n" > "$_tb_status_guest"; cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;',
       'else',
-      '{ ' + cmd + '; } > "$_tb_out_guest" 2>&1; _tb_rc=$?; cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true; printf "rc:%s\\n" "$_tb_rc" > "$_tb_status_guest"; cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;',
+      executeKnownCommand,
       'fi',
     ].join(' ');
     const fullCmd = [beforeShell, resolver, executeShell, afterShell].filter(Boolean).join('; ');
@@ -1416,6 +1426,10 @@
       const status = (ctx && ctx.runStatus) || {};
       const output = String((ctx && ctx.runOutput) || '');
       const parsed = extractNostrIdentityFromText(output);
+      if (output.trim() && Array.isArray(args) && (args[0] === 'pubkey' || args[0] === 'init')) {
+        const firstLine = output.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || '(empty output)';
+        sLog('guest social output: ' + firstLine.slice(0, 180), 'hint');
+      }
       if (parsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
       if (parsed.npub) localStorage.setItem('traits.nostr.npub', parsed.npub);
       if (status.state === 'missing') {
