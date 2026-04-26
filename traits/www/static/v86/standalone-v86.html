@@ -235,7 +235,11 @@
   // v86 emits one byte at a time; we batch within a microtask so xterm.js
   // parses multi-byte CSI sequences in a single write() rather than per byte.
   let pendingBytes = [], pendingFlush = false;
+  let serialTextTail = '';
   function pushByte(b) {
+    if (b === 10 || b === 13 || (b >= 32 && b <= 126)) {
+      serialTextTail = (serialTextTail + String.fromCharCode(b)).slice(-32768);
+    }
     pendingBytes.push(b);
     if (!pendingFlush) {
       pendingFlush = true;
@@ -1229,11 +1233,16 @@
     if (!text) return { ok: false, state: 'empty', raw: text };
     if (text === 'missing') return { ok: false, state: 'missing', missing: true, raw: text };
     if (text.startsWith('rc:')) {
-      const code = Number(text.slice(3));
+      const m = text.match(/^rc:([0-9-]+)(?:\s+npub:([^\s]*))?(?:\s+nsec:([^\s]*))?/);
+      const code = m ? Number(m[1]) : Number(text.slice(3));
+      const npub = m && m[2] ? m[2] : '';
+      const nsec = m && m[3] ? m[3] : '';
       return {
         ok: Number.isFinite(code) ? code === 0 : false,
         state: 'exit',
         exitCode: Number.isFinite(code) ? code : null,
+        npub,
+        nsec,
         raw: text,
       };
     }
@@ -1332,8 +1341,10 @@
       '_tb_rc=$?; cp "$_tb_out_tmp" "$_tb_out_guest" 2>/dev/null || true; ' +
       'cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true; ' +
       'cat "$_tb_out_tmp" 2>/dev/null || true; ' +
+      `_tb_npub=$(grep -aoE "npub1[023456789acdefghjklmnpqrstuvwxyz]+" "$_tb_out_tmp" | head -1 2>/dev/null || true); ` +
+      `_tb_nsec=$(grep -aoE "nsec1[023456789acdefghjklmnpqrstuvwxyz]+" "$_tb_out_tmp" | head -1 2>/dev/null || true); ` +
       'rm -f "$_tb_out_tmp" 2>/dev/null || true; ' +
-      'printf "rc:%s\\n" "$_tb_rc" > "$_tb_status_guest"; ' +
+      'printf "rc:%s npub:%s nsec:%s\\n" "$_tb_rc" "$_tb_npub" "$_tb_nsec" > "$_tb_status_guest"; ' +
       'cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;';
     const executeShell = [
       'if [ -z "$_tb_cmd" ]; then',
@@ -1426,19 +1437,24 @@
       const status = (ctx && ctx.runStatus) || {};
       const output = String((ctx && ctx.runOutput) || '');
       const parsed = extractNostrIdentityFromText(output);
+      const statusNpub = (status && status.npub) ? String(status.npub).trim() : '';
+      const statusNsec = (status && status.nsec) ? String(status.nsec).trim() : '';
+      const serialParsed = extractNostrIdentityFromText(serialTextTail);
       if (output.trim() && Array.isArray(args) && (args[0] === 'pubkey' || args[0] === 'init')) {
         const firstLine = output.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || '(empty output)';
         sLog('guest social output: ' + firstLine.slice(0, 180), 'hint');
       }
-      if (parsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
-      if (parsed.npub) localStorage.setItem('traits.nostr.npub', parsed.npub);
+      const mergedNsec = parsed.nsec || statusNsec || serialParsed.nsec;
+      const mergedNpub = parsed.npub || statusNpub || serialParsed.npub;
+      if (mergedNsec) localStorage.setItem(SOCIAL_NSEC_KEY, mergedNsec);
+      if (mergedNpub) localStorage.setItem('traits.nostr.npub', mergedNpub);
       if (status.state === 'missing') {
         sLog('guest social command missing; install it in guest with:', 'err');
         sLog('  wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/local/bin/social', 'hint');
       } else if (status.state === 'exit' && status.exitCode !== 0) {
         sLog('guest social command exited with code ' + status.exitCode + ' (see terminal output)', 'hint');
-      } else if (status.state === 'exit' && status.exitCode === 0 && parsed.npub) {
-        sLog('guest identity detected: ' + truncNpub(parsed.npub), 'ok');
+      } else if (status.state === 'exit' && status.exitCode === 0 && mergedNpub) {
+        sLog('guest identity detected: ' + truncNpub(mergedNpub), 'ok');
       } else if (status.state === 'timeout') {
         sLog('guest social command is still running or hung (status timeout)', 'hint');
       }
@@ -1640,23 +1656,24 @@
   let socialIdentityRescueDone = false;
 
   async function rescueGuestIdentityToVfs() {
+    const rescueScript = [
+      'mkdir -p /mnt/vfs /mnt/host/vfs >/dev/null 2>&1',
+      '_tb_src=""',
+      'for _tb_d in /mnt/vfs /mnt/host /mnt/host/vfs /root /home/root .; do',
+      '  [ -z "$_tb_src" ] && [ -f "$_tb_d/.nsec" ] && _tb_src="$_tb_d"',
+      'done',
+      'if [ -n "$_tb_src" ]; then',
+      '  [ -f "$_tb_src/.nsec" ] && cp "$_tb_src/.nsec" /mnt/vfs/.nsec 2>/dev/null || true',
+      '  [ -f "$_tb_src/.npub" ] && cp "$_tb_src/.npub" /mnt/vfs/.npub 2>/dev/null || true',
+      '  [ -f /mnt/vfs/.nsec ] && cp /mnt/vfs/.nsec /mnt/host/vfs/.nsec 2>/dev/null || true',
+      '  [ -f /mnt/vfs/.npub ] && cp /mnt/vfs/.npub /mnt/host/vfs/.npub 2>/dev/null || true',
+      '  printf "rescued:%s\\n" "$_tb_src"',
+      'fi',
+    ].join('\n');
     return runGuestCommand({
       candidates: ['/bin/sh'],
       commandName: 'sh',
-      args: ['-c', [
-        'mkdir -p /mnt/vfs /mnt/host/vfs >/dev/null 2>&1',
-        '_tb_src=""',
-        'for _tb_d in /mnt/vfs /mnt/host /mnt/host/vfs /root /home/root .; do',
-        '  [ -z "$_tb_src" ] && [ -f "$_tb_d/.nsec" ] && _tb_src="$_tb_d";',
-        'done',
-        'if [ -n "$_tb_src" ]; then',
-        '  [ -f "$_tb_src/.nsec" ] && cp "$_tb_src/.nsec" /mnt/vfs/.nsec 2>/dev/null || true;',
-        '  [ -f "$_tb_src/.npub" ] && cp "$_tb_src/.npub" /mnt/vfs/.npub 2>/dev/null || true;',
-        '  [ -f /mnt/vfs/.nsec ] && cp /mnt/vfs/.nsec /mnt/host/vfs/.nsec 2>/dev/null || true;',
-        '  [ -f /mnt/vfs/.npub ] && cp /mnt/vfs/.npub /mnt/host/vfs/.npub 2>/dev/null || true;',
-        '  printf "rescued:%s\\n" "$_tb_src";',
-        'fi',
-      ].join(' ')],
+      args: ['-c', rescueScript],
       label: 'rescue guest social identity into /mnt/vfs',
       afterDelayMs: 400,
       afterRun: async () => {
@@ -1669,6 +1686,19 @@
 
   async function debugGuestPubkeyFlow() {
     sLog('debug: running guest social pubkey…');
+    const tailStart = serialTextTail.length;
+    if (shellReady) {
+      dispatchGuestCommand('SOCIAL_HOME=/mnt/vfs social pubkey', 'social pubkey (direct)');
+      await new Promise(resolve => setTimeout(resolve, 900));
+      await hydrateSocialStateFromGuest();
+      const directTail = serialTextTail.slice(tailStart);
+      const directParsed = extractNostrIdentityFromText(directTail);
+      if (directParsed.npub || directParsed.nsec) {
+        if (directParsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, directParsed.nsec);
+        if (directParsed.npub) localStorage.setItem('traits.nostr.npub', directParsed.npub);
+        sLog('debug: guest identity detected from direct pubkey command', 'ok');
+      }
+    }
     const ran = await runGuestSocialCommand(['pubkey'], 'social pubkey', {
       afterRun: async (ctx) => {
         await hydrateSocialStateFromGuest();
