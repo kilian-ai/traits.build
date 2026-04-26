@@ -6,6 +6,11 @@
 > - **Repository:** https://github.com/kilian-ai/traits.build
 > - **Homepage:** https://www.traits.build/
 
+### Fresh Tab 9P Ownership Note
+
+- In `traits/www/static/v86/standalone-v86.html`, the `/mnt/host` 9P mount boot command should prefer root identity (`access=0,uid=0,gid=0,uname=root,dfltuid=0,dfltgid=0`) and seed social directories (`/mnt/host/public`, `/mnt/host/following`, `/mnt/host/following_new`, `/mnt/host/social_following`) with mode `0777` on boot.
+- This mitigates fresh-tab cases where 9P metadata appears as `nobody` and nested mkdir/write fails with `Permission denied`.
+
 ---
 
 ## Project Overview
