@@ -1101,7 +1101,19 @@
       return fs.writeFile(path, bytes);
     }
     if (typeof fs.CreateBinaryFile === 'function') {
-      return fs.CreateBinaryFile(path, bytes);
+      const normalized = String(path || '');
+      const parts = normalized.split('/').filter(Boolean);
+      const fileName = parts.pop() || '';
+      const parentPath = '/' + parts.join('/');
+      const search = fs.SearchPath && fs.SearchPath(parentPath || '/');
+      const parentId = search && typeof search.id === 'number' ? search.id : -1;
+      if (!fileName || parentId < 0) {
+        throw new Error('CreateBinaryFile parent resolution failed for ' + normalized);
+      }
+      return fs.CreateBinaryFile(fileName, parentId, bytes);
+    }
+    if (typeof emulator !== 'undefined' && emulator && typeof emulator.create_file === 'function') {
+      return emulator.create_file(path, bytes);
     }
     throw new Error('fs.write_file is not a function');
   }
