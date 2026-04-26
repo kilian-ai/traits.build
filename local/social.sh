@@ -2,12 +2,12 @@
 # social.sh — Nostr-backed public folder follow/sync for v86 Alpine guests.
 #
 # Lays out the canonical guest convention:
-#   /mnt/host/public/                     ← what YOU publish
-#   /mnt/host/.nsec                       ← your private key (hex)
-#   /mnt/host/.npub                       ← cached bech32 pubkey
-#   /mnt/host/.social.tunnel              ← cached base URL for serving public/
-#   /mnt/host/following/.list             ← npubs you follow (one per line)
-#   /mnt/host/following/<npub>/           ← mirrored content from each followed user
+#   /mnt/vfs/public/                      ← what YOU publish (preferred)
+#   /mnt/vfs/.nsec                        ← your private key (hex)
+#   /mnt/vfs/.npub                        ← cached bech32 pubkey
+#   /mnt/vfs/.social.tunnel               ← cached base URL for serving public/
+#   /mnt/vfs/following/.list              ← npubs you follow (one per line)
+#   /mnt/vfs/following/<npub>/            ← mirrored content from each followed user
 #
 # Crypto goes through traits-build.fly.dev REST (social.nostr trait).
 # Relay I/O via websocat. File mirror via wget.
@@ -16,7 +16,7 @@
 #   social.sh init                  # generate keypair (or import: social.sh init <nsec1...>)
 #   social.sh pubkey                # show your npub
 #   social.sh tunnel-up [ports...]  # start tunnel-up.sh (default: 8080); cache base_url
-#   social.sh publish               # build manifest of /mnt/host/public, sign, push to relays
+#   social.sh publish               # build manifest of SOCIAL_HOME/public, sign, push to relays
 #   social.sh follow <npub>         # add to follow list, create dir
 #   social.sh unfollow <npub> [--purge]
 #   social.sh list                  # show follow list
@@ -27,13 +27,28 @@
 # Config (env overrides):
 #   SOCIAL_API     default: https://traits-build.fly.dev/traits/social/nostr
 #   SOCIAL_RELAYS  default: wss://relay.damus.io wss://nos.lol wss://relay.nostr.band
-#   SOCIAL_HOME    default: /mnt/host
+#   SOCIAL_HOME    default: auto (/mnt/vfs → /mnt/host → current working directory)
 
 set -eu
 
 API="${SOCIAL_API:-https://traits-build.fly.dev/traits/social/nostr}"
 RELAYS="${SOCIAL_RELAYS:-wss://relay.damus.io wss://nos.lol wss://relay.nostr.band}"
-HOME_DIR="${SOCIAL_HOME:-/mnt/host}"
+
+auto_home_dir() {
+    for d in /mnt/vfs /mnt/host; do
+        if [ -d "$d" ] || mkdir -p "$d" 2>/dev/null; then
+            t="$d/.social.home.probe.$$"
+            if (: > "$t") 2>/dev/null; then
+                rm -f "$t" 2>/dev/null || true
+                printf '%s\n' "$d"
+                return 0
+            fi
+        fi
+    done
+    pwd
+}
+
+HOME_DIR="${SOCIAL_HOME:-$(auto_home_dir)}"
 PUBLIC_DIR="$HOME_DIR/public"
 FOLLOW_DIR="$HOME_DIR/following"
 NSEC_FILE="$HOME_DIR/.nsec"

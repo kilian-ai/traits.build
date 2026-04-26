@@ -60,5 +60,6 @@ sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
 # then open http://localhost:18384 in browser
 
 #social:
-wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/loca
-l/bin/social
+wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/local/bin/social
+# optional: force custom location (otherwise social auto-picks /mnt/vfs -> /mnt/host -> $PWD)
+# export SOCIAL_HOME=/mnt/vfs

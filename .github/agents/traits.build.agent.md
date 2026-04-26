@@ -1482,7 +1482,7 @@ GET  /port/debug?code=XXXX
 | [local/tunnel-up.sh](local/tunnel-up.sh) | Guest-side: register + launch websocat bridges (with respawn loop per port) |
 | [local/tunnel-ssh.sh](local/tunnel-ssh.sh) | Host-side: one-off SSH via ProxyCommand wrapper (zsh-safe, URL in temp script to avoid `&`/`?` glob) |
 | [local/tunnel-listen.sh](local/tunnel-listen.sh) | Host-side: local TCP listener forwarding to tunnel — enables plain `ssh -p`/`scp -P`/`sftp -P`/`rsync`/any TCP client |
-| [local/social.sh](local/social.sh) | Guest-side: Nostr-backed public folder publish/follow/sync over the 9P share (`/mnt/host/public` ↔ `/mnt/host/following/<npub>/`) |
+| [local/social.sh](local/social.sh) | Guest-side: Nostr-backed public folder publish/follow/sync with auto root selection (`/mnt/vfs` preferred, then `/mnt/host`, then current working directory) |
 
 ### social.sh — Nostr public-folder follow/sync (Apr 2026)
 
@@ -1495,11 +1495,11 @@ wget -O /usr/local/bin/social https://www.traits.build/local/social.sh
 chmod +x /usr/local/bin/social
 
 # identity
-social init                                  # generate keypair → /mnt/host/.nsec + .npub
-social tunnel-up 8080                        # registers tunnel; caches base_url to /mnt/host/.social.tunnel
+social init                                  # generate keypair → /mnt/vfs/.nsec + .npub (or SOCIAL_HOME fallback)
+social tunnel-up 8080                        # registers tunnel; caches base_url to /mnt/vfs/.social.tunnel
 
 # publishing
-echo "hi" > /mnt/host/public/note.txt
+echo "hi" > /mnt/vfs/public/note.txt
 social publish                               # signs kind-30000 d="public-folder" event with ["r", base_url] tag, broadcasts to relays
 
 # following
@@ -1512,13 +1512,15 @@ social search "alice"                        # NIP-50 keyword search across conf
 Guest convention (single source of truth = full `npub` as folder name):
 
 ```
-/mnt/host/public/                    your published content (visible to host via 9P)
-/mnt/host/.nsec                      your private key (hex)
-/mnt/host/.npub                      cached bech32 pubkey
-/mnt/host/.social.tunnel             cached base URL for serving public/
-/mnt/host/following/.list            npubs you follow (one per line)
-/mnt/host/following/<npub>/          mirrored files
-/mnt/host/following/<npub>/.manifest.json   raw kind-30000 event for inspection
+/mnt/vfs/public/                     your published content (preferred root)
+/mnt/vfs/.nsec                       your private key (hex)
+/mnt/vfs/.npub                       cached bech32 pubkey
+/mnt/vfs/.social.tunnel              cached base URL for serving public/
+/mnt/vfs/following/.list             npubs you follow (one per line)
+/mnt/vfs/following/<npub>/           mirrored files
+/mnt/vfs/following/<npub>/.manifest.json    raw kind-30000 event for inspection
+
+If `/mnt/vfs` is unavailable/unwritable, `social.sh` auto-falls back to `/mnt/host`, then to the current working directory. You can always override with `SOCIAL_HOME=/path social <cmd>`.
 ```
 
 Manifest event schema (kind=30000, d-tag="public-folder"):
