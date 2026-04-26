@@ -794,22 +794,55 @@
       sendGuestText(buildNetInitCmd());
     }
 
-    let promptTail = '';
-    const PROMPT_RE = /[#$]\s$/;
+    let promptLine = '';
+    let queuedLoginKickSent = false;
+    let queuedLoginHintShown = false;
+    const SHELL_PROMPT_RE = /^(?!.*login:)(?!.*password:)(?:\x1b\[[0-9;]*m)*(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_.-]+:[^\n]*#\s$/i;
+    const LOGIN_PROMPT_RE = /login:\s*$/i;
+
+    function markShellReady() {
+      if (shellReady) return;
+      shellReady = true;
+      queuedLoginKickSent = false;
+      queuedLoginHintShown = false;
+      flushPendingGuestCommands();
+      // Prime stty with current cols now that we know we're at a shell.
+      if (lastCols && emulator) {
+        sentCols = lastCols;
+        const cmd = `stty cols ${lastCols} 2>/dev/null\n`;
+        setTimeout(() => sendGuestText(cmd), 300);
+      }
+    }
+
+    function maybeKickQueuedGuestLogin() {
+      if (queuedLoginKickSent || shellReady || !pendingGuestCommands.length) return;
+      queuedLoginKickSent = true;
+      if (!queuedLoginHintShown) {
+        queuedLoginHintShown = true;
+        sLog('guest: logging into Alpine as root so queued guest commands can run', 'hint');
+      }
+      setTimeout(() => {
+        if (!emulator || shellReady) return;
+        sendGuestText('root\n');
+      }, 120);
+    }
+
     emulator.add_listener('serial0-output-byte', b => {
       byteCount++; pushByte(b); markDirty();
+      const ch = String.fromCharCode(b);
       if (!shellReady || !netInited) {
-        promptTail = (promptTail + String.fromCharCode(b)).slice(-24);
-        if (PROMPT_RE.test(promptTail) && /localhost|alpine|~/.test(promptTail)) {
+        if (ch === '\r' || ch === '\n') {
+          promptLine = '';
+        } else {
+          promptLine = (promptLine + ch).slice(-256);
+        }
+        if (!shellReady && LOGIN_PROMPT_RE.test(promptLine)) {
+          maybeKickQueuedGuestLogin();
+          return;
+        }
+        if (SHELL_PROMPT_RE.test(promptLine)) {
           if (!shellReady) {
-            shellReady = true;
-            flushPendingGuestCommands();
-            // Prime stty with current cols now that we know we're at a shell.
-            if (lastCols && emulator) {
-              sentCols = lastCols;
-              const cmd = `stty cols ${lastCols} 2>/dev/null\n`;
-              setTimeout(() => sendGuestText(cmd), 300);
-            }
+            markShellReady();
           }
           if (!netInited) {
             setTimeout(runNetInit, 600);
@@ -844,6 +877,7 @@
     try { emulator.destroy(); } catch (_) {}
     emulator = null; window.emulator = null;
     shellReady = false; sentCols = 0;
+    queuedLoginKickSent = false; queuedLoginHintShown = false; promptLine = '';
   }
 
   async function doReset() { await shutdown(); await boot({ restore: false }); }

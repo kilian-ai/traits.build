@@ -26,6 +26,7 @@
 - Social overlay identity discovery now probes guest CLI `social pubkey` once when local identity is missing, then hydrates mirrored files back into UI state.
 - Social overlay now attempts guest→host mirror hydration before showing a no-identity state, reducing false "no identity" UI states when keys already exist under `/mnt/vfs`.
 - Social overlay includes a `debug pubkey` button that executes guest `social pubkey`, then logs hydrated identity state (`localStorage` + `/mnt/vfs/.npub`) to help diagnose CLI↔UI mirror issues.
+- v86 guest-command queuing must treat Alpine `login:` as a separate state from a real shell prompt. For Social/open-on-boot flows, detect `login:` explicitly, send `root` once when queued guest work is waiting, and only mark the guest ready after a root-style prompt ending in `# ` appears; otherwise echoed shell variables like `$_tb_cmd ` can be misclassified as readiness and commands get sprayed into the login prompt.
 
 ---
 
