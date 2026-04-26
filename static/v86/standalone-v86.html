@@ -1092,6 +1092,13 @@
     return `${name}=${shQuote(value)}`;
   }
 
+  function runGuestShellSnippet(snippet, label) {
+    if (!snippet || !shellReady || !emulator) return false;
+    sendCmd(snippet.replace(/\s+$/,'') + '\n');
+    if (label) sLog('guest: ' + label + ' (running in terminal below)', 'ok');
+    return true;
+  }
+
   async function guestWriteText(fs, path, value) {
     const parts = String(path).split('/').filter(Boolean);
     let current = '';
@@ -1115,8 +1122,11 @@
       .map(([name, value]) => shAssign(name, value))
       .join(' ');
     const argString = ((options && options.args) || []).map(shQuote).join(' ');
+    const beforeShell = (options && options.beforeShell) ? String(options.beforeShell).trim() : '';
+    const afterShell = (options && options.afterShell) ? String(options.afterShell).trim() : '';
     const cmd = `${envPrefix ? envPrefix + ' ' : ''}${binary}${argString ? ' ' + argString : ''}`;
-    sendCmd(cmd + '\n');
+    const fullCmd = [beforeShell, cmd, afterShell].filter(Boolean).join('; ');
+    sendCmd(fullCmd + '\n');
 
     if (options && options.label) {
       sLog('guest: ' + options.label + ' (running in terminal below)', 'ok');
@@ -1175,6 +1185,31 @@
     }
   }
 
+  function socialMirrorToGuestSnippet() {
+    return [
+      'mkdir -p /mnt/vfs /mnt/vfs/public /mnt/vfs/following /mnt/host/vfs /mnt/host/vfs/following >/dev/null 2>&1',
+      '[ -f /mnt/host/vfs/.nsec ] && cp /mnt/host/vfs/.nsec /mnt/vfs/.nsec 2>/dev/null || true',
+      '[ -f /mnt/host/vfs/.npub ] && cp /mnt/host/vfs/.npub /mnt/vfs/.npub 2>/dev/null || true',
+      '[ -f /mnt/host/vfs/.social.tunnel ] && cp /mnt/host/vfs/.social.tunnel /mnt/vfs/.social.tunnel 2>/dev/null || true',
+      '[ -f /mnt/host/vfs/following/.list ] && cp /mnt/host/vfs/following/.list /mnt/vfs/following/.list 2>/dev/null || true',
+    ].join('; ');
+  }
+
+  function socialMirrorFromGuestSnippet() {
+    return [
+      'mkdir -p /mnt/host/vfs /mnt/host/vfs/public /mnt/host/vfs/following >/dev/null 2>&1',
+      '[ -f /mnt/vfs/.nsec ] && cp /mnt/vfs/.nsec /mnt/host/vfs/.nsec 2>/dev/null || true',
+      '[ -f /mnt/vfs/.npub ] && cp /mnt/vfs/.npub /mnt/host/vfs/.npub 2>/dev/null || true',
+      '[ -f /mnt/vfs/.social.tunnel ] && cp /mnt/vfs/.social.tunnel /mnt/host/vfs/.social.tunnel 2>/dev/null || true',
+      '[ -f /mnt/vfs/following/.list ] && cp /mnt/vfs/following/.list /mnt/host/vfs/following/.list 2>/dev/null || true',
+    ].join('; ');
+  }
+
+  async function syncSocialMirrorToGuest({ fillMissingOnly = false } = {}) {
+    await syncSocialStateToGuest({ fillMissingOnly });
+    runGuestShellSnippet(socialMirrorToGuestSnippet(), 'sync social state into /mnt/vfs');
+  }
+
   async function runGuestSocialCommand(args, label, options = {}) {
     const afterRun = options.afterRun || (async () => {
       await hydrateSocialStateFromGuest();
@@ -1188,6 +1223,8 @@
         await syncSocialStateToGuest({ fillMissingOnly: true });
         if (typeof options.beforeRun === 'function') await options.beforeRun();
       },
+      beforeShell: socialMirrorToGuestSnippet(),
+      afterShell: socialMirrorFromGuestSnippet(),
       afterRun,
       afterDelayMs: options.afterDelayMs,
     });
@@ -1713,6 +1750,14 @@
       const nsec = d.nsec || d.secret_key || d[0] || '';
       if (!nsec) throw new Error('keygen returned no nsec: ' + JSON.stringify(d));
       localStorage.setItem(SOCIAL_NSEC_KEY, nsec);
+      try {
+        const pubRes = await nostrCall('pubkey', nsec);
+        const pubHex = typeof pubRes === 'string' ? pubRes : (pubRes.pubkey || String(pubRes));
+        const npubRes = await nostrCall('encode_npub', pubHex);
+        const npub = typeof npubRes === 'string' ? npubRes : JSON.stringify(npubRes);
+        localStorage.setItem('traits.nostr.npub', npub);
+      } catch (_) {}
+      await syncSocialMirrorToGuest({ fillMissingOnly: false });
       sLog('identity generated!', 'ok');
       await socialInit();
     } catch (e) { sLog('keygen failed: ' + e.message, 'err'); }
@@ -1768,7 +1813,7 @@
   socialBtn.onclick = async () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
     socialOverlay.hidden = false;
-    await syncSocialStateToGuest({ fillMissingOnly: true });
+    await syncSocialMirrorToGuest({ fillMissingOnly: true });
     await hydrateSocialStateFromGuest();
     socialInit();
   };
