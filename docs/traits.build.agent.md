@@ -30,6 +30,7 @@
 - v86 Social guest command execution now writes per-run status markers under `/mnt/vfs/.guest-runner/*.status` (mirrored to `/mnt/host/vfs/.guest-runner`) so UI actions can distinguish `missing` command state from normal exits. Status polling in the browser must use bounded `fs.read_file` timeouts (`Promise.race`) because missing files may hang reads in some v86 sessions.
 - v86 Social now also captures per-run command output under `/mnt/vfs/.guest-runner/*.out` (mirrored to `/mnt/host/vfs/.guest-runner`). The UI parses `npub1...` / `nsec1...` directly from guest command output as a fallback identity source when `/mnt/vfs` ↔ `/vfs` mirroring lags.
 - v86 Social `debug pubkey` should also support a direct shell-path probe (`SOCIAL_HOME=/mnt/vfs social pubkey`) and parse the live serial tail for `npub1...` / `nsec1...` as a final fallback when guest-runner marker flow is delayed.
+- v86 Social debug now defaults to a step-debug mode (`social_debug` query param, default on) that disables automatic pubkey probe/rescue churn and logs runner dispatch markers (`seen`, `rc`, `status`) to isolate command-path failures.
 - When Social UI still shows empty identity after `social init`, run a guest-side rescue pass that searches fallback roots (`/mnt/host`, `/mnt/host/vfs`, `/root`, `/home/root`, current directory) for `.nsec/.npub` and normalizes them into `/mnt/vfs` (plus `/mnt/host/vfs` mirror). This handles sessions where keys were created outside forced `SOCIAL_HOME=/mnt/vfs`.
 
 ---

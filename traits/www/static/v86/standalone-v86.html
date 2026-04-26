@@ -206,6 +206,7 @@
   // "Loading stty... failed" error before Linux starts.
   let sttyTimer = null, lastCols = 0, sentCols = 0, shellReady = false;
   const pendingGuestCommands = [];
+  let flushingGuestCommands = false;
   term.onResize(({ cols }) => {
     lastCols = cols;
     clearTimeout(sttyTimer);
@@ -358,8 +359,13 @@
   const sendCmd = sendGuestText;
 
   function flushPendingGuestCommands() {
-    if (!emulator || !shellReady || !pendingGuestCommands.length) return;
-    while (pendingGuestCommands.length) {
+    if (!emulator || !shellReady || !pendingGuestCommands.length || flushingGuestCommands) return;
+    flushingGuestCommands = true;
+    const flushNext = () => {
+      if (!emulator || !shellReady || !pendingGuestCommands.length) {
+        flushingGuestCommands = false;
+        return;
+      }
       const entry = pendingGuestCommands.shift();
       sendGuestText(entry.text);
       if (entry.label) sLog('guest: ' + entry.label + ' (running in terminal below)', 'ok');
@@ -369,7 +375,9 @@
           entry.afterRun().catch(() => {});
         }, delayMs);
       }
-    }
+      setTimeout(flushNext, 140);
+    };
+    flushNext();
   }
 
   function dispatchGuestCommand(text, label, options = {}) {
@@ -688,9 +696,11 @@
         : '';
       // Fresh Alpine live ISO ships with only /media/cdrom/apks as an apk repo
       // and a stale libcrypto that breaks any `apk add nodejs` (EVP_MD_CTX_get_size_ex
-      // symbol mismatch). On first boot, once DHCP succeeds, wire latest-stable
-      // main+community, run `apk upgrade`, then notify the terminal. Opt out with ?setup=0.
-      const skipSetup = (new URLSearchParams(location.search).get('setup') === '0');
+      // symbol mismatch). This setup is intentionally opt-in to keep boot fast,
+      // low-noise, and immediately interactive for command dispatch debugging.
+      // Enable explicitly with ?setup=1.
+      const setupParam = (new URLSearchParams(location.search).get('setup') || '').trim();
+      const skipSetup = setupParam !== '1';
       const setupCmd = skipSetup ? '' :
         ' { ' +
           'printf "%s\\n" ' +
@@ -1252,19 +1262,24 @@
   async function waitForGuestRunStatus(runId, timeoutMs = 25000) {
     const fs = emulator && emulator.fs9p;
     if (!fs || !runId) return { ok: false, state: 'unavailable' };
-    const statusPath = SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.status';
+    const statusPaths = [
+      SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.status',
+      '/tb-runner-' + runId + '.status',
+    ];
     const started = Date.now();
     while ((Date.now() - started) < timeoutMs) {
-      try {
-        const bytes = await Promise.race([
-          fs.read_file(statusPath),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
-        ]);
-        const text = (typeof bytes === 'string')
-          ? bytes
-          : new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
-        return parseGuestRunStatus(text);
-      } catch (_) {}
+      for (const statusPath of statusPaths) {
+        try {
+          const bytes = await Promise.race([
+            fs.read_file(statusPath),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
+          ]);
+          const text = (typeof bytes === 'string')
+            ? bytes
+            : new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+          return parseGuestRunStatus(text);
+        } catch (_) {}
+      }
       await new Promise(resolve => setTimeout(resolve, 220));
     }
     return { ok: false, state: 'timeout' };
@@ -1273,17 +1288,46 @@
   async function readGuestRunOutput(runId, timeoutMs = 1200) {
     const fs = emulator && emulator.fs9p;
     if (!fs || !runId) return '';
-    const outPath = SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.out';
+    const outPaths = [
+      SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.out',
+      '/tb-runner-' + runId + '.out',
+    ];
     const started = Date.now();
     while ((Date.now() - started) < timeoutMs) {
-      try {
-        const bytes = await Promise.race([
-          fs.read_file(outPath),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
-        ]);
-        if (typeof bytes === 'string') return bytes;
-        return new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
-      } catch (_) {}
+      for (const outPath of outPaths) {
+        try {
+          const bytes = await Promise.race([
+            fs.read_file(outPath),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
+          ]);
+          if (typeof bytes === 'string') return bytes;
+          return new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+        } catch (_) {}
+      }
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+    return '';
+  }
+
+  async function readGuestRunTrace(runId, timeoutMs = 1200) {
+    const fs = emulator && emulator.fs9p;
+    if (!fs || !runId) return '';
+    const tracePaths = [
+      SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.trace',
+      '/tb-runner-' + runId + '.trace',
+    ];
+    const started = Date.now();
+    while ((Date.now() - started) < timeoutMs) {
+      for (const tracePath of tracePaths) {
+        try {
+          const bytes = await Promise.race([
+            fs.read_file(tracePath),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
+          ]);
+          if (typeof bytes === 'string') return bytes;
+          return new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+        } catch (_) {}
+      }
       await new Promise(resolve => setTimeout(resolve, 120));
     }
     return '';
@@ -1301,15 +1345,21 @@
 
   async function runGuestCommand(options) {
     const fs = emulator && emulator.fs9p;
-    if (!emulator) return false;
+    if (!emulator || !fs) return false;
 
     const runId = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
+    const runMarker = '__TB_RUNNER_' + runId + '__';
 
     const afterRun = options && typeof options.afterRun === 'function'
       ? async () => {
           const runStatus = await waitForGuestRunStatus(runId, (options && options.statusTimeoutMs) || 25000);
           const runOutput = await readGuestRunOutput(runId, (options && options.outputTimeoutMs) || 1500);
-          await options.afterRun({ fs, binary: null, runStatus, runId, runOutput });
+          const runTrace = await readGuestRunTrace(runId, (options && options.traceTimeoutMs) || 1200);
+          const markerSeen = serialTextTail.includes(runMarker);
+          const markerMatch = serialTextTail.match(new RegExp(runMarker + ':rc=([0-9-]+):status=([^\\s]+)'));
+          const markerRc = markerMatch ? Number(markerMatch[1]) : null;
+          const markerStatus = markerMatch ? String(markerMatch[2] || '') : '';
+          await options.afterRun({ fs, binary: null, runStatus, runId, runOutput, runTrace, runMarker, markerSeen, markerRc, markerStatus });
         }
       : null;
 
@@ -1322,41 +1372,68 @@
       .join(' ');
     const argString = ((options && options.args) || []).map(shQuote).join(' ');
     const statusShell = [
-      'mkdir -p /mnt/vfs/.guest-runner /mnt/host/vfs/.guest-runner >/dev/null 2>&1',
+      'mkdir -p /mnt/vfs/.guest-runner /mnt/host >/dev/null 2>&1 || true',
       `_tb_status_guest=/mnt/vfs/.guest-runner/${runId}.status`,
-      `_tb_status_host=/mnt/host/vfs/.guest-runner/${runId}.status`,
+      `_tb_status_host=/mnt/host/tb-runner-${runId}.status`,
       `_tb_out_guest=/mnt/vfs/.guest-runner/${runId}.out`,
-      `_tb_out_host=/mnt/host/vfs/.guest-runner/${runId}.out`,
+      `_tb_out_host=/mnt/host/tb-runner-${runId}.out`,
+      `_tb_trace_guest=/mnt/vfs/.guest-runner/${runId}.trace`,
+      `_tb_trace_host=/mnt/host/tb-runner-${runId}.trace`,
       'rm -f "$_tb_status_guest" "$_tb_status_host" >/dev/null 2>&1 || true',
       'rm -f "$_tb_out_guest" "$_tb_out_host" >/dev/null 2>&1 || true',
+      'rm -f "$_tb_trace_guest" "$_tb_trace_host" >/dev/null 2>&1 || true',
     ].join('; ');
     const beforeShellRaw = (options && options.beforeShell) ? String(options.beforeShell).trim() : '';
-    const beforeShell = [statusShell, beforeShellRaw].filter(Boolean).join('; ');
+    const beforeShell = beforeShellRaw;
     const afterShell = (options && options.afterShell) ? String(options.afterShell).trim() : '';
     const resolver = resolveGuestBinaryShell(options || {});
     const cmd = `${envPrefix ? envPrefix + ' ' : ''}"$_tb_cmd"${argString ? ' ' + argString : ''}`;
     const runOutTmp = `/tmp/.tb-run-${runId}.out`;
+    const traceLine =
+      '_tb_trace() { printf "%s\\n" "$1" >> "$_tb_trace_guest"; cp "$_tb_trace_guest" "$_tb_trace_host" 2>/dev/null || true; };';
     const executeKnownCommand =
+      '_tb_trace "phase:exec:start"; ' +
       `_tb_out_tmp=${shQuote(runOutTmp)}; { ` + cmd + '; } > "$_tb_out_tmp" 2>&1; ' +
       '_tb_rc=$?; cp "$_tb_out_tmp" "$_tb_out_guest" 2>/dev/null || true; ' +
       'cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true; ' +
-      'cat "$_tb_out_tmp" 2>/dev/null || true; ' +
       `_tb_npub=$(grep -aoE "npub1[023456789acdefghjklmnpqrstuvwxyz]+" "$_tb_out_tmp" | head -1 2>/dev/null || true); ` +
       `_tb_nsec=$(grep -aoE "nsec1[023456789acdefghjklmnpqrstuvwxyz]+" "$_tb_out_tmp" | head -1 2>/dev/null || true); ` +
       'rm -f "$_tb_out_tmp" 2>/dev/null || true; ' +
       'printf "rc:%s npub:%s nsec:%s\\n" "$_tb_rc" "$_tb_npub" "$_tb_nsec" > "$_tb_status_guest"; ' +
-      'cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;';
+      'cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true; ' +
+      '_tb_trace "phase:exec:done rc=$_tb_rc npub=${_tb_npub:+yes} nsec=${_tb_nsec:+yes}";';
     const executeShell = [
+      '_tb_trace "phase:resolve:start"',
       'if [ -z "$_tb_cmd" ]; then',
       'printf "[guest-runner] command not found\\n" > "$_tb_out_guest"; cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true;',
-      'cat "$_tb_out_guest" 2>/dev/null || true;',
       'printf "missing\\n" > "$_tb_status_guest"; cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;',
+      '_tb_trace "phase:resolve:missing";',
       'else',
+      '_tb_trace "phase:resolve:ok cmd=$_tb_cmd";',
       executeKnownCommand,
       'fi',
-    ].join(' ');
-    const fullCmd = [beforeShell, resolver, executeShell, afterShell].filter(Boolean).join('; ');
-    dispatchGuestCommand(fullCmd, options && options.label, {
+    ].join('\n');
+
+    const runnerScript = [
+      '#!/bin/sh',
+      'set +e',
+      statusShell,
+      traceLine,
+      '_tb_trace "phase:init"',
+      beforeShell,
+      '_tb_trace "phase:before-shell:done"',
+      resolver,
+      executeShell,
+      '_tb_trace "phase:after-shell:start"',
+      afterShell,
+      '_tb_trace "phase:after-shell:done"',
+    ].filter(Boolean).join('\n') + '\n';
+
+    const hostScriptPath = '/tb-runner-' + runId + '.sh';
+    await guestWriteText(fs, hostScriptPath, runnerScript);
+
+    const launchCmd = `/bin/sh /mnt/host/tb-runner-${runId}.sh; _tb_run_rc=$?; if [ $_tb_run_rc -ne 0 ]; then sh /mnt/host/tb-runner-${runId}.sh; _tb_run_rc=$?; fi; _tb_status_line=$(cat /mnt/vfs/.guest-runner/${runId}.status 2>/dev/null | tr -d '\\r\\n'); [ -n "$_tb_status_line" ] || _tb_status_line=nostatus; echo ${runMarker}:rc=$_tb_run_rc:status=$_tb_status_line`;
+    dispatchGuestCommand(launchCmd, options && options.label, {
       afterRun,
       afterDelayMs: options && options.afterDelayMs,
     });
@@ -1434,8 +1511,15 @@
 
   async function runGuestSocialCommand(args, label, options = {}) {
     const afterRun = async (ctx) => {
-      const status = (ctx && ctx.runStatus) || {};
+      let status = (ctx && ctx.runStatus) || {};
       const output = String((ctx && ctx.runOutput) || '');
+      const trace = String((ctx && ctx.runTrace) || '').trim();
+      const markerSeen = !!(ctx && ctx.markerSeen);
+      const markerRc = (ctx && typeof ctx.markerRc === 'number' && Number.isFinite(ctx.markerRc)) ? ctx.markerRc : null;
+      const markerStatus = String((ctx && ctx.markerStatus) || '').trim();
+      if ((status.state === 'empty' || status.state === 'unknown' || status.state === 'timeout') && markerStatus.startsWith('rc:')) {
+        status = parseGuestRunStatus(markerStatus);
+      }
       const parsed = extractNostrIdentityFromText(output);
       const statusNpub = (status && status.npub) ? String(status.npub).trim() : '';
       const statusNsec = (status && status.nsec) ? String(status.nsec).trim() : '';
@@ -1446,6 +1530,12 @@
       }
       const mergedNsec = parsed.nsec || statusNsec || serialParsed.nsec;
       const mergedNpub = parsed.npub || statusNpub || serialParsed.npub;
+      if (trace) {
+        const traceLines = trace.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        const tail = traceLines.slice(-3).join(' | ');
+        if (tail) sLog('guest runner trace: ' + tail.slice(0, 220), 'hint');
+      }
+      sLog('guest runner dispatch marker seen=' + (markerSeen ? 'yes' : 'no') + (markerRc == null ? '' : ' rc=' + markerRc) + (markerStatus ? ' status=' + markerStatus : ''), markerSeen ? 'ok' : 'hint');
       if (mergedNsec) localStorage.setItem(SOCIAL_NSEC_KEY, mergedNsec);
       if (mergedNpub) localStorage.setItem('traits.nostr.npub', mergedNpub);
       if (status.state === 'missing') {
@@ -1457,6 +1547,8 @@
         sLog('guest identity detected: ' + truncNpub(mergedNpub), 'ok');
       } else if (status.state === 'timeout') {
         sLog('guest social command is still running or hung (status timeout)', 'hint');
+      } else {
+        sLog('guest social runner status=' + (status.state || 'unknown') + ' raw=' + (status.raw || '(empty)'), 'hint');
       }
       await hydrateSocialStateFromGuest();
       if (typeof options.afterRun === 'function') {
@@ -1633,6 +1725,7 @@
   const searchBtnEl    = $('social-search-btn');
   const searchResults  = $('social-search-results');
   const socialList     = $('social-list');
+  const socialStepDebugMode = (new URLSearchParams(location.search).get('social_debug') || '1') !== '0';
 
   function sLog(msg, cls = '') {
     const d = document.createElement('div');
@@ -1723,7 +1816,7 @@
         } catch (e) {
           sLog('debug: could not read /mnt/vfs/.npub: ' + e.message, 'hint');
         }
-        if (!localNpub && !socialIdentityRescueDone) {
+        if (!localNpub && !socialIdentityRescueDone && !socialStepDebugMode) {
           socialIdentityRescueDone = true;
           sLog('debug: trying guest identity rescue from fallback paths…', 'hint');
           await rescueGuestIdentityToVfs();
@@ -1751,6 +1844,13 @@
       npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
     }
     if (!nsec) {
+      if (socialStepDebugMode) {
+        npubDisplay.innerHTML = '<span class="hint">no identity — run debug pubkey to inspect command path</span>';
+        publishBtn.disabled = true;
+        syncNowBtn.disabled = true;
+        renderFollowList();
+        return;
+      }
       if (!socialIdentityProbeDone) {
         socialIdentityProbeDone = true;
         const ran = await runGuestSocialCommand(['pubkey'], 'social pubkey', {
