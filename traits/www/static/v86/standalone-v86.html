@@ -1350,6 +1350,25 @@
     return parsed;
   }
 
+  async function tryUpdateIdentityFromPubkey() {
+    if (!shellReady) {
+      sLog('shell not ready yet; try again in a moment', 'hint');
+      return;
+    }
+    sLog('running social pubkey to extract identity…', 'hint');
+    const tailStart = serialTextTail.length;
+    dispatchGuestCommand('SOCIAL_HOME=/mnt/host social pubkey', 'social pubkey (manual)');
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    const newTail = serialTextTail.slice(tailStart);
+    const parsed = promoteNostrIdentityFromText(newTail);
+    if (parsed.npub) {
+      sLog('identity detected: ' + truncNpub(parsed.npub), 'ok');
+      await socialInit();
+    } else {
+      sLog('no npub found in output; try running social init first', 'hint');
+    }
+  }
+
   async function runGuestCommand(options) {
     const fs = emulator && emulator.fs9p;
     if (!emulator || !fs) return false;
@@ -1905,7 +1924,29 @@
         renderFollowList();
         return;
       }
-      npubDisplay.innerHTML = '<span class="hint">no identity — generate one below</span>';
+      const updateBtn = document.createElement('button');
+      updateBtn.id = 'social-update-from-pubkey';
+      updateBtn.textContent = 'Check for identity';
+      updateBtn.title = 'Run social pubkey and extract npub';
+      updateBtn.style.cssText = 'padding:4px 12px;font-size:11px;margin-left:8px;cursor:pointer;background:#4b5563;border:1px solid #6b7280;color:#fff;border-radius:3px';
+      updateBtn.onclick = async () => {
+        updateBtn.disabled = true;
+        updateBtn.textContent = 'Checking…';
+        try {
+          await tryUpdateIdentityFromPubkey();
+        } catch (e) {
+          sLog('error checking identity: ' + (e && e.message ? e.message : e), 'err');
+        } finally {
+          updateBtn.disabled = false;
+          updateBtn.textContent = 'Check for identity';
+        }
+      };
+      const container = document.createElement('div');
+      container.style.cssText = 'display:flex;align-items:center';
+      container.innerHTML = '<span class="hint">no identity — generate one below</span>';
+      container.appendChild(updateBtn);
+      npubDisplay.innerHTML = '';
+      npubDisplay.appendChild(container);
       publishBtn.disabled = true;
       syncNowBtn.disabled = true;
     } else {
