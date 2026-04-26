@@ -1623,14 +1623,48 @@
   }
 
   let socialIdentityProbeDone = false;
+  let socialIdentityRescueDone = false;
+
+  async function rescueGuestIdentityToVfs() {
+    return runGuestCommand({
+      candidates: ['/bin/sh'],
+      commandName: 'sh',
+      args: ['-c', [
+        'mkdir -p /mnt/vfs /mnt/host/vfs >/dev/null 2>&1',
+        '_tb_src=""',
+        'for _tb_d in /mnt/vfs /mnt/host /mnt/host/vfs /root /home/root .; do',
+        '  [ -z "$_tb_src" ] && [ -f "$_tb_d/.nsec" ] && _tb_src="$_tb_d";',
+        'done',
+        'if [ -n "$_tb_src" ]; then',
+        '  [ -f "$_tb_src/.nsec" ] && cp "$_tb_src/.nsec" /mnt/vfs/.nsec 2>/dev/null || true;',
+        '  [ -f "$_tb_src/.npub" ] && cp "$_tb_src/.npub" /mnt/vfs/.npub 2>/dev/null || true;',
+        '  [ -f /mnt/vfs/.nsec ] && cp /mnt/vfs/.nsec /mnt/host/vfs/.nsec 2>/dev/null || true;',
+        '  [ -f /mnt/vfs/.npub ] && cp /mnt/vfs/.npub /mnt/host/vfs/.npub 2>/dev/null || true;',
+        '  printf "rescued:%s\\n" "$_tb_src";',
+        'fi',
+      ].join(' ')],
+      label: 'rescue guest social identity into /mnt/vfs',
+      afterDelayMs: 400,
+      afterRun: async () => {
+        await hydrateSocialStateFromGuest();
+      },
+      statusTimeoutMs: 9000,
+      outputTimeoutMs: 1200,
+    });
+  }
 
   async function debugGuestPubkeyFlow() {
     sLog('debug: running guest social pubkey…');
     const ran = await runGuestSocialCommand(['pubkey'], 'social pubkey', {
-      afterRun: async () => {
+      afterRun: async (ctx) => {
         await hydrateSocialStateFromGuest();
         const localNsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
         const localNpub = (localStorage.getItem('traits.nostr.npub') || '').trim();
+        const output = String((ctx && ctx.runOutput) || '').trim();
+        if (output) {
+          const oneLine = output.replace(/\s+/g, ' ').trim();
+          sLog('debug: social pubkey output=' + oneLine.slice(0, 180), 'hint');
+        }
         sLog('debug: localStorage nsec=' + (localNsec ? 'yes' : 'no') + ', npub=' + (localNpub || '(empty)'), localNsec ? 'ok' : 'hint');
         try {
           const fs = emulator && emulator.fs9p;
@@ -1644,6 +1678,12 @@
           }
         } catch (e) {
           sLog('debug: could not read /mnt/vfs/.npub: ' + e.message, 'hint');
+        }
+        if (!localNpub && !socialIdentityRescueDone) {
+          socialIdentityRescueDone = true;
+          sLog('debug: trying guest identity rescue from fallback paths…', 'hint');
+          await rescueGuestIdentityToVfs();
+          await hydrateSocialStateFromGuest();
         }
         await socialInit();
       },
@@ -1682,6 +1722,13 @@
           syncNowBtn.disabled = true;
           return;
         }
+      }
+      if (!npubOnly && !socialIdentityRescueDone) {
+        socialIdentityRescueDone = true;
+        await rescueGuestIdentityToVfs();
+        await hydrateSocialStateFromGuest();
+        nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
+        npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
       }
       if (npubOnly) {
         npubDisplay.innerHTML =

@@ -29,6 +29,7 @@
 - v86 guest-command queuing must treat Alpine `login:` as a separate state from a real shell prompt. For Social/open-on-boot flows, detect `login:` explicitly, send `root` once when queued guest work is waiting, and only mark the guest ready after a root-style prompt ending in `# ` appears; otherwise echoed shell variables like `$_tb_cmd ` can be misclassified as readiness and commands get sprayed into the login prompt.
 - v86 Social guest command execution now writes per-run status markers under `/mnt/vfs/.guest-runner/*.status` (mirrored to `/mnt/host/vfs/.guest-runner`) so UI actions can distinguish `missing` command state from normal exits. Status polling in the browser must use bounded `fs.read_file` timeouts (`Promise.race`) because missing files may hang reads in some v86 sessions.
 - v86 Social now also captures per-run command output under `/mnt/vfs/.guest-runner/*.out` (mirrored to `/mnt/host/vfs/.guest-runner`). The UI parses `npub1...` / `nsec1...` directly from guest command output as a fallback identity source when `/mnt/vfs` ↔ `/vfs` mirroring lags.
+- When Social UI still shows empty identity after `social init`, run a guest-side rescue pass that searches fallback roots (`/mnt/host`, `/mnt/host/vfs`, `/root`, `/home/root`, current directory) for `.nsec/.npub` and normalizes them into `/mnt/vfs` (plus `/mnt/host/vfs` mirror). This handles sessions where keys were created outside forced `SOCIAL_HOME=/mnt/vfs`.
 
 ---
 
