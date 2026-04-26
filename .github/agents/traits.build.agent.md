@@ -894,6 +894,7 @@ The SPA at `www.traits.build` uses a 4-tier dispatch cascade:
 - `local/social.sh` must parse both direct and wrapped REST result payloads from trait calls (for example `{"npub":...}` and `{"result":{"npub":...}}`) for keygen/pubkey/decode/sign_event extraction.
 - v86 Social overlay should prefer guest CLI identity discovery by probing `social pubkey` once when local UI identity is missing, then hydrating mirrored `/mnt/vfs` files back into browser state.
 - v86 Social overlay should run a guest→host social mirror pull on open and re-hydrate local state before rendering the no-identity hint, so existing guest keys in `/mnt/vfs` are surfaced immediately in UI.
+- v86 Social overlay now exposes a `debug pubkey` action that runs guest `social pubkey` and logs both localStorage identity and `/mnt/vfs/.npub` readback for fast CLI↔UI wiring diagnostics.
 - Relay worker now exposes `GET /linux/tunnel/debug` with isolate-local tunnel counters, active connection metadata, and recent lifecycle events (`ws_open`, `ws_close`, `ws_error`, parse/dns failures) to diagnose intermittent WebSocket tunnel drops.
 - Relay Cloudflare worker is isolated as `traits-build-relay` (account-pinned in `relay/wrangler.toml`) to reduce accidental cross-project overwrites from other repos using generic worker names.
 - `www.linux` now normalizes legacy tunnel URL overrides (`wss://traits-relay.kiliannc.workers.dev/linux/tunnel`) to `wss://relay.traits.build/linux/tunnel` and rewrites stale localStorage values on boot.

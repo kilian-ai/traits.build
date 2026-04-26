@@ -25,6 +25,7 @@
 - `local/social.sh` field parsing accepts both direct and wrapped REST payloads (`{"nsec":...}` and `{"result":{"nsec":...}}`) for keygen/pubkey/decode/sign_event flows.
 - Social overlay identity discovery now probes guest CLI `social pubkey` once when local identity is missing, then hydrates mirrored files back into UI state.
 - Social overlay now attempts guest→host mirror hydration before showing a no-identity state, reducing false "no identity" UI states when keys already exist under `/mnt/vfs`.
+- Social overlay includes a `debug pubkey` button that executes guest `social pubkey`, then logs hydrated identity state (`localStorage` + `/mnt/vfs/.npub`) to help diagnose CLI↔UI mirror issues.
 
 ---
 

@@ -126,6 +126,7 @@
         <div id="social-npub-display"><span class="hint">no identity — generate one below</span></div>
         <div class="row-flex" style="margin-top:6px">
           <button id="social-generate">generate identity</button>
+          <button id="social-debug-pubkey">debug pubkey</button>
           <button id="social-publish" disabled>publish /vfs/public</button>
           <button id="social-sync-now" disabled>sync all</button>
           <select id="social-sync-interval">
@@ -1396,6 +1397,7 @@
   const socialCloseBtn = $('social-close');
   const npubDisplay    = $('social-npub-display');
   const generateBtn    = $('social-generate');
+  const debugPubkeyBtn = $('social-debug-pubkey');
   const publishBtn     = $('social-publish');
   const syncNowBtn     = $('social-sync-now');
   const syncIntervalEl = $('social-sync-interval');
@@ -1426,6 +1428,35 @@
   }
 
   let socialIdentityProbeDone = false;
+
+  async function debugGuestPubkeyFlow() {
+    sLog('debug: running guest social pubkey…');
+    const ran = await runGuestSocialCommand(['pubkey'], 'social pubkey', {
+      afterRun: async () => {
+        await hydrateSocialStateFromGuest();
+        const localNsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
+        const localNpub = (localStorage.getItem('traits.nostr.npub') || '').trim();
+        sLog('debug: localStorage nsec=' + (localNsec ? 'yes' : 'no') + ', npub=' + (localNpub || '(empty)'), localNsec ? 'ok' : 'hint');
+        try {
+          const fs = emulator && emulator.fs9p;
+          if (fs) {
+            const npubBytes = await fs.read_file(SOCIAL_VFS_ROOT + '/.npub');
+            const fromFs = new TextDecoder().decode(npubBytes).trim();
+            sLog('debug: /mnt/vfs/.npub=' + (fromFs || '(empty)'), fromFs ? 'ok' : 'hint');
+          }
+        } catch (e) {
+          sLog('debug: could not read /mnt/vfs/.npub: ' + e.message, 'hint');
+        }
+        await socialInit();
+      },
+      afterDelayMs: 900,
+    });
+    if (!ran) {
+      sLog('debug: guest social command not available; using local fallback only', 'hint');
+      await hydrateSocialStateFromGuest();
+      await socialInit();
+    }
+  }
 
   // Refresh identity display and enable/disable action buttons
   async function socialInit() {
@@ -1810,6 +1841,10 @@
       sLog('identity generated!', 'ok');
       await socialInit();
     } catch (e) { sLog('keygen failed: ' + e.message, 'err'); }
+  };
+
+  debugPubkeyBtn.onclick = () => {
+    void debugGuestPubkeyFlow();
   };
 
   publishBtn.onclick  = doPublish;
