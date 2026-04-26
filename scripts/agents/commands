@@ -59,6 +59,6 @@ rsync -e "ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/nul
 sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
 # then open http://localhost:18384 in browser
 
-social:
+#social:
 wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/loca
 l/bin/social

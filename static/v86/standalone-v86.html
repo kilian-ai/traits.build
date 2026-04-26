@@ -90,7 +90,7 @@
     <button id="restore" disabled>restore</button>
     <button id="clear" disabled>clear snapshot</button>
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
-    <button id="viewer" disabled title="Browse files in /mnt/host (v86 9P share) directly from the host — no relay needed">viewer</button>
+    <button id="viewer" disabled title="Browse files in /mnt/vfs (v86 VFS root) directly from the host — no relay needed">viewer</button>
     <button id="social" disabled title="Nostr social: publish /mnt/vfs/public, follow users, sync their content">social</button>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
@@ -99,8 +99,8 @@
   <div id="viewer-overlay" hidden>
     <div id="viewer-bar">
       <b>viewer</b>
-      <span class="hint" style="margin-left:6px">9P share → /mnt/host (in guest)</span>
-      <input id="viewer-path" value="/" spellcheck="false" title="path inside the 9P share">
+      <span class="hint" style="margin-left:6px">VFS root → /mnt/vfs (in guest)</span>
+      <input id="viewer-path" value="/vfs" spellcheck="false" title="path inside the 9P share">
       <button id="viewer-refresh" title="reload listing">refresh</button>
       <span class="hint" id="viewer-status"></span>
       <button id="viewer-close" style="margin-left:auto">close</button>
@@ -842,7 +842,7 @@
 
   // ─────────────────────────────────────────────────────────────────────────
   // Viewer overlay — browse files in the v86 9P share directly from the host.
-  // No relay/tunnel/websocat needed. Files the guest writes to /mnt/host/*
+  // No relay/tunnel/websocat needed. Files the guest writes under /mnt/vfs/*
   // appear here on the next refresh.
   // ─────────────────────────────────────────────────────────────────────────
   const viewerBtn   = $('viewer');
@@ -945,8 +945,8 @@
   closeBtn.onclick = () => { overlay.hidden = true; term.focus(); };
   viewerBtn.onclick = () => {
     if (!fs9p()) { setStatus('9P share not available — boot v86 first', 'err'); return; }
-    // Default to the public seed dir if it exists, otherwise root.
-    if (pathEl.value === '/' && isDir('/public')) pathEl.value = '/public';
+    // Default to the vfs public seed dir if it exists.
+    if ((pathEl.value === '/' || pathEl.value === '/vfs') && isDir('/vfs/public')) pathEl.value = '/vfs/public';
     overlay.hidden = false;
     renderTree();
     vSet('ready');
@@ -1065,8 +1065,8 @@
 
   function socialGuestPath(fsPath) {
     if (typeof fsPath !== 'string' || !fsPath.startsWith('/')) return fsPath;
-    if (fsPath.startsWith('/vfs')) return '/mnt/vfs' + fsPath.slice(4);
-    return '/mnt/host' + fsPath;
+    const suffix = fsPath.startsWith('/vfs') ? fsPath.slice(4) : fsPath;
+    return '/mnt/vfs' + suffix;
   }
 
   function getFollowRoot() {
