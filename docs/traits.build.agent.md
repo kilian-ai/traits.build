@@ -24,6 +24,7 @@
 - SPA `/shell` route now appends `cb=${STATIC_RUNTIME_CB}` to the `standalone-v86.html` iframe URL so fresh deploys pick up updated social/UI JS immediately instead of serving stale CDN-cached iframe content.
 - `local/social.sh` field parsing accepts both direct and wrapped REST payloads (`{"nsec":...}` and `{"result":{"nsec":...}}`) for keygen/pubkey/decode/sign_event flows.
 - Social overlay identity discovery now probes guest CLI `social pubkey` once when local identity is missing, then hydrates mirrored files back into UI state.
+- Social overlay now attempts guest→host mirror hydration before showing a no-identity state, reducing false "no identity" UI states when keys already exist under `/mnt/vfs`.
 
 ---
 

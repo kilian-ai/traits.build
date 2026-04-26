@@ -1429,7 +1429,12 @@
 
   // Refresh identity display and enable/disable action buttons
   async function socialInit() {
-    const nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
+    let nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
+    if (!nsec) {
+      // First try to hydrate from mirrored guest files before declaring no identity.
+      await hydrateSocialStateFromGuest();
+      nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
+    }
     if (!nsec) {
       if (!socialIdentityProbeDone) {
         socialIdentityProbeDone = true;
@@ -1857,6 +1862,9 @@
   socialBtn.onclick = async () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
     socialOverlay.hidden = false;
+    // Pull current guest state into the host-visible /vfs mirror first.
+    runGuestShellSnippet(socialMirrorFromGuestSnippet(), 'sync social state from /mnt/vfs');
+    await new Promise(resolve => setTimeout(resolve, 220));
     await syncSocialMirrorToGuest({ fillMissingOnly: true });
     await hydrateSocialStateFromGuest();
     socialInit();
