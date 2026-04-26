@@ -1066,6 +1066,56 @@
   const SOCIAL_PUBLIC_ROOT = SOCIAL_VFS_ROOT + '/public';
   const DEFAULT_FOLLOW_ROOT = SOCIAL_VFS_ROOT + '/following';
   const SOCIAL_FOLLOW_ROOT_KEY = 'traits.nostr.follow_root';
+
+  function hasPathInFs(fs, path) {
+    try {
+      const r = fs && fs.SearchPath && fs.SearchPath(path);
+      return !!(r && r.id !== -1);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function guestSocialPath(fs) {
+    if (!fs) return '';
+    if (hasPathInFs(fs, '/usr/local/bin/social')) return '/usr/local/bin/social';
+    if (hasPathInFs(fs, '/usr/bin/social')) return '/usr/bin/social';
+    return '';
+  }
+
+  function shQuote(s) {
+    return "'" + String(s).replace(/'/g, "'\\''") + "'";
+  }
+
+  async function hydrateSocialStateFromGuest() {
+    const fs = emulator && emulator.fs9p;
+    if (!fs) return;
+    try {
+      const nsec = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/.nsec')).trim();
+      if (nsec) localStorage.setItem(SOCIAL_NSEC_KEY, nsec);
+    } catch (_) {}
+    try {
+      const npub = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/.npub')).trim();
+      if (npub) localStorage.setItem('traits.nostr.npub', npub);
+    } catch (_) {}
+    try {
+      const lines = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/following/.list'))
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      if (lines.length) saveFollowing(Array.from(new Set(lines)));
+    } catch (_) {}
+  }
+
+  function runGuestSocialCommand(args, label) {
+    const fs = emulator && emulator.fs9p;
+    const socialPath = guestSocialPath(fs);
+    if (!socialPath || !shellReady || !emulator) return false;
+    const cmd = `SOCIAL_HOME=/mnt/vfs ${socialPath} ${args}`;
+    sendCmd(cmd + '\n');
+    if (label) sLog('guest: ' + label + ' (running in terminal below)', 'ok');
+    return true;
+  }
   const FOLLOW_ROOT_CANDIDATES = [
     SOCIAL_PUBLIC_ROOT + '/.following',
     SOCIAL_VFS_ROOT + '/following',
@@ -1311,6 +1361,18 @@
     if (!npub.startsWith('npub1') || npub.length < 30) {
       sLog('invalid npub — must start with npub1 and be at least 30 chars', 'err'); return;
     }
+
+    if (runGuestSocialCommand('follow ' + shQuote(npub), 'social follow ' + truncNpub(npub))) {
+      const following = getFollowing();
+      if (!following.includes(npub)) {
+        following.push(npub);
+        saveFollowing(following);
+      }
+      renderFollowList();
+      setTimeout(() => { hydrateSocialStateFromGuest().then(renderFollowList).catch(() => {}); }, 1200);
+      return;
+    }
+
     const following = getFollowing();
     if (following.includes(npub)) { sLog('already following ' + truncNpub(npub)); return; }
     following.push(npub);
@@ -1333,6 +1395,9 @@
 
   async function doSyncOne(npub) {
     npub = npub.trim();
+    if (runGuestSocialCommand('sync', 'social sync')) {
+      return;
+    }
     sLog('syncing ' + truncNpub(npub) + '…');
     let pubkeyHex;
     try {
@@ -1436,6 +1501,9 @@
   }
 
   async function doSyncAll() {
+    if (runGuestSocialCommand('sync', 'social sync')) {
+      return;
+    }
     const following = getFollowing();
     if (!following.length) { sLog('no followed users to sync'); return; }
     sLog('syncing ' + following.length + ' user(s)…');
@@ -1444,6 +1512,9 @@
   }
 
   async function doPublish() {
+    if (runGuestSocialCommand('publish', 'social publish')) {
+      return;
+    }
     const nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
     if (!nsec) { sLog('no identity — generate one first', 'err'); return; }
     const fs = emulator && emulator.fs9p;
@@ -1519,6 +1590,10 @@
   async function doSearch(query) {
     query = query.trim();
     if (!query) return;
+    if (runGuestSocialCommand('search ' + shQuote(query), 'social search "' + query + '"')) {
+      searchResults.innerHTML = '<span class="hint">search is running in terminal output</span>';
+      return;
+    }
     sLog('searching "' + query + '"…');
     searchResults.innerHTML = '<span class="hint">searching…</span>';
     const events = await nostrReq(NOSTR_RELAYS, {
@@ -1543,6 +1618,13 @@
   // ── Event handlers
   generateBtn.onclick = async () => {
     if (!confirm('Generate a new Nostr identity? Existing key in localStorage will be overwritten.')) return;
+    if (runGuestSocialCommand('init', 'social init')) {
+      setTimeout(async () => {
+        await hydrateSocialStateFromGuest();
+        await socialInit();
+      }, 1200);
+      return;
+    }
     sLog('generating keypair…');
     try {
       const res = await nostrCall('keygen');
@@ -1596,9 +1678,10 @@
     }).catch(err => sLog('encode_npub: ' + err.message, 'err'));
   });
 
-  socialBtn.onclick = () => {
+  socialBtn.onclick = async () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
     socialOverlay.hidden = false;
+    await hydrateSocialStateFromGuest();
     socialInit();
   };
   socialCloseBtn.onclick = () => { socialOverlay.hidden = true; term.focus(); };

@@ -1482,7 +1482,7 @@ GET  /port/debug?code=XXXX
 | [local/tunnel-up.sh](local/tunnel-up.sh) | Guest-side: register + launch websocat bridges (with respawn loop per port) |
 | [local/tunnel-ssh.sh](local/tunnel-ssh.sh) | Host-side: one-off SSH via ProxyCommand wrapper (zsh-safe, URL in temp script to avoid `&`/`?` glob) |
 | [local/tunnel-listen.sh](local/tunnel-listen.sh) | Host-side: local TCP listener forwarding to tunnel — enables plain `ssh -p`/`scp -P`/`sftp -P`/`rsync`/any TCP client |
-| [local/social.sh](local/social.sh) | Guest-side: Nostr-backed public folder publish/follow/sync with auto root selection (`/mnt/vfs` preferred, then `/mnt/host`, then current working directory) |
+| [local/social.sh](local/social.sh) | Guest-side: Nostr-backed public folder publish/follow/sync with auto root selection (`/mnt/vfs` preferred, then `/mnt/host`, then current working directory); v86 Social overlay buttons call this CLI when installed in guest |
 
 ### social.sh — Nostr public-folder follow/sync (Apr 2026)
 
