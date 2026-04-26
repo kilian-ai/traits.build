@@ -1343,6 +1343,13 @@
     };
   }
 
+  function promoteNostrIdentityFromText(text) {
+    const parsed = extractNostrIdentityFromText(text);
+    if (parsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
+    if (parsed.npub) localStorage.setItem('traits.nostr.npub', parsed.npub);
+    return parsed;
+  }
+
   async function runGuestCommand(options) {
     const fs = emulator && emulator.fs9p;
     if (!emulator || !fs) return false;
@@ -1835,6 +1842,14 @@
   async function socialInit() {
     let nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
     let npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
+    if (!nsec && !npubOnly) {
+      const fromSerial = promoteNostrIdentityFromText(serialTextTail);
+      if (fromSerial.nsec || fromSerial.npub) {
+        nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
+        npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
+        sLog('identity hydrated from terminal output (social pubkey)', 'ok');
+      }
+    }
     if (!nsec) {
       // First try to hydrate from mirrored guest files before declaring no identity.
       await hydrateSocialStateFromGuest();
