@@ -18,6 +18,7 @@
 - Viewer path input is hard-clamped to `/vfs` subtree (paths outside `/vfs` normalize back to `/vfs`) to avoid accidental browsing of non-VFS roots.
 - Social publish now writes local manifest files at `/vfs/public/.manifest.json` and `/vfs/public/manifest.json` before relay broadcast; sync caches relay manifests to `<follow_root>/<npub>/.manifest.json` and can fall back to cached/local manifest when relays return none.
 - In the v86 Social overlay, button actions prefer running guest `social.sh` (`init`, `follow`, `publish`, `sync`, `search`) with `SOCIAL_HOME=/mnt/vfs` when the script is installed in the guest, and fall back to in-browser JS behavior otherwise.
+- The preferred UI→guest integration pattern in `standalone-v86.html` is now a generic `runGuestCommand(...)` helper with `beforeRun`/`afterRun` hooks. Social uses it to sync local UI state into guest files before invoking the guest CLI, then hydrate UI state back from guest after command completion.
 
 ---
 

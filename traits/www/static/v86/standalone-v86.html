@@ -1076,15 +1076,59 @@
     }
   }
 
-  function guestSocialPath(fs) {
+  function resolveGuestBinary(fs, candidates) {
     if (!fs) return '';
-    if (hasPathInFs(fs, '/usr/local/bin/social')) return '/usr/local/bin/social';
-    if (hasPathInFs(fs, '/usr/bin/social')) return '/usr/bin/social';
+    for (const candidate of candidates || []) {
+      if (hasPathInFs(fs, candidate)) return candidate;
+    }
     return '';
   }
 
   function shQuote(s) {
     return "'" + String(s).replace(/'/g, "'\\''") + "'";
+  }
+
+  function shAssign(name, value) {
+    return `${name}=${shQuote(value)}`;
+  }
+
+  async function guestWriteText(fs, path, value) {
+    const parts = String(path).split('/').filter(Boolean);
+    let current = '';
+    for (let index = 0; index < parts.length - 1; index++) {
+      current += '/' + parts[index];
+      try { fs.create_directory(current); } catch (_) {}
+    }
+    await fs.write_file(path, new TextEncoder().encode(String(value)));
+  }
+
+  async function runGuestCommand(options) {
+    const fs = emulator && emulator.fs9p;
+    const binary = resolveGuestBinary(fs, options && options.candidates);
+    if (!binary || !shellReady || !emulator) return false;
+
+    if (options && typeof options.beforeRun === 'function') {
+      await options.beforeRun({ fs, binary });
+    }
+
+    const envPrefix = Object.entries((options && options.env) || {})
+      .map(([name, value]) => shAssign(name, value))
+      .join(' ');
+    const argString = ((options && options.args) || []).map(shQuote).join(' ');
+    const cmd = `${envPrefix ? envPrefix + ' ' : ''}${binary}${argString ? ' ' + argString : ''}`;
+    sendCmd(cmd + '\n');
+
+    if (options && options.label) {
+      sLog('guest: ' + options.label + ' (running in terminal below)', 'ok');
+    }
+
+    if (options && typeof options.afterRun === 'function') {
+      const delayMs = options.afterDelayMs == null ? 1200 : options.afterDelayMs;
+      setTimeout(() => {
+        options.afterRun({ fs, binary }).catch(() => {});
+      }, delayMs);
+    }
+    return true;
   }
 
   async function hydrateSocialStateFromGuest() {
@@ -1107,14 +1151,52 @@
     } catch (_) {}
   }
 
-  function runGuestSocialCommand(args, label) {
+  async function syncSocialStateToGuest({ fillMissingOnly = false } = {}) {
     const fs = emulator && emulator.fs9p;
-    const socialPath = guestSocialPath(fs);
-    if (!socialPath || !shellReady || !emulator) return false;
-    const cmd = `SOCIAL_HOME=/mnt/vfs ${socialPath} ${args}`;
-    sendCmd(cmd + '\n');
-    if (label) sLog('guest: ' + label + ' (running in terminal below)', 'ok');
-    return true;
+    if (!fs) return;
+
+    const localNsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
+    const localNpub = (localStorage.getItem('traits.nostr.npub') || '').trim();
+    const localFollowing = getFollowing();
+
+    try { fs.create_directory(SOCIAL_VFS_ROOT); } catch (_) {}
+    try { fs.create_directory(DEFAULT_FOLLOW_ROOT); } catch (_) {}
+
+    const maybeWrite = async (path, value) => {
+      if (!value) return;
+      if (fillMissingOnly && hasPathInFs(fs, path)) return;
+      await guestWriteText(fs, path, value.endsWith('\n') ? value : value + '\n');
+    };
+
+    await maybeWrite(SOCIAL_VFS_ROOT + '/.nsec', localNsec);
+    await maybeWrite(SOCIAL_VFS_ROOT + '/.npub', localNpub);
+    if (localFollowing.length && !(fillMissingOnly && hasPathInFs(fs, DEFAULT_FOLLOW_ROOT + '/.list'))) {
+      await guestWriteText(fs, DEFAULT_FOLLOW_ROOT + '/.list', localFollowing.join('\n') + '\n');
+    }
+  }
+
+  async function runGuestSocialCommand(args, label, options = {}) {
+    const afterRun = options.afterRun || (async () => {
+      await hydrateSocialStateFromGuest();
+    });
+    return runGuestCommand({
+      candidates: ['/usr/local/bin/social', '/usr/bin/social'],
+      env: { SOCIAL_HOME: '/mnt/vfs' },
+      args,
+      label,
+      beforeRun: async () => {
+        await syncSocialStateToGuest({ fillMissingOnly: true });
+        if (typeof options.beforeRun === 'function') await options.beforeRun();
+      },
+      afterRun,
+      afterDelayMs: options.afterDelayMs,
+    });
+  }
+
+  function socialGuestPath(fsPath) {
+    if (typeof fsPath !== 'string' || !fsPath.startsWith('/')) return fsPath;
+    const suffix = fsPath.startsWith('/vfs') ? fsPath.slice(4) : fsPath;
+    return '/mnt/vfs' + suffix;
   }
   const FOLLOW_ROOT_CANDIDATES = [
     SOCIAL_PUBLIC_ROOT + '/.following',
@@ -1128,12 +1210,6 @@
     '/social_following',
   ];
   let socialFollowRoot = null;
-
-  function socialGuestPath(fsPath) {
-    if (typeof fsPath !== 'string' || !fsPath.startsWith('/')) return fsPath;
-    const suffix = fsPath.startsWith('/vfs') ? fsPath.slice(4) : fsPath;
-    return '/mnt/vfs' + suffix;
-  }
 
   function getFollowRoot() {
     return socialFollowRoot || localStorage.getItem(SOCIAL_FOLLOW_ROOT_KEY) || DEFAULT_FOLLOW_ROOT;
@@ -1362,14 +1438,18 @@
       sLog('invalid npub — must start with npub1 and be at least 30 chars', 'err'); return;
     }
 
-    if (runGuestSocialCommand('follow ' + shQuote(npub), 'social follow ' + truncNpub(npub))) {
+    if (await runGuestSocialCommand(['follow', npub], 'social follow ' + truncNpub(npub), {
+      afterRun: async () => {
+        await hydrateSocialStateFromGuest();
+        renderFollowList();
+      },
+    })) {
       const following = getFollowing();
       if (!following.includes(npub)) {
         following.push(npub);
         saveFollowing(following);
       }
       renderFollowList();
-      setTimeout(() => { hydrateSocialStateFromGuest().then(renderFollowList).catch(() => {}); }, 1200);
       return;
     }
 
@@ -1395,7 +1475,7 @@
 
   async function doSyncOne(npub) {
     npub = npub.trim();
-    if (runGuestSocialCommand('sync', 'social sync')) {
+    if (await runGuestSocialCommand(['sync'], 'social sync')) {
       return;
     }
     sLog('syncing ' + truncNpub(npub) + '…');
@@ -1501,7 +1581,7 @@
   }
 
   async function doSyncAll() {
-    if (runGuestSocialCommand('sync', 'social sync')) {
+    if (await runGuestSocialCommand(['sync'], 'social sync')) {
       return;
     }
     const following = getFollowing();
@@ -1512,7 +1592,7 @@
   }
 
   async function doPublish() {
-    if (runGuestSocialCommand('publish', 'social publish')) {
+    if (await runGuestSocialCommand(['publish'], 'social publish')) {
       return;
     }
     const nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
@@ -1590,7 +1670,7 @@
   async function doSearch(query) {
     query = query.trim();
     if (!query) return;
-    if (runGuestSocialCommand('search ' + shQuote(query), 'social search "' + query + '"')) {
+    if (await runGuestSocialCommand(['search', query], 'social search "' + query + '"')) {
       searchResults.innerHTML = '<span class="hint">search is running in terminal output</span>';
       return;
     }
@@ -1618,11 +1698,12 @@
   // ── Event handlers
   generateBtn.onclick = async () => {
     if (!confirm('Generate a new Nostr identity? Existing key in localStorage will be overwritten.')) return;
-    if (runGuestSocialCommand('init', 'social init')) {
-      setTimeout(async () => {
+    if (await runGuestSocialCommand(['init'], 'social init', {
+      afterRun: async () => {
         await hydrateSocialStateFromGuest();
         await socialInit();
-      }, 1200);
+      },
+    })) {
       return;
     }
     sLog('generating keypair…');
@@ -1665,6 +1746,12 @@
     }
     if (btn.classList.contains('fc-unfollow-btn')) {
       if (!confirm('Unfollow ' + truncNpub(npub) + '?')) return;
+      void runGuestSocialCommand(['unfollow', npub], 'social unfollow ' + truncNpub(npub), {
+        afterRun: async () => {
+          await hydrateSocialStateFromGuest();
+          renderFollowList();
+        },
+      });
       saveFollowing(getFollowing().filter(n => n !== npub));
       sLog('unfollowed ' + truncNpub(npub));
       renderFollowList();
@@ -1681,6 +1768,7 @@
   socialBtn.onclick = async () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
     socialOverlay.hidden = false;
+    await syncSocialStateToGuest({ fillMissingOnly: true });
     await hydrateSocialStateFromGuest();
     socialInit();
   };
