@@ -205,6 +205,7 @@
   // ISOLINUX `boot:` prompt and `stty` gets typed there, producing a visible
   // "Loading stty... failed" error before Linux starts.
   let sttyTimer = null, lastCols = 0, sentCols = 0, shellReady = false;
+  const pendingGuestCommands = [];
   term.onResize(({ cols }) => {
     lastCols = cols;
     clearTimeout(sttyTimer);
@@ -341,6 +342,55 @@
 
   // ---- Emulator lifecycle ----
   let emulator = null, currentIso = null;
+
+  function sendGuestText(text) {
+    if (!emulator) return false;
+    const value = String(text || '');
+    for (let index = 0; index < value.length; index++) emulator.serial0_send(value[index]);
+    markDirty();
+    return true;
+  }
+
+  const sendCmd = sendGuestText;
+
+  function flushPendingGuestCommands() {
+    if (!emulator || !shellReady || !pendingGuestCommands.length) return;
+    while (pendingGuestCommands.length) {
+      const entry = pendingGuestCommands.shift();
+      sendGuestText(entry.text);
+      if (entry.label) sLog('guest: ' + entry.label + ' (running in terminal below)', 'ok');
+      if (typeof entry.afterRun === 'function') {
+        const delayMs = entry.afterDelayMs == null ? 1200 : entry.afterDelayMs;
+        setTimeout(() => {
+          entry.afterRun().catch(() => {});
+        }, delayMs);
+      }
+    }
+  }
+
+  function dispatchGuestCommand(text, label, options = {}) {
+    if (!emulator) return false;
+    const payload = String(text || '').replace(/\s+$/, '') + '\n';
+    if (!shellReady) {
+      pendingGuestCommands.push({
+        text: payload,
+        label,
+        afterRun: options.afterRun,
+        afterDelayMs: options.afterDelayMs,
+      });
+      if (label) sLog('guest: ' + label + ' (queued until shell is ready)', 'hint');
+      return true;
+    }
+    sendGuestText(payload);
+    if (label) sLog('guest: ' + label + ' (running in terminal below)', 'ok');
+    if (typeof options.afterRun === 'function') {
+      const delayMs = options.afterDelayMs == null ? 1200 : options.afterDelayMs;
+      setTimeout(() => {
+        options.afterRun().catch(() => {});
+      }, delayMs);
+    }
+    return true;
+  }
 
   // ── DNS interceptor (pure-JS UDP/53 → DoH via relay) ──────────────────────
   // v86's built-in DoH reply injection is broken for us. We hook the emulator
@@ -620,7 +670,10 @@
     // to fix stale tunnel/DHCP state after restore.
     let netInited = !(netEl && netEl.checked);
     // On restore the shell is already up, so enable stty sync immediately.
-    if (doRestore) shellReady = true;
+    if (doRestore) {
+      shellReady = true;
+      flushPendingGuestCommands();
+    }
 
     // Build the net-init command (fresh boot vs snapshot restore).
     function buildNetInitCmd() {
@@ -735,14 +788,10 @@
       return (doRestore ? restoreNetCmd : freshBootCmd) + '\n';
     }
 
-    function sendCmd(cmd) {
-      for (let i = 0; i < cmd.length; i++) emulator.serial0_send(cmd[i]);
-    }
-
     function runNetInit() {
       if (netInited) return;
       netInited = true;
-      sendCmd(buildNetInitCmd());
+      sendGuestText(buildNetInitCmd());
     }
 
     let promptTail = '';
@@ -754,11 +803,12 @@
         if (PROMPT_RE.test(promptTail) && /localhost|alpine|~/.test(promptTail)) {
           if (!shellReady) {
             shellReady = true;
+            flushPendingGuestCommands();
             // Prime stty with current cols now that we know we're at a shell.
             if (lastCols && emulator) {
               sentCols = lastCols;
               const cmd = `stty cols ${lastCols} 2>/dev/null\n`;
-              setTimeout(() => sendCmd(cmd), 300);
+              setTimeout(() => sendGuestText(cmd), 300);
             }
           }
           if (!netInited) {
@@ -776,7 +826,7 @@
     // misses it (observed on 2nd+ back-to-back restores). Just schedule the
     // kicker on a plain timer — `runNetInit` is idempotent via `netInited`.
     if (doRestore && !netInited) {
-      setTimeout(() => { if (emulator) sendCmd('\n'); }, 400);
+      setTimeout(() => { if (emulator) sendGuestText('\n'); }, 400);
       setTimeout(runNetInit, 1400);
     }
 
@@ -833,9 +883,7 @@
   // term.onData fires with a string containing already-encoded VT sequences
   // (arrow keys → ESC[A, Ctrl-C → \x03, etc.), so we just forward bytes.
   term.onData(data => {
-    if (!emulator) return;
-    for (let i = 0; i < data.length; i++) emulator.serial0_send(data[i]);
-    markDirty();
+    sendGuestText(data);
   });
   termEl.addEventListener('click', () => term.focus());
 
@@ -1077,12 +1125,20 @@
     }
   }
 
-  function resolveGuestBinary(fs, candidates) {
-    if (!fs) return '';
-    for (const candidate of candidates || []) {
-      if (hasPathInFs(fs, candidate)) return candidate;
+  function resolveGuestBinaryShell(options) {
+    const candidates = ((options && options.candidates) || []).filter(Boolean);
+    const fallbackName = (options && options.commandName)
+      || (candidates.length ? String(candidates[0]).split('/').pop() : '');
+    const lines = ['_tb_cmd=""'];
+    if (candidates.length) {
+      const candidateList = candidates.map(shQuote).join(' ');
+      lines.push(`for _tb_candidate in ${candidateList}; do [ -x "$_tb_candidate" ] && { _tb_cmd="$_tb_candidate"; break; }; done`);
     }
-    return '';
+    if (fallbackName) {
+      lines.push(`[ -n "$_tb_cmd" ] || _tb_cmd=$(command -v ${shQuote(fallbackName)} 2>/dev/null || true)`);
+    }
+    lines.push('[ -n "$_tb_cmd" ] || { echo "[guest-runner] command not found" >&2; exit 127; }');
+    return lines.join('; ');
   }
 
   function shQuote(s) {
@@ -1120,10 +1176,8 @@
   }
 
   function runGuestShellSnippet(snippet, label) {
-    if (!snippet || !shellReady || !emulator) return false;
-    sendCmd(snippet.replace(/\s+$/,'') + '\n');
-    if (label) sLog('guest: ' + label + ' (running in terminal below)', 'ok');
-    return true;
+    if (!snippet || !emulator) return false;
+    return dispatchGuestCommand(snippet, label);
   }
 
   async function guestWriteText(fs, path, value) {
@@ -1138,11 +1192,14 @@
 
   async function runGuestCommand(options) {
     const fs = emulator && emulator.fs9p;
-    const binary = resolveGuestBinary(fs, options && options.candidates);
-    if (!binary || !shellReady || !emulator) return false;
+    if (!emulator) return false;
+
+    const afterRun = options && typeof options.afterRun === 'function'
+      ? async () => { await options.afterRun({ fs, binary: null }); }
+      : null;
 
     if (options && typeof options.beforeRun === 'function') {
-      await options.beforeRun({ fs, binary });
+      await options.beforeRun({ fs, binary: null });
     }
 
     const envPrefix = Object.entries((options && options.env) || {})
@@ -1151,20 +1208,13 @@
     const argString = ((options && options.args) || []).map(shQuote).join(' ');
     const beforeShell = (options && options.beforeShell) ? String(options.beforeShell).trim() : '';
     const afterShell = (options && options.afterShell) ? String(options.afterShell).trim() : '';
-    const cmd = `${envPrefix ? envPrefix + ' ' : ''}${binary}${argString ? ' ' + argString : ''}`;
-    const fullCmd = [beforeShell, cmd, afterShell].filter(Boolean).join('; ');
-    sendCmd(fullCmd + '\n');
-
-    if (options && options.label) {
-      sLog('guest: ' + options.label + ' (running in terminal below)', 'ok');
-    }
-
-    if (options && typeof options.afterRun === 'function') {
-      const delayMs = options.afterDelayMs == null ? 1200 : options.afterDelayMs;
-      setTimeout(() => {
-        options.afterRun({ fs, binary }).catch(() => {});
-      }, delayMs);
-    }
+    const resolver = resolveGuestBinaryShell(options || {});
+    const cmd = `${envPrefix ? envPrefix + ' ' : ''}"$_tb_cmd"${argString ? ' ' + argString : ''}`;
+    const fullCmd = [beforeShell, resolver, cmd, afterShell].filter(Boolean).join('; ');
+    dispatchGuestCommand(fullCmd, options && options.label, {
+      afterRun,
+      afterDelayMs: options && options.afterDelayMs,
+    });
     return true;
   }
 
@@ -1243,6 +1293,7 @@
     });
     return runGuestCommand({
       candidates: ['/usr/local/bin/social', '/usr/bin/social'],
+      commandName: 'social',
       env: { SOCIAL_HOME: '/mnt/vfs' },
       args,
       label,
@@ -1441,7 +1492,10 @@
           const fs = emulator && emulator.fs9p;
           if (fs) {
             const npubBytes = await fs.read_file(SOCIAL_VFS_ROOT + '/.npub');
-            const fromFs = new TextDecoder().decode(npubBytes).trim();
+            let fromFs = '';
+            if (typeof npubBytes === 'string') fromFs = npubBytes.trim();
+            else if (npubBytes instanceof Uint8Array) fromFs = new TextDecoder().decode(npubBytes).trim();
+            else if (npubBytes instanceof ArrayBuffer) fromFs = new TextDecoder().decode(new Uint8Array(npubBytes)).trim();
             sLog('debug: /mnt/vfs/.npub=' + (fromFs || '(empty)'), fromFs ? 'ok' : 'hint');
           }
         } catch (e) {
