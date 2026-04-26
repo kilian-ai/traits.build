@@ -1344,27 +1344,45 @@
   }
 
   function promoteNostrIdentityFromText(text) {
+    console.log('[promoteNostrIdentityFromText] input text (first 300 chars):', String(text || '').slice(0, 300));
     const parsed = extractNostrIdentityFromText(text);
-    if (parsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
-    if (parsed.npub) localStorage.setItem('traits.nostr.npub', parsed.npub);
+    console.log('[promoteNostrIdentityFromText] parsed result:', JSON.stringify(parsed));
+    if (parsed.nsec) {
+      localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
+      console.log('[promoteNostrIdentityFromText] stored nsec:', parsed.nsec);
+    }
+    if (parsed.npub) {
+      localStorage.setItem('traits.nostr.npub', parsed.npub);
+      console.log('[promoteNostrIdentityFromText] stored npub:', parsed.npub);
+    }
+    console.log('[promoteNostrIdentityFromText] final parsed object:', parsed);
     return parsed;
   }
 
   async function tryUpdateIdentityFromPubkey() {
+    console.log('[tryUpdateIdentityFromPubkey] starting');
     if (!shellReady) {
+      console.log('[tryUpdateIdentityFromPubkey] shell not ready');
       sLog('shell not ready yet; try again in a moment', 'hint');
       return;
     }
     sLog('running social pubkey to extract identity…', 'hint');
     const tailStart = serialTextTail.length;
+    console.log('[tryUpdateIdentityFromPubkey] sending command: SOCIAL_HOME=/mnt/host social pubkey');
     dispatchGuestCommand('SOCIAL_HOME=/mnt/host social pubkey', 'social pubkey (manual)');
     await new Promise(resolve => setTimeout(resolve, 1200));
     const newTail = serialTextTail.slice(tailStart);
+    console.log('[tryUpdateIdentityFromPubkey] captured output (first 400 chars):', newTail.slice(0, 400));
+    console.log('[tryUpdateIdentityFromPubkey] captured output full length:', newTail.length);
     const parsed = promoteNostrIdentityFromText(newTail);
+    console.log('[tryUpdateIdentityFromPubkey] parsed result:', parsed);
+    console.log('[tryUpdateIdentityFromPubkey] parsed.npub exists:', !!parsed.npub);
     if (parsed.npub) {
+      console.log('[tryUpdateIdentityFromPubkey] success - npub found:', parsed.npub);
       sLog('identity detected: ' + truncNpub(parsed.npub), 'ok');
       await socialInit();
     } else {
+      console.log('[tryUpdateIdentityFromPubkey] failure - no npub in output');
       sLog('no npub found in output; try running social init first', 'hint');
     }
   }
@@ -1930,13 +1948,18 @@
       updateBtn.title = 'Run social pubkey and extract npub';
       updateBtn.style.cssText = 'padding:4px 12px;font-size:11px;margin-left:8px;cursor:pointer;background:#4b5563;border:1px solid #6b7280;color:#fff;border-radius:3px';
       updateBtn.onclick = async () => {
+        console.log('[identity-button] clicked');
         updateBtn.disabled = true;
         updateBtn.textContent = 'Checking…';
         try {
+          console.log('[identity-button] calling tryUpdateIdentityFromPubkey');
           await tryUpdateIdentityFromPubkey();
+          console.log('[identity-button] tryUpdateIdentityFromPubkey completed');
         } catch (e) {
+          console.log('[identity-button] error:', e);
           sLog('error checking identity: ' + (e && e.message ? e.message : e), 'err');
         } finally {
+          console.log('[identity-button] finally block, resetting button');
           updateBtn.disabled = false;
           updateBtn.textContent = 'Check for identity';
         }
