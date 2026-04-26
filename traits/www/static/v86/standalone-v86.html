@@ -1844,58 +1844,24 @@
 
   async function debugGuestPubkeyFlow() {
     sLog('debug: running guest social pubkey…');
-    const tailStart = serialTextTail.length;
-    if (shellReady) {
-      dispatchGuestCommand('SOCIAL_HOME=/mnt/host social pubkey', 'social pubkey (direct)');
-      await new Promise(resolve => setTimeout(resolve, 900));
-      await hydrateSocialStateFromGuest();
-      const directTail = serialTextTail.slice(tailStart);
-      const directParsed = extractNostrIdentityFromText(directTail);
-      if (directParsed.npub || directParsed.nsec) {
-        if (directParsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, directParsed.nsec);
-        if (directParsed.npub) localStorage.setItem('traits.nostr.npub', directParsed.npub);
-        sLog('debug: guest identity detected from direct pubkey command', 'ok');
-      }
-    }
-    const ran = await runGuestSocialCommand(['pubkey'], 'social pubkey', {
-      afterRun: async (ctx) => {
-        await hydrateSocialStateFromGuest();
-        const localNsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
-        const localNpub = (localStorage.getItem('traits.nostr.npub') || '').trim();
-        const output = String((ctx && ctx.runOutput) || '').trim();
-        if (output) {
-          const oneLine = output.replace(/\s+/g, ' ').trim();
-          sLog('debug: social pubkey output=' + oneLine.slice(0, 180), 'hint');
-        }
-        sLog('debug: localStorage nsec=' + (localNsec ? 'yes' : 'no') + ', npub=' + (localNpub || '(empty)'), localNsec ? 'ok' : 'hint');
-        try {
-          const fs = emulator && emulator.fs9p;
-          if (fs) {
-            const npubBytes = await fs.read_file(SOCIAL_VFS_ROOT + '/.npub');
-            let fromFs = '';
-            if (typeof npubBytes === 'string') fromFs = npubBytes.trim();
-            else if (npubBytes instanceof Uint8Array) fromFs = new TextDecoder().decode(npubBytes).trim();
-            else if (npubBytes instanceof ArrayBuffer) fromFs = new TextDecoder().decode(new Uint8Array(npubBytes)).trim();
-            sLog('debug: /mnt/vfs/.npub=' + (fromFs || '(empty)'), fromFs ? 'ok' : 'hint');
-          }
-        } catch (e) {
-          sLog('debug: could not read /mnt/vfs/.npub: ' + e.message, 'hint');
-        }
-        if (!localNpub && !socialIdentityRescueDone && !socialStepDebugMode) {
-          socialIdentityRescueDone = true;
-          sLog('debug: trying guest identity rescue from fallback paths…', 'hint');
-          await rescueGuestIdentityToVfs();
-          await hydrateSocialStateFromGuest();
-        }
-        await socialInit();
-      },
-      afterDelayMs: 900,
-    });
-    if (!ran) {
-      sLog('debug: guest social command not available; using local fallback only', 'hint');
-      await hydrateSocialStateFromGuest();
+    if (!shellReady) {
+      sLog('debug: shell not ready yet', 'hint');
       await socialInit();
+      return;
     }
+    const tailStart = serialTextTail.length;
+    dispatchGuestCommand('SOCIAL_HOME=/mnt/host social pubkey', 'social pubkey (direct)');
+    await new Promise(resolve => setTimeout(resolve, 900));
+    const tail = serialTextTail.slice(tailStart);
+    const parsed = extractNostrIdentityFromText(tail);
+    if (parsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
+    if (parsed.npub) localStorage.setItem('traits.nostr.npub', parsed.npub);
+    if (parsed.npub || parsed.nsec) {
+      sLog('debug: guest identity detected from direct pubkey command', 'ok');
+    } else {
+      sLog('debug: no identity found in serial output', 'hint');
+    }
+    await socialInit();
   }
 
   // Refresh identity display and enable/disable action buttons
@@ -1910,79 +1876,30 @@
         sLog('identity hydrated from terminal output (social pubkey)', 'ok');
       }
     }
-    if (!nsec) {
-      // First try to hydrate from mirrored guest files before declaring no identity.
-      await hydrateSocialStateFromGuest();
-      nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
-      npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
-      if (npubOnly) {
-        npubDisplay.innerHTML =
-          `<span class="social-npub">${truncNpub(npubOnly)}</span>` +
-          ` <span class="hint" style="font-size:10px">(guest identity; nsec not mirrored)</span>`;
-        publishBtn.disabled = !emulator;
-        syncNowBtn.disabled = false;
-        renderFollowList();
-        return;
-      }
-    }
-    if (!nsec) {
-      if (socialStepDebugMode) {
-        npubDisplay.innerHTML = '<span class="hint">no identity — run debug pubkey to inspect command path</span>';
+    // If still no identity, run debugGuestPubkeyFlow() once (direct serial-tail approach)
+    if (!nsec && !npubOnly) {
+      if (!socialIdentityProbeDone && shellReady) {
+        socialIdentityProbeDone = true;
+        npubDisplay.innerHTML = '<span class="hint">checking guest identity…</span>';
         publishBtn.disabled = true;
         syncNowBtn.disabled = true;
-        renderFollowList();
-        return;
+        await debugGuestPubkeyFlow();
+        return; // debugGuestPubkeyFlow calls socialInit() again when done
       }
-      if (!socialIdentityProbeDone) {
-        socialIdentityProbeDone = true;
-        const ran = await runGuestSocialCommand(['pubkey'], 'social pubkey', {
-          afterRun: async () => {
-            await hydrateSocialStateFromGuest();
-            await socialInit();
-          },
-          afterDelayMs: 900,
-        });
-        if (ran) {
-          npubDisplay.innerHTML = '<span class="hint">checking guest identity via social pubkey…</span>';
-          publishBtn.disabled = true;
-          syncNowBtn.disabled = true;
-          return;
-        }
-      }
-      if (!npubOnly && !socialIdentityRescueDone) {
-        socialIdentityRescueDone = true;
-        await rescueGuestIdentityToVfs();
-        await hydrateSocialStateFromGuest();
-        nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
-        npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
-      }
-      if (npubOnly) {
-        npubDisplay.innerHTML =
-          `<span class="social-npub">${truncNpub(npubOnly)}</span>` +
-          ` <span class="hint" style="font-size:10px">(guest identity; nsec not mirrored)</span>`;
-        publishBtn.disabled = !emulator;
-        syncNowBtn.disabled = false;
-        renderFollowList();
-        return;
-      }
+      // Show "no identity" with a manual re-check button
       const updateBtn = document.createElement('button');
       updateBtn.id = 'social-update-from-pubkey';
       updateBtn.textContent = 'Check for identity';
       updateBtn.title = 'Run social pubkey and extract npub';
       updateBtn.style.cssText = 'padding:4px 12px;font-size:11px;margin-left:8px;cursor:pointer;background:#4b5563;border:1px solid #6b7280;color:#fff;border-radius:3px';
       updateBtn.onclick = async () => {
-        console.log('[identity-button] clicked');
+        socialIdentityProbeDone = false;
         updateBtn.disabled = true;
         updateBtn.textContent = 'Checking…';
         try {
-          console.log('[identity-button] calling tryUpdateIdentityFromPubkey');
-          await tryUpdateIdentityFromPubkey();
-          console.log('[identity-button] tryUpdateIdentityFromPubkey completed');
+          await socialInit();
         } catch (e) {
-          console.log('[identity-button] error:', e);
           sLog('error checking identity: ' + (e && e.message ? e.message : e), 'err');
-        } finally {
-          console.log('[identity-button] finally block, resetting button');
           updateBtn.disabled = false;
           updateBtn.textContent = 'Check for identity';
         }
@@ -1995,7 +1912,17 @@
       npubDisplay.appendChild(container);
       publishBtn.disabled = true;
       syncNowBtn.disabled = true;
-    } else {
+    }
+    if (!nsec && npubOnly) {
+      npubDisplay.innerHTML =
+        `<span class="social-npub">${truncNpub(npubOnly)}</span>` +
+        ` <span class="hint" style="font-size:10px">(guest identity; nsec not mirrored)</span>`;
+      publishBtn.disabled = !emulator;
+      syncNowBtn.disabled = false;
+      renderFollowList();
+      return;
+    }
+    if (nsec) {
       try {
         const res = await nostrCall('pubkey', nsec);
         const pubkey = typeof res === 'string' ? res : (res.pubkey || String(res));
