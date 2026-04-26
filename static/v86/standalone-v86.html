@@ -1340,20 +1340,6 @@
       pubkeyHex = typeof res === 'string' ? res : (res.pubkey || JSON.stringify(res));
     } catch (e) { sLog('decode_npub failed: ' + e.message, 'err'); return; }
 
-    const events = await nostrReq(NOSTR_RELAYS, {
-      kinds: [30000], authors: [pubkeyHex], '#d': ['public-folder'], limit: 5,
-    });
-    if (!events.length) { sLog('no manifest found for ' + truncNpub(npub), 'hint'); return; }
-
-    const ev = events.sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
-    let manifest;
-    try { manifest = JSON.parse(ev.content); }
-    catch (e) { sLog('invalid manifest: ' + e.message, 'err'); return; }
-    if (!manifest.base || !Array.isArray(manifest.files)) {
-      sLog('manifest missing base/files', 'err'); return;
-    }
-    sLog('manifest: ' + manifest.files.length + ' file(s) from ' + manifest.base);
-
     const fs = emulator && emulator.fs9p;
     let followRoot = DEFAULT_FOLLOW_ROOT;
     if (fs) {
@@ -1364,6 +1350,61 @@
         return;
       }
     }
+
+    const events = await nostrReq(NOSTR_RELAYS, {
+      kinds: [30000], authors: [pubkeyHex], '#d': ['public-folder'], limit: 5,
+    });
+
+    let manifest = null;
+    if (events.length) {
+      const ev = events.sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+      try {
+        manifest = JSON.parse(ev.content);
+        if (fs) {
+          const cachePath = followRoot + '/' + npub + '/.manifest.json';
+          const payload = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+          const parts = cachePath.split('/').filter(Boolean);
+          let cur = '';
+          for (let i = 0; i < parts.length - 1; i++) {
+            cur += '/' + parts[i];
+            try { fs.create_directory(cur); } catch (_) {}
+          }
+          try { await fs.write_file(cachePath, payload); } catch (_) {}
+        }
+      } catch (e) {
+        sLog('invalid manifest: ' + e.message, 'err');
+        return;
+      }
+    } else if (fs) {
+      const cachePath = followRoot + '/' + npub + '/.manifest.json';
+      try {
+        const cached = await fs.read_file(cachePath);
+        manifest = JSON.parse(new TextDecoder().decode(cached));
+        sLog('no relay manifest; using cached manifest at ' + socialGuestPath(cachePath), 'hint');
+      } catch (_) {
+        const ownNpub = localStorage.getItem('traits.nostr.npub') || '';
+        if (ownNpub === npub) {
+          try {
+            const localManifest = await fs.read_file(SOCIAL_PUBLIC_ROOT + '/.manifest.json');
+            manifest = JSON.parse(new TextDecoder().decode(localManifest));
+            sLog('no relay manifest; using local manifest at ' + socialGuestPath(SOCIAL_PUBLIC_ROOT + '/.manifest.json'), 'hint');
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (!manifest) {
+      sLog('no manifest found for ' + truncNpub(npub), 'hint');
+      sLog('manifest = kind-30000 d=public-folder event that lists files + base URL', 'hint');
+      sLog('ask this user to run: social tunnel-up 8080, then publish /vfs/public', 'hint');
+      return;
+    }
+    if (!manifest.base || !Array.isArray(manifest.files)) {
+      sLog('manifest missing base/files', 'err');
+      return;
+    }
+    sLog('manifest: ' + manifest.files.length + ' file(s) from ' + manifest.base);
+
     let synced = 0;
     for (const f of manifest.files) {
       try {
@@ -1449,9 +1490,20 @@
     if (!files.length) { sLog('no files in ' + socialGuestPath(SOCIAL_PUBLIC_ROOT), 'hint'); return; }
     sLog('found ' + files.length + ' file(s) — signing manifest…');
 
-    const content  = JSON.stringify({ v: 1, base: baseUrl, files });
+    const manifestObj = { v: 1, base: baseUrl, files };
+    const content  = JSON.stringify(manifestObj);
     const tagsJson = JSON.stringify([['d', 'public-folder'], ['r', baseUrl]]);
     const now      = String(Math.floor(Date.now() / 1000));
+
+    // Keep a local copy for offline/self testing and relay-miss fallback.
+    try {
+      const payload = new TextEncoder().encode(JSON.stringify(manifestObj, null, 2));
+      await fs.write_file(SOCIAL_PUBLIC_ROOT + '/.manifest.json', payload);
+      await fs.write_file(SOCIAL_PUBLIC_ROOT + '/manifest.json', payload);
+      sLog('wrote local manifest: ' + socialGuestPath(SOCIAL_PUBLIC_ROOT + '/.manifest.json'), 'ok');
+    } catch (e) {
+      sLog('could not write local manifest file: ' + e.message, 'hint');
+    }
 
     let event;
     try {

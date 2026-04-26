@@ -16,6 +16,7 @@
 - Browser social overlay now uses `/vfs/*` roots inside the 9P tree (`/vfs/public`, `/vfs/following`, etc.) and logs guest-facing paths as `/mnt/vfs/*`; legacy follow roots remain as fallback candidates for existing sessions.
 - Viewer overlay default root is `/vfs` (displayed as guest `/mnt/vfs`) and opening the viewer prefers `/vfs/public` when present.
 - Viewer path input is hard-clamped to `/vfs` subtree (paths outside `/vfs` normalize back to `/vfs`) to avoid accidental browsing of non-VFS roots.
+- Social publish now writes local manifest files at `/vfs/public/.manifest.json` and `/vfs/public/manifest.json` before relay broadcast; sync caches relay manifests to `<follow_root>/<npub>/.manifest.json` and can fall back to cached/local manifest when relays return none.
 
 ---
 
