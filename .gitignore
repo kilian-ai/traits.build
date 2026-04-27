@@ -16,3 +16,6 @@ scripts/check-example-field.py
 scripts/verify-examples.py
 scripts/verify-openapi-examples.py
 .DS_Store
+# v86 upstream clone (regenerated locally; see third_party/v86/UPSTREAM.md)
+/third_party/v86/*
+!/third_party/v86/UPSTREAM.md
