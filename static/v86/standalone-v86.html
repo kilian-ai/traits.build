@@ -1508,13 +1508,37 @@
       const npub = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/.npub')).trim();
       if (npub) localStorage.setItem('traits.nostr.npub', npub);
     } catch (_) {}
+    // Follow list: localStorage is the canonical UI-owned source. Only hydrate
+    // from 9P when localStorage is empty (initial migration / fresh tab on a
+    // session that already has a guest-side .list). Otherwise the UI's pending
+    // follow/unfollow would be clobbered by a stale guest .list.
     try {
-      const lines = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/following/.list'))
-        .split(/\r?\n/)
-        .map(s => s.trim())
-        .filter(Boolean);
-      if (lines.length) saveFollowing(Array.from(new Set(lines)));
+      const existingLocal = getFollowing();
+      if (!existingLocal.length) {
+        const lines = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/following/.list'))
+          .split(/\r?\n/)
+          .map(s => s.trim())
+          .filter(Boolean);
+        if (lines.length) saveFollowing(Array.from(new Set(lines)));
+      }
     } catch (_) {}
+  }
+
+  // Force-push the localStorage follow list to /following/.list on the 9P
+  // share (= guest /mnt/host/following/.list). Used after UI follow/unfollow
+  // so the guest CLI sees the authoritative list.
+  async function pushFollowingListTo9P() {
+    const fs = emulator && emulator.fs9p;
+    if (!fs) return false;
+    const list = getFollowing();
+    try { fs.create_directory(SOCIAL_VFS_ROOT + '/following'); } catch (_) {}
+    try {
+      await guestWriteText(fs, SOCIAL_VFS_ROOT + '/following/.list', list.join('\n') + (list.length ? '\n' : ''));
+      return true;
+    } catch (e) {
+      console.warn('[pushFollowingListTo9P] failed:', e && e.message);
+      return false;
+    }
   }
 
   // Single source of truth reconciliation:
@@ -2087,18 +2111,28 @@
       sLog('invalid npub — must start with npub1 and be at least 30 chars', 'err'); return;
     }
 
-    if (await runGuestSocialCommand(['follow', npub], 'social follow ' + truncNpub(npub), {
-      afterRun: async () => {
-        await hydrateSocialStateFromGuest();
-        renderFollowList();
-      },
-    })) {
+    // Update localStorage (canonical UI source) FIRST so renderFollowList sees
+    // the new entry immediately, and so any subsequent hydrate sees a non-empty
+    // local list and won't clobber it from a stale 9P .list.
+    {
       const following = getFollowing();
       if (!following.includes(npub)) {
         following.push(npub);
         saveFollowing(following);
       }
       renderFollowList();
+    }
+    // Push merged list to 9P directly so the guest CLI sees it before it runs.
+    await pushFollowingListTo9P();
+
+    if (await runGuestSocialCommand(['follow', npub], 'social follow ' + truncNpub(npub), {
+      afterRun: async () => {
+        // Do NOT hydrate the follow list here — localStorage is canonical and
+        // the guest CLI's view of /following/.list may lag or be empty after a
+        // 9P writability rmdir+mkdir recovery in social.sh ensure_dirs.
+        renderFollowList();
+      },
+    })) {
       return;
     }
 
@@ -2407,15 +2441,21 @@
     }
     if (btn.classList.contains('fc-unfollow-btn')) {
       if (!confirm('Unfollow ' + truncNpub(npub) + '?')) return;
-      void runGuestSocialCommand(['unfollow', npub], 'social unfollow ' + truncNpub(npub), {
-        afterRun: async () => {
-          await hydrateSocialStateFromGuest();
-          renderFollowList();
-        },
-      });
+      // localStorage is canonical: remove first, render, push to 9P, THEN
+      // dispatch the guest CLI for relay-side broadcast.
       saveFollowing(getFollowing().filter(n => n !== npub));
-      sLog('unfollowed ' + truncNpub(npub));
       renderFollowList();
+      sLog('unfollowed ' + truncNpub(npub));
+      void (async () => {
+        await pushFollowingListTo9P();
+        void runGuestSocialCommand(['unfollow', npub], 'social unfollow ' + truncNpub(npub), {
+          afterRun: async () => {
+            // Do NOT hydrate from 9P — that would re-add the npub if the guest
+            // CLI failed to update its .list (9P writability or social.sh die).
+            renderFollowList();
+          },
+        });
+      })();
     }
   });
 
