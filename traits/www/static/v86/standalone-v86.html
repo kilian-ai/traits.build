@@ -920,9 +920,9 @@
         //   1. `sync` flushes guest writes to fs9p.
         //   2. Guest emits "__HOST_SYNC__:<nonce>" on serial0.
         //   3. Host catches marker, refreshes viewer, writes
-        //      /.tb-sync/<nonce> via emulator.fs9p (NOT through the guest
+        //      /.tb-sync-<nonce> via emulator.fs9p (NOT through the guest
         //      kernel — bypasses Linux 9P caching so it's visible at once).
-        //   4. Guest polls `ls /mnt/host/.tb-sync` for the nonce filename.
+        //   4. Guest polls `ls /mnt/host/` for a file matching the nonce.
         //
         // CRITICAL: the receipt path embeds the nonce so every call hits
         // a fresh dentry the guest kernel has never looked up. A fixed
@@ -930,6 +930,9 @@
         // the first stat() returns -ENOENT, subsequent stat()s read from
         // cache for several seconds even after the host writes the file.
         // Polling via `ls` (readdir) always round-trips to the 9P server.
+        // The receipt is written at the fs9p root (not under a subdir) to
+        // avoid create_directory races on snapshot-restored sessions where
+        // CreateBinaryFile parent resolution can fail.
         'cat > /etc/profile.d/02sync9p.sh <<\\__SYNC9P_EOF__\n' +
         'sync9p() {\n' +
         '  __n=$$-$(date +%s 2>/dev/null)-$RANDOM-$RANDOM\n' +
@@ -937,8 +940,8 @@
         '  printf "__HOST_SYNC__:%s\\n" "$__n"\n' +
         '  __i=0\n' +
         '  while [ $__i -lt 50 ]; do\n' +
-        '    if ls /mnt/host/.tb-sync 2>/dev/null | grep -qxF "$__n"; then\n' +
-        '      rm -f /mnt/host/.tb-sync/"$__n" 2>/dev/null\n' +
+        '    if ls -a /mnt/host/ 2>/dev/null | grep -qxF ".tb-sync-$__n"; then\n' +
+        '      rm -f "/mnt/host/.tb-sync-$__n" 2>/dev/null\n' +
         '      printf "sync9p: ok %s\\n" "$__n"\n' +
         '      return 0\n' +
         '    fi\n' +
@@ -1027,10 +1030,11 @@
       const sm = HOST_SYNC_RE.exec(clean);
       if (sm) {
         const nonce = sm[1].trim();
-        // Refresh the viewer and drop a per-nonce receipt under /.tb-sync/.
-        // Per-nonce filename sidesteps the Linux 9P negative-dentry cache
-        // (a fixed path gets stuck after the first call when the guest
-        // does any stat/rm before the file exists).
+        // Refresh viewer and drop a per-nonce receipt at fs9p root as
+        // /.tb-sync-<nonce>. Writing at root (not under a subdir) avoids
+        // create_directory races on snapshot-restored sessions where
+        // SearchPath of a freshly created dir can return id<0.
+        // Per-nonce filename sidesteps the Linux 9P negative-dentry cache.
         (async () => {
           try {
             if (typeof renderTree === 'function') {
@@ -1038,15 +1042,9 @@
             }
             const fs = emulator && emulator.fs9p;
             if (!fs) { sLog('sync9p: fs9p unavailable', 'err'); return; }
-            // Ensure /.tb-sync exists. create_directory is the v86 fs9p API.
-            try {
-              if (typeof fs.create_directory === 'function') {
-                fs.create_directory('/.tb-sync');
-              }
-            } catch (_) { /* already exists is fine */ }
             const receiptText = nonce + ' ' + Date.now() + '\n';
             const bytes = new TextEncoder().encode(receiptText);
-            await fsWriteFileCompat(fs, '/.tb-sync/' + nonce, bytes);
+            await fsWriteFileCompat(fs, '/.tb-sync-' + nonce, bytes);
             sLog('sync9p: ack ' + nonce, 'ok');
           } catch (e) {
             sLog('sync9p ack failed: ' + (e && e.message || e), 'err');
