@@ -746,6 +746,37 @@
     // we can see whether the tunnel reattaches cleanly on restore.
     if (doRestore) {
       console.log('[restore] boot invoked restore=true, snapKey=', snapKey);
+      // Dump fs9p state shortly after restore so we can tell whether the
+      // snapshot actually carried the share contents across or came back
+      // empty. If inodes.length is ~3-5 (just /, /dev, /proc-ish), v86's
+      // save_state did not persist fs9p — the guest's `ls /mnt/host` will
+      // then be empty regardless of how we remount.
+      setTimeout(() => {
+        try {
+          const fs = emulator && emulator.fs9p;
+          if (!fs) { console.warn('[restore] fs9p missing'); return; }
+          const inodeCount = fs.inodes ? fs.inodes.filter(Boolean).length : -1;
+          let rootEntries = null;
+          try {
+            const root = fs.SearchPath ? fs.SearchPath('/') : null;
+            if (root && root.id >= 0 && fs.GetChildren) {
+              rootEntries = fs.GetChildren(root.id).map(id => fs.inodes[id] && fs.inodes[id].name).filter(Boolean);
+            }
+          } catch (_) {}
+          let publicEntries = null;
+          try {
+            const pub = fs.SearchPath ? fs.SearchPath('/public') : null;
+            if (pub && pub.id >= 0 && fs.GetChildren) {
+              publicEntries = fs.GetChildren(pub.id).map(id => fs.inodes[id] && fs.inodes[id].name).filter(Boolean);
+            }
+          } catch (_) {}
+          console.log('[restore] fs9p state', {
+            inodes: inodeCount,
+            root: rootEntries,
+            public: publicEntries,
+          });
+        } catch (e) { console.warn('[restore] fs9p peek failed', e); }
+      }, 800);
       // Peek at the adapter's internal WebSocket (v86 stashes it on
       // emulator.network_adapter.wisp_network.wisp_url / websocket).
       setTimeout(() => {
