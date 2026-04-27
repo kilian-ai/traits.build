@@ -261,6 +261,24 @@ cmd_tunnel_up() {
     echo "base_url:    $base_url"
 }
 
+# Pick a non-empty public dir. Prefer $PUBLIC_DIR; otherwise scan canonical
+# roots (/mnt/vfs, /mnt/host, $HOME) for a public/ that actually has files.
+# Sets the global PUBLIC_DIR if it found a better candidate.
+resolve_public_dir() {
+    if [ -d "$PUBLIC_DIR" ] && [ -n "$(find "$PUBLIC_DIR" -type f 2>/dev/null | head -1)" ]; then
+        return 0
+    fi
+    for cand in /mnt/vfs/public /mnt/host/public "$HOME/public" "$PWD/public"; do
+        [ "$cand" = "$PUBLIC_DIR" ] && continue
+        if [ -d "$cand" ] && [ -n "$(find "$cand" -type f 2>/dev/null | head -1)" ]; then
+            log "using non-empty public dir: $cand (was: $PUBLIC_DIR)"
+            PUBLIC_DIR="$cand"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Walk PUBLIC_DIR, emit JSON manifest content.
 build_manifest_content() {
     need sha256sum
@@ -285,13 +303,36 @@ build_manifest_content() {
     printf ']}'
 }
 
+# Count files under PUBLIC_DIR (used for empty-manifest guard).
+count_public_files() {
+    [ -d "$PUBLIC_DIR" ] || { echo 0; return; }
+    find "$PUBLIC_DIR" -type f 2>/dev/null | wc -l | tr -d ' '
+}
+
 cmd_publish() {
     need websocat
     [ -f "$NSEC_FILE" ] || die "no identity yet — run 'social.sh init'"
     nsec=$(cat "$NSEC_FILE")
     base=""
     [ -f "$TUNNEL_FILE" ] && base=$(cat "$TUNNEL_FILE")
-    log "building manifest for $PUBLIC_DIR ${base:+(base=$base)}"
+
+    # Resolve non-empty public dir. If still empty, refuse to publish a
+    # 0-file manifest — that just litters the relays with noise.
+    resolve_public_dir || true
+    nfiles=$(count_public_files)
+    if [ "$nfiles" -eq 0 ]; then
+        cat >&2 <<EOF
+social: no files to publish under $PUBLIC_DIR
+
+Drop something into one of these and re-run:
+  $PUBLIC_DIR/
+  /mnt/vfs/public/
+  /mnt/host/public/
+Or override:  SOCIAL_HOME=/some/path social publish
+EOF
+        exit 2
+    fi
+    log "building manifest for $PUBLIC_DIR (files=$nfiles)${base:+ base=$base}"
     content=$(build_manifest_content "$base")
     bytes=$(printf '%s' "$content" | wc -c | tr -d ' ')
     log "manifest: $bytes bytes"
@@ -308,13 +349,34 @@ cmd_publish() {
     event=$(printf '%s' "$resp" | (command -v jq >/dev/null 2>&1 && jq -c '.event // .result.event' || sed -n 's/.*"event":\({.*}\).*/\1/p'))
     [ -n "$event" ] && [ "$event" != "null" ] || die "sign failed: $resp"
 
+    # Extract event id for OK matching from relay responses.
+    evid=$(printf '%s' "$event" | (command -v jq >/dev/null 2>&1 && jq -r '.id' || sed -n 's/.*"id":"\([0-9a-f]*\)".*/\1/p') | head -1)
+
     msg='["EVENT",'"$event"']'
+    ok_count=0
+    fail_count=0
     for relay in $RELAYS; do
-        log "→ $relay"
-        ( printf '%s\n' "$msg"; sleep 2 ) | websocat -n0 - "$relay" 2>&1 | head -3 || true
+        # --text silences "recommend --binary or --text" warning;
+        # --no-close + sleep 3 lets the relay flush its OK reply.
+        out=$( ( printf '%s\n' "$msg"; sleep 3 ) | websocat --text -n0 - "$relay" 2>/dev/null | head -5 )
+        if printf '%s' "$out" | grep -q '"OK"'; then
+            # NIP-20: ["OK", <id>, <true|false>, <message>]
+            if printf '%s' "$out" | grep -q '"OK","'"$evid"'",true'; then
+                log "→ $relay  OK"
+                ok_count=$((ok_count + 1))
+            else
+                reason=$(printf '%s' "$out" | sed -n 's/.*"OK","[0-9a-f]*",false,"\([^"]*\)".*/\1/p' | head -1)
+                log "→ $relay  REJECTED${reason:+: $reason}"
+                fail_count=$((fail_count + 1))
+            fi
+        else
+            log "→ $relay  no-ok-reply"
+            fail_count=$((fail_count + 1))
+        fi
     done
     npub=$(cmd_pubkey)
-    echo "published as $npub"
+    echo "published as $npub  (ok=$ok_count fail=$fail_count files=$nfiles bytes=$bytes)"
+    [ "$ok_count" -gt 0 ] || exit 3
 }
 
 cmd_follow() {
@@ -357,7 +419,7 @@ relay_fetch_manifest() {
     sub="sub-$$"
     filter='{"kinds":[30000],"authors":["'"$hex_pk"'"],"#d":["public-folder"],"limit":1}'
     req='["REQ","'"$sub"'",'"$filter"']'
-    ( printf '%s\n' "$req"; sleep 4 ) | websocat -n0 - "$relay" 2>/dev/null \
+    ( printf '%s\n' "$req"; sleep 4 ) | websocat --text -n0 - "$relay" 2>/dev/null \
         | grep -E '^\["EVENT",' | head -1
 }
 
@@ -456,7 +518,7 @@ cmd_search() {
     req='["REQ","'"$sub"'",'"$filter"']'
     log "searching for: $q"
     for relay in $RELAYS; do
-        ( printf '%s\n' "$req"; sleep 3 ) | websocat -n0 - "$relay" 2>/dev/null \
+        ( printf '%s\n' "$req"; sleep 3 ) | websocat --text -n0 - "$relay" 2>/dev/null \
             | grep -E '^\["EVENT",' | while IFS= read -r line; do
                 if command -v jq >/dev/null 2>&1; then
                     pk=$(printf '%s' "$line" | jq -r '.[2].pubkey')
