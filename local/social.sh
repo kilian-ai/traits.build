@@ -349,7 +349,10 @@ EOF
     now=$(date +%s)
     log "signing event (kind 30000)..."
     resp=$(api_call sign_event "$nsec" "30000" "$content" "$tags" "$now")
-    event=$(printf '%s' "$resp" | (command -v jq >/dev/null 2>&1 && jq -c '.event // .result.event' || sed -n 's/.*"event":\({.*}\).*/\1/p'))
+    # Extract event JSON. Prefer jq when available. Fallback sed must NOT be greedy:
+    # API response is {"result":{"event":{...},"ok":true}} — a naive `.*"event":\({.*}\)` matches
+    # through the trailing `,"ok":true}}` wrapper and produces invalid JSON. Anchor on `,"ok":`.
+    event=$(printf '%s' "$resp" | (command -v jq >/dev/null 2>&1 && jq -c '.event // .result.event' || sed -n 's/.*"event":\({.*\}\),"ok":.*/\1/p'))
     [ -n "$event" ] && [ "$event" != "null" ] || die "sign failed: $resp"
 
     # Extract event id for OK matching from relay responses.
