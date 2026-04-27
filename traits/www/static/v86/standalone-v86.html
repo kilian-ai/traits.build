@@ -790,7 +790,17 @@
       // directly — no kernel 9P client involved.
       const mount9pCmd =
         'mkdir -p /mnt/host 2>/dev/null\n' +
-        'mountpoint -q /mnt/host && (umount /mnt/host 2>/dev/null || umount -l /mnt/host 2>/dev/null || true)\n' +
+        // Unstack any existing host9p mounts. If snapshot restore or a prior
+        // boot path mounted /mnt/host more than once, a single umount leaves
+        // the inner mount(s) stacked underneath — `ls /mnt/host/x` (absolute)
+        // and `cd /mnt/host; ls x` (relative) then resolve through different
+        // mount layers and disagree (e.g. SFTP writes visible only via the
+        // top mount). Loop until /proc/mounts no longer lists host9p.
+        'cd / 2>/dev/null\n' +
+        'i=0; while grep -q " /mnt/host " /proc/mounts && [ $i -lt 8 ]; do ' +
+        '  umount /mnt/host 2>/dev/null || umount -l /mnt/host 2>/dev/null || break; ' +
+        '  i=$((i+1)); ' +
+        'done\n' +
         'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null || ' +
         'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null\n' +
         // Reset stale ownership left over from old snapshots where v86 fs9p
