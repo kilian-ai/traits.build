@@ -177,9 +177,37 @@ CGI
 }
 
 # Auto-start busybox httpd serving ~/public on port 8080 if requested + no listener.
+# ~/public is symlinked to /mnt/host/public so files are shared between the
+# guest user shell, SFTP uploads (whose home is /root), the v86 host browser
+# (which reads fs9p directly), and the public viewer — all looking at the
+# same 9P-backed directory.
 auto_start_httpd() {
-    local dir="${HOME:-/root}/public"
-    mkdir -p "$dir"
+    local home="${HOME:-/root}"
+    local link="$home/public"
+    local target="/mnt/host/public"
+    # Ensure the shared 9P dir exists. If /mnt/host isn't actually a 9P mount
+    # (no host bridge), fall back to a plain $HOME/public dir so the viewer
+    # still works in headless test runs.
+    if grep -q ' /mnt/host ' /proc/mounts 2>/dev/null; then
+        mkdir -p "$target" 2>/dev/null
+        # Replace $HOME/public with a symlink to /mnt/host/public unless
+        # it's already correctly linked. If a real dir exists with content,
+        # migrate its files into the shared dir before replacing.
+        if [ -L "$link" ]; then
+            [ "$(readlink "$link")" = "$target" ] || { rm -f "$link"; ln -s "$target" "$link"; }
+        elif [ -d "$link" ]; then
+            if [ -n "$(ls -A "$link" 2>/dev/null)" ]; then
+                cp -a "$link"/. "$target"/ 2>/dev/null || true
+            fi
+            rm -rf "$link" 2>/dev/null
+            ln -s "$target" "$link"
+        else
+            ln -s "$target" "$link"
+        fi
+    else
+        mkdir -p "$link"
+    fi
+    local dir="$link"
     if ! command -v httpd >/dev/null 2>&1; then
         # BusyBox httpd is usually built-in; if not, install busybox-extras.
         apk add --no-cache busybox-extras >/dev/null 2>&1 || true
