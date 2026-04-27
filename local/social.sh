@@ -254,7 +254,7 @@ cmd_tunnel_up() {
         rm -f "$tmp"
         return 1
     fi
-    base_url="https://tunnel.traits.build/port/http/$code/8080"
+    base_url="${SOCIAL_TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}/port/http/$code/8080"
     printf '%s\n' "$base_url" > "$TUNNEL_FILE"
     rm -f "$tmp"
     echo "tunnel code: $code"

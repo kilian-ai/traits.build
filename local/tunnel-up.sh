@@ -1,5 +1,6 @@
 #!/bin/sh
-# tunnel-up.sh — Expose local TCP ports through tunnel.traits.build
+# tunnel-up.sh — Expose local TCP ports through traits-build-tunnel.fly.dev
+# (CF Worker tunnel.traits.build kept as fallback in helper scripts)
 # Usage: tunnel-up.sh [port1] [port2] ...
 # Defaults: sshd(22), public-http(8080 → ~/public), syncthing-sync(22000),
 #           syncthing-gui(8384)
@@ -13,7 +14,7 @@
 #   sh <(curl -sS https://www.traits.build/local/tunnel-ssh.sh) CODE
 #
 # ~/public browsing (any HTTPS client):
-#   curl  https://tunnel.traits.build/port/http/CODE/8080/
+#   curl  https://traits-build-tunnel.fly.dev/port/http/CODE/8080/
 #   open  https://www.traits.build/#/viewer?code=CODE
 
 set -u

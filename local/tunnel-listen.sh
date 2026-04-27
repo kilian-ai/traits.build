@@ -22,8 +22,9 @@ LOCAL_PORT="${2:-2222}"
 REMOTE_PORT="${3:-22}"
 
 # Override via env: TUNNEL_WS=ws://localhost:8787 sh tunnel-listen.sh CODE
-TUNNEL_WS="${TUNNEL_WS:-wss://tunnel.traits.build}"
-TUNNEL_WS_FALLBACK="wss://traits-build-tunnel.fly.dev"
+# Default to Fly (no daily quota); CF Worker kept as fallback for legacy codes.
+TUNNEL_WS="${TUNNEL_WS:-wss://traits-build-tunnel.fly.dev}"
+TUNNEL_WS_FALLBACK="wss://tunnel.traits.build"
 
 if ! command -v websocat >/dev/null 2>&1; then
     echo "[tunnel-listen] websocat not found — install via: brew install websocat" >&2
