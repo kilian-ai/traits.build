@@ -954,6 +954,27 @@
         'ln -sfn /mnt/vfs /home/root/vfs 2>/dev/null\n' +
         'export SOCIAL_HOME=/mnt/host\n';
 
+      // Seed /etc/hosts via DoH (DNS-over-HTTPS to 1.1.1.1).
+      // The Fly WISP backend doesn't pass UDP/53 reliably, so plain
+      // getaddrinfo / nslookup times out post-boot. HTTPS to 1.1.1.1
+      // works, so we resolve the canonical traits.build + Fly hosts via
+      // the JSON DoH endpoint and write them straight into /etc/hosts.
+      // Idempotent via a marker-block delete on each run.
+      const dohSeedCmd =
+        'sed -i "/# traits-doh-begin/,/# traits-doh-end/d" /etc/hosts 2>/dev/null\n' +
+        '{ echo "# traits-doh-begin"; for h in ' +
+          'www.traits.build tunnel.traits.build relay.traits.build ' +
+          'traits-build-tunnel.fly.dev apptron-traits-build.fly.dev traits-build.fly.dev; do ' +
+          'ip=$(wget -qO- --timeout=4 -t 1 ' +
+            '"https://1.1.1.1/dns-query?name=${h}&type=A" ' +
+            '--header="Accept: application/dns-json" 2>/dev/null ' +
+            '| tr "," "\\n" ' +
+            '| sed -n \'s/.*"data":"\\([0-9.]*\\)".*/\\1/p\' ' +
+            '| grep -E "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$" ' +
+            '| head -1); ' +
+          '[ -n "$ip" ] && echo "$ip $h"; ' +
+        'done; echo "# traits-doh-end"; } >> /etc/hosts\n';
+
       const restoreNetCmd =
         rootfsCmd +
         mount9pCmd +
@@ -968,6 +989,7 @@
         'arp -d 192.168.86.1 2>/dev/null\n' +
         'arp -s 192.168.86.1 52:54:00:01:02:03\n' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf\n' +
+        dohSeedCmd +
         'echo "[restore-net] eth0 operstate=$st flags=$fl (retries=$i)"\n';
 
       const freshBootCmd =
@@ -977,6 +999,7 @@
         'ip link set eth0 up 2>/dev/null\n' +
         'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1\n' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf\n' +
+        dohSeedCmd +
         'clear\n' + (setupCmd ? setupCmd + '\n' : '');
 
       return doRestore ? restoreNetCmd : freshBootCmd;
