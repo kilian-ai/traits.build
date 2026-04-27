@@ -56,7 +56,7 @@ function spawnAsteroid(size=3,x=Math.random()*(canvas.width-80)+40,y=-60){
   asteroids.push({x,y,r:radius,size,vx:(Math.random()-.5)*(1.8+level*.15),vy:1.4+Math.random()*1.8+(4-size)*0.35+level*.18,rot:Math.random()*6.28,vr:(Math.random()-.5)*0.08,hp:1});
 }
 function spawnBoss(){
-  boss={x:canvas.width/2,y:110,w:140,h:80,hp:10+level*4,maxHp:10+level*4,vx:2.2+level*.15,dir:1,phase:0};
+  boss={x:canvas.width/2,y:110,w:140*3,h:80*3,hp:10+level*4,maxHp:10+level*4,vx:2.2+level*.15,dir:1,phase:0};
   bossEl.textContent='Yes';
 }
 function spawnPowerup(x,y){
@@ -76,7 +76,7 @@ function bossShoot(){
   if(!boss)return;
   const dx=player.x-boss.x,dy=player.y-boss.y,mag=Math.sqrt(dx*dx+dy*dy)||1;
   const speed=4+level*.2;
-  [-0.25,0,0.25].forEach(a=>{const cs=Math.cos(a),sn=Math.sin(a);const vx=(dx/mag)*cs*speed-(dy/mag)*sn*speed,vy=(dx/mag)*sn*speed+(dy/mag)*cs*speed;enemyBullets.push({x:boss.x,y:boss.y+boss.h/2,vx,vy,r:5})});
+  [-0.25,0,0.25].forEach(a=>{const cs=Math.cos(a),sn=Math.sin(a);const vx=(dx/mag)*cs*speed-(dy/mag)*sn*speed,vy=(dx/mag)*sn*speed+(dy/mag)*cs*speed;enemyBullets.push({x:boss.x,y:boss.y+boss.h/2,vx,vy,r:22})});
 }
 function burst(x,y,color,count){for(let i=0;i<count;i++)particles.push({x,y,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,r:2+Math.random()*2,life:20+Math.random()*20,color})}
 function drawShip(){
@@ -100,12 +100,38 @@ function drawBoss(){
   ctx.save();ctx.translate(boss.x,boss.y);
   ctx.fillStyle='#7a1f35';ctx.fillRect(-boss.w/2,-boss.h/2,boss.w,boss.h);
   ctx.fillStyle='#c93d63';ctx.fillRect(-boss.w/2+12,-boss.h/2+10,boss.w-24,boss.h-20);
-  ctx.fillStyle='#ffd36b';ctx.fillRect(-20,-10,40,20);
-  ctx.fillStyle='#ff8ea1';ctx.fillRect(-boss.w/2,-8,18,16);ctx.fillRect(boss.w/2-18,-8,18,16);
+  // angry triangle eyes
+ctx.fillStyle = '#ff8ea1';
+
+// left eye
+ctx.beginPath();
+ctx.moveTo(-boss.w/2 + boss.w*0.15, -boss.h*0.1);
+ctx.lineTo(-boss.w/2 + boss.w*0.35, -boss.h*0.2);
+ctx.lineTo(-boss.w/2 + boss.w*0.35, boss.h*0.05);
+ctx.closePath();
+ctx.fill();
+
+// right eye
+ctx.beginPath();
+ctx.moveTo(boss.w/2 - boss.w*0.15, -boss.h*0.1);
+ctx.lineTo(boss.w/2 - boss.w*0.35, -boss.h*0.2);
+ctx.lineTo(boss.w/2 - boss.w*0.35, boss.h*0.05);
+ctx.closePath();
+ctx.fill();
+
+// triangle nose
+ctx.fillStyle = '#ffd36b';
+ctx.beginPath();
+ctx.moveTo(0, -boss.h*0.05);
+ctx.lineTo(-boss.w*0.08, boss.h*0.15);
+ctx.lineTo(boss.w*0.08, boss.h*0.15);
+ctx.closePath();
+ctx.fill();
   ctx.restore();
-  ctx.fillStyle='rgba(255,255,255,.2)';ctx.fillRect(canvas.width/2-120,20,240,12);
-  ctx.fillStyle='#ff5f7a';ctx.fillRect(canvas.width/2-120,20,240*(boss.hp/boss.maxHp),12);
-  ctx.strokeStyle='rgba(255,255,255,.5)';ctx.strokeRect(canvas.width/2-120,20,240,12);
+  const barW = 240*3;
+  ctx.fillStyle='rgba(255,255,255,.2)';ctx.fillRect(canvas.width/2-barW/2,20,barW,12);
+  ctx.fillStyle='#ff5f7a';ctx.fillRect(canvas.width/2-barW/2,20,barW*(boss.hp/boss.maxHp),12);
+  ctx.strokeStyle='rgba(255,255,255,.5)';ctx.strokeRect(canvas.width/2-barW/2,20,barW,12);
 }
 function drawPowerup(p){
   ctx.save();ctx.translate(p.x,p.y);ctx.scale(1+Math.sin(p.pulse)*.08,1+Math.sin(p.pulse)*.08);

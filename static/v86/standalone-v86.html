@@ -1504,6 +1504,42 @@
     } catch (_) {}
   }
 
+  // Single source of truth reconciliation:
+  //   9P share root (browser: fs9p root; guest: /mnt/host/) is CANONICAL.
+  //   localStorage is a cache for nostrCall (signing).
+  //   On reconcile: 9P wins. If 9P empty but localStorage has nsec, write to 9P.
+  async function reconcileSocialIdentity() {
+    const fs = emulator && emulator.fs9p;
+    if (!fs) return { source: 'localStorage-only' };
+    let nineP_nsec = '', nineP_npub = '';
+    try { nineP_nsec = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/.nsec')).trim(); } catch (_) {}
+    try { nineP_npub = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/.npub')).trim(); } catch (_) {}
+    const ls_nsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
+    const ls_npub = (localStorage.getItem('traits.nostr.npub') || '').trim();
+
+    if (nineP_nsec) {
+      if (ls_nsec && ls_nsec !== nineP_nsec) {
+        sLog('identity mismatch: localStorage differs from /mnt/host/.nsec — using 9P (canonical)', 'hint');
+        if (ls_npub) sLog('  localStorage npub was: ' + truncNpub(ls_npub), 'hint');
+      }
+      localStorage.setItem(SOCIAL_NSEC_KEY, nineP_nsec);
+      if (nineP_npub) localStorage.setItem('traits.nostr.npub', nineP_npub);
+      return { source: '9p', nsec: nineP_nsec, npub: nineP_npub };
+    }
+    if (ls_nsec) {
+      // Seed 9P from localStorage so guest CLI sees the same identity
+      try {
+        await guestWriteText(fs, SOCIAL_VFS_ROOT + '/.nsec', ls_nsec + '\n');
+        if (ls_npub) await guestWriteText(fs, SOCIAL_VFS_ROOT + '/.npub', ls_npub + '\n');
+        sLog('seeded 9P /mnt/host/.nsec from localStorage', 'ok');
+      } catch (e) {
+        sLog('failed to seed 9P from localStorage: ' + (e && e.message ? e.message : e), 'err');
+      }
+      return { source: 'localStorage', nsec: ls_nsec, npub: ls_npub };
+    }
+    return { source: 'none' };
+  }
+
   async function syncSocialStateToGuest({ fillMissingOnly = false } = {}) {
     const fs = emulator && emulator.fs9p;
       if (!fs) {
@@ -1551,23 +1587,27 @@
     }
   }
 
+  // Mirror canonical identity from 9P share root (/mnt/host/) into /mnt/vfs/ tmpfs
+  // so `SOCIAL_HOME=/mnt/vfs social pubkey` returns the same identity as `SOCIAL_HOME=/mnt/host`.
   function socialMirrorToGuestSnippet() {
     return [
-      'mkdir -p /mnt/vfs /mnt/vfs/public /mnt/vfs/following /mnt/host/vfs /mnt/host/vfs/following >/dev/null 2>&1',
-      '[ -f /mnt/host/vfs/.nsec ] && cp /mnt/host/vfs/.nsec /mnt/vfs/.nsec 2>/dev/null || true',
-      '[ -f /mnt/host/vfs/.npub ] && cp /mnt/host/vfs/.npub /mnt/vfs/.npub 2>/dev/null || true',
-      '[ -f /mnt/host/vfs/.social.tunnel ] && cp /mnt/host/vfs/.social.tunnel /mnt/vfs/.social.tunnel 2>/dev/null || true',
-      '[ -f /mnt/host/vfs/following/.list ] && cp /mnt/host/vfs/following/.list /mnt/vfs/following/.list 2>/dev/null || true',
+      'mkdir -p /mnt/vfs /mnt/vfs/public /mnt/vfs/following >/dev/null 2>&1',
+      '[ -f /mnt/host/.nsec ] && cp /mnt/host/.nsec /mnt/vfs/.nsec 2>/dev/null || true',
+      '[ -f /mnt/host/.npub ] && cp /mnt/host/.npub /mnt/vfs/.npub 2>/dev/null || true',
+      '[ -f /mnt/host/.social.tunnel ] && cp /mnt/host/.social.tunnel /mnt/vfs/.social.tunnel 2>/dev/null || true',
+      '[ -f /mnt/host/following/.list ] && cp /mnt/host/following/.list /mnt/vfs/following/.list 2>/dev/null || true',
     ].join('; ');
   }
 
+  // Mirror identity from /mnt/vfs/ tmpfs back to canonical 9P share root
+  // (used when guest CLI has written identity locally and we want to persist it).
   function socialMirrorFromGuestSnippet() {
     return [
-      'mkdir -p /mnt/host/vfs /mnt/host/vfs/public /mnt/host/vfs/following >/dev/null 2>&1',
-      '[ -f /mnt/vfs/.nsec ] && cp /mnt/vfs/.nsec /mnt/host/vfs/.nsec 2>/dev/null || true',
-      '[ -f /mnt/vfs/.npub ] && cp /mnt/vfs/.npub /mnt/host/vfs/.npub 2>/dev/null || true',
-      '[ -f /mnt/vfs/.social.tunnel ] && cp /mnt/vfs/.social.tunnel /mnt/host/vfs/.social.tunnel 2>/dev/null || true',
-      '[ -f /mnt/vfs/following/.list ] && cp /mnt/vfs/following/.list /mnt/host/vfs/following/.list 2>/dev/null || true',
+      'mkdir -p /mnt/host /mnt/host/public /mnt/host/following >/dev/null 2>&1',
+      '[ -f /mnt/vfs/.nsec ] && cp /mnt/vfs/.nsec /mnt/host/.nsec 2>/dev/null || true',
+      '[ -f /mnt/vfs/.npub ] && cp /mnt/vfs/.npub /mnt/host/.npub 2>/dev/null || true',
+      '[ -f /mnt/vfs/.social.tunnel ] && cp /mnt/vfs/.social.tunnel /mnt/host/.social.tunnel 2>/dev/null || true',
+      '[ -f /mnt/vfs/following/.list ] && cp /mnt/vfs/following/.list /mnt/host/following/.list 2>/dev/null || true',
     ].join('; ');
   }
 
@@ -1866,6 +1906,8 @@
 
   // Refresh identity display and enable/disable action buttons
   async function socialInit() {
+    // Reconcile 9P (canonical) ↔ localStorage (cache) before reading state
+    await reconcileSocialIdentity();
     let nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
     let npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
     if (!nsec && !npubOnly) {
