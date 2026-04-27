@@ -2549,51 +2549,129 @@
   }
 
   async function doPublish() {
-    const nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
-    if (!nsec) { sLog('no identity — generate one first', 'err'); return; }
-    const fs = emulator && emulator.fs9p;
-    if (!fs) { sLog('9P share not available — boot v86 first', 'err'); return; }
+    const t0 = performance.now();
+    const ts = () => '[+' + Math.round(performance.now() - t0) + 'ms]';
+    console.group('[publish] doPublish() invoked');
+    console.log('[publish]', ts(), 'start');
 
-    // Read tunnel base URL from /mnt/vfs/.social.tunnel (fallback to legacy root path)
+    // Step 1: resolve identity (localStorage cache → 9P canonical → guest CLI rescue).
+    let nsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
+    let npub = (localStorage.getItem('traits.nostr.npub') || '').trim();
+    console.log('[publish]', ts(), 'identity#1 from localStorage:',
+      { nsec: nsec ? nsec.slice(0, 12) + '…' : '(empty)', npub: npub ? truncNpub(npub) : '(empty)' });
+
+    if (!nsec) {
+      console.log('[publish]', ts(), 'localStorage missing nsec → reconcileSocialIdentity()');
+      try {
+        const rec = await reconcileSocialIdentity();
+        console.log('[publish]', ts(), 'reconcile result:', {
+          source: rec && rec.source,
+          nsec: rec && rec.nsec ? rec.nsec.slice(0, 12) + '…' : '(empty)',
+          npub: rec && rec.npub ? truncNpub(rec.npub) : '(empty)',
+        });
+      } catch (e) {
+        console.warn('[publish]', ts(), 'reconcile threw:', e && e.message);
+      }
+      nsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
+      npub = (localStorage.getItem('traits.nostr.npub') || '').trim();
+      console.log('[publish]', ts(), 'identity#2 after reconcile:',
+        { nsec: nsec ? nsec.slice(0, 12) + '…' : '(empty)', npub: npub ? truncNpub(npub) : '(empty)' });
+    }
+
+    if (!nsec) {
+      // Last-resort rescue: try reading .nsec directly off both vfs paths.
+      const fsProbe = emulator && emulator.fs9p;
+      if (fsProbe) {
+        for (const path of [SOCIAL_VFS_ROOT + '/.nsec', '/.nsec']) {
+          try {
+            const buf = await fsProbe.read_file(path);
+            const txt = new TextDecoder().decode(buf || new Uint8Array()).trim();
+            console.log('[publish]', ts(), 'fs9p direct read', path, '→', txt ? txt.slice(0, 12) + '…' : '(empty)');
+            if (txt) {
+              localStorage.setItem(SOCIAL_NSEC_KEY, txt);
+              nsec = txt;
+              break;
+            }
+          } catch (e) {
+            console.log('[publish]', ts(), 'fs9p read failed', path, ':', e && e.message);
+          }
+        }
+      }
+    }
+
+    if (!nsec) {
+      console.warn('[publish]', ts(), 'NO nsec found — bailing out');
+      console.groupEnd();
+      const hasNpub = !!npub;
+      sLog(hasNpub
+        ? 'publish blocked: guest reports identity ' + truncNpub(npub) + ' but private key (nsec) is not mirrored to host. Run in terminal: social pubkey  (or generate fresh)'
+        : 'no identity — generate one first', 'err');
+      return;
+    }
+    console.log('[publish]', ts(), 'identity OK — proceeding to manifest build');
+
+    const fs = emulator && emulator.fs9p;
+    if (!fs) {
+      console.warn('[publish]', ts(), 'fs9p not available');
+      console.groupEnd();
+      sLog('9P share not available — boot v86 first', 'err');
+      return;
+    }
+
+    // Step 2: read tunnel base URL from /mnt/vfs/.social.tunnel (fallback to legacy root path).
     let baseUrl = '';
     try {
       const data = await fs.read_file(SOCIAL_VFS_ROOT + '/.social.tunnel');
       baseUrl = new TextDecoder().decode(data).trim();
+      console.log('[publish]', ts(), 'tunnel base from', SOCIAL_VFS_ROOT + '/.social.tunnel:', baseUrl || '(empty)');
     } catch (_) {
       try {
         const legacy = await fs.read_file('/.social.tunnel');
         baseUrl = new TextDecoder().decode(legacy).trim();
+        console.log('[publish]', ts(), 'tunnel base from /.social.tunnel (legacy):', baseUrl || '(empty)');
       } catch (_) {
-        // Degrade gracefully: publish manifest without a base URL. Followers
-        // will see the file list + hashes but won't be able to fetch content
-        // until you run `social tunnel-up 8080` in the guest and re-publish.
+        console.log('[publish]', ts(), 'no .social.tunnel found — manifest without fetch URL');
         sLog('no .social.tunnel — publishing manifest without fetch URL', 'hint');
         sLog('  run in terminal: social tunnel-up 8080  (then click publish again)', 'hint');
       }
     }
 
-    // Walk /vfs/public via fs9p, compute sha256 of each file
+    // Step 3: walk /vfs/public via fs9p, compute sha256 of each file.
     sLog('reading ' + socialGuestPath(SOCIAL_PUBLIC_ROOT) + '…');
+    console.log('[publish]', ts(), 'walking', SOCIAL_PUBLIC_ROOT);
     const files = [];
     async function walkPublic(dir) {
-      for (const e of listDir(dir)) {
+      const entries = listDir(dir);
+      console.log('[publish]', ts(), 'listDir', dir, '→', entries.length, 'entries');
+      for (const e of entries) {
         if (e.dir) { await walkPublic(e.path); }
         else {
           try {
             const data = await fs.read_file(e.path);
-            if (!data) continue;
+            if (!data) { console.log('[publish] skip empty', e.path); continue; }
             const h = 'sha256:' + (await sha256hex(data));
             const relPath = e.path
               .replace(/^\/vfs\/public\/?/, '')
               .replace(/^\/public\/?/, '');
-            files.push({ p: relPath, h, s: data.byteLength || data.length });
-          } catch (e2) { sLog('skip ' + e.path + ': ' + e2.message, 'hint'); }
+            const size = data.byteLength || data.length;
+            files.push({ p: relPath, h, s: size });
+            console.log('[publish] file', relPath, 'size=' + size, 'hash=' + h.slice(0, 24) + '…');
+          } catch (e2) {
+            console.warn('[publish] read failed', e.path, ':', e2 && e2.message);
+            sLog('skip ' + e.path + ': ' + e2.message, 'hint');
+          }
         }
       }
     }
     await walkPublic(SOCIAL_PUBLIC_ROOT);
+    console.log('[publish]', ts(), 'walk complete — total files:', files.length);
 
-    if (!files.length) { sLog('no files in ' + socialGuestPath(SOCIAL_PUBLIC_ROOT), 'hint'); return; }
+    if (!files.length) {
+      console.warn('[publish]', ts(), 'empty public folder — nothing to publish');
+      console.groupEnd();
+      sLog('no files in ' + socialGuestPath(SOCIAL_PUBLIC_ROOT), 'hint');
+      return;
+    }
     sLog('found ' + files.length + ' file(s) — signing manifest…');
 
     const manifestObj = { v: 1, base: baseUrl, files };
@@ -2603,28 +2681,44 @@
       : [['d', 'public-folder']];
     const tagsJson = JSON.stringify(tags);
     const now      = String(Math.floor(Date.now() / 1000));
+    console.log('[publish]', ts(), 'manifest size=' + content.length, 'tags=' + tagsJson, 'created_at=' + now);
 
-    // Keep a local copy for offline/self testing and relay-miss fallback.
+    // Step 4: keep a local copy for offline/self testing and relay-miss fallback.
     try {
       const payload = new TextEncoder().encode(JSON.stringify(manifestObj, null, 2));
       await fsWriteFileCompat(fs, SOCIAL_PUBLIC_ROOT + '/.manifest.json', payload);
       await fsWriteFileCompat(fs, SOCIAL_PUBLIC_ROOT + '/manifest.json', payload);
+      console.log('[publish]', ts(), 'local manifest written:', SOCIAL_PUBLIC_ROOT + '/.manifest.json');
       sLog('wrote local manifest: ' + socialGuestPath(SOCIAL_PUBLIC_ROOT + '/.manifest.json'), 'ok');
     } catch (e) {
+      console.warn('[publish]', ts(), 'local manifest write failed:', e && e.message);
       sLog('could not write local manifest file: ' + e.message, 'hint');
     }
 
+    // Step 5: sign event via nostrCall (REST) using our nsec.
     let event;
     try {
+      console.log('[publish]', ts(), 'calling nostrCall sign_event…');
       const res = await nostrCall('sign_event', nsec, '30000', content, tagsJson, now);
       event = typeof res === 'string' ? JSON.parse(res) : res;
-    } catch (e) { sLog('sign_event failed: ' + e.message, 'err'); return; }
+      console.log('[publish]', ts(), 'signed event:', { id: event.id, pubkey: event.pubkey, kind: event.kind });
+    } catch (e) {
+      console.error('[publish]', ts(), 'sign_event failed:', e);
+      console.groupEnd();
+      sLog('sign_event failed: ' + e.message, 'err');
+      return;
+    }
 
+    // Step 6: broadcast to relays.
+    console.log('[publish]', ts(), 'broadcasting to relays:', NOSTR_RELAYS);
     sLog('broadcasting to ' + NOSTR_RELAYS.length + ' relays…');
     await nostrPublish(NOSTR_RELAYS, event);
+    console.log('[publish]', ts(), 'broadcast complete; id=' + event.id);
     sLog('published! id: ' + (event.id || '').slice(0, 16) + '…', 'ok');
     // Fire-and-forget guest CLI for terminal echo (parallel relay broadcast).
     void runGuestSocialCommand(['publish'], 'social publish');
+    console.log('[publish]', ts(), 'doPublish() complete');
+    console.groupEnd();
   }
 
   async function doSearch(query) {
