@@ -999,10 +999,19 @@
         'if command -v unbound >/dev/null 2>&1; then ' +
           'killall -q unbound 2>/dev/null; sleep 1; ' +
           'unbound -c /etc/unbound/unbound.conf >/dev/null 2>&1 & ' +
-          'sleep 1; ' +
-          'if pidof unbound >/dev/null 2>&1; then ' +
+          // Wait up to ~6s for unbound to actually answer on 127.0.0.1:53
+          // (sleep 1 + pidof was racy on slow VMs -> first ping/wget after
+          // boot hit /etc/resolv.conf with 1.1.1.1 still in slot 1 and
+          // failed with "bad address" via UDP/53).
+          '__ub_ok=0; __ub_i=0; while [ $__ub_i -lt 12 ]; do ' +
+            'if nslookup -timeout=1 cloudflare.com 127.0.0.1 >/dev/null 2>&1; then __ub_ok=1; break; fi; ' +
+            '__ub_i=$((__ub_i+1)); sleep 0.5; ' +
+          'done; ' +
+          'if [ "$__ub_ok" = 1 ]; then ' +
             'printf "nameserver 127.0.0.1\\nnameserver 1.1.1.1\\n" > /etc/resolv.conf; ' +
             'echo "[restore-net] unbound recycled"; ' +
+          'else ' +
+            'echo "[restore-net] unbound did not bind in time, staying on 1.1.1.1 (UDP may fail)" >&2; ' +
           'fi; ' +
         'fi\n' +
         'echo "[restore-net] eth0 operstate=$st flags=$fl (retries=$i)"\n';
@@ -1022,10 +1031,15 @@
         'if command -v unbound >/dev/null 2>&1; then ' +
           'killall -q unbound 2>/dev/null; sleep 1; ' +
           'unbound -c /etc/unbound/unbound.conf >/dev/null 2>&1 & ' +
-          'sleep 1; ' +
-          'if pidof unbound >/dev/null 2>&1; then ' +
+          '__ub_ok=0; __ub_i=0; while [ $__ub_i -lt 12 ]; do ' +
+            'if nslookup -timeout=1 cloudflare.com 127.0.0.1 >/dev/null 2>&1; then __ub_ok=1; break; fi; ' +
+            '__ub_i=$((__ub_i+1)); sleep 0.5; ' +
+          'done; ' +
+          'if [ "$__ub_ok" = 1 ]; then ' +
             'printf "nameserver 127.0.0.1\\nnameserver 1.1.1.1\\n" > /etc/resolv.conf; ' +
             'echo "[fresh-net] unbound recycled"; ' +
+          'else ' +
+            'echo "[fresh-net] unbound did not bind in time, staying on 1.1.1.1 (UDP may fail)" >&2; ' +
           'fi; ' +
         'fi\n' +
         'clear\n' + (setupCmd ? setupCmd + '\n' : '');
