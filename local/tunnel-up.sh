@@ -124,18 +124,36 @@ auto_start_sshd() {
     /usr/sbin/sshd 2>&1 | head -5
 }
 
-# Seed ~/public/cgi-bin/ls — JSON listing endpoint for the viewer.
+# The single source of truth for the public docroot. When fs9p is mounted
+# we use /mnt/host/public directly so the host browser, SFTP (via the
+# ~/public symlink), and httpd/viewer all see the exact same dir without
+# any copy/symlink chain on the read path.
+public_root() {
+    if grep -q ' /mnt/host ' /proc/mounts 2>/dev/null; then
+        printf '/mnt/host/public'
+    else
+        printf '%s/public' "${HOME:-/root}"
+    fi
+}
+
+# Seed <docroot>/cgi-bin/ls — JSON listing endpoint for the viewer.
 # Must run even when httpd is already up (user may have started it
 # before upgrading this script), because BusyBox httpd picks up new
 # cgi-bin scripts without a restart.
 seed_public_cgi() {
-    local dir="${HOME:-/root}/public"
+    local dir
+    dir="$(public_root)"
     mkdir -p "$dir/cgi-bin"
-    cat > "$dir/cgi-bin/ls" <<'CGI'
+    # Bake the absolute docroot into the CGI script so listings are
+    # independent of whatever cwd/HOME httpd happens to inherit.
+    cat > "$dir/cgi-bin/ls" <<CGI
 #!/bin/sh
 printf 'Content-Type: application/json\r\n'
 printf 'Access-Control-Allow-Origin: *\r\n'
 printf '\r\n'
+base="$dir"
+CGI
+    cat >> "$dir/cgi-bin/ls" <<'CGI'
 qs="${QUERY_STRING:-}"
 sub=$(printf '%s' "$qs" | awk -v RS='&' -F= '$1=="dir"{print $2; exit}')
 sub="${sub:-/}"
@@ -144,7 +162,6 @@ sub=$(printf '%b' "$dec")
 case "$sub" in *..*) sub="/" ;; esac
 sub=$(printf '%s' "$sub" | sed 's|//*|/|g')
 [ "${sub#/}" = "$sub" ] && sub="/$sub"
-base="${HOME:-/root}/public"
 full="$base${sub%/}"
 [ "$sub" = "/" ] && full="$base"
 if [ ! -d "$full" ]; then
@@ -217,8 +234,8 @@ ensure_public_symlink() {
 # Auto-start busybox httpd serving ~/public on port 8080 if requested + no listener.
 auto_start_httpd() {
     ensure_public_symlink
-    local home="${HOME:-/root}"
-    local dir="$home/public"
+    local dir
+    dir="$(public_root)"
     if ! command -v httpd >/dev/null 2>&1; then
         # BusyBox httpd is usually built-in; if not, install busybox-extras.
         apk add --no-cache busybox-extras >/dev/null 2>&1 || true
@@ -306,11 +323,26 @@ for PORT in $PORTS; do
     # auto_start_httpd would be skipped, BusyBox httpd picks up new cgi-bin
     # scripts on the next request without needing a restart.
     if [ "$PORT" = "8080" ]; then
-        # Symlink ~/public -> /mnt/host/public BEFORE seeding cgi-bin so the
-        # CGI script lands in the shared dir (where httpd will serve it).
+        # Set up the symlink (for SFTP) + seed CGI listing into the docroot.
         ensure_public_symlink
         seed_public_cgi
-        echo "[tunnel] port 8080 — seeded ~/public/cgi-bin/ls (JSON listing endpoint)"
+        # If an old httpd is still running with a stale -h docroot (e.g. the
+        # plain ~/public dir before the symlink existed), kill it so the
+        # branch below restarts it with -h /mnt/host/public.
+        if port_listening 8080; then
+            old_pid=$(pgrep -nf 'httpd.*-p.*8080' 2>/dev/null)
+            old_root=""
+            if [ -n "$old_pid" ]; then
+                old_root=$(readlink -f "/proc/$old_pid/cwd" 2>/dev/null || true)
+            fi
+            target_root=$(public_root)
+            if [ -n "$old_root" ] && [ "$old_root" != "$target_root" ]; then
+                echo "[tunnel] port 8080 — restarting httpd (docroot $old_root -> $target_root)"
+                pkill -f 'httpd.*-p.*8080' 2>/dev/null || true
+                sleep 0.3 2>/dev/null || sleep 1
+            fi
+        fi
+        echo "[tunnel] port 8080 — seeded $(public_root)/cgi-bin/ls (JSON listing endpoint)"
     fi
     if ! port_listening "$PORT"; then
         if [ "$PORT" = "22" ]; then
