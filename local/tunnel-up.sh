@@ -123,7 +123,13 @@ seed_hosts_via_doh
 if ! command -v websocat >/dev/null 2>&1 \
         || ! command -v unbound >/dev/null 2>&1; then
     echo "[tunnel] installing websocat + unbound..."
-    apk add --no-cache websocat curl unbound >/dev/null 2>&1 \
+    # libcrypto3/libssl3 upgrade is required: the unbound in the current
+    # apk index is built against newer openssl symbols
+    # (EVP_MD_CTX_get_size_ex) than the libcrypto shipped in older Alpine
+    # base images, so without this upgrade unbound dies with a relocation
+    # error at startup.
+    apk add --no-cache --upgrade websocat curl unbound libcrypto3 libssl3 \
+            >/dev/null 2>&1 \
         || { echo "[tunnel] apk failed — install packages manually"; exit 1; }
 fi
 
