@@ -1904,10 +1904,22 @@
     await socialInit();
   }
 
-  // Refresh identity display and enable/disable action buttons
+  // Refresh identity display and enable/disable action buttons.
+  // Single source of truth: `social pubkey` output (run in guest with SOCIAL_HOME=/mnt/host).
+  // The npub displayed here is the EXACT bytes the guest CLI prints — never re-encoded.
   async function socialInit() {
     // Reconcile 9P (canonical) ↔ localStorage (cache) before reading state
     await reconcileSocialIdentity();
+    // Always re-verify identity from the guest CLI when the shell is ready.
+    // This guarantees the UI shows whatever `social pubkey` would print at this moment.
+    if (shellReady && !socialIdentityProbeDone) {
+      socialIdentityProbeDone = true;
+      npubDisplay.innerHTML = '<span class="hint">running social pubkey…</span>';
+      publishBtn.disabled = true;
+      syncNowBtn.disabled = true;
+      await debugGuestPubkeyFlow();
+      return; // debugGuestPubkeyFlow calls socialInit() again when done
+    }
     let nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
     let npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
     if (!nsec && !npubOnly) {
@@ -1918,16 +1930,7 @@
         sLog('identity hydrated from terminal output (social pubkey)', 'ok');
       }
     }
-    // If still no identity, run debugGuestPubkeyFlow() once (direct serial-tail approach)
     if (!nsec && !npubOnly) {
-      if (!socialIdentityProbeDone && shellReady) {
-        socialIdentityProbeDone = true;
-        npubDisplay.innerHTML = '<span class="hint">checking guest identity…</span>';
-        publishBtn.disabled = true;
-        syncNowBtn.disabled = true;
-        await debugGuestPubkeyFlow();
-        return; // debugGuestPubkeyFlow calls socialInit() again when done
-      }
       // Show "no identity" with a manual re-check button
       const updateBtn = document.createElement('button');
       updateBtn.id = 'social-update-from-pubkey';
@@ -1965,25 +1968,38 @@
       return;
     }
     if (nsec) {
+      // Display the npub stored from `social pubkey` output (canonical).
+      // Fall back to nostrCall derivation only when guest hasn't reported yet.
+      let displayNpub = npubOnly;
+      let pubkey = '';
       try {
         const res = await nostrCall('pubkey', nsec);
-        const pubkey = typeof res === 'string' ? res : (res.pubkey || String(res));
-        const enc = await nostrCall('encode_npub', pubkey);
-        const npub = typeof enc === 'string' ? enc : JSON.stringify(enc);
-        localStorage.setItem('traits.nostr.npub', npub);
+        pubkey = typeof res === 'string' ? res : (res.pubkey || String(res));
+        if (!displayNpub) {
+          const enc = await nostrCall('encode_npub', pubkey);
+          displayNpub = typeof enc === 'string' ? enc : JSON.stringify(enc);
+          localStorage.setItem('traits.nostr.npub', displayNpub);
+        }
+      } catch (e) {
+        if (!displayNpub) {
+          npubDisplay.innerHTML = `<span class="err">key error: ${e.message}</span>`;
+          return;
+        }
+      }
+      try {
         npubDisplay.innerHTML =
-          `<span class="social-npub">${truncNpub(npub)}</span>` +
+          `<span class="social-npub">${truncNpub(displayNpub)}</span>` +
           ` <button id="social-copy-npub" title="Copy full npub to clipboard" style="padding:1px 8px; font-size:10px; margin:0 6px;">copy npub</button>` +
-          ` <span class="hint" style="font-size:10px">${pubkey.slice(0, 16)}…</span>`;
+          (pubkey ? ` <span class="hint" style="font-size:10px">${pubkey.slice(0, 16)}…</span>` : '');
         const copyBtn = $('social-copy-npub');
         if (copyBtn) {
           copyBtn.onclick = async () => {
             try {
               if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(npub);
+                await navigator.clipboard.writeText(displayNpub);
               } else {
                 const ta = document.createElement('textarea');
-                ta.value = npub;
+                ta.value = displayNpub;
                 ta.style.position = 'fixed';
                 ta.style.left = '-9999px';
                 document.body.appendChild(ta);
@@ -1992,7 +2008,7 @@
                 document.execCommand('copy');
                 ta.remove();
               }
-              sLog('copied ' + truncNpub(npub) + ' to clipboard', 'ok');
+              sLog('copied ' + truncNpub(displayNpub) + ' to clipboard', 'ok');
             } catch (e) {
               sLog('copy failed: ' + (e && e.message ? e.message : e), 'err');
             }
@@ -2001,7 +2017,7 @@
         publishBtn.disabled = !emulator;
         syncNowBtn.disabled = false;
       } catch (e) {
-        npubDisplay.innerHTML = `<span class="err">key error: ${e.message}</span>`;
+        npubDisplay.innerHTML = `<span class="err">render error: ${e.message}</span>`;
       }
     }
     renderFollowList();
