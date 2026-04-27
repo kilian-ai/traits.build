@@ -1904,7 +1904,14 @@
       return;
     }
     const tailStart = serialTextTail.length;
-    dispatchGuestCommand('SOCIAL_HOME=/mnt/host social pubkey', 'social pubkey (direct)');
+    // Run social pubkey AND dump the canonical nsec/npub from /mnt/host so we
+    // can resync localStorage to whatever the guest CLI is actually using.
+    // Without the nsec dump the UI would display the right npub but derive a
+    // mismatched hex hint from a stale localStorage nsec.
+    dispatchGuestCommand(
+      'SOCIAL_HOME=/mnt/host social pubkey; cat /mnt/host/.nsec 2>/dev/null; cat /mnt/host/.npub 2>/dev/null',
+      'social pubkey + nsec dump'
+    );
     // Poll for npub in serial output (REST call to Fly can take 1-3+ seconds)
     const deadline = Date.now() + 8000;
     let parsed = { npub: '', nsec: '' };
@@ -1912,12 +1919,24 @@
       await new Promise(resolve => setTimeout(resolve, 250));
       const tail = serialTextTail.slice(tailStart);
       parsed = extractNostrIdentityFromText(tail);
-      if (parsed.npub) break;
+      if (parsed.npub && parsed.nsec) break;
     }
     if (parsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
     if (parsed.npub) localStorage.setItem('traits.nostr.npub', parsed.npub);
+    // Mirror back into 9P so future reconciles see the same canonical pair.
+    if (parsed.nsec || parsed.npub) {
+      const fs = emulator && emulator.fs9p;
+      if (fs) {
+        try {
+          if (parsed.nsec) await guestWriteText(fs, SOCIAL_VFS_ROOT + '/.nsec', parsed.nsec + '\n');
+          if (parsed.npub) await guestWriteText(fs, SOCIAL_VFS_ROOT + '/.npub', parsed.npub + '\n');
+        } catch (_) {}
+      }
+    }
     if (parsed.npub || parsed.nsec) {
-      sLog('debug: identity from social pubkey: ' + truncNpub(parsed.npub), 'ok');
+      sLog('debug: identity from social pubkey: ' + truncNpub(parsed.npub) +
+        (parsed.nsec ? ' (nsec captured)' : ' (nsec NOT in output — hex hint may be stale)'),
+        parsed.nsec ? 'ok' : 'hint');
     } else {
       sLog('debug: no identity found in serial output (timed out after 8s)', 'hint');
     }
