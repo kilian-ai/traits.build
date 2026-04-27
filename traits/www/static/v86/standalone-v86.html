@@ -1769,7 +1769,33 @@
     const hostScriptPath = '/tb-runner-' + runId + '.sh';
     await guestWriteText(fs, hostScriptPath, runnerScript);
 
-    const launchCmd = `/bin/sh /mnt/host/tb-runner-${runId}.sh; _tb_run_rc=$?; if [ $_tb_run_rc -ne 0 ]; then sh /mnt/host/tb-runner-${runId}.sh; _tb_run_rc=$?; fi; _tb_status_line=$(cat /mnt/vfs/.guest-runner/${runId}.status 2>/dev/null | tr -d '\\r\\n'); [ -n "$_tb_status_line" ] || _tb_status_line=nostatus; echo ${runMarker}:rc=$_tb_run_rc:status=$_tb_status_line`;
+    // JS-side verification: confirm the script bytes are readable through
+    // fs9p before dispatching. Some write paths (CreateBinaryFile, fallback
+    // emulator.create_file) succeed without the file being visible to a
+    // subsequent read_file. Retry the write up to 4 times on mismatch.
+    let writeVerified = false;
+    for (let attempt = 0; attempt < 4 && !writeVerified; attempt++) {
+      try {
+        const bytes = await fs.read_file(hostScriptPath);
+        if (bytes && bytes.length > 0) { writeVerified = true; break; }
+      } catch (_) {}
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 120));
+        try { await guestWriteText(fs, hostScriptPath, runnerScript); } catch (_) {}
+      }
+    }
+    if (!writeVerified) {
+      console.warn('[guest-runner] fs9p write of', hostScriptPath, 'not verifiable from JS side after 4 attempts; dispatching anyway');
+    } else {
+      console.log('[guest-runner] script ready at', hostScriptPath, '(verified via fs.read_file)');
+    }
+
+    // Guest-side: wait for /mnt/host/<script> to be visible before exec'ing.
+    // 9P client may not see a freshly-written host file for a few hundred ms.
+    // Poll up to ~6s, then run. Also retry once on non-zero rc to absorb
+    // transient ENOENT.
+    const waitForScript = `_tb_path=/mnt/host/tb-runner-${runId}.sh; _tb_i=0; while [ ! -s "$_tb_path" ] && [ $_tb_i -lt 30 ]; do sleep 0.2; _tb_i=$((_tb_i+1)); done`;
+    const launchCmd = `${waitForScript}; /bin/sh "$_tb_path"; _tb_run_rc=$?; if [ $_tb_run_rc -ne 0 ] && [ ! -s "$_tb_path" ]; then sleep 0.5; sh "$_tb_path"; _tb_run_rc=$?; fi; _tb_status_line=$(cat /mnt/vfs/.guest-runner/${runId}.status 2>/dev/null | tr -d '\\r\\n'); [ -n "$_tb_status_line" ] || _tb_status_line=nostatus; if [ ! -s "$_tb_path" ]; then _tb_status_line="missing-script:$_tb_status_line"; fi; echo ${runMarker}:rc=$_tb_run_rc:status=$_tb_status_line`;
     dispatchGuestCommand(launchCmd, options && options.label, {
       afterRun,
       afterDelayMs: options && options.afterDelayMs,
