@@ -1446,6 +1446,8 @@
     'wss://relay.damus.io',
     'wss://nos.lol',
     'wss://relay.nostr.band',
+    'wss://relay.primal.net',
+    'wss://nostr.wine',
   ];
   let socialSyncTimer = null;
     const SOCIAL_VFS_ROOT = '';
@@ -2443,10 +2445,25 @@
     }
 
     console.log('[sync]', ts(), 'requesting kind-30000 manifest from relays:', NOSTR_RELAYS);
-    const events = await nostrReq(NOSTR_RELAYS, {
+    let events = await nostrReq(NOSTR_RELAYS, {
       kinds: [30000], authors: [pubkeyHex], '#d': ['public-folder'], limit: 5,
     });
-    console.log('[sync]', ts(), 'relay returned', events.length, 'event(s)');
+    console.log('[sync]', ts(), '#d-filtered query returned', events.length, 'event(s)');
+
+    // Fallback: some relays don't honor NIP-12 #d tag filters. Refetch all
+    // kind-30000 events for this author and filter client-side on the
+    // d=public-folder tag.
+    if (!events.length) {
+      console.log('[sync]', ts(), 'retrying without #d filter (client-side filtering)…');
+      const all = await nostrReq(NOSTR_RELAYS, {
+        kinds: [30000], authors: [pubkeyHex], limit: 20,
+      });
+      console.log('[sync]', ts(), 'unfiltered kind-30000 returned', all.length, 'event(s)');
+      events = all.filter(ev => Array.isArray(ev.tags) && ev.tags.some(t =>
+        Array.isArray(t) && t[0] === 'd' && t[1] === 'public-folder'
+      ));
+      console.log('[sync]', ts(), 'after client-side d-tag filter:', events.length);
+    }
 
     let manifest = null;
     if (events.length) {
@@ -2493,11 +2510,12 @@
     }
 
     if (!manifest) {
-      console.warn('[sync] no manifest available');
+      console.warn('[sync] no manifest available for pubkey', pubkeyHex);
       console.groupEnd();
-      sLog('no manifest found for ' + truncNpub(npub), 'hint');
-      sLog('manifest = kind-30000 d=public-folder event that lists files + base URL', 'hint');
-      sLog('ask this user to run: social tunnel-up 8080, then publish /vfs/public', 'hint');
+      sLog('no manifest found for ' + truncNpub(npub) + ' on any relay', 'hint');
+      sLog('checked relays: ' + NOSTR_RELAYS.join(', '), 'hint');
+      sLog('pubkey hex: ' + pubkeyHex, 'hint');
+      sLog('that user must run: social tunnel-up 8080 && social publish', 'hint');
       return;
     }
     if (!manifest.base || !Array.isArray(manifest.files)) {
