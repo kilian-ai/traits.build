@@ -1999,56 +1999,37 @@
     const suffix = fsPath.startsWith('/vfs') ? fsPath.slice(4) : fsPath;
       return '/mnt/host' + suffix;
   }
-  const FOLLOW_ROOT_CANDIDATES = [
-    SOCIAL_PUBLIC_ROOT + '/.following',
-    SOCIAL_VFS_ROOT + '/following',
-    SOCIAL_VFS_ROOT + '/following_new',
-    SOCIAL_VFS_ROOT + '/social_following',
-    // Legacy roots kept for migration from older sessions.
-    '/public/.following',
-    '/following',
-    '/following_new',
-    '/social_following',
-  ];
   let socialFollowRoot = null;
 
   function getFollowRoot() {
     return socialFollowRoot || localStorage.getItem(SOCIAL_FOLLOW_ROOT_KEY) || DEFAULT_FOLLOW_ROOT;
   }
 
-  async function canUseFollowRoot(fs, root) {
-    try { fs.create_directory(root); } catch (_) {}
-    const probeDir = root + '/.tb_probe';
-    try { fs.create_directory(probeDir); } catch (_) {}
-    const probeFile = probeDir + '/writable.txt';
-    try {
-      await fsWriteFileCompat(fs, probeFile, new TextEncoder().encode(String(Date.now())));
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  async function resolveFollowRoot(fs) {
+  // Best-effort: create the canonical follow root and any chain of subdirs.
+  // We deliberately do NOT do a probe write here — earlier probes were
+  // unreliable on virtio-9p (write into a just-created subdir rejected even
+  // though create_directory succeeded), which made every sync fail with
+  // "no writable follow directory under …" before any real I/O was attempted.
+  // If individual writes during sync fail, those errors are surfaced per-file.
+  async function ensureFollowRoot(fs) {
     if (!fs) return DEFAULT_FOLLOW_ROOT;
-    if (socialFollowRoot) return socialFollowRoot;
+    const root = DEFAULT_FOLLOW_ROOT;
+    try { fs.create_directory(root); } catch (_) {}
+    socialFollowRoot = root;
+    localStorage.setItem(SOCIAL_FOLLOW_ROOT_KEY, root);
+    return root;
+  }
+  // Legacy alias preserved so other callers keep working.
+  async function resolveFollowRoot(fs) { return ensureFollowRoot(fs); }
 
-    const candidates = [];
-    const saved = localStorage.getItem(SOCIAL_FOLLOW_ROOT_KEY);
-    if (saved) candidates.push(saved);
-    for (const p of FOLLOW_ROOT_CANDIDATES) if (!candidates.includes(p)) candidates.push(p);
-
-    for (const root of candidates) {
-      if (await canUseFollowRoot(fs, root)) {
-        socialFollowRoot = root;
-        localStorage.setItem(SOCIAL_FOLLOW_ROOT_KEY, root);
-        if (root !== DEFAULT_FOLLOW_ROOT) {
-          sLog('using fallback follow dir: ' + socialGuestPath(root), 'hint');
-        }
-        return root;
-      }
+  // mkdir -p chain in fs9p, swallowing already-exists.
+  function ensureDirChain(fs, fullPath) {
+    const parts = String(fullPath).split('/').filter(Boolean);
+    let cur = '';
+    for (let i = 0; i < parts.length; i++) {
+      cur += '/' + parts[i];
+      try { fs.create_directory(cur); } catch (_) {}
     }
-    throw new Error('no writable follow directory under ' + SOCIAL_VFS_ROOT);
   }
 
   // social.nostr REST dispatch
@@ -2436,45 +2417,58 @@
 
   async function doSyncOne(npub) {
     npub = npub.trim();
+    const t0 = performance.now();
+    const ts = () => '[+' + Math.round(performance.now() - t0) + 'ms]';
+    console.group('[sync] doSyncOne ' + truncNpub(npub));
     sLog('syncing ' + truncNpub(npub) + '…');
     let pubkeyHex;
     try {
       const res = await nostrCall('decode_npub', npub);
       pubkeyHex = typeof res === 'string' ? res : (res.pubkey || JSON.stringify(res));
-    } catch (e) { sLog('decode_npub failed: ' + e.message, 'err'); return; }
+      console.log('[sync]', ts(), 'decoded pubkey hex:', pubkeyHex.slice(0, 16) + '…');
+    } catch (e) {
+      console.error('[sync] decode_npub failed', e);
+      console.groupEnd();
+      sLog('decode_npub failed: ' + e.message, 'err');
+      return;
+    }
 
     const fs = emulator && emulator.fs9p;
     let followRoot = DEFAULT_FOLLOW_ROOT;
     if (fs) {
-      try {
-        followRoot = await resolveFollowRoot(fs);
-      } catch (e) {
-        sLog('sync blocked: ' + e.message, 'err');
-        return;
-      }
+      followRoot = await ensureFollowRoot(fs);
+      console.log('[sync]', ts(), 'followRoot:', followRoot, '→ guest:', socialGuestPath(followRoot));
+    } else {
+      console.warn('[sync] fs9p unavailable — sync will not persist files');
     }
 
+    console.log('[sync]', ts(), 'requesting kind-30000 manifest from relays:', NOSTR_RELAYS);
     const events = await nostrReq(NOSTR_RELAYS, {
       kinds: [30000], authors: [pubkeyHex], '#d': ['public-folder'], limit: 5,
     });
+    console.log('[sync]', ts(), 'relay returned', events.length, 'event(s)');
 
     let manifest = null;
     if (events.length) {
       const ev = events.sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+      console.log('[sync]', ts(), 'newest event id=' + (ev.id || '').slice(0, 16) + '… created_at=' + ev.created_at);
       try {
         manifest = JSON.parse(ev.content);
         if (fs) {
-          const cachePath = followRoot + '/' + npub + '/.manifest.json';
+          const userDir = followRoot + '/' + npub;
+          ensureDirChain(fs, userDir);
+          const cachePath = userDir + '/.manifest.json';
           const payload = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
-          const parts = cachePath.split('/').filter(Boolean);
-          let cur = '';
-          for (let i = 0; i < parts.length - 1; i++) {
-            cur += '/' + parts[i];
-            try { fs.create_directory(cur); } catch (_) {}
+          try {
+            await fsWriteFileCompat(fs, cachePath, payload);
+            console.log('[sync]', ts(), 'cached manifest at', cachePath);
+          } catch (e) {
+            console.warn('[sync] cache manifest write failed:', e && e.message);
           }
-          try { await fsWriteFileCompat(fs, cachePath, payload); } catch (_) {}
         }
       } catch (e) {
+        console.error('[sync] invalid manifest JSON', e);
+        console.groupEnd();
         sLog('invalid manifest: ' + e.message, 'err');
         return;
       }
@@ -2483,6 +2477,7 @@
       try {
         const cached = await fs.read_file(cachePath);
         manifest = JSON.parse(new TextDecoder().decode(cached));
+        console.log('[sync]', ts(), 'falling back to cached manifest at', cachePath);
         sLog('no relay manifest; using cached manifest at ' + socialGuestPath(cachePath), 'hint');
       } catch (_) {
         const ownNpub = localStorage.getItem('traits.nostr.npub') || '';
@@ -2490,6 +2485,7 @@
           try {
             const localManifest = await fs.read_file(SOCIAL_PUBLIC_ROOT + '/.manifest.json');
             manifest = JSON.parse(new TextDecoder().decode(localManifest));
+            console.log('[sync]', ts(), 'using own local /public manifest');
             sLog('no relay manifest; using local manifest at ' + socialGuestPath(SOCIAL_PUBLIC_ROOT + '/.manifest.json'), 'hint');
           } catch (_) {}
         }
@@ -2497,45 +2493,68 @@
     }
 
     if (!manifest) {
+      console.warn('[sync] no manifest available');
+      console.groupEnd();
       sLog('no manifest found for ' + truncNpub(npub), 'hint');
       sLog('manifest = kind-30000 d=public-folder event that lists files + base URL', 'hint');
       sLog('ask this user to run: social tunnel-up 8080, then publish /vfs/public', 'hint');
       return;
     }
     if (!manifest.base || !Array.isArray(manifest.files)) {
+      console.error('[sync] manifest missing base/files', manifest);
+      console.groupEnd();
       sLog('manifest missing base/files', 'err');
       return;
     }
+    console.log('[sync]', ts(), 'manifest base=' + manifest.base, 'files=' + manifest.files.length);
     sLog('manifest: ' + manifest.files.length + ' file(s) from ' + manifest.base);
 
     let synced = 0;
+    let writeFailed = 0;
     for (const f of manifest.files) {
       try {
         const url = manifest.base.replace(/\/+$/, '') + '/' + f.p.replace(/^\/+/, '');
+        console.log('[sync] fetch', f.p, '←', url);
         const resp = await fetch(url);
-        if (!resp.ok) { sLog('fetch ' + f.p + ' → ' + resp.status, 'hint'); continue; }
+        if (!resp.ok) {
+          console.warn('[sync] http', resp.status, 'on', f.p);
+          sLog('fetch ' + f.p + ' → ' + resp.status, 'hint');
+          continue;
+        }
         const buf = await resp.arrayBuffer();
-        // Verify hash if provided
         if (f.h && f.h.startsWith('sha256:')) {
           const got = 'sha256:' + (await sha256hex(buf));
-          if (got !== f.h) { sLog('hash mismatch: ' + f.p, 'err'); continue; }
+          if (got !== f.h) {
+            console.warn('[sync] hash mismatch', { file: f.p, expected: f.h, got });
+            sLog('hash mismatch: ' + f.p, 'err');
+            continue;
+          }
         }
-        // Write to 9P share under <follow_root>/<npub>/
         if (fs) {
           const dest = followRoot + '/' + npub + '/' + f.p.replace(/^\/+/, '');
-          // Create parent directories
-          const parts = dest.split('/').filter(Boolean);
-          let cur = '';
-          for (let i = 0; i < parts.length - 1; i++) {
-            cur += '/' + parts[i];
-            try { fs.create_directory(cur); } catch (_) {}
+          // ensure parent dir chain
+          const lastSlash = dest.lastIndexOf('/');
+          if (lastSlash > 0) ensureDirChain(fs, dest.slice(0, lastSlash));
+          try {
+            await fsWriteFileCompat(fs, dest, new Uint8Array(buf));
+            console.log('[sync] wrote', dest, 'bytes=' + buf.byteLength);
+          } catch (e) {
+            writeFailed++;
+            console.error('[sync] write failed', dest, e);
+            sLog('write failed: ' + socialGuestPath(dest) + ': ' + (e && e.message), 'err');
+            continue;
           }
-          await fsWriteFileCompat(fs, dest, new Uint8Array(buf));
         }
         synced++;
-      } catch (e) { sLog('error on ' + f.p + ': ' + e.message, 'err'); }
+      } catch (e) {
+        console.error('[sync] error on', f.p, e);
+        sLog('error on ' + f.p + ': ' + e.message, 'err');
+      }
     }
-    sLog(`synced ${synced}/${manifest.files.length} for ${truncNpub(npub)}`, synced > 0 ? 'ok' : 'hint');
+    console.log('[sync]', ts(), 'done: synced=' + synced + '/' + manifest.files.length + ' writeFailed=' + writeFailed);
+    console.groupEnd();
+    sLog(`synced ${synced}/${manifest.files.length} for ${truncNpub(npub)}` + (writeFailed ? ` (${writeFailed} write fail)` : ''),
+      synced > 0 ? 'ok' : 'hint');
   }
 
   async function doSyncAll() {
