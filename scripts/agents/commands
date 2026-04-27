@@ -54,7 +54,8 @@ scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null myfile r
 sftp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@localhost
 rsync -e "ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" -av ./ root@localhost:/tmp/
 
-
+#kill
+ps | grep tunnel 
 # Expose guest port 8384 (Syncthing GUI) as local :18384
 sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
 # then open http://localhost:18384 in browser

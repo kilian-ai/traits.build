@@ -642,6 +642,34 @@
     emulator = new V86(cfg);
     window.emulator = emulator;
 
+    // ── 9P inode uid/gid sanitizer ──────────────────────────────────────────
+    // v86's fs9p stores inode uid as whatever the kernel sent in Tattach's
+    // n_uname field. Linux 9p with `access=any` sends ~0u (0xFFFFFFFF) as a
+    // sentinel for "any user". v86 stores that as fid.uid, then Tmkdir/Tlcreate
+    // copy it into c.uid. When the kernel reads it back via Tgetattr, (uid_t)-1
+    // is treated as "invalid" and squashed to dfltuid (65534 = nobody),
+    // producing EOVERFLOW on plain `rm`/`stat`. We patched libv86.js Tattach
+    // to clamp n_uname to 0 for new attaches, but persisted snapshots still
+    // contain stale inodes with uid=4294967295. This walks the inode array
+    // on every emulator-ready and resets any out-of-range uid/gid to 0 (root).
+    function sanitizeInodeOwnership() {
+      const fs = emulator && emulator.fs9p;
+      if (!fs || !fs.inodes) return 0;
+      let fixed = 0;
+      for (const inode of fs.inodes) {
+        if (!inode) continue;
+        if (inode.uid === undefined || inode.uid < 0 || inode.uid >= 0x80000000 || !Number.isFinite(inode.uid)) {
+          inode.uid = 0; fixed++;
+        }
+        if (inode.gid === undefined || inode.gid < 0 || inode.gid >= 0x80000000 || !Number.isFinite(inode.gid)) {
+          inode.gid = 0;
+        }
+      }
+      if (fixed) console.log('[fs9p] sanitized inode uids:', fixed);
+      return fixed;
+    }
+    window.sanitize9pInodes = sanitizeInodeOwnership;
+
     // ── DNS interceptor ─────────────────────────────────────────────────────
     // v86's WispNetworkAdapter has a built-in DoH path (handle_fake_dns_doh)
     // but its synthesised UDP reply isn't delivered to the guest resolver in
@@ -650,8 +678,8 @@
     // and inject the reply back onto the receive side with correct framing.
     installDnsInterceptor(emulator);
 
-    emulator.add_listener('emulator-ready',   () => setStatus('ready'));
-    emulator.add_listener('emulator-started', () => setStatus(doRestore ? 'restored' : 'running', 'ok'));
+    emulator.add_listener('emulator-ready',   () => { sanitizeInodeOwnership(); setStatus('ready'); });
+    emulator.add_listener('emulator-started', () => { sanitizeInodeOwnership(); setStatus(doRestore ? 'restored' : 'running', 'ok'); });
     emulator.add_listener('emulator-stopped', () => setStatus('stopped'));
 
     // ── Restore-path instrumentation ───────────────────────────────────────
@@ -763,8 +791,14 @@
       const mount9pCmd =
         'mkdir -p /mnt/host 2>/dev/null\n' +
         'mountpoint -q /mnt/host && (umount /mnt/host 2>/dev/null || umount -l /mnt/host 2>/dev/null || true)\n' +
-        'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none,access=any,rw host9p /mnt/host 2>/dev/null || ' +
-        'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,rw host9p /mnt/host 2>/dev/null\n' +
+        'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null || ' +
+        'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null\n' +
+        // Reset stale ownership left over from old snapshots where v86 fs9p
+        // recorded uid=0xFFFFFFFF (Linux: nobody=65534, → EOVERFLOW on stat).
+        // The host page also runs window.sanitize9pInodes() on emulator-ready
+        // for the same purpose; this guest-side chown is belt-and-suspenders
+        // for the moment after mount, before the first user `rm`.
+        'chown -R 0:0 /mnt/host 2>/dev/null || true\n' +
         'ln -sfn /mnt/host /home/root/host 2>/dev/null\n' +
         'umask 000\n' +
         'mkdir -p -m 0777 /mnt/host/public /mnt/host/public/.following 2>/dev/null\n' +
