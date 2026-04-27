@@ -1015,6 +1015,19 @@
         'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1\n' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf\n' +
         dohSeedCmd +
+        // If unbound is already installed (snapshot has it), recycle it
+        // so its dead WISP-era TCP cnxns are dropped, then point libc at
+        // 127.0.0.1 — Fly WISP drops UDP/53 so resolving via 1.1.1.1
+        // directly fails with "bad address" for every getaddrinfo call.
+        'if command -v unbound >/dev/null 2>&1; then ' +
+          'killall -q unbound 2>/dev/null; sleep 1; ' +
+          'unbound -c /etc/unbound/unbound.conf >/dev/null 2>&1 & ' +
+          'sleep 1; ' +
+          'if pidof unbound >/dev/null 2>&1; then ' +
+            'printf "nameserver 127.0.0.1\\nnameserver 1.1.1.1\\n" > /etc/resolv.conf; ' +
+            'echo "[fresh-net] unbound recycled"; ' +
+          'fi; ' +
+        'fi\n' +
         'clear\n' + (setupCmd ? setupCmd + '\n' : '');
 
       return doRestore ? restoreNetCmd : freshBootCmd;
