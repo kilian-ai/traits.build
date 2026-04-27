@@ -90,8 +90,8 @@
     <button id="restore" disabled>restore</button>
     <button id="clear" disabled>clear snapshot</button>
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
-    <button id="viewer" disabled title="Browse files in /mnt/vfs (v86 VFS root) directly from the host — no relay needed">viewer</button>
-    <button id="social" disabled title="Nostr social: publish /mnt/vfs/public, follow users, sync their content">social</button>
+    <button id="viewer" disabled title="Browse files in /mnt/host (v86 9P share root) directly from the host browser — no relay needed">viewer</button>
+    <button id="social" disabled title="Nostr social: publish /mnt/host/public, follow users, sync their content">social</button>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
   </div>
@@ -99,8 +99,8 @@
   <div id="viewer-overlay" hidden>
     <div id="viewer-bar">
       <b>viewer</b>
-      <span class="hint" style="margin-left:6px">VFS root → /mnt/vfs (in guest)</span>
-      <input id="viewer-path" value="/vfs" spellcheck="false" title="path inside the 9P share">
+      <span class="hint" style="margin-left:6px">9P share root → /mnt/host (in guest)</span>
+      <input id="viewer-path" value="/mnt/host" spellcheck="false" title="guest path inside the 9P share (root /mnt/host == 9P share root)">
       <button id="viewer-refresh" title="reload listing">refresh</button>
       <span class="hint" id="viewer-status"></span>
       <button id="viewer-close" style="margin-left:auto">close</button>
@@ -1031,8 +1031,10 @@
 
   // ─────────────────────────────────────────────────────────────────────────
   // Viewer overlay — browse files in the v86 9P share directly from the host.
-  // No relay/tunnel/websocat needed. Files the guest writes under /mnt/vfs/*
-  // appear here on the next refresh.
+  // No relay/tunnel/websocat needed. Files the guest writes under /mnt/host/*
+  // appear here on the next refresh. The 9P share root (fs9p "/") is what the
+  // guest sees mounted at /mnt/host — the input field accepts both forms
+  // ("/mnt/host/..." guest paths and "/..." share-relative paths).
   // ─────────────────────────────────────────────────────────────────────────
   const viewerBtn   = $('viewer');
   const overlay     = $('viewer-overlay');
@@ -1044,18 +1046,36 @@
   const closeBtn    = $('viewer-close');
   const vStatusEl   = $('viewer-status');
   let lastBlobUrl   = null;
-  const VIEWER_ROOT = '/vfs';
-  const expanded    = new Set([VIEWER_ROOT]);
+  // The 9P share root from the host browser's view is fs9p "/". In the guest
+  // it is mounted at /mnt/host. We accept either form in the input field and
+  // strip the /mnt/host prefix internally before talking to fs9p.
+  const VIEWER_ROOT      = '/';
+  const VIEWER_GUEST_TAG = '/mnt/host';
+  const expanded         = new Set([VIEWER_ROOT]);
 
+  // Convert a share-relative path ("/foo/bar") into the guest-visible form
+  // ("/mnt/host/foo/bar") for display in the input field.
+  function toGuestPath(sharePath) {
+    if (!sharePath || sharePath === '/') return VIEWER_GUEST_TAG;
+    return VIEWER_GUEST_TAG + sharePath;
+  }
+
+  // Convert the input field value (which may be "/mnt/host/..." guest form,
+  // a bare share-relative path, or empty) into the canonical share-relative
+  // path used by fs9p.
   function normalizeViewerPath(raw) {
     let path = String(raw || '').trim();
     if (!path) return VIEWER_ROOT;
     if (!path.startsWith('/')) path = '/' + path;
-    path = path.replace(/\/+/g, '/');
-    path = path.replace(/\/$/, '');
+    path = path.replace(/\/+/g, '/').replace(/\/$/, '');
+    if (!path) return VIEWER_ROOT;
+    // Strip the guest-side mount prefix if the user pasted a /mnt/host path.
+    if (path === VIEWER_GUEST_TAG) return VIEWER_ROOT;
+    if (path.startsWith(VIEWER_GUEST_TAG + '/')) {
+      path = path.slice(VIEWER_GUEST_TAG.length);
+    }
     if (!path || path === '/') return VIEWER_ROOT;
-    if (path === VIEWER_ROOT || path.startsWith(VIEWER_ROOT + '/')) return path;
-    return VIEWER_ROOT;
+    return path;
   }
 
   function vSet(msg, cls) { vStatusEl.textContent = msg || ''; vStatusEl.className = 'hint ' + (cls || ''); }
@@ -1127,9 +1147,9 @@
   function renderTree() {
     if (!fs9p()) { treeEl.innerHTML = '<div class="row hint" style="padding:8px 12px">9P share not ready</div>'; return; }
     const root = normalizeViewerPath(pathEl.value);
-    pathEl.value = root;
+    pathEl.value = toGuestPath(root);
     if (!isDir(root)) {
-      treeEl.innerHTML = `<div class="row hint" style="padding:8px 12px">not a directory: ${root}</div>`;
+      treeEl.innerHTML = `<div class="row hint" style="padding:8px 12px">not a directory: ${toGuestPath(root)}</div>`;
       return;
     }
     expanded.add(root);
@@ -1161,17 +1181,18 @@
 
   async function openFile(path) {
     const fs = fs9p(); if (!fs) return;
-    vSet('loading ' + path);
+    const display = toGuestPath(path);
+    vSet('loading ' + display);
     let data;
     try { data = await fs.read_file(path); } catch (e) { vSet('error: ' + e.message, 'err'); return; }
-    if (!data) { vSet('empty or missing: ' + path, 'err'); return; }
+    if (!data) { vSet('empty or missing: ' + display, 'err'); return; }
     if (lastBlobUrl) { try { URL.revokeObjectURL(lastBlobUrl); } catch (_) {} lastBlobUrl = null; }
     const blob = new Blob([data], { type: mimeFor(path) });
     lastBlobUrl = URL.createObjectURL(blob);
     frameEl.src = lastBlobUrl;
     frameEl.hidden = false;
     emptyEl.hidden = true;
-    vSet(`${path} (${data.length} bytes)`, 'ok');
+    vSet(`${display} (${data.length} bytes)`, 'ok');
   }
 
   treeEl.addEventListener('click', e => {
@@ -1188,14 +1209,14 @@
   });
   refreshBtn.onclick = () => { renderTree(); vSet('reloaded'); };
   pathEl.onkeydown = e => { if (e.key === 'Enter') { renderTree(); } };
-  pathEl.onblur = () => { pathEl.value = normalizeViewerPath(pathEl.value); };
+  pathEl.onblur = () => { pathEl.value = toGuestPath(normalizeViewerPath(pathEl.value)); };
   closeBtn.onclick = () => { overlay.hidden = true; term.focus(); };
   viewerBtn.onclick = () => {
     if (!fs9p()) { setStatus('9P share not available — boot v86 first', 'err'); return; }
-    // Default to the vfs public seed dir if it exists.
+    // Default to /mnt/host/public if it exists, otherwise the share root.
     const normalized = normalizeViewerPath(pathEl.value);
-    if (normalized === VIEWER_ROOT && isDir('/vfs/public')) pathEl.value = '/vfs/public';
-    else pathEl.value = normalized;
+    const target = (normalized === VIEWER_ROOT && isDir('/public')) ? '/public' : normalized;
+    pathEl.value = toGuestPath(target);
     overlay.hidden = false;
     renderTree();
     vSet('ready');
