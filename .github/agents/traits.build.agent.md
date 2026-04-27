@@ -1443,6 +1443,20 @@ sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
 
 **Consequence for debugging network stalls from v86:** `apk fetch` hangs, DHCP retries, and TCP timeouts inside the v86 Alpine guest must be investigated against **the Fly.io WISP server**, not the Cloudflare Worker. The CF relay's `/linux/tunnel`, `/x/net`, `/x/sys`, and `/wisp` endpoints serve `www.linux` and Apptron — not v86. Check Fly logs, WISP flow-control (`WISP_BUFFER` credits, `bytesSinceCredit` replenish), and `connect()` error codes on the Fly side first before suspecting the CF relay.
 
+### v86 DNS over Fly WISP: UDP/53 is dropped, use TCP/53 (Apr 2026)
+
+Fly WISP passes TCP fine (including TCP/53, TCP/443, TCP/853) and ICMP, but **drops UDP/53**. Symptoms inside the guest: `ping google.com` → `bad address`, all UDP DNS queries (busybox `nslookup`, libc `getaddrinfo`) time out. Verified by sending a raw DNS query packet over `nc 1.1.1.1 53` (TCP) which returns a real response, while UDP times out.
+
+`local/tunnel-up.sh` now mitigates this in two layers:
+1. A small DoH `/etc/hosts` allowlist seeder (`seed_hosts_via_doh`) that runs BEFORE `apk add` — bootstraps name resolution for `dl-cdn.alpinelinux.org` and the canonical traits/Fly hosts using `https://1.1.1.1/dns-query` (literal IP, no DNS needed).
+2. Installs **`unbound`** + libcrypto upgrade and starts it on `127.0.0.1:53` configured with `forward-tcp-upstream: yes` to forward all queries over TCP to 1.1.1.1 / 1.0.0.1. `/etc/resolv.conf` becomes `nameserver 127.0.0.1` + fallback `1.1.1.1`. Result: arbitrary hostnames (`google.com`, `example.com`, anything) resolve normally and `ping`/`wget`/`curl` work.
+
+**Apk gotcha:** Alpine's current `unbound` (1.24.2) calls `EVP_MD_CTX_get_size_ex`, which only exists in openssl ≥ 3.5. Older base images ship libcrypto 3.3.3 → unbound dies silently at startup with a relocation error and `pidof unbound` returns nothing. Always install with `apk add --no-cache --upgrade unbound libcrypto3 libssl3` to pull in matching openssl 3.5.6.
+
+**Don't try `https-dns-proxy` or `cloudflared`** — neither is in the Alpine repo. `dnsmasq` always tries UDP first to upstream and has no force-TCP option, so it's not useful here. `dnscrypt-proxy` and `stubby` would also work but unbound is simpler when plain TCP/53 already works.
+
+See [/memories/repo/v86_dns_fix.md](/memories/repo/v86_dns_fix.md) for full debugging history. Fixed in commits `974ee98e` + `b269a1d7`.
+
 ### v86 snapshot-restore networking (alpine.iso)
 
 On snapshot restore the `WispNetworkAdapter` + its WebSocket are recreated fresh (they are not in the x86 snapshot). However, the NE2K driver lives in the x86 state and does **not** re-emit its `net0-mac` bus event — so the fresh adapter keeps a zero `vm_mac` and silently drops/misroutes all frames (`ping 192.168.86.1` fails 100%). Fix: `restoreNetCmd` must bounce `eth0` (`ip link set eth0 down; sleep 1; ip link set eth0 up`) which re-initializes the NE2K, re-fires `net0-mac`, and resets RX/TX ring state. Empirically the first `up` after restore sometimes silently fails (racy NE2K+adapter handshake) so wrap in a 5-try retry loop polling `/sys/class/net/eth0/operstate`. After bounce, apply **static** IPv4 config (never backgrounded `udhcpc &`): `192.168.86.100/24` + `default via 192.168.86.1` + static ARP for `52:54:00:01:02:03` + resolv.conf fallback `1.1.1.1`. Verified at commit `065f9d02`: post-restore DNS resolves to CF (172.67.x.x / 104.21.x.x / 2606:4700::) and HTTPS to `relay.traits.build` returns real HTTP responses.
