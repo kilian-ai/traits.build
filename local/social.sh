@@ -248,7 +248,10 @@ cmd_tunnel_up() {
     tmp=$(mktemp /tmp/social-tunnel.XXXXXX)
     sh -c "curl -sS https://www.traits.build/local/tunnel-up.sh | sh -s -- $ports" 2>&1 | tee "$tmp" &
     sleep 6
-    code=$(grep -oE 'CODE[: =]+[A-Z0-9]{4}' "$tmp" | head -1 | grep -oE '[A-Z0-9]{4}$' || true)
+    # tunnel-up.sh emits one of:
+    #   [tunnel] pairing code: XXXX
+    #   CODE=XXXX   /   CODE: XXXX
+    code=$(grep -oE '(pairing code|CODE)[: =]+[A-Z0-9]{4}' "$tmp" | head -1 | grep -oE '[A-Z0-9]{4}$' || true)
     if [ -z "$code" ]; then
         log "could not parse tunnel code; check output above"
         rm -f "$tmp"
