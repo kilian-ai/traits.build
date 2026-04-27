@@ -115,47 +115,72 @@ dl-cdn.alpinelinux.org"
 
 seed_hosts_via_doh
 
-# Install websocat if missing (needs DNS — handled by seeder above).
-# Also install https-dns-proxy so we can forward ALL DNS queries via DoH,
-# not just the small seeded host list.
+# Install websocat + a TCP-DNS forwarder (unbound) if missing.
+# Fly WISP passes TCP fine, including TCP/53, but drops UDP/53.
+# unbound's `forward-tcp-upstream: yes` resolves all hostnames over
+# TCP to 1.1.1.1, so getaddrinfo / wget / curl / ping work normally
+# without needing the /etc/hosts seed for every host.
 if ! command -v websocat >/dev/null 2>&1 \
-        || ! command -v https-dns-proxy >/dev/null 2>&1; then
-    echo "[tunnel] installing websocat + https-dns-proxy..."
-    apk add --no-cache websocat curl https-dns-proxy >/dev/null 2>&1 \
+        || ! command -v unbound >/dev/null 2>&1; then
+    echo "[tunnel] installing websocat + unbound..."
+    apk add --no-cache websocat curl unbound >/dev/null 2>&1 \
         || { echo "[tunnel] apk failed — install packages manually"; exit 1; }
 fi
 
-# Bring up a local DoH→UDP/53 proxy so getaddrinfo/wget/curl/ping
-# resolve arbitrary hostnames via HTTPS (1.1.1.1) instead of UDP/53,
-# which Fly WISP drops. Bootstrap is unnecessary because the URL host
-# is a literal IP. Idempotent: skip relaunch if 127.0.0.1:53 is live.
-start_doh_proxy() {
-    if pidof https-dns-proxy >/dev/null 2>&1; then
+# Bring up unbound on 127.0.0.1:53 forwarding via TCP to 1.1.1.1.
+# Idempotent: skip relaunch if a binding already exists.
+start_dns_proxy() {
+    if pidof unbound >/dev/null 2>&1; then
         return 0
     fi
-    echo "[tunnel] starting local DoH proxy on 127.0.0.1:53"
-    # -a listen addr, -p port, -r resolver URL, -d daemonize
-    https-dns-proxy -a 127.0.0.1 -p 53 \
-        -r 'https://1.1.1.1/dns-query' \
-        -r 'https://1.0.0.1/dns-query' \
-        -d >/dev/null 2>&1 \
-        || { echo "[tunnel] https-dns-proxy failed to start"; return 1; }
-    # Point resolv.conf at the local proxy. Keep 1.1.1.1 as a fallback
-    # so direct-IP HTTPS tools still work even if the proxy dies.
-    printf 'nameserver 127.0.0.1\nnameserver 1.1.1.1\n' > /etc/resolv.conf
-    # Quick sanity check.
-    for i in 1 2 3 4 5; do
-        if nslookup google.com 127.0.0.1 >/dev/null 2>&1; then
-            echo "[tunnel] DoH proxy resolving OK"
+    echo "[tunnel] starting local DNS proxy (unbound TCP→1.1.1.1)"
+    mkdir -p /etc/unbound /var/lib/unbound 2>/dev/null
+    cat > /etc/unbound/unbound.conf <<'UNBCONF'
+server:
+    verbosity: 0
+    interface: 127.0.0.1
+    port: 53
+    do-udp: yes
+    do-tcp: yes
+    do-ip4: yes
+    do-ip6: no
+    access-control: 127.0.0.0/8 allow
+    chroot: ""
+    pidfile: "/var/run/unbound.pid"
+    use-syslog: no
+    logfile: ""
+    hide-identity: yes
+    hide-version: yes
+    qname-minimisation: no
+    harden-glue: yes
+    cache-min-ttl: 60
+    cache-max-ttl: 3600
+    # Skip auto-trust-anchor — fetching the IANA root key needs DNS.
+    auto-trust-anchor-file: ""
+    trust-anchor-file: ""
+    val-permissive-mode: yes
+
+forward-zone:
+    name: "."
+    forward-tcp-upstream: yes
+    forward-first: no
+    forward-addr: 1.1.1.1
+    forward-addr: 1.0.0.1
+UNBCONF
+    unbound -c /etc/unbound/unbound.conf >/dev/null 2>&1 &
+    # Wait for it to start serving.
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if nslookup -timeout=2 google.com 127.0.0.1 >/dev/null 2>&1; then
+            printf 'nameserver 127.0.0.1\nnameserver 1.1.1.1\n' > /etc/resolv.conf
+            echo "[tunnel] DNS proxy resolving OK"
             return 0
         fi
         sleep 1
     done
-    echo "[tunnel] DoH proxy did not respond — leaving /etc/resolv.conf with 1.1.1.1 only"
-    printf 'nameserver 1.1.1.1\nnameserver 1.0.0.1\n' > /etc/resolv.conf
+    echo "[tunnel] unbound did not respond — falling back to /etc/hosts seed"
     return 1
 }
-start_doh_proxy
+start_dns_proxy
 
 # Build ports JSON array  e.g. "22 8384" → [22,8384]
 PORTS_JSON=$(printf '['; first=1
