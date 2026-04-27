@@ -2158,9 +2158,6 @@
 
   async function doSyncOne(npub) {
     npub = npub.trim();
-    if (await runGuestSocialCommand(['sync'], 'social sync')) {
-      return;
-    }
     sLog('syncing ' + truncNpub(npub) + '…');
     let pubkeyHex;
     try {
@@ -2264,27 +2261,23 @@
   }
 
   async function doSyncAll() {
-    if (await runGuestSocialCommand(['sync'], 'social sync')) {
-      return;
-    }
     const following = getFollowing();
     if (!following.length) { sLog('no followed users to sync'); return; }
     sLog('syncing ' + following.length + ' user(s)…');
     for (const npub of following) await doSyncOne(npub);
     sLog('sync complete', 'ok');
+    // Fire-and-forget guest CLI for terminal echo (relay broadcast logging).
+    void runGuestSocialCommand(['sync'], 'social sync');
   }
 
   async function doPublish() {
-    if (await runGuestSocialCommand(['publish'], 'social publish')) {
-      return;
-    }
     const nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
     if (!nsec) { sLog('no identity — generate one first', 'err'); return; }
     const fs = emulator && emulator.fs9p;
     if (!fs) { sLog('9P share not available — boot v86 first', 'err'); return; }
 
     // Read tunnel base URL from /mnt/vfs/.social.tunnel (fallback to legacy root path)
-    let baseUrl;
+    let baseUrl = '';
     try {
       const data = await fs.read_file(SOCIAL_VFS_ROOT + '/.social.tunnel');
       baseUrl = new TextDecoder().decode(data).trim();
@@ -2293,10 +2286,11 @@
         const legacy = await fs.read_file('/.social.tunnel');
         baseUrl = new TextDecoder().decode(legacy).trim();
       } catch (_) {
-        sLog('no /mnt/vfs/.social.tunnel — run social tunnel-up in the guest first', 'err');
-        sLog('  wget -qO- https://www.traits.build/local/social.sh | sh', 'hint');
-        sLog('  social tunnel-up 8080', 'hint');
-        return;
+        // Degrade gracefully: publish manifest without a base URL. Followers
+        // will see the file list + hashes but won't be able to fetch content
+        // until you run `social tunnel-up 8080` in the guest and re-publish.
+        sLog('no .social.tunnel — publishing manifest without fetch URL', 'hint');
+        sLog('  run in terminal: social tunnel-up 8080  (then click publish again)', 'hint');
       }
     }
 
@@ -2326,7 +2320,10 @@
 
     const manifestObj = { v: 1, base: baseUrl, files };
     const content  = JSON.stringify(manifestObj);
-    const tagsJson = JSON.stringify([['d', 'public-folder'], ['r', baseUrl]]);
+    const tags = baseUrl
+      ? [['d', 'public-folder'], ['r', baseUrl]]
+      : [['d', 'public-folder']];
+    const tagsJson = JSON.stringify(tags);
     const now      = String(Math.floor(Date.now() / 1000));
 
     // Keep a local copy for offline/self testing and relay-miss fallback.
@@ -2348,15 +2345,13 @@
     sLog('broadcasting to ' + NOSTR_RELAYS.length + ' relays…');
     await nostrPublish(NOSTR_RELAYS, event);
     sLog('published! id: ' + (event.id || '').slice(0, 16) + '…', 'ok');
+    // Fire-and-forget guest CLI for terminal echo (parallel relay broadcast).
+    void runGuestSocialCommand(['publish'], 'social publish');
   }
 
   async function doSearch(query) {
     query = query.trim();
     if (!query) return;
-    if (await runGuestSocialCommand(['search', query], 'social search "' + query + '"')) {
-      searchResults.innerHTML = '<span class="hint">search is running in terminal output</span>';
-      return;
-    }
     sLog('searching "' + query + '"…');
     searchResults.innerHTML = '<span class="hint">searching…</span>';
     const events = await nostrReq(NOSTR_RELAYS, {
@@ -2435,9 +2430,33 @@
     const npub = btn.dataset.npub;
     if (btn.classList.contains('fc-sync-btn'))     doSyncOne(npub);
     if (btn.classList.contains('fc-view-btn')) {
-      // Open viewer overlay on <follow_root>/<npub>
-      if (pathEl) pathEl.value = getFollowRoot() + '/' + npub;
-      overlay.hidden = false; renderTree(); vSet('ready');
+      // Open viewer overlay on <follow_root>/<npub>. If the dir is empty,
+      // trigger a sync first so the viewer has files to show.
+      void (async () => {
+        try {
+          const fs = emulator && emulator.fs9p;
+          let root = getFollowRoot();
+          if (fs) {
+            try { root = await resolveFollowRoot(fs); } catch (_) {}
+          }
+          const userDir = root + '/' + npub;
+          let hasFiles = false;
+          if (fs) {
+            try {
+              const entries = listDir(userDir);
+              hasFiles = entries.some(e => !e.dir && !e.path.endsWith('/.manifest.json'));
+            } catch (_) {}
+          }
+          if (!hasFiles) {
+            sLog('no synced files for ' + truncNpub(npub) + ' — syncing first…', 'hint');
+            await doSyncOne(npub);
+          }
+          if (pathEl) pathEl.value = userDir;
+          overlay.hidden = false; renderTree(); vSet('ready');
+        } catch (e) {
+          sLog('view files: ' + e.message, 'err');
+        }
+      })();
     }
     if (btn.classList.contains('fc-unfollow-btn')) {
       if (!confirm('Unfollow ' + truncNpub(npub) + '?')) return;
