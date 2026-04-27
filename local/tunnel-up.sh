@@ -116,11 +116,46 @@ dl-cdn.alpinelinux.org"
 seed_hosts_via_doh
 
 # Install websocat if missing (needs DNS — handled by seeder above).
-if ! command -v websocat >/dev/null 2>&1; then
-    echo "[tunnel] installing websocat..."
-    apk add --no-cache websocat curl >/dev/null 2>&1 \
-        || { echo "[tunnel] apk failed — install websocat manually"; exit 1; }
+# Also install https-dns-proxy so we can forward ALL DNS queries via DoH,
+# not just the small seeded host list.
+if ! command -v websocat >/dev/null 2>&1 \
+        || ! command -v https-dns-proxy >/dev/null 2>&1; then
+    echo "[tunnel] installing websocat + https-dns-proxy..."
+    apk add --no-cache websocat curl https-dns-proxy >/dev/null 2>&1 \
+        || { echo "[tunnel] apk failed — install packages manually"; exit 1; }
 fi
+
+# Bring up a local DoH→UDP/53 proxy so getaddrinfo/wget/curl/ping
+# resolve arbitrary hostnames via HTTPS (1.1.1.1) instead of UDP/53,
+# which Fly WISP drops. Bootstrap is unnecessary because the URL host
+# is a literal IP. Idempotent: skip relaunch if 127.0.0.1:53 is live.
+start_doh_proxy() {
+    if pidof https-dns-proxy >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "[tunnel] starting local DoH proxy on 127.0.0.1:53"
+    # -a listen addr, -p port, -r resolver URL, -d daemonize
+    https-dns-proxy -a 127.0.0.1 -p 53 \
+        -r 'https://1.1.1.1/dns-query' \
+        -r 'https://1.0.0.1/dns-query' \
+        -d >/dev/null 2>&1 \
+        || { echo "[tunnel] https-dns-proxy failed to start"; return 1; }
+    # Point resolv.conf at the local proxy. Keep 1.1.1.1 as a fallback
+    # so direct-IP HTTPS tools still work even if the proxy dies.
+    printf 'nameserver 127.0.0.1\nnameserver 1.1.1.1\n' > /etc/resolv.conf
+    # Quick sanity check.
+    for i in 1 2 3 4 5; do
+        if nslookup google.com 127.0.0.1 >/dev/null 2>&1; then
+            echo "[tunnel] DoH proxy resolving OK"
+            return 0
+        fi
+        sleep 1
+    done
+    echo "[tunnel] DoH proxy did not respond — leaving /etc/resolv.conf with 1.1.1.1 only"
+    printf 'nameserver 1.1.1.1\nnameserver 1.0.0.1\n' > /etc/resolv.conf
+    return 1
+}
+start_doh_proxy
 
 # Build ports JSON array  e.g. "22 8384" → [22,8384]
 PORTS_JSON=$(printf '['; first=1
