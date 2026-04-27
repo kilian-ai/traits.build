@@ -176,38 +176,49 @@ CGI
     chmod +x "$dir/cgi-bin/ls"
 }
 
-# Auto-start busybox httpd serving ~/public on port 8080 if requested + no listener.
-# ~/public is symlinked to /mnt/host/public so files are shared between the
-# guest user shell, SFTP uploads (whose home is /root), the v86 host browser
-# (which reads fs9p directly), and the public viewer — all looking at the
-# same 9P-backed directory.
-auto_start_httpd() {
+# Ensure ~/public is a symlink to /mnt/host/public so SFTP uploads (which land
+# in $HOME), v86 host fs9p writes, and the viewer all see the same dir.
+# Idempotent — safe to call multiple times. Falls back to a plain dir when
+# /mnt/host isn't mounted (headless test runs).
+ensure_public_symlink() {
     local home="${HOME:-/root}"
     local link="$home/public"
     local target="/mnt/host/public"
-    # Ensure the shared 9P dir exists. If /mnt/host isn't actually a 9P mount
-    # (no host bridge), fall back to a plain $HOME/public dir so the viewer
-    # still works in headless test runs.
-    if grep -q ' /mnt/host ' /proc/mounts 2>/dev/null; then
-        mkdir -p "$target" 2>/dev/null
-        # Replace $HOME/public with a symlink to /mnt/host/public unless
-        # it's already correctly linked. If a real dir exists with content,
-        # migrate its files into the shared dir before replacing.
-        if [ -L "$link" ]; then
-            [ "$(readlink "$link")" = "$target" ] || { rm -f "$link"; ln -s "$target" "$link"; }
-        elif [ -d "$link" ]; then
-            if [ -n "$(ls -A "$link" 2>/dev/null)" ]; then
-                cp -a "$link"/. "$target"/ 2>/dev/null || true
-            fi
-            rm -rf "$link" 2>/dev/null
-            ln -s "$target" "$link"
-        else
-            ln -s "$target" "$link"
-        fi
-    else
-        mkdir -p "$link"
+    if ! grep -q ' /mnt/host ' /proc/mounts 2>/dev/null; then
+        mkdir -p "$link" 2>/dev/null
+        return 0
     fi
-    local dir="$link"
+    mkdir -p "$target" 2>/dev/null
+    if [ -L "$link" ]; then
+        if [ "$(readlink "$link")" = "$target" ]; then
+            return 0
+        fi
+        rm -f "$link"
+        ln -s "$target" "$link"
+        echo "[tunnel]   ~/public -> $target (relinked)"
+        return 0
+    fi
+    if [ -d "$link" ]; then
+        if [ -n "$(ls -A "$link" 2>/dev/null)" ]; then
+            cp -a "$link"/. "$target"/ 2>/dev/null || true
+            echo "[tunnel]   migrated existing ~/public contents into $target"
+        fi
+        rm -rf "$link" 2>/dev/null || {
+            # Couldn't remove (busy?) — try to empty it instead so at least
+            # the dir is consistent with /mnt/host/public next time.
+            echo "[tunnel]   WARNING: could not remove ~/public (cwd?). cd / and re-run."
+            return 1
+        }
+    fi
+    ln -s "$target" "$link"
+    echo "[tunnel]   ~/public -> $target"
+}
+
+# Auto-start busybox httpd serving ~/public on port 8080 if requested + no listener.
+auto_start_httpd() {
+    ensure_public_symlink
+    local home="${HOME:-/root}"
+    local dir="$home/public"
     if ! command -v httpd >/dev/null 2>&1; then
         # BusyBox httpd is usually built-in; if not, install busybox-extras.
         apk add --no-cache busybox-extras >/dev/null 2>&1 || true
@@ -295,7 +306,9 @@ for PORT in $PORTS; do
     # auto_start_httpd would be skipped, BusyBox httpd picks up new cgi-bin
     # scripts on the next request without needing a restart.
     if [ "$PORT" = "8080" ]; then
-        mkdir -p "${HOME:-/root}/public" 2>/dev/null
+        # Symlink ~/public -> /mnt/host/public BEFORE seeding cgi-bin so the
+        # CGI script lands in the shared dir (where httpd will serve it).
+        ensure_public_symlink
         seed_public_cgi
         echo "[tunnel] port 8080 — seeded ~/public/cgi-bin/ls (JSON listing endpoint)"
     fi
