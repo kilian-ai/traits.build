@@ -98,14 +98,21 @@ fn compute_id(pubkey_hex: &str, created_at: i64, kind: i64, tags: &Value, conten
 }
 
 fn sign_id(secret: &[u8; 32], id: &[u8; 32]) -> Result<String, String> {
-    use k256::schnorr::signature::Signer;
+    // BIP-340 / NIP-01: the message `m` IS the 32-byte event id. The high-level
+    // `Signer::try_sign(msg)` impl in k256 0.13 hashes `msg` with SHA-256 before
+    // calling `sign_prehash`, which would sign SHA-256(id) and produce a sig
+    // that real Nostr relays reject as `invalid: bad signature`. Use
+    // `sign_prehash` directly so the 32 bytes are signed as `m`.
+    use k256::schnorr::signature::hazmat::PrehashSigner;
     let sk = signing_key_from_bytes(secret)?;
-    let sig: k256::schnorr::Signature = sk.sign(id);
+    let sig: k256::schnorr::Signature = sk
+        .sign_prehash(id)
+        .map_err(|e| format!("sign: {e}"))?;
     Ok(hex::encode(sig.to_bytes()))
 }
 
 fn verify(pubkey_hex: &str, id: &[u8; 32], sig_hex: &str) -> bool {
-    use k256::schnorr::signature::Verifier;
+    use k256::schnorr::signature::hazmat::PrehashVerifier;
     let pk = match hex::decode(pubkey_hex) {
         Ok(v) if v.len() == 32 => v,
         _ => return false,
@@ -119,7 +126,7 @@ fn verify(pubkey_hex: &str, id: &[u8; 32], sig_hex: &str) -> bool {
         Ok(s) => s,
         Err(_) => return false,
     };
-    vk.verify(id, &sig).is_ok()
+    vk.verify_prehash(id, &sig).is_ok()
 }
 
 // ─── time ───────────────────────────────────────────────────────────────────

@@ -978,6 +978,55 @@
           '[ -n "$ip" ] && echo "$ip $h"; ' +
         'done; echo "# traits-doh-end"; } >> /etc/hosts\n';
 
+      // Bring up a local DNS proxy on 127.0.0.1:53 that forwards over
+      // TCP to 1.1.1.1 / 1.0.0.1. Fly WISP drops UDP/53, so plain
+      // /etc/resolv.conf -> 1.1.1.1 fails for any host not in the
+      // DoH-seeded /etc/hosts. unbound's `forward-tcp-upstream: yes`
+      // resolves arbitrary hostnames over TCP/53 which DOES pass.
+      // Auto-installs unbound if missing (apk works because dl-cdn is
+      // in the DoH-seeded /etc/hosts above). Always rewrites
+      // unbound.conf so the apk default (which has all forward-addr
+      // commented out) cannot leave us with a non-resolving daemon.
+      const dnsProxyCmd =
+        'if ! command -v unbound >/dev/null 2>&1; then ' +
+          'echo "[dns] installing unbound..."; ' +
+          'apk add --no-cache --upgrade unbound libcrypto3 libssl3 >/dev/null 2>&1 ' +
+            '|| echo "[dns] apk install failed — DNS will rely on /etc/hosts only" >&2; ' +
+        'fi\n' +
+        'if command -v unbound >/dev/null 2>&1; then ' +
+          'mkdir -p /etc/unbound /var/lib/unbound 2>/dev/null; ' +
+          'printf \'%s\\n\' ' +
+            '\'server:\' \'    verbosity: 0\' \'    interface: 127.0.0.1\' ' +
+            '\'    port: 53\' \'    do-udp: yes\' \'    do-tcp: yes\' ' +
+            '\'    do-ip4: yes\' \'    do-ip6: no\' ' +
+            '\'    access-control: 127.0.0.0/8 allow\' ' +
+            '\'    chroot: ""\' \'    pidfile: "/var/run/unbound.pid"\' ' +
+            '\'    use-syslog: no\' \'    logfile: ""\' ' +
+            '\'    hide-identity: yes\' \'    hide-version: yes\' ' +
+            '\'    qname-minimisation: no\' \'    harden-glue: yes\' ' +
+            '\'    cache-min-ttl: 60\' \'    cache-max-ttl: 3600\' ' +
+            '\'    auto-trust-anchor-file: ""\' \'    trust-anchor-file: ""\' ' +
+            '\'    val-permissive-mode: yes\' \'\' \'forward-zone:\' ' +
+            '\'    name: "."\' \'    forward-tcp-upstream: yes\' ' +
+            '\'    forward-first: no\' \'    forward-addr: 1.1.1.1\' ' +
+            '\'    forward-addr: 1.0.0.1\' ' +
+            '> /etc/unbound/unbound.conf; ' +
+          'killall -q unbound 2>/dev/null; sleep 1; ' +
+          'unbound -c /etc/unbound/unbound.conf >/dev/null 2>&1 & ' +
+          '__ub_ok=0; __ub_i=0; while [ $__ub_i -lt 12 ]; do ' +
+            'if nslookup -timeout=1 cloudflare.com 127.0.0.1 >/dev/null 2>&1; then __ub_ok=1; break; fi; ' +
+            '__ub_i=$((__ub_i+1)); sleep 0.5; ' +
+          'done; ' +
+          'if [ "$__ub_ok" = 1 ]; then ' +
+            'printf "nameserver 127.0.0.1\\nnameserver 1.1.1.1\\n" > /etc/resolv.conf; ' +
+            'echo "[dns] unbound resolving OK"; ' +
+          'else ' +
+            'echo "[dns] unbound did not bind in time, /etc/hosts only (UDP/53 may fail)" >&2; ' +
+          'fi; ' +
+        'else ' +
+          'echo "[dns] no unbound — relying on /etc/hosts seeds only" >&2; ' +
+        'fi\n';
+
       const restoreNetCmd =
         rootfsCmd +
         mount9pCmd +
@@ -993,27 +1042,7 @@
         'arp -s 192.168.86.1 52:54:00:01:02:03\n' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf\n' +
         dohSeedCmd +
-        // Snapshot-restore: in-memory unbound has dead WISP TCP
-        // connections to 1.1.1.1:53 from the pre-snapshot session, so
-        // every query times out. Recycle it so it opens fresh sockets.
-        'if command -v unbound >/dev/null 2>&1; then ' +
-          'killall -q unbound 2>/dev/null; sleep 1; ' +
-          'unbound -c /etc/unbound/unbound.conf >/dev/null 2>&1 & ' +
-          // Wait up to ~6s for unbound to actually answer on 127.0.0.1:53
-          // (sleep 1 + pidof was racy on slow VMs -> first ping/wget after
-          // boot hit /etc/resolv.conf with 1.1.1.1 still in slot 1 and
-          // failed with "bad address" via UDP/53).
-          '__ub_ok=0; __ub_i=0; while [ $__ub_i -lt 12 ]; do ' +
-            'if nslookup -timeout=1 cloudflare.com 127.0.0.1 >/dev/null 2>&1; then __ub_ok=1; break; fi; ' +
-            '__ub_i=$((__ub_i+1)); sleep 0.5; ' +
-          'done; ' +
-          'if [ "$__ub_ok" = 1 ]; then ' +
-            'printf "nameserver 127.0.0.1\\nnameserver 1.1.1.1\\n" > /etc/resolv.conf; ' +
-            'echo "[restore-net] unbound recycled"; ' +
-          'else ' +
-            'echo "[restore-net] unbound did not bind in time, staying on 1.1.1.1 (UDP may fail)" >&2; ' +
-          'fi; ' +
-        'fi\n' +
+        dnsProxyCmd +
         'echo "[restore-net] eth0 operstate=$st flags=$fl (retries=$i)"\n';
 
       const freshBootCmd =
@@ -1024,24 +1053,7 @@
         'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1\n' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf\n' +
         dohSeedCmd +
-        // If unbound is already installed (snapshot has it), recycle it
-        // so its dead WISP-era TCP cnxns are dropped, then point libc at
-        // 127.0.0.1 — Fly WISP drops UDP/53 so resolving via 1.1.1.1
-        // directly fails with "bad address" for every getaddrinfo call.
-        'if command -v unbound >/dev/null 2>&1; then ' +
-          'killall -q unbound 2>/dev/null; sleep 1; ' +
-          'unbound -c /etc/unbound/unbound.conf >/dev/null 2>&1 & ' +
-          '__ub_ok=0; __ub_i=0; while [ $__ub_i -lt 12 ]; do ' +
-            'if nslookup -timeout=1 cloudflare.com 127.0.0.1 >/dev/null 2>&1; then __ub_ok=1; break; fi; ' +
-            '__ub_i=$((__ub_i+1)); sleep 0.5; ' +
-          'done; ' +
-          'if [ "$__ub_ok" = 1 ]; then ' +
-            'printf "nameserver 127.0.0.1\\nnameserver 1.1.1.1\\n" > /etc/resolv.conf; ' +
-            'echo "[fresh-net] unbound recycled"; ' +
-          'else ' +
-            'echo "[fresh-net] unbound did not bind in time, staying on 1.1.1.1 (UDP may fail)" >&2; ' +
-          'fi; ' +
-        'fi\n' +
+        dnsProxyCmd +
         'clear\n' + (setupCmd ? setupCmd + '\n' : '');
 
       return doRestore ? restoreNetCmd : freshBootCmd;
