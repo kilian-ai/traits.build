@@ -69,14 +69,8 @@ is_ftp_passive_port() {
     [ "$candidate_port" -ge "$FTP_PASV_MIN" ] && [ "$candidate_port" -le "$FTP_PASV_MAX" ]
 }
 
-# Install websocat if missing
-if ! command -v websocat >/dev/null 2>&1; then
-    echo "[tunnel] installing websocat..."
-    apk add --no-cache websocat curl >/dev/null 2>&1 \
-        || { echo "[tunnel] apk failed — install websocat manually"; exit 1; }
-fi
-
-# Ensure loopback is up (websocat → tcp:127.0.0.1:PORT needs it)
+# Ensure loopback is up (websocat → tcp:127.0.0.1:PORT needs it).
+# Done early so DoH seeding below can use HTTPS via the host network too.
 if ! ip addr show lo 2>/dev/null | grep -q 'inet 127\.'; then
     ifconfig lo 127.0.0.1 up 2>/dev/null || ip link set lo up 2>/dev/null
 fi
@@ -84,10 +78,11 @@ fi
 # Seed /etc/hosts via DoH (DNS-over-HTTPS).
 # The Fly WISP backend used by v86/Alpine does NOT pass UDP/53 reliably,
 # so plain `nslookup`/getaddrinfo to 1.1.1.1:53 times out and every
-# `wget`/`curl` fails with "bad address". HTTPS to 1.1.1.1 works fine,
-# so we resolve the canonical traits.build hosts via 1.1.1.1's DoH JSON
-# endpoint and write them straight into /etc/hosts. Idempotent (uses a
-# marker block so repeated runs don't accumulate duplicates).
+# `wget`/`curl`/`apk` fails with "bad address". HTTPS to 1.1.1.1 works,
+# so we resolve the canonical traits.build + Alpine apk hosts via
+# 1.1.1.1's DoH JSON endpoint and write them straight into /etc/hosts.
+# Idempotent (marker block so repeated runs don't accumulate duplicates).
+# IMPORTANT: must run BEFORE any `apk add` because apk also needs DNS.
 seed_hosts_via_doh() {
     # Skip if hostnames already resolve via real DNS (e.g. host has
     # working UDP/53). Cheap probe with a 1s timeout via busybox wget.
@@ -96,8 +91,10 @@ seed_hosts_via_doh() {
         return 0
     fi
     echo "[tunnel] DNS lookup failed — seeding /etc/hosts via DoH (1.1.1.1)"
+    # Includes Alpine apk mirror so `apk add websocat` works post-seed.
     local hosts="www.traits.build tunnel.traits.build relay.traits.build \
-traits-build-tunnel.fly.dev apptron-traits-build.fly.dev traits-build.fly.dev"
+traits-build-tunnel.fly.dev apptron-traits-build.fly.dev traits-build.fly.dev \
+dl-cdn.alpinelinux.org"
     # Strip any previous block we wrote (in-place busybox sed).
     sed -i '/# traits-doh-begin/,/# traits-doh-end/d' /etc/hosts 2>/dev/null
     {
@@ -117,6 +114,13 @@ traits-build-tunnel.fly.dev apptron-traits-build.fly.dev traits-build.fly.dev"
 }
 
 seed_hosts_via_doh
+
+# Install websocat if missing (needs DNS — handled by seeder above).
+if ! command -v websocat >/dev/null 2>&1; then
+    echo "[tunnel] installing websocat..."
+    apk add --no-cache websocat curl >/dev/null 2>&1 \
+        || { echo "[tunnel] apk failed — install websocat manually"; exit 1; }
+fi
 
 # Build ports JSON array  e.g. "22 8384" → [22,8384]
 PORTS_JSON=$(printf '['; first=1
