@@ -1335,11 +1335,13 @@
 
   function extractNostrIdentityFromText(text) {
     const body = String(text || '');
-    const npubMatch = body.match(/\bnpub1[023456789acdefghjklmnpqrstuvwxyz]+\b/i);
-    const nsecMatch = body.match(/\bnsec1[023456789acdefghjklmnpqrstuvwxyz]+\b/i);
+    // Find LAST npub/nsec match (most recent in serial output) so stale lines
+    // from previous commands don't shadow the freshly-printed identity.
+    const npubMatches = body.match(/\bnpub1[023456789acdefghjklmnpqrstuvwxyz]+\b/gi);
+    const nsecMatches = body.match(/\bnsec1[023456789acdefghjklmnpqrstuvwxyz]+\b/gi);
     return {
-      npub: npubMatch ? npubMatch[0] : '',
-      nsec: nsecMatch ? nsecMatch[0] : '',
+      npub: npubMatches ? npubMatches[npubMatches.length - 1] : '',
+      nsec: nsecMatches ? nsecMatches[nsecMatches.length - 1] : '',
     };
   }
 
@@ -1891,15 +1893,21 @@
     }
     const tailStart = serialTextTail.length;
     dispatchGuestCommand('SOCIAL_HOME=/mnt/host social pubkey', 'social pubkey (direct)');
-    await new Promise(resolve => setTimeout(resolve, 900));
-    const tail = serialTextTail.slice(tailStart);
-    const parsed = extractNostrIdentityFromText(tail);
+    // Poll for npub in serial output (REST call to Fly can take 1-3+ seconds)
+    const deadline = Date.now() + 8000;
+    let parsed = { npub: '', nsec: '' };
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      const tail = serialTextTail.slice(tailStart);
+      parsed = extractNostrIdentityFromText(tail);
+      if (parsed.npub) break;
+    }
     if (parsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
     if (parsed.npub) localStorage.setItem('traits.nostr.npub', parsed.npub);
     if (parsed.npub || parsed.nsec) {
-      sLog('debug: guest identity detected from direct pubkey command', 'ok');
+      sLog('debug: identity from social pubkey: ' + truncNpub(parsed.npub), 'ok');
     } else {
-      sLog('debug: no identity found in serial output', 'hint');
+      sLog('debug: no identity found in serial output (timed out after 8s)', 'hint');
     }
     await socialInit();
   }
