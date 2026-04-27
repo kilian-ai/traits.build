@@ -914,7 +914,42 @@
         '  fi\n' +
         '}\n' +
         '__HOST_RM_EOF__\n' +
-        '. /etc/profile.d/01host-rm.sh 2>/dev/null || true\n';
+        '. /etc/profile.d/01host-rm.sh 2>/dev/null || true\n' +
+        // sync9p: ask the host page to refresh its 9P view of /mnt/host
+        // and confirm via a receipt file the guest can read back. Flow:
+        //   1. `sync` flushes any in-flight guest writes to fs9p.
+        //   2. Guest emits "__HOST_SYNC__:<nonce>" on serial0.
+        //   3. Host catches the marker, refreshes the viewer, and writes
+        //      /.tb-sync-receipt (== /mnt/host/.tb-sync-receipt) containing
+        //      the same <nonce> via emulator.fs9p.write_file (NOT through
+        //      the guest kernel — so it shows up immediately in the mount).
+        //   4. Guest polls /mnt/host/.tb-sync-receipt for ~3s; on a match
+        //      print "sync9p: ok".
+        // This is the canonical "force the browser to see what I see right
+        // now" command, and a round-trip health check at the same time.
+        'cat > /etc/profile.d/02sync9p.sh <<\\__SYNC9P_EOF__\n' +
+        'sync9p() {\n' +
+        '  __n=$$-$(date +%s 2>/dev/null)-$RANDOM-$RANDOM\n' +
+        '  sync 2>/dev/null\n' +
+        '  command rm -f /mnt/host/.tb-sync-receipt 2>/dev/null || \\\n' +
+        '    printf "__HOST_WIPE__:/mnt/host/.tb-sync-receipt\\n"\n' +
+        '  printf "__HOST_SYNC__:%s\\n" "$__n"\n' +
+        '  __i=0\n' +
+        '  while [ $__i -lt 30 ]; do\n' +
+        '    if [ -f /mnt/host/.tb-sync-receipt ]; then\n' +
+        '      __got=$(cat /mnt/host/.tb-sync-receipt 2>/dev/null)\n' +
+        '      case "$__got" in\n' +
+        '        "$__n"*) printf "sync9p: ok %s\\n" "$__n"; return 0 ;;\n' +
+        '      esac\n' +
+        '    fi\n' +
+        '    __i=$((__i+1))\n' +
+        '    sleep 0.1\n' +
+        '  done\n' +
+        '  printf "sync9p: timeout (no receipt for %s)\\n" "$__n" >&2\n' +
+        '  return 1\n' +
+        '}\n' +
+        '__SYNC9P_EOF__\n' +
+        '. /etc/profile.d/02sync9p.sh 2>/dev/null || true\n';
 
       // Guest-local open-permission VFS (tmpfs) for workflows that should not
       // depend on 9P UID metadata semantics. Keep /mnt/host as optional bridge.
@@ -981,6 +1016,7 @@
     const SHELL_PROMPT_RE = /^(?!.*login:)(?!.*password:)(?:\x1b\[[0-9;]*m)*(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_.-]+:[^\n]*#\s$/i;
     const LOGIN_PROMPT_RE = /login:\s*$/i;
     const HOST_WIPE_RE = /__HOST_WIPE__:(.+?)\s*$/;
+    const HOST_SYNC_RE = /__HOST_SYNC__:([^\s]+)\s*$/;
 
     // Watch for guest-emitted action markers on serial0 and execute them
     // host-side. Used to delegate destructive 9P ops (rm/unlink) to fs9p,
@@ -988,6 +1024,32 @@
     function handleHostMarker(line) {
       // Strip ANSI escapes the guest shell may have wrapped around output.
       const clean = line.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+      const sm = HOST_SYNC_RE.exec(clean);
+      if (sm) {
+        const nonce = sm[1].trim();
+        // Force-refresh the viewer if it's open and write a receipt the
+        // guest can read back. Receipt path is the fs9p path (drop /mnt/host).
+        try {
+          if (typeof renderTree === 'function') {
+            try { renderTree(); } catch (_) {}
+          }
+          const fs = emulator && emulator.fs9p;
+          if (!fs) {
+            sLog('sync9p: fs9p unavailable', 'err');
+            return;
+          }
+          const receiptText = nonce + ' ' + Date.now() + '\n';
+          // Best-effort delete-then-write so a stale receipt with the same
+          // length doesn't bleed bytes (v86 idbfs/fs9p short-write quirk).
+          try { if (typeof fs.DeleteNode === 'function') fs.DeleteNode('/.tb-sync-receipt'); } catch (_) {}
+          fsWriteFileCompat(fs, '/.tb-sync-receipt',
+            new TextEncoder().encode(receiptText));
+          sLog('sync9p: ack ' + nonce, 'ok');
+        } catch (e) {
+          sLog('sync9p ack failed: ' + (e && e.message || e), 'err');
+        }
+        return;
+      }
       const m = HOST_WIPE_RE.exec(clean);
       if (!m) return;
       const target = m[1].trim();
