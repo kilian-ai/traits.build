@@ -741,17 +741,30 @@
       // until it reports non-`down`.
       // Mount the v86 9P share at /mnt/host so the host browser viewer can
       // read files written by the guest without going through the relay.
-      // - msize: 8KB chunks (small but reliable; v86 9P doesn't like big msize)
-      // - cache=loose: avoids excessive flushes for write-heavy workloads
-      // - access=any: avoid strict per-uid server-side permission checks
+      // - cache=none: forces the kernel to re-fetch stat for every op.
+      //   `cache=loose` (the v86 default we used to ship) caches qid.version
+      //   and stat fields in the kernel dentry. v86 increments qid.version on
+      //   every write/rename/unlink and stores 64-bit size/mtime as JS Numbers,
+      //   which over a long session drift past 32-bit limits. The kernel's
+      //   p9_check_errors() then returns EOVERFLOW ("Value too large for data
+      //   type") on lstat() — which `rm` calls before unlinkat() — so even
+      //   `rm -rf /mnt/host/foo` fails. `cache=none` makes 9P slower but
+      //   correct: no stale dentries, no overflow on stat, rm/mv/cp work.
+      // - msize=8192: small but reliable; v86 9P doesn't like big msize.
+      // - access=any: avoid strict per-uid server-side permission checks.
+      //   We also drop dfltuid/dfltgid (v86 ignores them anyway).
       // - seed social dirs as 0777 so first-write works even if uid metadata
-      //   is reported as overflow/nobody by the 9P bridge on fresh tabs
-      // - always remount: snapshot restore can keep stale old mount options
+      //   is reported as overflow/nobody by the 9P bridge on fresh tabs.
+      // - always remount: snapshot restore can keep stale old mount options.
       // The symlink puts a `~/host` shortcut in $HOME for ergonomic access.
+      // For destructive ops that still trip 9P (legacy snapshots etc), the
+      // browser exposes window.wipe9p(path) which deletes via emulator.fs9p
+      // directly — no kernel 9P client involved.
       const mount9pCmd =
         'mkdir -p /mnt/host 2>/dev/null\n' +
         'mountpoint -q /mnt/host && (umount /mnt/host 2>/dev/null || umount -l /mnt/host 2>/dev/null || true)\n' +
-        'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,rw host9p /mnt/host 2>/dev/null\n' +
+        'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none,access=any,rw host9p /mnt/host 2>/dev/null || ' +
+        'mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,rw host9p /mnt/host 2>/dev/null\n' +
         'ln -sfn /mnt/host /home/root/host 2>/dev/null\n' +
         'umask 000\n' +
         'mkdir -p -m 0777 /mnt/host/public /mnt/host/public/.following 2>/dev/null\n' +
@@ -980,6 +993,50 @@
   function vSet(msg, cls) { vStatusEl.textContent = msg || ''; vStatusEl.className = 'hint ' + (cls || ''); }
 
   function fs9p() { return emulator && emulator.fs9p; }
+
+  // Host-side wipe — bypasses the guest's 9P kernel client entirely.
+  // Use when `rm -rf /mnt/host/foo` returns EOVERFLOW ("Value too large for
+  // data type") or any other 9P-side error. Operates directly on the v86
+  // in-memory inode tree via fs9p.DeleteNode/Unlink/RecursiveDelete.
+  // Path is relative to the 9P root (i.e. drop the `/mnt/host` prefix).
+  // Examples (devtools console):
+  //   wipe9p('/public')              -> wipes everything under /public
+  //   wipe9p('/following/npub1xxx')  -> wipes one followed user's mirror
+  //   ls9p('/public')                -> list children
+  //   stat9p('/public/manifest.json')-> show inode info
+  window.wipe9p = function (path) {
+    const fs = fs9p(); if (!fs) return 'fs9p not ready';
+    if (!path || path === '/' || path === '') return 'refuse to wipe root';
+    // Strip /mnt/host prefix if user passes the guest path by accident.
+    path = String(path).replace(/^\/mnt\/host/, '') || '/';
+    const r = fs.SearchPath(path);
+    if (!r || r.id === -1) return 'not found: ' + path;
+    try { fs.DeleteNode(path); return 'wiped: ' + path; }
+    catch (e) { return 'wipe failed: ' + (e && e.message || e); }
+  };
+  window.ls9p = function (path) {
+    const fs = fs9p(); if (!fs) return 'fs9p not ready';
+    path = String(path || '/').replace(/^\/mnt\/host/, '') || '/';
+    const r = fs.SearchPath(path);
+    if (!r || r.id === -1) return 'not found: ' + path;
+    if (!fs.IsDirectory(r.id)) return 'not a dir: ' + path;
+    return fs.GetChildren(r.id);
+  };
+  window.stat9p = function (path) {
+    const fs = fs9p(); if (!fs) return 'fs9p not ready';
+    path = String(path || '/').replace(/^\/mnt\/host/, '') || '/';
+    const r = fs.SearchPath(path);
+    if (!r || r.id === -1) return 'not found: ' + path;
+    const inode = fs.GetInode(r.id);
+    return {
+      id: r.id, mode: '0' + (inode.mode & 0o7777).toString(8),
+      type: (inode.mode & 0o170000).toString(8),
+      uid: inode.uid, gid: inode.gid, size: inode.size,
+      qid: { path: inode.qid.path, version: inode.qid.version, type: inode.qid.type },
+      nlinks: inode.nlinks, status: inode.status,
+    };
+  };
+
   function joinPath(base, name) {
     if (base === '/' || base === '') return '/' + name;
     return base.replace(/\/+$/, '') + '/' + name;
