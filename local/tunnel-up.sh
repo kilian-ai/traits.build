@@ -134,10 +134,18 @@ if ! command -v websocat >/dev/null 2>&1 \
 fi
 
 # Bring up unbound on 127.0.0.1:53 forwarding via TCP to 1.1.1.1.
-# Idempotent: skip relaunch if a binding already exists.
+# Idempotent: if an existing unbound process can actually resolve a
+# query, keep it. Otherwise kill it (likely a zombie from an earlier
+# libcrypto-mismatched start that bound the socket but can't serve)
+# and relaunch with the current config.
 start_dns_proxy() {
     if pidof unbound >/dev/null 2>&1; then
-        return 0
+        if nslookup -timeout=2 cloudflare.com 127.0.0.1 >/dev/null 2>&1; then
+            return 0
+        fi
+        echo "[tunnel] stale unbound detected — restarting"
+        killall -q unbound 2>/dev/null
+        sleep 1
     fi
     echo "[tunnel] starting local DNS proxy (unbound TCP→1.1.1.1)"
     mkdir -p /etc/unbound /var/lib/unbound 2>/dev/null
