@@ -696,22 +696,21 @@
         : '';
       // Fresh Alpine live ISO ships with only /media/cdrom/apks as an apk repo
       // and a stale libcrypto that breaks any `apk add nodejs` (EVP_MD_CTX_get_size_ex
-      // symbol mismatch). This setup is intentionally opt-in to keep boot fast,
-      // low-noise, and immediately interactive for command dispatch debugging.
-      // Enable explicitly with ?setup=1.
+      // symbol mismatch). On fresh boot we replace the repo list with the
+      // upstream Alpine CDN, refresh the index, and rebase libc/libcrypto so
+      // `apk add <pkg>` works immediately. Snapshot restores skip this since
+      // the snapshot already has the patched repos.
+      // Disable explicitly with ?setup=0.
       const setupParam = (new URLSearchParams(location.search).get('setup') || '').trim();
-      const skipSetup = setupParam !== '1';
+      const skipSetup = setupParam === '0';
       const setupCmd = skipSetup ? '' :
-        ' { ' +
-          'printf "%s\\n" ' +
-            '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/main" ' +
-            '"https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" ' +
-            '> /etc/apk/repositories && ' +
-         'apk update &&' +
-         'echo "[setup] apk upgrade (rebasing libc/libcrypto)…" && ' +
-          'apk upgrade --available 2>&1 | tail -3 && ' +
-          'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."; ' +
-        '} ';
+        'echo "[setup] configuring apk repositories…"\n' +
+        'printf "%s\\n" "https://dl-cdn.alpinelinux.org/alpine/latest-stable/main" "https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" > /etc/apk/repositories\n' +
+        'echo "[setup] apk update…"\n' +
+        'apk update 2>&1 | tail -3\n' +
+        'echo "[setup] apk upgrade (rebasing libc/libcrypto)…"\n' +
+        'apk upgrade --available 2>&1 | tail -3\n' +
+        'echo "[setup] ready — apk add <pkg> works now. snapshot to skip on next boot."\n';
       // Snapshot restore: WISP WebSocket is freshly reconnected (JS adapter
       // is not in the x86 snapshot), and the Wisp router config is known
       // and fixed: guest IP 192.168.86.100/24, gateway 192.168.86.1, router
