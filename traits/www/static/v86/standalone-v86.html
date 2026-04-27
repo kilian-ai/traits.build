@@ -876,45 +876,6 @@
         'mkdir -p -m 0777 /mnt/host/vfs/following /mnt/host/vfs/following_new /mnt/host/vfs/social_following 2>/dev/null\n' +
         'chmod 0777 /mnt/host/public /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null || true\n' +
         'chmod 0777 /mnt/host/vfs/public /mnt/host/vfs/following /mnt/host/vfs/following_new /mnt/host/vfs/social_following 2>/dev/null || true\n' +
-        // host-rm <path>: ask the host page to wipe a 9P path via fs9p
-        // (DeleteNode/Unlink), bypassing the kernel 9P client and its
-        // EOVERFLOW failures on plain unlink/rm. The host listens for
-        // "__HOST_WIPE__:<path>" on serial0 and calls window.wipe9p().
-        // Also installs an `rm` shell function that auto-delegates for
-        // any /mnt/host path.
-        'cat > /etc/profile.d/01host-rm.sh <<\\__HOST_RM_EOF__\n' +
-        'host_rm() {\n' +
-        '  for p in "$@"; do\n' +
-        '    case "$p" in /mnt/host|/mnt/host/*) ;; /*) p="/mnt/host${p}" ;; *) p="/mnt/host/${p}" ;; esac\n' +
-        '    printf "__HOST_WIPE__:%s\\n" "$p"\n' +
-        '    sleep 0.15\n' +
-        '  done\n' +
-        '}\n' +
-        'rm() {\n' +
-        '  __rm_opts=""; __rm_targets=""; __rm_host=0\n' +
-        '  for a in "$@"; do\n' +
-        '    case "$a" in\n' +
-        '      -*) __rm_opts="$__rm_opts $a" ;;\n' +
-        '      /mnt/host|/mnt/host/*) __rm_targets="$__rm_targets $a"; __rm_host=1 ;;\n' +
-        '      *) __rm_targets="$__rm_targets $a" ;;\n' +
-        '    esac\n' +
-        '  done\n' +
-        '  __cwd=$(pwd 2>/dev/null)\n' +
-        '  case "$__cwd" in /mnt/host|/mnt/host/*) __rm_host=1 ;; esac\n' +
-        '  if [ "$__rm_host" = "1" ]; then\n' +
-        '    for t in $__rm_targets; do\n' +
-        '      case "$t" in\n' +
-        '        /mnt/host|/mnt/host/*) host_rm "$t" ;;\n' +
-        '        /*) command rm $__rm_opts "$t" ;;\n' +
-        '        *)  case "$__cwd" in /mnt/host|/mnt/host/*) host_rm "$__cwd/$t" ;; *) command rm $__rm_opts "$t" ;; esac ;;\n' +
-        '      esac\n' +
-        '    done\n' +
-        '  else\n' +
-        '    command rm $__rm_opts $__rm_targets\n' +
-        '  fi\n' +
-        '}\n' +
-        '__HOST_RM_EOF__\n' +
-        '. /etc/profile.d/01host-rm.sh 2>/dev/null || true\n' +
         // sync9p: ask the host page to refresh its 9P view of /mnt/host
         // and confirm via a receipt the guest reads back. Flow:
         //   1. `sync` flushes guest writes to fs9p.
@@ -1018,12 +979,10 @@
     let queuedLoginHintShown = false;
     const SHELL_PROMPT_RE = /^(?!.*login:)(?!.*password:)(?:\x1b\[[0-9;]*m)*(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_.-]+:[^\n]*#\s$/i;
     const LOGIN_PROMPT_RE = /login:\s*$/i;
-    const HOST_WIPE_RE = /__HOST_WIPE__:(.+?)\s*$/;
     const HOST_SYNC_RE = /__HOST_SYNC__:([^\s]+)\s*$/;
 
     // Watch for guest-emitted action markers on serial0 and execute them
-    // host-side. Used to delegate destructive 9P ops (rm/unlink) to fs9p,
-    // which sidesteps v86's kernel-9P EOVERFLOW failures on `rm`.
+    // host-side. Currently only sync9p (refresh + per-nonce receipt).
     function handleHostMarker(line) {
       // Strip ANSI escapes the guest shell may have wrapped around output.
       const clean = line.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
@@ -1051,15 +1010,6 @@
           }
         })();
         return;
-      }
-      const m = HOST_WIPE_RE.exec(clean);
-      if (!m) return;
-      const target = m[1].trim();
-      try {
-        const result = window.wipe9p ? window.wipe9p(target) : 'wipe9p unavailable';
-        sLog('host-rm: ' + result, 'ok');
-      } catch (e) {
-        sLog('host-rm failed for ' + target + ': ' + (e && e.message || e), 'err');
       }
     }
 
@@ -1094,7 +1044,7 @@
       byteCount++; pushByte(b); markDirty();
       const ch = String.fromCharCode(b);
       // Accumulate full lines so we can detect host-side action markers
-      // emitted by guest scripts (e.g. host_rm prints "__HOST_WIPE__:<path>").
+      // emitted by guest scripts (e.g. sync9p prints "__HOST_SYNC__:<nonce>").
       if (ch === '\n' || ch === '\r') {
         if (markerLine) {
           const line = markerLine; markerLine = '';
