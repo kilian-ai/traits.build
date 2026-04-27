@@ -916,31 +916,31 @@
         '__HOST_RM_EOF__\n' +
         '. /etc/profile.d/01host-rm.sh 2>/dev/null || true\n' +
         // sync9p: ask the host page to refresh its 9P view of /mnt/host
-        // and confirm via a receipt file the guest can read back. Flow:
-        //   1. `sync` flushes any in-flight guest writes to fs9p.
+        // and confirm via a receipt the guest reads back. Flow:
+        //   1. `sync` flushes guest writes to fs9p.
         //   2. Guest emits "__HOST_SYNC__:<nonce>" on serial0.
-        //   3. Host catches the marker, refreshes the viewer, and writes
-        //      /.tb-sync-receipt (== /mnt/host/.tb-sync-receipt) containing
-        //      the same <nonce> via emulator.fs9p.write_file (NOT through
-        //      the guest kernel — so it shows up immediately in the mount).
-        //   4. Guest polls /mnt/host/.tb-sync-receipt for ~3s; on a match
-        //      print "sync9p: ok".
-        // This is the canonical "force the browser to see what I see right
-        // now" command, and a round-trip health check at the same time.
+        //   3. Host catches marker, refreshes viewer, writes
+        //      /.tb-sync/<nonce> via emulator.fs9p (NOT through the guest
+        //      kernel — bypasses Linux 9P caching so it's visible at once).
+        //   4. Guest polls `ls /mnt/host/.tb-sync` for the nonce filename.
+        //
+        // CRITICAL: the receipt path embeds the nonce so every call hits
+        // a fresh dentry the guest kernel has never looked up. A fixed
+        // path gets poisoned by the Linux 9P negative-dentry cache: after
+        // the first stat() returns -ENOENT, subsequent stat()s read from
+        // cache for several seconds even after the host writes the file.
+        // Polling via `ls` (readdir) always round-trips to the 9P server.
         'cat > /etc/profile.d/02sync9p.sh <<\\__SYNC9P_EOF__\n' +
         'sync9p() {\n' +
         '  __n=$$-$(date +%s 2>/dev/null)-$RANDOM-$RANDOM\n' +
         '  sync 2>/dev/null\n' +
-        '  command rm -f /mnt/host/.tb-sync-receipt 2>/dev/null || \\\n' +
-        '    printf "__HOST_WIPE__:/mnt/host/.tb-sync-receipt\\n"\n' +
         '  printf "__HOST_SYNC__:%s\\n" "$__n"\n' +
         '  __i=0\n' +
-        '  while [ $__i -lt 30 ]; do\n' +
-        '    if [ -f /mnt/host/.tb-sync-receipt ]; then\n' +
-        '      __got=$(cat /mnt/host/.tb-sync-receipt 2>/dev/null)\n' +
-        '      case "$__got" in\n' +
-        '        "$__n"*) printf "sync9p: ok %s\\n" "$__n"; return 0 ;;\n' +
-        '      esac\n' +
+        '  while [ $__i -lt 50 ]; do\n' +
+        '    if ls /mnt/host/.tb-sync 2>/dev/null | grep -qxF "$__n"; then\n' +
+        '      rm -f /mnt/host/.tb-sync/"$__n" 2>/dev/null\n' +
+        '      printf "sync9p: ok %s\\n" "$__n"\n' +
+        '      return 0\n' +
         '    fi\n' +
         '    __i=$((__i+1))\n' +
         '    sleep 0.1\n' +
@@ -1027,27 +1027,31 @@
       const sm = HOST_SYNC_RE.exec(clean);
       if (sm) {
         const nonce = sm[1].trim();
-        // Force-refresh the viewer if it's open and write a receipt the
-        // guest can read back. Receipt path is the fs9p path (drop /mnt/host).
-        try {
-          if (typeof renderTree === 'function') {
-            try { renderTree(); } catch (_) {}
+        // Refresh the viewer and drop a per-nonce receipt under /.tb-sync/.
+        // Per-nonce filename sidesteps the Linux 9P negative-dentry cache
+        // (a fixed path gets stuck after the first call when the guest
+        // does any stat/rm before the file exists).
+        (async () => {
+          try {
+            if (typeof renderTree === 'function') {
+              try { renderTree(); } catch (_) {}
+            }
+            const fs = emulator && emulator.fs9p;
+            if (!fs) { sLog('sync9p: fs9p unavailable', 'err'); return; }
+            // Ensure /.tb-sync exists. create_directory is the v86 fs9p API.
+            try {
+              if (typeof fs.create_directory === 'function') {
+                fs.create_directory('/.tb-sync');
+              }
+            } catch (_) { /* already exists is fine */ }
+            const receiptText = nonce + ' ' + Date.now() + '\n';
+            const bytes = new TextEncoder().encode(receiptText);
+            await fsWriteFileCompat(fs, '/.tb-sync/' + nonce, bytes);
+            sLog('sync9p: ack ' + nonce, 'ok');
+          } catch (e) {
+            sLog('sync9p ack failed: ' + (e && e.message || e), 'err');
           }
-          const fs = emulator && emulator.fs9p;
-          if (!fs) {
-            sLog('sync9p: fs9p unavailable', 'err');
-            return;
-          }
-          const receiptText = nonce + ' ' + Date.now() + '\n';
-          // Best-effort delete-then-write so a stale receipt with the same
-          // length doesn't bleed bytes (v86 idbfs/fs9p short-write quirk).
-          try { if (typeof fs.DeleteNode === 'function') fs.DeleteNode('/.tb-sync-receipt'); } catch (_) {}
-          fsWriteFileCompat(fs, '/.tb-sync-receipt',
-            new TextEncoder().encode(receiptText));
-          sLog('sync9p: ack ' + nonce, 'ok');
-        } catch (e) {
-          sLog('sync9p ack failed: ' + (e && e.message || e), 'err');
-        }
+        })();
         return;
       }
       const m = HOST_WIPE_RE.exec(clean);
