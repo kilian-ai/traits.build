@@ -36,7 +36,7 @@ API_CANDIDATES="${SOCIAL_API_CANDIDATES:-$API}"
 RELAYS="${SOCIAL_RELAYS:-wss://relay.damus.io wss://nos.lol wss://relay.nostr.band}"
 
 auto_home_dir() {
-    for d in /mnt/vfs /mnt/host; do
+    for d in /mnt/host; do
         if [ -d "$d" ] || mkdir -p "$d" 2>/dev/null; then
             t="$d/.social.home.probe.$$"
             if (: > "$t") 2>/dev/null; then
@@ -268,7 +268,7 @@ resolve_public_dir() {
     if [ -d "$PUBLIC_DIR" ] && [ -n "$(find "$PUBLIC_DIR" -type f 2>/dev/null | head -1)" ]; then
         return 0
     fi
-    for cand in /mnt/vfs/public /mnt/host/public "$HOME/public" "$PWD/public"; do
+    for cand in /mnt/host/public "$HOME/public" "$PWD/public"; do
         [ "$cand" = "$PUBLIC_DIR" ] && continue
         if [ -d "$cand" ] && [ -n "$(find "$cand" -type f 2>/dev/null | head -1)" ]; then
             log "using non-empty public dir: $cand (was: $PUBLIC_DIR)"

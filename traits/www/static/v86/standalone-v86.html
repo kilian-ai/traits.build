@@ -1003,8 +1003,25 @@
             if (!fs) { sLog('sync9p: fs9p unavailable', 'err'); return; }
             const receiptText = nonce + ' ' + Date.now() + '\n';
             const bytes = new TextEncoder().encode(receiptText);
-            await fsWriteFileCompat(fs, '/.tb-sync-' + nonce, bytes);
-            sLog('sync9p: ack ' + nonce, 'ok');
+            const path = '/.tb-sync-' + nonce;
+            // Write-verify-retry: fsWriteFileCompat occasionally returns
+            // success without the byte stream being readable back through
+            // fs.read_file (silent drop, esp. after snapshot restore). Verify
+            // by reading back; retry up to 4× with 120ms backoff. Without
+            // this the guest's `ls /mnt/host/.tb-sync-<nonce>` poll loop
+            // times out (sync9p: timeout) even though the host JS thinks
+            // the write succeeded.
+            let verified = false;
+            for (let attempt = 0; attempt < 4 && !verified; attempt++) {
+              try { await fsWriteFileCompat(fs, path, bytes); } catch (_) {}
+              try {
+                const back = await fs.read_file(path);
+                if (back && back.length === bytes.length) { verified = true; break; }
+              } catch (_) {}
+              if (attempt < 3) await new Promise(r => setTimeout(r, 120));
+            }
+            if (verified) sLog('sync9p: ack ' + nonce, 'ok');
+            else sLog('sync9p: ack ' + nonce + ' write not verifiable after 4 retries', 'err');
           } catch (e) {
             sLog('sync9p ack failed: ' + (e && e.message || e), 'err');
           }
