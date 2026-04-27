@@ -360,8 +360,10 @@ EOF
     fail_count=0
     for relay in $RELAYS; do
         # --text silences "recommend --binary or --text" warning;
-        # --no-close + sleep 3 lets the relay flush its OK reply.
-        out=$( ( printf '%s\n' "$msg"; sleep 3 ) | websocat --text -n0 - "$relay" 2>/dev/null | head -5 )
+        # -E (--exit-on-eof) closes the websocket once stdin EOFs (after sleep);
+        # without -E (or with -n/--no-close) websocat hangs forever and the publish
+        # loop never terminates.
+        out=$( ( printf '%s\n' "$msg"; sleep 3 ) | websocat --text -E - "$relay" 2>/dev/null | head -5 )
         if printf '%s' "$out" | grep -q '"OK"'; then
             # NIP-20: ["OK", <id>, <true|false>, <message>]
             if printf '%s' "$out" | grep -q '"OK","'"$evid"'",true'; then
@@ -422,7 +424,7 @@ relay_fetch_manifest() {
     sub="sub-$$"
     filter='{"kinds":[30000],"authors":["'"$hex_pk"'"],"#d":["public-folder"],"limit":1}'
     req='["REQ","'"$sub"'",'"$filter"']'
-    ( printf '%s\n' "$req"; sleep 4 ) | websocat --text -n0 - "$relay" 2>/dev/null \
+    ( printf '%s\n' "$req"; sleep 4 ) | websocat --text -E - "$relay" 2>/dev/null \
         | grep -E '^\["EVENT",' | head -1
 }
 
@@ -521,7 +523,7 @@ cmd_search() {
     req='["REQ","'"$sub"'",'"$filter"']'
     log "searching for: $q"
     for relay in $RELAYS; do
-        ( printf '%s\n' "$req"; sleep 3 ) | websocat --text -n0 - "$relay" 2>/dev/null \
+        ( printf '%s\n' "$req"; sleep 3 ) | websocat --text -E - "$relay" 2>/dev/null \
             | grep -E '^\["EVENT",' | while IFS= read -r line; do
                 if command -v jq >/dev/null 2>&1; then
                     pk=$(printf '%s' "$line" | jq -r '.[2].pubkey')
