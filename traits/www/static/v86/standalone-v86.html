@@ -960,11 +960,14 @@
       // works, so we resolve the canonical traits.build + Fly hosts via
       // the JSON DoH endpoint and write them straight into /etc/hosts.
       // Idempotent via a marker-block delete on each run.
+      // Includes dl-cdn.alpinelinux.org so `apk add ...` works on a
+      // fresh/restored guest before tunnel-up.sh has run its own seed.
       const dohSeedCmd =
         'sed -i "/# traits-doh-begin/,/# traits-doh-end/d" /etc/hosts 2>/dev/null\n' +
         '{ echo "# traits-doh-begin"; for h in ' +
           'www.traits.build tunnel.traits.build relay.traits.build ' +
-          'traits-build-tunnel.fly.dev apptron-traits-build.fly.dev traits-build.fly.dev; do ' +
+          'traits-build-tunnel.fly.dev apptron-traits-build.fly.dev traits-build.fly.dev ' +
+          'dl-cdn.alpinelinux.org; do ' +
           'ip=$(wget -qO- --timeout=4 -t 1 ' +
             '"https://1.1.1.1/dns-query?name=${h}&type=A" ' +
             '--header="Accept: application/dns-json" 2>/dev/null ' +
@@ -990,6 +993,18 @@
         'arp -s 192.168.86.1 52:54:00:01:02:03\n' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf\n' +
         dohSeedCmd +
+        // Snapshot-restore: in-memory unbound has dead WISP TCP
+        // connections to 1.1.1.1:53 from the pre-snapshot session, so
+        // every query times out. Recycle it so it opens fresh sockets.
+        'if command -v unbound >/dev/null 2>&1; then ' +
+          'killall -q unbound 2>/dev/null; sleep 1; ' +
+          'unbound -c /etc/unbound/unbound.conf >/dev/null 2>&1 & ' +
+          'sleep 1; ' +
+          'if pidof unbound >/dev/null 2>&1; then ' +
+            'printf "nameserver 127.0.0.1\\nnameserver 1.1.1.1\\n" > /etc/resolv.conf; ' +
+            'echo "[restore-net] unbound recycled"; ' +
+          'fi; ' +
+        'fi\n' +
         'echo "[restore-net] eth0 operstate=$st flags=$fl (retries=$i)"\n';
 
       const freshBootCmd =
