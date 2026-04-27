@@ -756,18 +756,16 @@
           const fs = emulator && emulator.fs9p;
           if (!fs) { console.warn('[restore] fs9p missing'); return; }
           const inodeCount = fs.inodes ? fs.inodes.filter(Boolean).length : -1;
-          let rootEntries = null;
+          // GetChildren returns NAMES (not ids), so we resolve them via the
+          // parent's direntries Map for child-id → log a single summary.
+          let rootEntries = null, publicEntries = null;
           try {
-            const root = fs.SearchPath ? fs.SearchPath('/') : null;
-            if (root && root.id >= 0 && fs.GetChildren) {
-              rootEntries = fs.GetChildren(root.id).map(id => fs.inodes[id] && fs.inodes[id].name).filter(Boolean);
-            }
+            if (fs.GetChildren) rootEntries = fs.GetChildren(0);
           } catch (_) {}
-          let publicEntries = null;
           try {
-            const pub = fs.SearchPath ? fs.SearchPath('/public') : null;
-            if (pub && pub.id >= 0 && fs.GetChildren) {
-              publicEntries = fs.GetChildren(pub.id).map(id => fs.inodes[id] && fs.inodes[id].name).filter(Boolean);
+            if (fs.SearchPath) {
+              const pub = fs.SearchPath('/public');
+              if (pub && pub.id >= 0) publicEntries = fs.GetChildren(pub.id);
             }
           } catch (_) {}
           console.log('[restore] fs9p state', {
