@@ -3308,12 +3308,26 @@
     } else if (!useSerial) {
       console.warn('[sync] fs9p and serialVfs both unavailable — sync will not persist files');
     }
+    // Create the per-user folder UP FRONT, regardless of whether the
+    // manifest lookup later succeeds. This guarantees that following a user
+    // always materializes /mnt/host/following/<npub>/ on disk, even if the
+    // user has not published yet (the dir will be empty until next sync).
     if (useSerial) {
       console.log('[sync]', ts(), 'using serialVfs → guest path', guestUserDir);
       try {
         await serialVfs.mkdir(guestUserDir);
+        sLog('created ' + guestUserDir, 'ok');
       } catch (e) {
         console.warn('[sync] serialVfs.mkdir failed:', e && e.message);
+      }
+    } else if (fs) {
+      const userDir = followRoot + '/' + npub;
+      try {
+        ensureDirChain(fs, userDir);
+        console.log('[sync]', ts(), '9p mkdir', userDir);
+        sLog('created ' + socialGuestPath(userDir) + ' (9p)', 'ok');
+      } catch (e) {
+        console.warn('[sync] 9p mkdir failed:', e && e.message);
       }
     }
 
