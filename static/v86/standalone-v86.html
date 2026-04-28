@@ -60,6 +60,27 @@
   .fc-meta { font-size:10px; color:#5a6370; word-break:break-all; }
   .fc-actions { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
   #social-search-results { font-size:11px; margin-top:4px; }
+  /* ── follow panel (side panel, leaves terminal visible) ── */
+  #follow-panel { position:absolute; right:0; top:36px; bottom:0; width:460px; max-width:55vw; display:flex; flex-direction:column; background:#0b0d10; border-left:1px solid #2a2f36; z-index:50; box-shadow:-4px 0 12px rgba(0,0,0,0.5); }
+  #follow-panel[hidden] { display:none; }
+  #follow-hdr { display:flex; gap:8px; align-items:center; padding:6px 10px; background:#161a1f; border-bottom:1px solid #2a2f36; font-size:12px; }
+  #follow-hdr button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; }
+  #follow-hdr button:hover:not(:disabled) { background:#2d343d; }
+  #follow-hdr button:disabled { opacity:0.4; cursor:not-allowed; }
+  #follow-body { flex:1; min-height:0; overflow:auto; padding:12px 14px; display:flex; flex-direction:column; gap:10px; font-size:12px; }
+  #follow-body .fp-section { background:#161a1f; border:1px solid #2a2f36; border-radius:6px; padding:10px 12px; }
+  #follow-body .fp-label { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#7a8392; margin-bottom:6px; }
+  #follow-npub { font-size:11px; color:#4ade80; word-break:break-all; min-height:14px; }
+  #follow-status { font-size:11px; color:#7a8392; }
+  #follow-log { font-size:11px; line-height:1.45; max-height:300px; overflow:auto; background:#0b0d10; border:1px solid #2a2f36; border-radius:4px; padding:8px; font-family:'Menlo','Monaco','Consolas',monospace; }
+  #follow-log .fl-cmd { color:#7ab8f5; white-space:pre-wrap; word-break:break-all; }
+  #follow-log .fl-out { color:#aab2bc; white-space:pre-wrap; word-break:break-all; padding-left:8px; }
+  #follow-log .fl-ok  { color:#4ade80; }
+  #follow-log .fl-err { color:#f87171; }
+  #follow-log .fl-info { color:#7a8392; }
+  #follow-body button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; white-space:nowrap; }
+  #follow-body button:hover:not(:disabled) { background:#2d343d; }
+  #follow-body button:disabled { opacity:0.4; cursor:not-allowed; }
   /* Always reserve scrollbar space so xterm's fit calculation doesn't
      oscillate by 2 cols when a scrollbar appears/disappears. */
   #term .xterm-viewport { background:#0b0d10 !important; overflow-y: scroll !important; }
@@ -105,6 +126,7 @@
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
     <button id="viewer" disabled title="Browse the entire guest filesystem via serial shell (ls/cat). No relay or 9P mount needed.">viewer</button>
     <button id="social" disabled title="Nostr social: publish /mnt/host/public, follow users, sync their content">social</button>
+    <button id="follow" disabled title="Follow panel — bootstraps social CLI and shows your npub. Side panel leaves terminal visible.">follow</button>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
   </div>
@@ -124,6 +146,35 @@
       <div id="viewer-preview">
         <div id="viewer-empty" class="hint">select a file on the left</div>
         <iframe id="viewer-frame" hidden sandbox="allow-scripts"></iframe>
+      </div>
+    </div>
+  </div>
+  <div id="follow-panel" hidden>
+    <div id="follow-hdr">
+      <b>follow</b>
+      <span class="hint" style="margin-left:6px;font-size:11px">social bootstrap</span>
+      <button id="follow-refresh" title="re-run bootstrap pipeline">refresh</button>
+      <button id="follow-close" style="margin-left:auto">close</button>
+    </div>
+    <div id="follow-body">
+      <div class="fp-section">
+        <div class="fp-label">your npub</div>
+        <div id="follow-npub"><span class="hint">(not loaded yet — click refresh)</span></div>
+        <div id="follow-status" style="margin-top:6px">idle</div>
+      </div>
+      <div class="fp-section">
+        <div class="fp-label">actions (placeholders)</div>
+        <div class="row-flex" style="display:flex;gap:6px;flex-wrap:wrap">
+          <button id="follow-action-follow" disabled title="placeholder">follow user…</button>
+          <button id="follow-action-sync" disabled title="placeholder">sync all</button>
+          <button id="follow-action-publish" disabled title="placeholder">publish</button>
+          <button id="follow-action-list" disabled title="placeholder">list following</button>
+          <button id="follow-action-search" disabled title="placeholder">search</button>
+        </div>
+      </div>
+      <div class="fp-section">
+        <div class="fp-label">command log</div>
+        <div id="follow-log"></div>
       </div>
     </div>
   </div>
@@ -3833,6 +3884,140 @@
 
   // Keep social button in sync with emulator state
   setInterval(() => { socialBtn.disabled = !emulator; }, 800);
+
+  // ── follow panel ──────────────────────────────────────────────────────
+  // Side panel (does not fully overlap the terminal). Bootstrap pipeline:
+  //   1. `which social` → wget+chmod if missing
+  //   2. `social pubkey` → `social init` if missing, then `social pubkey`
+  //   3. Display npub.
+  // Refresh button reruns the same pipeline. Other buttons are placeholders.
+  const followBtn        = $('follow');
+  const followPanel      = $('follow-panel');
+  const followCloseBtn   = $('follow-close');
+  const followRefreshBtn = $('follow-refresh');
+  const followNpubEl     = $('follow-npub');
+  const followStatusEl   = $('follow-status');
+  const followLogEl      = $('follow-log');
+
+  function fLog(line, cls) {
+    const d = document.createElement('div');
+    d.className = 'fl-' + (cls || 'info');
+    d.textContent = line;
+    followLogEl.appendChild(d);
+    followLogEl.scrollTop = followLogEl.scrollHeight;
+  }
+  function fStatus(msg, cls) {
+    followStatusEl.textContent = msg;
+    followStatusEl.style.color = cls === 'err' ? '#f87171'
+                              : cls === 'ok'  ? '#4ade80'
+                              : '#7a8392';
+  }
+
+  // Run a shell command via SerialVfs and log it. Returns {stdout, exitCode, timedOut}.
+  async function followRun(cmd, opts) {
+    fLog('$ ' + cmd, 'cmd');
+    if (!serialVfs || !serialVfs.ready) {
+      fLog('(serial shell not ready)', 'err');
+      return { stdout: '', exitCode: -1, timedOut: false, notReady: true };
+    }
+    const r = await serialVfs.exec(cmd, opts || { timeout: 60000 });
+    const out = (r.stdout || '').replace(/\r/g, '').replace(/\n+$/, '');
+    if (out) fLog(out, 'out');
+    const tag = r.timedOut ? 'TIMEOUT' : ('exit=' + r.exitCode);
+    fLog('  → ' + tag, r.exitCode === 0 ? 'ok' : 'err');
+    return r;
+  }
+
+  function extractNpub(text) {
+    const m = (text || '').match(/npub1[0-9a-z]{20,}/i);
+    return m ? m[0] : null;
+  }
+
+  let followBootstrapInFlight = false;
+  async function followBootstrap() {
+    if (followBootstrapInFlight) return;
+    followBootstrapInFlight = true;
+    followRefreshBtn.disabled = true;
+    fStatus('running bootstrap…');
+    fLog('── bootstrap start ──', 'info');
+    try {
+      if (!emulator) { fStatus('boot v86 first', 'err'); fLog('no emulator', 'err'); return; }
+      if (!serialVfs || !serialVfs.ready) {
+        fStatus('waiting for guest shell…', 'err');
+        fLog('serial shell not ready — boot the guest and wait for prompt', 'err');
+        return;
+      }
+
+      // Step 1: check for /usr/local/bin/social (or anywhere on PATH)
+      fStatus('1/3 checking social CLI…');
+      const which = await followRun('which social || true', { timeout: 15000 });
+      const socialPath = (which.stdout || '').replace(/\s+/g, '');
+      if (!socialPath || !socialPath.startsWith('/')) {
+        fStatus('1/3 installing social CLI…');
+        fLog('social not found — downloading', 'info');
+        const dl = await followRun(
+          'wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/local/bin/social',
+          { timeout: 90000 }
+        );
+        if (dl.exitCode !== 0) {
+          fStatus('install failed', 'err');
+          fLog('wget/chmod failed — check network (DNS / unbound) and try again', 'err');
+          return;
+        }
+      } else {
+        fLog('found: ' + socialPath, 'ok');
+      }
+
+      // Step 2: social pubkey → init if needed → pubkey
+      fStatus('2/3 reading pubkey…');
+      let pk = await followRun('social pubkey 2>&1 || true', { timeout: 30000 });
+      let npub = extractNpub(pk.stdout);
+      if (!npub) {
+        fStatus('2/3 no key — running social init…');
+        fLog('no pubkey yet — generating identity', 'info');
+        const init = await followRun('social init 2>&1', { timeout: 60000 });
+        const initNpub = extractNpub(init.stdout);
+        if (initNpub) {
+          npub = initNpub;
+        } else {
+          fStatus('3/3 re-reading pubkey…');
+          pk = await followRun('social pubkey 2>&1 || true', { timeout: 30000 });
+          npub = extractNpub(pk.stdout);
+        }
+      }
+
+      // Step 3: display
+      if (npub) {
+        followNpubEl.textContent = npub;
+        followNpubEl.style.color = '#4ade80';
+        fStatus('ready', 'ok');
+        fLog('── bootstrap ok ──', 'ok');
+      } else {
+        followNpubEl.innerHTML = '<span class="hint">(could not determine npub — see log)</span>';
+        fStatus('failed to obtain npub', 'err');
+        fLog('── bootstrap failed ──', 'err');
+      }
+    } catch (err) {
+      fStatus('error: ' + (err && err.message || err), 'err');
+      fLog('exception: ' + (err && err.stack || err), 'err');
+    } finally {
+      followBootstrapInFlight = false;
+      followRefreshBtn.disabled = false;
+    }
+  }
+
+  followBtn.onclick = async () => {
+    if (!emulator) { setStatus('boot v86 first', 'err'); return; }
+    followPanel.hidden = false;
+    // Auto-run bootstrap once when first opened (log empty == fresh).
+    if (!followLogEl.children.length) {
+      followBootstrap();
+    }
+  };
+  followCloseBtn.onclick = () => { followPanel.hidden = true; term.focus(); };
+  followRefreshBtn.onclick = () => { followBootstrap(); };
+
+  setInterval(() => { followBtn.disabled = !emulator; }, 800);
 
   // ?autoboot=1 [&restore=0|1]
   // When `restore` is unspecified, auto-restore if a snapshot exists for the
