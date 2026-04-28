@@ -416,6 +416,229 @@
   // ---- Emulator lifecycle ----
   let emulator = null, currentIso = null;
 
+  // ── SerialVfs ───────────────────────────────────────────────────────────
+  // JS↔guest filesystem bridge over serial0 — bypasses 9P entirely.
+  //
+  // Each command runs at the guest shell as:
+  //
+  //     printf '\n%s\n' "$__b"; { <user cmd>; } </dev/null; ec=$?
+  //     printf '\n%s:%d\n' "$__e" "$ec"
+  //
+  // where $__b / $__e are randomized markers. We never emit the marker text
+  // as a literal string in the sent command, so the shell's input echo (which
+  // mirrors typed bytes back over serial0) cannot confuse output detection —
+  // the markers only appear in the *output* stream, never in the echo.
+  //
+  // API surface:
+  //   exec(cmd, opts?)  → { stdout, exitCode, timedOut? }
+  //   ls(path)          → string[]   (one entry per line, hidden+visible)
+  //   cat(path)         → string|null
+  //   read(path)        → Uint8Array|null (binary-safe via base64)
+  //   write(path,data)  → { exitCode } (string or Uint8Array; auto-mkdir)
+  //   stat(path)        → { type, size, mode, uid, gid, mtime } | null
+  //   mkdir(path)       → exec result
+  //   rm(path)          → exec result (rm -rf)
+  //   pwd()             → string
+  //
+  // All calls are queued; one command runs at a time. Calls before the
+  // shell is ready queue up and drain after `markShellReady()`.
+  class SerialVfs {
+    constructor() {
+      this.queue = [];
+      this.busy = false;
+      this.ready = false;
+      this.attached = false;
+      this.buf = '';                    // rolling output capture
+      this.current = null;              // active job
+      this.maxBufWindow = 4096;         // bytes to keep waiting for marker boundary
+      this.echoMaxLen = 65536;          // shell echo buffer cap
+    }
+
+    _attach(em) {
+      if (this.attached) return;
+      this.attached = true;
+      em.add_listener('serial0-output-byte', (b) => this._onByte(b));
+    }
+
+    setReady(yes) {
+      this.ready = !!yes;
+      if (this.ready && !this.busy && this.queue.length) this._next();
+    }
+
+    _send(text) {
+      const s = String(text || '');
+      for (let i = 0; i < s.length; i++) emulator.serial0_send(s[i]);
+    }
+
+    _onByte(b) {
+      if (!this.current) return;
+      const c = this.current;
+      this.buf += String.fromCharCode(b);
+      if (this.buf.length > this.echoMaxLen) {
+        this.buf = this.buf.slice(-this.echoMaxLen);
+      }
+      if (!c.started) {
+        // Begin marker only ever appears in output as `\n${begin}\r?\n`
+        // (printf prefixes with explicit \n). The echoed source line embeds
+        // begin inside double quotes/variable substitution and never on a
+        // line of its own.
+        const m = this.buf.match(c.beginRe);
+        if (!m) return;
+        c.started = true;
+        this.buf = this.buf.slice(m.index + m[0].length);
+        c.output = '';
+      }
+      const m = this.buf.match(c.endRe);
+      if (m) {
+        c.output += this.buf.slice(0, m.index);
+        const exitCode = parseInt(m[1], 10);
+        this.buf = '';
+        this.current = null;
+        const job = c.job;
+        clearTimeout(c.timer);
+        job.resolve({ stdout: c.output, exitCode });
+        this._next();
+      } else {
+        // Flush bytes that can't possibly be part of a marker yet.
+        const keep = Math.min(this.buf.length, this.maxBufWindow);
+        if (this.buf.length > keep) {
+          c.output += this.buf.slice(0, this.buf.length - keep);
+          this.buf = this.buf.slice(-keep);
+        }
+      }
+    }
+
+    _next() {
+      if (!this.ready) { this.busy = false; return; }
+      const job = this.queue.shift();
+      if (!job) { this.busy = false; return; }
+      this.busy = true;
+      this._run(job);
+    }
+
+    _run(job) {
+      const tag = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      // Markers are constructed at runtime from a shell var so the literal
+      // `__VFS_B_<tag>__` text never appears in the sent command line (and
+      // therefore never appears in the input echo).
+      const begin = '__VFSB_' + tag + '__';
+      const end   = '__VFSE_' + tag + '__';
+      this.current = {
+        job,
+        started: false,
+        output: '',
+        beginRe: new RegExp('\\n' + begin + '\\r?\\n'),
+        endRe:   new RegExp('\\n' + end + ':(-?\\d+)\\r?\\n'),
+        timer: null,
+      };
+      this.buf = '';
+      // Build the printf format strings at runtime via concatenation so the
+      // marker text is not present as a single literal token in the source.
+      // Note: `</dev/null` prevents the user's command from reading marker
+      // bytes off stdin (serial0 input is the same pipe).
+      const wrapped =
+        `__b='${begin}'; __e='${end}'; ` +
+        `printf '\\n%s\\n' "$__b"; { ${job.cmd}\n} </dev/null; __ec=$?; ` +
+        `printf '\\n%s:%d\\n' "$__e" "$__ec"\n`;
+      this._send(wrapped);
+      this.current.timer = setTimeout(() => {
+        if (!this.current || this.current.job !== job) return;
+        const cur = this.current;
+        this.current = null;
+        this.buf = '';
+        // Best-effort: send Ctrl-C to break the runaway command.
+        this._send('\x03');
+        job.resolve({ stdout: cur.output, exitCode: -1, timedOut: true });
+        this._next();
+      }, job.timeout || 30000);
+    }
+
+    exec(cmd, opts = {}) {
+      return new Promise((resolve) => {
+        this.queue.push({ cmd: String(cmd), resolve, timeout: opts.timeout });
+        if (this.ready && !this.busy) this._next();
+      });
+    }
+
+    static _q(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+    static _dirname(p) { const i = String(p).lastIndexOf('/'); return i <= 0 ? '/' : p.slice(0, i); }
+
+    async ls(path = '.') {
+      const r = await this.exec(`ls -1A -- ${SerialVfs._q(path)} 2>/dev/null`);
+      if (r.exitCode !== 0) return [];
+      return r.stdout.split('\n').map(s => s.replace(/\r$/, '')).filter(Boolean);
+    }
+
+    async cat(path) {
+      const r = await this.exec(`cat -- ${SerialVfs._q(path)} 2>/dev/null`);
+      return r.exitCode === 0 ? r.stdout : null;
+    }
+
+    async read(path) {
+      const r = await this.exec(`base64 -- ${SerialVfs._q(path)} 2>/dev/null`, { timeout: 60000 });
+      if (r.exitCode !== 0) return null;
+      const b64 = r.stdout.replace(/[^A-Za-z0-9+/=]/g, '');
+      let bin;
+      try { bin = atob(b64); } catch { return null; }
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+
+    async write(path, data) {
+      let bytes;
+      if (typeof data === 'string') bytes = new TextEncoder().encode(data);
+      else if (data instanceof Uint8Array) bytes = data;
+      else if (data && data.buffer instanceof ArrayBuffer) bytes = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength);
+      else throw new Error('SerialVfs.write: data must be string or Uint8Array');
+
+      // Encode to base64 in JS (binary-safe), then stream to a temp file in
+      // <=4KiB chunks via `printf >>` and decode with base64 -d. Works on
+      // BusyBox without `cat << EOF` heredoc fragility.
+      let bstr = '';
+      for (let i = 0; i < bytes.length; i++) bstr += String.fromCharCode(bytes[i]);
+      const b64 = btoa(bstr);
+
+      const tmp = '/tmp/.svfsw.' + Math.random().toString(36).slice(2, 10);
+      const CHUNK = 4096;
+      const dir = SerialVfs._dirname(path);
+      let cmd = `: > ${SerialVfs._q(tmp)} || exit 1; `;
+      for (let i = 0; i < b64.length; i += CHUNK) {
+        cmd += `printf '%s' ${SerialVfs._q(b64.slice(i, i + CHUNK))} >> ${SerialVfs._q(tmp)}; `;
+      }
+      cmd += `mkdir -p -- ${SerialVfs._q(dir)} 2>/dev/null; `;
+      cmd += `base64 -d ${SerialVfs._q(tmp)} > ${SerialVfs._q(path)}; rc=$?; `;
+      cmd += `rm -f ${SerialVfs._q(tmp)}; exit $rc`;
+      return this.exec(cmd, { timeout: Math.max(60000, 1000 + bytes.length / 1024 * 200) });
+    }
+
+    mkdir(path)      { return this.exec(`mkdir -p -- ${SerialVfs._q(path)}`); }
+    rm(path)         { return this.exec(`rm -rf -- ${SerialVfs._q(path)}`); }
+
+    async stat(path) {
+      const r = await this.exec(`stat -c '%F|%s|%a|%u|%g|%Y' -- ${SerialVfs._q(path)} 2>/dev/null`);
+      if (r.exitCode !== 0) return null;
+      const parts = r.stdout.trim().split('|');
+      if (parts.length < 6) return null;
+      return {
+        type:  parts[0],
+        size:  +parts[1],
+        mode:  parts[2],
+        uid:   +parts[3],
+        gid:   +parts[4],
+        mtime: +parts[5],
+      };
+    }
+
+    async pwd() {
+      const r = await this.exec('pwd');
+      return r.stdout.trim();
+    }
+  }
+
+  const serialVfs = new SerialVfs();
+  window.serialVfs = serialVfs;
+
   // ── One-shot serial markers ────────────────────────────────────────────
   // Some host operations need to wait for a guest-emitted line (e.g.
   // __UMOUNT_OK__:<nonce> before save_state). Callers register a
@@ -785,6 +1008,7 @@
 
     emulator = new V86(cfg);
     window.emulator = emulator;
+    serialVfs._attach(emulator);
 
     // ── 9P inode uid/gid sanitizer ──────────────────────────────────────────
     // v86's fs9p stores inode uid as whatever the kernel sent in Tattach's
@@ -1458,6 +1682,7 @@
       shellReady = true;
       queuedLoginKickSent = false;
       queuedLoginHintShown = false;
+      serialVfs.setReady(true);
       flushPendingGuestCommands();
       // Prime stty with current cols now that we know we're at a shell.
       if (lastCols && emulator) {
@@ -1541,6 +1766,8 @@
     emulator = null; window.emulator = null;
     shellReady = false; sentCols = 0;
     queuedLoginKickSent = false; queuedLoginHintShown = false; promptLine = '';
+    serialVfs.ready = false; serialVfs.attached = false;
+    serialVfs.busy = false; serialVfs.current = null; serialVfs.buf = '';
   }
 
   async function doReset() { await shutdown(); await boot({ restore: false }); }
