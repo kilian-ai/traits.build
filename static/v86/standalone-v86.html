@@ -936,6 +936,11 @@
         '    if IFS= read -r -t 1 __line 2>/dev/null; then\n' +
         '      case "$__line" in\n' +
         '        *SYNC9P_RECEIPT:$__n*)\n' +
+        '          # Receipt confirms host-marker round-trip, but the guest\n' +
+        '          # 9P client still has cached dentries/readdir for\n' +
+        '          # /mnt/host (especially under cache=loose fallback). Drop\n' +
+        '          # the VFS caches so the next ls/stat/open re-walks 9P.\n' +
+        '          echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true\n' +
         '          printf "sync9p: ok %s\\n" "$__n"\n' +
         '          return 0\n' +
         '          ;;\n' +
