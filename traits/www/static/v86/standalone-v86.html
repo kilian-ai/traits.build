@@ -2082,7 +2082,10 @@
   };
   // Toggle viewer button availability when emulator boots/stops or shell becomes ready.
   function syncViewerBtn() {
-    viewerBtn.disabled = !(emulator && serialVfs && serialVfs.ready);
+    // Enable viewer whenever the emulator is running. If the shell isn't
+    // ready yet, the viewer overlay itself will show a "shell not ready"
+    // hint instead of leaving the button looking permanently broken.
+    viewerBtn.disabled = !emulator;
   }
   setInterval(syncViewerBtn, 800);
 
