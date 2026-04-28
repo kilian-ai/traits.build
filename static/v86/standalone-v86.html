@@ -3942,10 +3942,16 @@
     fLog('── bootstrap start ──', 'info');
     try {
       if (!emulator) { fStatus('boot v86 first', 'err'); fLog('no emulator', 'err'); return; }
-      if (!serialVfs || !serialVfs.ready) {
-        fStatus('waiting for guest shell…', 'err');
-        fLog('serial shell not ready — boot the guest and wait for prompt', 'err');
+      if (!serialVfs) {
+        fStatus('serial vfs unavailable', 'err');
+        fLog('serialVfs missing', 'err');
         return;
+      }
+      // Trust the user: if they clicked the button, assume shell is up.
+      // Prompt-detector sometimes misses the prompt (snapshot restore, ANSI noise).
+      if (!serialVfs.ready && typeof serialVfs.setReady === 'function') {
+        serialVfs.setReady(true);
+        fLog('(forcing shell-ready — exec will time out if guest not really up)', 'info');
       }
 
       // Step 1: check for /usr/local/bin/social (or anywhere on PATH)
