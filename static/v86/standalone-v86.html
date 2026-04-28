@@ -908,43 +908,40 @@
         // sync9p: ask the host page to refresh its 9P view of /mnt/host
         // and confirm via a receipt the guest reads back. Flow:
         //   1. `sync` flushes guest writes to fs9p.
-        //   2. Guest emits "__HOST_SYNC__:<nonce>" on serial0.
-        //   3. Host catches marker, refreshes viewer, writes
-        //      /.tb-sync-<nonce> via emulator.fs9p (NOT through the guest
-        //      kernel — bypasses Linux 9P caching so it's visible at once).
-        //   4. Guest polls `ls /mnt/host/` for a file matching the nonce.
+        //   2. Guest emits "__HOST_SYNC__:<nonce>" on serial0 and blocks
+        //      in `read -t` on its own stdin.
+        //   3. Host catches marker, refreshes viewer (renderTree),
+        //      writes /.tb-sync-<nonce> to fs9p (best-effort, for
+        //      observability), and echoes "SYNC9P_RECEIPT:<nonce>\n"
+        //      back over serial0.
+        //   4. Guest's `read` returns with the receipt line; sync9p prints
+        //      "sync9p: ok <nonce>".
         //
-        // CRITICAL: the receipt path embeds the nonce so every call hits
-        // a fresh dentry the guest kernel has never looked up. A fixed
-        // path gets poisoned by the Linux 9P negative-dentry cache: after
-        // the first stat() returns -ENOENT, subsequent stat()s read from
-        // cache for several seconds even after the host writes the file.
-        // Polling via `[ -e $path ]` on a unique nonce path forces a 9P
-        // Twalk because the kernel has no cached dentry for that name.
-        // Do NOT use `ls /mnt/host/ | grep`: the Linux 9P client caches
-        // directory listings, so newly-written files are invisible until
-        // the readdir cache invalidates.
-        // The receipt is written at the fs9p root (not under a subdir) to
-        // avoid create_directory races on snapshot-restored sessions where
-        // CreateBinaryFile parent resolution can fail.
+        // The previous design polled /mnt/host/.tb-sync-<nonce> from the
+        // guest, but the Linux 9P client's dentry + readdir caches can
+        // survive snapshot restore in stale states that hide host-written
+        // files even from per-nonce stat() probes. Serial is the same
+        // bidirectional path the shell already uses, so it cannot be
+        // poisoned by 9P client-side caching.
         'cat > /etc/profile.d/02sync9p.sh <<\\__SYNC9P_EOF__\n' +
         'sync9p() {\n' +
         '  __n=$$-$(date +%s 2>/dev/null)-$RANDOM-$RANDOM\n' +
-        '  __r="/mnt/host/.tb-sync-$__n"\n' +
         '  sync 2>/dev/null\n' +
         '  printf "__HOST_SYNC__:%s\\n" "$__n"\n' +
+        '  # Wait for host to echo SYNC9P_RECEIPT:<nonce> back over serial.\n' +
+        '  # Serial is the canonical bidirectional channel and bypasses 9P\n' +
+        '  # client caches that can survive snapshot restore.\n' +
         '  __i=0\n' +
-        '  while [ $__i -lt 50 ]; do\n' +
-        '    # Direct stat on a never-seen path forces 9P Twalk to the\n' +
-        '    # server; readdir-based polling (ls /mnt/host/) is cached by\n' +
-        '    # the Linux 9P client and never sees newly-written files.\n' +
-        '    if [ -e "$__r" ] || ls -a "$__r" >/dev/null 2>&1; then\n' +
-        '      rm -f "$__r" 2>/dev/null\n' +
-        '      printf "sync9p: ok %s\\n" "$__n"\n' +
-        '      return 0\n' +
+        '  while [ $__i -lt 30 ]; do\n' +
+        '    if IFS= read -r -t 1 __line 2>/dev/null; then\n' +
+        '      case "$__line" in\n' +
+        '        *SYNC9P_RECEIPT:$__n*)\n' +
+        '          printf "sync9p: ok %s\\n" "$__n"\n' +
+        '          return 0\n' +
+        '          ;;\n' +
+        '      esac\n' +
         '    fi\n' +
         '    __i=$((__i+1))\n' +
-        '    sleep 0.1\n' +
         '  done\n' +
         '  printf "sync9p: timeout (no receipt for %s)\\n" "$__n" >&2\n' +
         '  return 1\n' +
@@ -1193,11 +1190,12 @@
       sync9pDiag.stats.started++;
       sync9pDiag.stats.last_nonce = nonce;
       sync9pPush(entry);
-      // Refresh viewer and drop a per-nonce receipt at fs9p root as
-      // /.tb-sync-<nonce>. Writing at root (not under a subdir) avoids
-      // create_directory races on snapshot-restored sessions where
-      // SearchPath of a freshly created dir can return id<0.
-      // Per-nonce filename sidesteps the Linux 9P negative-dentry cache.
+      // PRIMARY receipt channel: echo the nonce back over serial0. The
+      // guest's sync9p() function is blocked in `read -t` on stdin and
+      // will see this line. Serial is the same path everything else
+      // uses (shell input/output) and is unaffected by 9P client-side
+      // dentry/readdir caches that survive snapshot restore.
+      try { sendGuestText('SYNC9P_RECEIPT:' + nonce + '\n'); } catch (_) {}
       (async () => {
         try {
           if (typeof renderTree === 'function') {
