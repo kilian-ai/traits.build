@@ -1696,8 +1696,9 @@
 
     function maybeKickQueuedGuestLogin() {
       if (queuedLoginKickSent || shellReady) return;
+      const autoLogin = (typeof window !== 'undefined') && window.__v86AutoLogin === true;
       const haveWork = pendingGuestCommands.length > 0 || (serialVfs && serialVfs.queue.length > 0);
-      if (!haveWork) return;
+      if (!autoLogin && !haveWork) return;
       queuedLoginKickSent = true;
       if (!queuedLoginHintShown) {
         queuedLoginHintShown = true;
@@ -3645,6 +3646,7 @@
   // expect file persistence across reloads). Pass `&restore=0` for a clean boot.
   const qs = new URLSearchParams(location.search);
   if (qs.get('autoboot') === '1') {
+    window.__v86AutoLogin = true;
     (async () => {
       const restoreParam = qs.get('restore');
       let wantRestore;
