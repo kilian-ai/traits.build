@@ -2066,14 +2066,17 @@
   closeBtn.onclick = () => { overlay.hidden = true; term.focus(); };
   viewerBtn.onclick = async () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
-    if (!serialVfs || !serialVfs.ready) {
-      setStatus('shell not ready — wait for guest prompt', 'err');
-      return;
+    if (!serialVfs) { setStatus('serial vfs unavailable', 'err'); return; }
+    // Trust the user: if they clicked the viewer button, assume the shell is
+    // up. The prompt-detector sometimes misses the prompt (snapshot restore,
+    // ANSI noise, etc.) and we don't want a permanently-disabled UI. If the
+    // shell really isn't ready, exec() will time out and the tree shows an
+    // error row instead.
+    if (!serialVfs.ready && typeof serialVfs.setReady === 'function') {
+      serialVfs.setReady(true);
     }
     overlay.hidden = false;
     vSet('listing…');
-    // Only seed the path field on first open (when it's empty).
-    // Don't ever overwrite a value the user already typed.
     if (!pathEl.value) pathEl.value = VIEWER_ROOT;
     expanded.clear();
     dirCache.clear();
