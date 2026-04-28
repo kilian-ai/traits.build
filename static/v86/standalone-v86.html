@@ -372,6 +372,10 @@
   let autosaveTimer = null, autosaveInFlight = false, lastAutosaveAt = 0, dirty = false;
 
   function markDirty() {
+    // Suppress while a save is in flight: the umount/remount handshake
+    // itself sends serial bytes via sendGuestText, which would otherwise
+    // re-dirty the snapshot and immediately re-trigger autosave.
+    if (saveInProgress) return;
     dirty = true;
     if (autosaveEl.checked) scheduleAutosave();
   }
@@ -388,11 +392,16 @@
       return;
     }
     autosaveInFlight = true;
+    saveInProgress = true;
     const prevStatus = statusEl.textContent;
     try {
       const t0 = Date.now();
+      // Take snapshot in unmounted state — see umountBeforeSave() comment.
+      await umountBeforeSave();
       const st = await emulator.save_state();
       await idbPut(snapKeyFor(currentIso), st);
+      // Restore mount for the live session so the user keeps working.
+      await remountAfterSave();
       lastAutosaveAt = Date.now();
       dirty = false;
       restoreBtn.disabled = false; clearBtn.disabled = false;
@@ -401,11 +410,45 @@
       setTimeout(() => { if (statusEl.textContent.startsWith('auto-saved')) setStatus(prevStatus); }, 2000);
     } catch (e) {
       setStatus('auto-save failed: ' + e.message, 'err');
-    } finally { autosaveInFlight = false; }
+    } finally { autosaveInFlight = false; saveInProgress = false; }
   }
 
   // ---- Emulator lifecycle ----
   let emulator = null, currentIso = null;
+
+  // ── One-shot serial markers ────────────────────────────────────────────
+  // Some host operations need to wait for a guest-emitted line (e.g.
+  // __UMOUNT_OK__:<nonce> before save_state). Callers register a
+  // matcher via awaitGuestMarker(prefix, timeoutMs) and resolve when
+  // handleHostMarker sees a line with that prefix. The fundamental
+  // value of this pattern: lets us round-trip async work through the
+  // guest shell over the same serial path that everything else uses,
+  // unaffected by 9P client cache state.
+  const oneShotMarkers = []; // [{ re, resolve, reject, timer }]
+  function awaitGuestMarker(re, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      const entry = { re, resolve, reject };
+      entry.timer = setTimeout(() => {
+        const i = oneShotMarkers.indexOf(entry);
+        if (i >= 0) oneShotMarkers.splice(i, 1);
+        reject(new Error('marker timeout: ' + re));
+      }, timeoutMs);
+      oneShotMarkers.push(entry);
+    });
+  }
+  function consumeOneShotMarker(line) {
+    for (let i = 0; i < oneShotMarkers.length; i++) {
+      const m = line.match(oneShotMarkers[i].re);
+      if (m) {
+        const e = oneShotMarkers[i];
+        oneShotMarkers.splice(i, 1);
+        clearTimeout(e.timer);
+        e.resolve(m);
+        return true;
+      }
+    }
+    return false;
+  }
 
   function sendGuestText(text) {
     if (!emulator) return false;
@@ -413,6 +456,46 @@
     for (let index = 0; index < value.length; index++) emulator.serial0_send(value[index]);
     markDirty();
     return true;
+  }
+
+  // ── Umount-before-save handshake ────────────────────────────────────────
+  // The 9P kernel client tracks chan->inuse in guest RAM. If we save_state()
+  // while /mnt/host is mounted, the snapshot RAM image holds a stale
+  // chan->inuse=1 referencing a virtqueue identity that won't match the
+  // freshly recreated Virtio9p instance on restore. Result: post-restore
+  // `mount -t 9p` fails with `9pnet_virtio: no channels available`.
+  //
+  // The fix: always snapshot in the unmounted state. Before save we
+  // umount /mnt/host (kernel calls p9_client_destroy → chan->inuse=0).
+  // After save we re-mount so the live session keeps working. On restore
+  // the guest's restoreNetCmd already runs `mount -t 9p`, which now
+  // succeeds cleanly because the snapshot captured "no mount" state.
+  let saveInProgress = false; // guard markDirty re-entrance during save
+  async function umountBeforeSave() {
+    if (!emulator || !shellReady) return false;
+    const tag = 'usv' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    const re = new RegExp('__UMOUNT_OK__:' + tag + '\\b');
+    const wait = awaitGuestMarker(re, 4000);
+    sendGuestText(
+      "sync; " +
+      "umount -f /mnt/host 2>/dev/null; " +
+      "umount -l /mnt/host 2>/dev/null; " +
+      "sync; " +
+      "printf '__UMOUNT_OK__:" + tag + "\\n'\n"
+    );
+    try { await wait; return true; } catch (_) { return false; }
+  }
+  async function remountAfterSave() {
+    if (!emulator || !shellReady) return false;
+    const tag = 'rsv' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    const re = new RegExp('__REMOUNT_OK__:' + tag + '\\b');
+    const wait = awaitGuestMarker(re, 4000);
+    sendGuestText(
+      "mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none,access=any," +
+      "dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null; " +
+      "printf '__REMOUNT_OK__:" + tag + "\\n'\n"
+    );
+    try { await wait; return true; } catch (_) { return false; }
   }
 
   const sendCmd = sendGuestText;
@@ -1248,6 +1331,11 @@
       // Strip ANSI escapes the guest shell may have wrapped around output.
       const clean = line.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
 
+      // Resolve any pending one-shot markers (e.g. umount/remount handshake).
+      // Done first so async save flows resume promptly even if other markers
+      // would have matched.
+      try { consumeOneShotMarker(clean); } catch (_) {}
+
       // Record guest-side sync9p outcomes (printed by the guest function
       // after polling /mnt/host/.tb-sync-<nonce>). These reveal cases where
       // the host wrote+verified the receipt but the Linux 9P client never
@@ -1463,15 +1551,19 @@
   async function doSave() {
     if (!emulator) return;
     saveBtn.disabled = true;
+    saveInProgress = true;
     setStatus('saving snapshot…');
     try {
+      // Take snapshot in unmounted state — see umountBeforeSave() comment.
+      await umountBeforeSave();
       const buf = await emulator.save_state();
       await idbPut(snapKeyFor(currentIso), buf);
+      await remountAfterSave();
       setStatus(`snapshot saved (${(buf.byteLength/1048576).toFixed(1)} MB)`, 'ok');
       restoreBtn.disabled = false; clearBtn.disabled = false;
     } catch (e) {
       setStatus('save failed: ' + e.message, 'err');
-    } finally { saveBtn.disabled = false; }
+    } finally { saveBtn.disabled = false; saveInProgress = false; }
   }
 
   bootBtn.onclick    = () => boot({ restore: false });
