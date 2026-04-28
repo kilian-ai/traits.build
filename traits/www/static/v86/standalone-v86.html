@@ -3238,21 +3238,21 @@
     // Push merged list to 9P directly so the guest CLI sees it before it runs.
     await pushFollowingListTo9P();
 
-    if (await runGuestSocialCommand(['follow', npub], 'social follow ' + truncNpub(npub), {
-      afterRun: async () => {
-        // Do NOT hydrate the follow list here — localStorage is canonical and
-        // the guest CLI's view of /following/.list may lag or be empty after a
-        // 9P writability rmdir+mkdir recovery in social.sh ensure_dirs.
-        renderFollowList();
-      },
-    })) {
-      return;
+    // Run the guest CLI (best-effort, fire-and-forget for echo only). We do
+    // NOT early-return on its outcome — auto-sync below must always run.
+    try {
+      await runGuestSocialCommand(['follow', npub], 'social follow ' + truncNpub(npub), {
+        afterRun: async () => {
+          // Do NOT hydrate the follow list here — localStorage is canonical
+          // and the guest CLI's view of /following/.list may lag or be empty
+          // after a 9P writability rmdir+mkdir recovery in social.sh.
+          renderFollowList();
+        },
+      });
+    } catch (e) {
+      console.warn('[follow] guest CLI follow failed (non-fatal):', e && e.message);
     }
 
-    const following = getFollowing();
-    if (following.includes(npub)) { sLog('already following ' + truncNpub(npub)); return; }
-    following.push(npub);
-    saveFollowing(following);
     sLog('following ' + truncNpub(npub), 'ok');
     // Create directory in 9P share: <follow_root>/<npub>
     const fs = emulator && emulator.fs9p;
