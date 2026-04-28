@@ -919,19 +919,27 @@
         // path gets poisoned by the Linux 9P negative-dentry cache: after
         // the first stat() returns -ENOENT, subsequent stat()s read from
         // cache for several seconds even after the host writes the file.
-        // Polling via `ls` (readdir) always round-trips to the 9P server.
+        // Polling via `[ -e $path ]` on a unique nonce path forces a 9P
+        // Twalk because the kernel has no cached dentry for that name.
+        // Do NOT use `ls /mnt/host/ | grep`: the Linux 9P client caches
+        // directory listings, so newly-written files are invisible until
+        // the readdir cache invalidates.
         // The receipt is written at the fs9p root (not under a subdir) to
         // avoid create_directory races on snapshot-restored sessions where
         // CreateBinaryFile parent resolution can fail.
         'cat > /etc/profile.d/02sync9p.sh <<\\__SYNC9P_EOF__\n' +
         'sync9p() {\n' +
         '  __n=$$-$(date +%s 2>/dev/null)-$RANDOM-$RANDOM\n' +
+        '  __r="/mnt/host/.tb-sync-$__n"\n' +
         '  sync 2>/dev/null\n' +
         '  printf "__HOST_SYNC__:%s\\n" "$__n"\n' +
         '  __i=0\n' +
         '  while [ $__i -lt 50 ]; do\n' +
-        '    if ls -a /mnt/host/ 2>/dev/null | grep -qxF ".tb-sync-$__n"; then\n' +
-        '      rm -f "/mnt/host/.tb-sync-$__n" 2>/dev/null\n' +
+        '    # Direct stat on a never-seen path forces 9P Twalk to the\n' +
+        '    # server; readdir-based polling (ls /mnt/host/) is cached by\n' +
+        '    # the Linux 9P client and never sees newly-written files.\n' +
+        '    if [ -e "$__r" ] || ls -a "$__r" >/dev/null 2>&1; then\n' +
+        '      rm -f "$__r" 2>/dev/null\n' +
         '      printf "sync9p: ok %s\\n" "$__n"\n' +
         '      return 0\n' +
         '    fi\n' +
