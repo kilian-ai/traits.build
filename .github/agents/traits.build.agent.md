@@ -533,7 +533,8 @@ traits test_runner '*'
 # Health check (used by Fly.io)
 GET /health
 
-# Admin — self-update (Basic Auth required)
+# Admin — self-update (Bearer auth required)
+# Header: Authorization: Bearer $ADMIN_TOKEN
 POST /admin/update                # Download latest binary from GitHub releases,
                                   # replace /data/traits, exit for restart
                                   # Returns: {"status":"updated","from":"v...","to":"v..."}
@@ -835,14 +836,14 @@ These traits now use `kernel_logic::platform::*` instead of `#[cfg]` blocks:
 - **Port:** 8090 (internal), HTTPS forced
 - **Auto-scaling:** 0–1 machines, auto-stop/auto-start
 - **Health check:** `GET /health` every 30s
-- **Admin auth:** HTTP Basic Auth (`ADMIN_PASSWORD` Fly secret)
+- **Admin auth (`/admin/update`):** Bearer token via `Authorization: Bearer $ADMIN_TOKEN` header (`ADMIN_TOKEN` Fly secret). The `www.admin` dashboard separately uses HTTP Basic Auth (`ADMIN_PASSWORD` Fly secret).
 - **Persistent volume:** `/data` mount — `CMD` prefers `/data/traits` over image binary
 
 Auto-deploy workflow (triggered by tag push from `build.sh`):
 1. `build.sh` creates + pushes git tag (e.g. `v260327.161045`)
 2. GitHub Actions (`.github/workflows/release.yml`) cross-compiles linux/amd64 binary
 3. Binary uploaded as GitHub Release asset (e.g. `traits-linux-x86_64`)
-4. Action curls `POST /admin/update` on Fly.io with Basic Auth
+4. Action curls `POST /admin/update` on Fly.io with `Authorization: Bearer $ADMIN_TOKEN`
 5. Server downloads new binary to `/data/traits`, exits
 6. Fly.io auto-restarts, picks up `/data/traits` (see Dockerfile CMD)
 

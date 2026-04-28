@@ -780,16 +780,18 @@ async fn admin_update(
             .json(serde_json::json!({"error": "Failed to fetch tags from GitHub"})),
     };
 
-    let latest = tag_output.lines()
-        .find(|l| l.contains("\"name\""))
-        .and_then(|l| {
-            let start = l.find('"')? + 1;
-            let rest = &l[start..];
-            let start2 = rest.find('"')? + 1;
-            let rest2 = &rest[start2..];
-            let end = rest2.find('"')?;
-            Some(rest2[..end].to_string())
-        });
+    // Parse the first `"name":"<value>"` occurrence in the tags JSON.
+    let latest = tag_output.find("\"name\"").and_then(|i| {
+        let after = &tag_output[i + "\"name\"".len()..];
+        // Skip whitespace and the colon
+        let colon = after.find(':')?;
+        let after = &after[colon + 1..];
+        // Find the opening quote of the value
+        let q1 = after.find('"')? + 1;
+        let after = &after[q1..];
+        let q2 = after.find('"')?;
+        Some(after[..q2].to_string())
+    });
 
     let latest = match latest {
         Some(v) => v,
