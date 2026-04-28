@@ -103,7 +103,7 @@
     <button id="restore" disabled>restore</button>
     <button id="clear" disabled>clear snapshot</button>
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
-    <button id="viewer" disabled title="Browse files in /mnt/host (v86 9P share root) directly from the host browser — no relay needed">viewer</button>
+    <button id="viewer" disabled title="Browse the entire guest filesystem via serial shell (ls/cat). No relay or 9P mount needed.">viewer</button>
     <button id="social" disabled title="Nostr social: publish /mnt/host/public, follow users, sync their content">social</button>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
@@ -112,8 +112,9 @@
   <div id="viewer-overlay" hidden>
     <div id="viewer-bar">
       <b>viewer</b>
-      <span class="hint" style="margin-left:6px">9P share root → /mnt/host (in guest)</span>
-      <input id="viewer-path" value="/mnt/host" spellcheck="false" title="guest path inside the 9P share (root /mnt/host == 9P share root)">
+      <span class="hint" style="margin-left:6px">guest filesystem (serial-backed: ls / cat / base64)</span>
+      <input id="viewer-path" value="/" spellcheck="false" autocomplete="new-password" autocorrect="off" autocapitalize="off" name="viewer-path-noautofill" list="viewer-path-empty-list" title="absolute guest path — try /, /root, /etc, /mnt/host, /tmp">
+      <datalist id="viewer-path-empty-list"></datalist>
       <button id="viewer-refresh" title="reload listing">refresh</button>
       <span class="hint" id="viewer-status"></span>
       <button id="viewer-close" style="margin-left:auto">close</button>
@@ -1596,9 +1597,10 @@
       try { sendGuestText('SYNC9P_RECEIPT:' + nonce + '\n'); } catch (_) {}
       (async () => {
         try {
-          if (typeof renderTree === 'function') {
-            try { renderTree(); } catch (_) {}
-          }
+          // Note: we used to call renderTree() here for live refresh,
+          // but it could fire while the user was editing the path field
+          // and caused perceived "auto-replace" of their typing. The
+          // user can hit the refresh button or press Enter to reload.
           const fs = emulator && emulator.fs9p;
           if (!fs) {
             entry.state = 'fs_unavailable';
@@ -1842,36 +1844,30 @@
   const closeBtn    = $('viewer-close');
   const vStatusEl   = $('viewer-status');
   let lastBlobUrl   = null;
-  // The 9P share root from the host browser's view is fs9p "/". In the guest
-  // it is mounted at /mnt/host. We accept either form in the input field and
-  // strip the /mnt/host prefix internally before talking to fs9p.
-  const VIEWER_ROOT      = '/';
-  const VIEWER_GUEST_TAG = '/mnt/host';
-  const expanded         = new Set([VIEWER_ROOT]);
+  // Viewer browses the entire guest filesystem via SerialVfs (ls / cat over
+  // the serial console). Paths are absolute guest paths (e.g. /, /root,
+  // /mnt/host, /etc). No 9P share or tunnel is involved here.
+  const VIEWER_ROOT = '/';
+  const expanded    = new Set([VIEWER_ROOT]);
+  // Cache: dir path -> [{name, path, dir}]. Cleared on refresh.
+  const dirCache    = new Map();
+  // Render generation counter; lets us discard stale async renders when the
+  // user navigates faster than serial commands complete.
+  let renderGen = 0;
 
-  // Convert a share-relative path ("/foo/bar") into the guest-visible form
-  // ("/mnt/host/foo/bar") for display in the input field.
-  function toGuestPath(sharePath) {
-    if (!sharePath || sharePath === '/') return VIEWER_GUEST_TAG;
-    return VIEWER_GUEST_TAG + sharePath;
+  function normalizeViewerPath(raw) {
+    let p = String(raw || '').trim();
+    if (!p) return VIEWER_ROOT;
+    if (!p.startsWith('/')) p = '/' + p;
+    p = p.replace(/\/+/g, '/');
+    if (p.length > 1) p = p.replace(/\/$/, '');
+    return p || VIEWER_ROOT;
   }
 
-  // Convert the input field value (which may be "/mnt/host/..." guest form,
-  // a bare share-relative path, or empty) into the canonical share-relative
-  // path used by fs9p.
-  function normalizeViewerPath(raw) {
-    let path = String(raw || '').trim();
-    if (!path) return VIEWER_ROOT;
-    if (!path.startsWith('/')) path = '/' + path;
-    path = path.replace(/\/+/g, '/').replace(/\/$/, '');
-    if (!path) return VIEWER_ROOT;
-    // Strip the guest-side mount prefix if the user pasted a /mnt/host path.
-    if (path === VIEWER_GUEST_TAG) return VIEWER_ROOT;
-    if (path.startsWith(VIEWER_GUEST_TAG + '/')) {
-      path = path.slice(VIEWER_GUEST_TAG.length);
-    }
-    if (!path || path === '/') return VIEWER_ROOT;
-    return path;
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
   }
 
   function vSet(msg, cls) { vStatusEl.textContent = msg || ''; vStatusEl.className = 'hint ' + (cls || ''); }
@@ -1940,25 +1936,74 @@
     }).sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
   }
 
-  function renderTree() {
-    if (!fs9p()) { treeEl.innerHTML = '<div class="row hint" style="padding:8px 12px">9P share not ready</div>'; return; }
-    const root = normalizeViewerPath(pathEl.value);
-    pathEl.value = toGuestPath(root);
-    if (!isDir(root)) {
-      treeEl.innerHTML = `<div class="row hint" style="padding:8px 12px">not a directory: ${toGuestPath(root)}</div>`;
+  // ── Serial-backed filesystem helpers (whole guest FS) ──────────────────
+  // svfsList: list a directory using `ls -1Ap` (BusyBox). The trailing '/'
+  // marker on each line distinguishes dirs from files in a single command.
+  // svfsIsDir: cheap dir check via `[ -d ... ]`.
+  async function svfsList(path) {
+    if (!serialVfs || !serialVfs.ready) return [];
+    const r = await serialVfs.exec(
+      `ls -1Ap -- ${SerialVfs._q(path)} 2>/dev/null`,
+      { timeout: 15000 }
+    );
+    if (r.exitCode !== 0) return [];
+    return r.stdout.split('\n')
+      .map(s => s.replace(/\r$/, ''))
+      .filter(Boolean)
+      .map(line => {
+        const dir = line.endsWith('/');
+        const name = dir ? line.slice(0, -1) : line;
+        return { name, path: joinPath(path, name), dir };
+      })
+      .filter(e => e.name && e.name !== '.' && e.name !== '..')
+      .sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
+  }
+  async function svfsIsDir(path) {
+    if (!serialVfs || !serialVfs.ready) return false;
+    const r = await serialVfs.exec(
+      `[ -d ${SerialVfs._q(path)} ] && echo 1 || echo 0`,
+      { timeout: 10000 }
+    );
+    return r.stdout.replace(/\s+/g, '') === '1';
+  }
+  async function getDir(path, force = false) {
+    if (!force && dirCache.has(path)) return dirCache.get(path);
+    const ents = await svfsList(path);
+    dirCache.set(path, ents);
+    return ents;
+  }
+
+  async function renderTree() {
+    if (!serialVfs || !serialVfs.ready) {
+      treeEl.innerHTML = '<div class="row hint" style="padding:8px 12px">shell not ready — wait for guest prompt</div>';
       return;
     }
+    const myGen = ++renderGen;
+    const root = normalizeViewerPath(pathEl.value);
+    // Never write back to pathEl here — the user owns that field.
+    // (Previously we normalized the value while unfocused, but any
+    // automatic rerender would still flicker the input.)
+    if (!await svfsIsDir(root)) {
+      if (myGen !== renderGen) return;
+      treeEl.innerHTML = `<div class="row hint" style="padding:8px 12px">not a directory: ${escapeHtml(root)}</div>`;
+      return;
+    }
+    if (myGen !== renderGen) return;
     expanded.add(root);
     const out = [];
-    function walk(dirPath, depth) {
-      for (const e of listDir(dirPath)) {
+    async function walk(dirPath, depth) {
+      const entries = await getDir(dirPath);
+      if (myGen !== renderGen) return;
+      for (const e of entries) {
         const cls = e.dir ? ('dir' + (expanded.has(e.path) ? ' open' : '')) : 'file';
         const indent = depth > 5 ? 5 : depth;
-        out.push(`<div class="row ${cls} indent-${indent}" data-path="${e.path}" data-dir="${e.dir ? 1 : 0}">${e.name}</div>`);
-        if (e.dir && expanded.has(e.path)) walk(e.path, depth + 1);
+        out.push(`<div class="row ${cls} indent-${indent}" data-path="${escapeHtml(e.path)}" data-dir="${e.dir ? 1 : 0}">${escapeHtml(e.name)}</div>`);
+        if (e.dir && expanded.has(e.path)) await walk(e.path, depth + 1);
+        if (myGen !== renderGen) return;
       }
     }
-    walk(root, 1);
+    await walk(root, 1);
+    if (myGen !== renderGen) return;
     treeEl.innerHTML = out.join('') || '<div class="row hint" style="padding:8px 12px">empty</div>';
   }
 
@@ -1976,19 +2021,19 @@
   }
 
   async function openFile(path) {
-    const fs = fs9p(); if (!fs) return;
-    const display = toGuestPath(path);
-    vSet('loading ' + display);
+    if (!serialVfs || !serialVfs.ready) { vSet('shell not ready', 'err'); return; }
+    vSet('loading ' + path);
     let data;
-    try { data = await fs.read_file(path); } catch (e) { vSet('error: ' + e.message, 'err'); return; }
-    if (!data) { vSet('empty or missing: ' + display, 'err'); return; }
+    try { data = await serialVfs.read(path); }
+    catch (e) { vSet('error: ' + (e && e.message || e), 'err'); return; }
+    if (!data) { vSet('empty or missing: ' + path, 'err'); return; }
     if (lastBlobUrl) { try { URL.revokeObjectURL(lastBlobUrl); } catch (_) {} lastBlobUrl = null; }
     const blob = new Blob([data], { type: mimeFor(path) });
     lastBlobUrl = URL.createObjectURL(blob);
     frameEl.src = lastBlobUrl;
     frameEl.hidden = false;
     emptyEl.hidden = true;
-    vSet(`${display} (${data.length} bytes)`, 'ok');
+    vSet(`${path} (${data.length} bytes)`, 'ok');
   }
 
   treeEl.addEventListener('click', e => {
@@ -2003,37 +2048,42 @@
       openFile(path);
     }
   });
-  refreshBtn.onclick = () => { renderTree(); vSet('reloaded'); };
-  pathEl.onkeydown = e => { if (e.key === 'Enter') { renderTree(); } };
-  pathEl.onblur = () => { pathEl.value = toGuestPath(normalizeViewerPath(pathEl.value)); };
-  // Auto-refresh tree while overlay is visible so SFTP / guest-shell mutations
-  // appear without a manual refresh click. fs9p reads are in-memory + cheap.
-  let viewerAutoTimer = null;
-  function startViewerAutoRefresh() {
-    if (viewerAutoTimer) return;
-    viewerAutoTimer = setInterval(() => {
-      if (overlay.hidden) { stopViewerAutoRefresh(); return; }
-      if (!fs9p()) return;
-      try { renderTree(); } catch (_) {}
-    }, 1500);
-  }
-  function stopViewerAutoRefresh() {
-    if (viewerAutoTimer) { clearInterval(viewerAutoTimer); viewerAutoTimer = null; }
-  }
-  closeBtn.onclick = () => { overlay.hidden = true; stopViewerAutoRefresh(); term.focus(); };
-  viewerBtn.onclick = () => {
-    if (!fs9p()) { setStatus('9P share not available — boot v86 first', 'err'); return; }
-    // Default to /mnt/host/public if it exists, otherwise the share root.
-    const normalized = normalizeViewerPath(pathEl.value);
-    const target = (normalized === VIEWER_ROOT && isDir('/public')) ? '/public' : normalized;
-    pathEl.value = toGuestPath(target);
-    overlay.hidden = false;
+  refreshBtn.onclick = () => {
+    dirCache.clear();
     renderTree();
-    startViewerAutoRefresh();
-    vSet('ready');
+    vSet('reloaded');
   };
-  // Toggle viewer button availability when emulator boots/stops.
-  function syncViewerBtn() { viewerBtn.disabled = !emulator; }
+  pathEl.onkeydown = e => {
+    if (e.key === 'Enter') {
+      // Navigating to a new root: drop expansion + cache so the new tree is fresh.
+      expanded.clear();
+      dirCache.clear();
+      renderTree();
+    }
+  };
+  // No onblur normalizer — we never want to mutate what the user typed.
+  // Normalization happens at submit time (Enter / refresh / openViewer).
+  closeBtn.onclick = () => { overlay.hidden = true; term.focus(); };
+  viewerBtn.onclick = async () => {
+    if (!emulator) { setStatus('boot v86 first', 'err'); return; }
+    if (!serialVfs || !serialVfs.ready) {
+      setStatus('shell not ready — wait for guest prompt', 'err');
+      return;
+    }
+    overlay.hidden = false;
+    vSet('listing…');
+    // Only seed the path field on first open (when it's empty).
+    // Don't ever overwrite a value the user already typed.
+    if (!pathEl.value) pathEl.value = VIEWER_ROOT;
+    expanded.clear();
+    dirCache.clear();
+    await renderTree();
+    vSet('ready (serial-backed)', 'ok');
+  };
+  // Toggle viewer button availability when emulator boots/stops or shell becomes ready.
+  function syncViewerBtn() {
+    viewerBtn.disabled = !(emulator && serialVfs && serialVfs.ready);
+  }
   setInterval(syncViewerBtn, 800);
 
   // ─────────────────────────────────────────────────────────────────────────
