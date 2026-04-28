@@ -13,6 +13,7 @@ jobs:
     name: Build & Release (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -20,12 +21,9 @@ jobs:
             os: linux
             arch: x86_64
             artifact: traits-linux-x86_64
-          - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-latest
-            os: linux
-            arch: aarch64
-            artifact: traits-linux-aarch64
-            cross: true
+          # NOTE: aarch64-unknown-linux-gnu disabled — openssl-sys requires a
+          # cross-sysroot setup that isn't configured in CI. Fly only uses x86_64.
+          # Re-enable when openssl cross-compile is sorted.
           - target: aarch64-apple-darwin
             runner: macos-latest
             os: macos
@@ -68,6 +66,7 @@ jobs:
   deploy:
     name: Deploy to Fly.io
     needs: release
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Trigger server self-update
