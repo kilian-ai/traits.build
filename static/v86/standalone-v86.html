@@ -3288,12 +3288,25 @@
     }
 
     const fs = emulator && emulator.fs9p;
+    // Prefer serialVfs (writes via guest root, no 9P uid issues) and target
+    // the canonical guest path /mnt/host/following/<npub>. Fall back to fs9p
+    // when the shell isn't ready (e.g. cold boot before login).
+    const useSerial = !!(serialVfs && serialVfs.ready);
+    const guestUserDir = '/mnt/host/following/' + npub;
     let followRoot = DEFAULT_FOLLOW_ROOT;
     if (fs) {
       followRoot = await ensureFollowRoot(fs);
       console.log('[sync]', ts(), 'followRoot:', followRoot, '→ guest:', socialGuestPath(followRoot));
-    } else {
-      console.warn('[sync] fs9p unavailable — sync will not persist files');
+    } else if (!useSerial) {
+      console.warn('[sync] fs9p and serialVfs both unavailable — sync will not persist files');
+    }
+    if (useSerial) {
+      console.log('[sync]', ts(), 'using serialVfs → guest path', guestUserDir);
+      try {
+        await serialVfs.mkdir(guestUserDir);
+      } catch (e) {
+        console.warn('[sync] serialVfs.mkdir failed:', e && e.message);
+      }
     }
 
     console.log('[sync]', ts(), 'requesting kind-30000 manifest from relays:', NOSTR_RELAYS);
@@ -3323,14 +3336,22 @@
       console.log('[sync]', ts(), 'newest event id=' + (ev.id || '').slice(0, 16) + '… created_at=' + ev.created_at);
       try {
         manifest = JSON.parse(ev.content);
-        if (fs) {
+        const manifestJson = JSON.stringify(manifest, null, 2);
+        const payload = new TextEncoder().encode(manifestJson);
+        if (useSerial) {
+          try {
+            await serialVfs.write(guestUserDir + '/.manifest.json', manifestJson);
+            console.log('[sync]', ts(), 'cached manifest at', guestUserDir + '/.manifest.json (serial)');
+          } catch (e) {
+            console.warn('[sync] serial manifest write failed:', e && e.message);
+          }
+        } else if (fs) {
           const userDir = followRoot + '/' + npub;
           ensureDirChain(fs, userDir);
           const cachePath = userDir + '/.manifest.json';
-          const payload = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
           try {
             await fsWriteFileCompat(fs, cachePath, payload);
-            console.log('[sync]', ts(), 'cached manifest at', cachePath);
+            console.log('[sync]', ts(), 'cached manifest at', cachePath, '(9p)');
           } catch (e) {
             console.warn('[sync] cache manifest write failed:', e && e.message);
           }
@@ -3341,21 +3362,34 @@
         sLog('invalid manifest: ' + e.message, 'err');
         return;
       }
-    } else if (fs) {
-      const cachePath = followRoot + '/' + npub + '/.manifest.json';
-      try {
-        const cached = await fs.read_file(cachePath);
-        manifest = JSON.parse(new TextDecoder().decode(cached));
-        console.log('[sync]', ts(), 'falling back to cached manifest at', cachePath);
-        sLog('no relay manifest; using cached manifest at ' + socialGuestPath(cachePath), 'hint');
-      } catch (_) {
+    } else {
+      // Try cached manifest (serial first, then 9P)
+      let cached = null;
+      if (useSerial) {
+        try { cached = await serialVfs.cat(guestUserDir + '/.manifest.json'); } catch (_) {}
+      }
+      if (!cached && fs) {
+        const cachePath = followRoot + '/' + npub + '/.manifest.json';
+        try {
+          const buf = await fs.read_file(cachePath);
+          cached = new TextDecoder().decode(buf);
+        } catch (_) {}
+      }
+      if (cached) {
+        try {
+          manifest = JSON.parse(cached);
+          console.log('[sync]', ts(), 'falling back to cached manifest');
+          sLog('no relay manifest; using cached manifest', 'hint');
+        } catch (_) {}
+      }
+      if (!manifest && fs) {
         const ownNpub = localStorage.getItem('traits.nostr.npub') || '';
         if (ownNpub === npub) {
           try {
             const localManifest = await fs.read_file(SOCIAL_PUBLIC_ROOT + '/.manifest.json');
             manifest = JSON.parse(new TextDecoder().decode(localManifest));
             console.log('[sync]', ts(), 'using own local /public manifest');
-            sLog('no relay manifest; using local manifest at ' + socialGuestPath(SOCIAL_PUBLIC_ROOT + '/.manifest.json'), 'hint');
+            sLog('no relay manifest; using local /public manifest', 'hint');
           } catch (_) {}
         }
       }
@@ -3400,17 +3434,32 @@
             continue;
           }
         }
-        if (fs) {
-          const dest = followRoot + '/' + npub + '/' + f.p.replace(/^\/+/, '');
-          // ensure parent dir chain
+        const relPath = f.p.replace(/^\/+/, '');
+        if (useSerial) {
+          const guestPath = guestUserDir + '/' + relPath;
+          const lastSlash = guestPath.lastIndexOf('/');
+          if (lastSlash > 0) {
+            try { await serialVfs.mkdir(guestPath.slice(0, lastSlash)); } catch (_) {}
+          }
+          try {
+            await serialVfs.write(guestPath, new Uint8Array(buf));
+            console.log('[sync] wrote', guestPath, 'bytes=' + buf.byteLength, '(serial)');
+          } catch (e) {
+            writeFailed++;
+            console.error('[sync] serial write failed', guestPath, e);
+            sLog('write failed: ' + guestPath + ': ' + (e && e.message), 'err');
+            continue;
+          }
+        } else if (fs) {
+          const dest = followRoot + '/' + npub + '/' + relPath;
           const lastSlash = dest.lastIndexOf('/');
           if (lastSlash > 0) ensureDirChain(fs, dest.slice(0, lastSlash));
           try {
             await fsWriteFileCompat(fs, dest, new Uint8Array(buf));
-            console.log('[sync] wrote', dest, 'bytes=' + buf.byteLength);
+            console.log('[sync] wrote', dest, 'bytes=' + buf.byteLength, '(9p)');
           } catch (e) {
             writeFailed++;
-            console.error('[sync] write failed', dest, e);
+            console.error('[sync] 9p write failed', dest, e);
             sLog('write failed: ' + socialGuestPath(dest) + ': ' + (e && e.message), 'err');
             continue;
           }
@@ -3421,9 +3470,11 @@
         sLog('error on ' + f.p + ': ' + e.message, 'err');
       }
     }
-    console.log('[sync]', ts(), 'done: synced=' + synced + '/' + manifest.files.length + ' writeFailed=' + writeFailed);
+    console.log('[sync]', ts(), 'done: synced=' + synced + '/' + manifest.files.length + ' writeFailed=' + writeFailed,
+      useSerial ? '(serial)' : '(9p)');
     console.groupEnd();
-    sLog(`synced ${synced}/${manifest.files.length} for ${truncNpub(npub)}` + (writeFailed ? ` (${writeFailed} write fail)` : ''),
+    sLog(`synced ${synced}/${manifest.files.length} for ${truncNpub(npub)} → ${useSerial ? guestUserDir : socialGuestPath(followRoot + '/' + npub)}`
+      + (writeFailed ? ` (${writeFailed} write fail)` : ''),
       synced > 0 ? 'ok' : 'hint');
   }
 
