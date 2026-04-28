@@ -1940,14 +1940,20 @@
   // svfsList: list a directory using `ls -1Ap` (BusyBox). The trailing '/'
   // marker on each line distinguishes dirs from files in a single command.
   // svfsIsDir: cheap dir check via `[ -d ... ]`.
+  // Strip ANSI CSI escapes that some shells inject via `ls` aliases
+  // (e.g. `alias ls='ls --color=auto'`). The leading `\ls` bypasses any
+  // alias on bash; for BusyBox/ash this is a no-op (no aliases by default)
+  // and we still strip on the host side as a safety net.
+  const ANSI_CSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
+  function stripAnsi(s) { return (s || '').replace(ANSI_CSI_RE, ''); }
   async function svfsList(path) {
     if (!serialVfs || !serialVfs.ready) return [];
     const r = await serialVfs.exec(
-      `ls -1Ap -- ${SerialVfs._q(path)} 2>/dev/null`,
+      `\\ls --color=never -1Ap -- ${SerialVfs._q(path)} 2>/dev/null`,
       { timeout: 15000 }
     );
     if (r.exitCode !== 0) return [];
-    return r.stdout.split('\n')
+    return stripAnsi(r.stdout).split('\n')
       .map(s => s.replace(/\r$/, ''))
       .filter(Boolean)
       .map(line => {
@@ -1964,7 +1970,7 @@
       `[ -d ${SerialVfs._q(path)} ] && echo 1 || echo 0`,
       { timeout: 10000 }
     );
-    return r.stdout.replace(/\s+/g, '') === '1';
+    return stripAnsi(r.stdout).replace(/\s+/g, '') === '1';
   }
   async function getDir(path, force = false) {
     if (!force && dirCache.has(path)) return dirCache.get(path);
