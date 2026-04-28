@@ -3998,6 +3998,9 @@
         followNpubEl.style.color = '#4ade80';
         fStatus('ready', 'ok');
         fLog('── bootstrap ok ──', 'ok');
+        // Enable real actions now that we have an identity.
+        followPublishBtn.disabled = false;
+        followPublishBtn.title = 'Publish $SOCIAL_HOME/public to Nostr relays';
       } else {
         followNpubEl.innerHTML = '<span class="hint">(could not determine npub — see log)</span>';
         fStatus('failed to obtain npub', 'err');
@@ -4022,6 +4025,107 @@
   };
   followCloseBtn.onclick = () => { followPanel.hidden = true; term.focus(); };
   followRefreshBtn.onclick = () => { followBootstrap(); };
+
+  // ── publish ───────────────────────────────────────────────────────────
+  // Pipeline:
+  //   1. Locate SOCIAL_HOME (the dir that contains .nsec) and its public/ subdir.
+  //   2. Refuse to publish if public/ is empty (would just litter relays).
+  //   3. Ensure websocat is installed (via apk; falls back to social tunnel-up
+  //      which also installs it).
+  //   4. Ensure a tunnel base URL is cached so peers can actually fetch files;
+  //      run `social tunnel-up 8080` if missing.
+  //   5. Run `social publish 2>&1` and surface the result.
+  const followPublishBtn = $('follow-action-publish');
+  let followPublishInFlight = false;
+  async function followPublish() {
+    if (followPublishInFlight) return;
+    followPublishInFlight = true;
+    followPublishBtn.disabled = true;
+    fStatus('publishing…');
+    fLog('── publish start ──', 'info');
+    try {
+      // 1. Locate SOCIAL_HOME via the nsec file social.sh writes.
+      const home = await followRun(
+        'for d in /mnt/vfs /mnt/host "$HOME" "$PWD"; do if [ -f "$d/.nsec" ]; then echo "$d"; break; fi; done',
+        { timeout: 10000 }
+      );
+      const socialHome = (home.stdout || '').trim();
+      if (!socialHome) {
+        fStatus('no identity yet — run refresh', 'err');
+        fLog('no .nsec file found in /mnt/vfs, /mnt/host, $HOME, or $PWD', 'err');
+        return;
+      }
+      fLog('SOCIAL_HOME = ' + socialHome, 'ok');
+
+      // 2. Verify public/ exists and has content.
+      const ls = await followRun(
+        'mkdir -p "' + socialHome + '/public" && find "' + socialHome + '/public" -type f 2>/dev/null | wc -l',
+        { timeout: 10000 }
+      );
+      const nFiles = parseInt((ls.stdout || '0').trim(), 10) || 0;
+      if (nFiles === 0) {
+        fStatus('public/ is empty', 'err');
+        fLog('Nothing to publish — drop files into ' + socialHome + '/public/ first.', 'err');
+        fLog('Tip: in the terminal run:  echo hello > ' + socialHome + '/public/note.txt', 'info');
+        return;
+      }
+      fLog('found ' + nFiles + ' file(s) under ' + socialHome + '/public', 'ok');
+
+      // 3. Ensure websocat (publish hard-fails without it).
+      const ws = await followRun('which websocat || true', { timeout: 10000 });
+      if (!(ws.stdout || '').trim().startsWith('/')) {
+        fStatus('installing websocat…');
+        fLog('websocat missing — apk add', 'info');
+        const apk = await followRun('apk add --no-cache websocat 2>&1 | tail -5', { timeout: 90000 });
+        if (apk.exitCode !== 0) {
+          fLog('apk failed; will rely on tunnel-up to install websocat', 'err');
+        }
+      } else {
+        fLog('websocat: ' + (ws.stdout || '').trim(), 'ok');
+      }
+
+      // 4. Ensure tunnel base URL cached. Run social tunnel-up 8080 if not.
+      const tu = await followRun(
+        'test -s "' + socialHome + '/.social.tunnel" && cat "' + socialHome + '/.social.tunnel" || true',
+        { timeout: 10000 }
+      );
+      const cachedTunnel = (tu.stdout || '').trim();
+      if (!cachedTunnel) {
+        fStatus('starting tunnel (port 8080)…');
+        fLog('no tunnel cached — running `social tunnel-up 8080`', 'info');
+        const t = await followRun('social tunnel-up 8080 2>&1', { timeout: 120000 });
+        if (t.exitCode !== 0) {
+          fLog('tunnel-up failed (publishing without `r` tag — files won\'t be fetchable)', 'err');
+        }
+      } else {
+        fLog('tunnel cached: ' + cachedTunnel, 'ok');
+      }
+
+      // 5. Sign + broadcast.
+      fStatus('signing & broadcasting…');
+      const pub = await followRun('social publish 2>&1', { timeout: 120000 });
+      const out = (pub.stdout || '');
+      // Parse "published as npub... (ok=N fail=M files=K bytes=B)"
+      const m = out.match(/published as (npub1[0-9a-z]+)\s*\(ok=(\d+)\s+fail=(\d+)\s+files=(\d+)\s+bytes=(\d+)\)/i);
+      if (m && parseInt(m[2], 10) > 0) {
+        fStatus('published ✓ (ok=' + m[2] + '/fail=' + m[3] + ', ' + m[4] + ' files)', 'ok');
+        fLog('── publish ok ──', 'ok');
+      } else if (pub.exitCode === 0) {
+        fStatus('publish completed (no relay confirmations)', 'err');
+        fLog('── publish completed but no relays acked ──', 'err');
+      } else {
+        fStatus('publish failed (exit ' + pub.exitCode + ')', 'err');
+        fLog('── publish failed ──', 'err');
+      }
+    } catch (err) {
+      fStatus('error: ' + (err && err.message || err), 'err');
+      fLog('exception: ' + (err && err.stack || err), 'err');
+    } finally {
+      followPublishInFlight = false;
+      followPublishBtn.disabled = false;
+    }
+  }
+  followPublishBtn.onclick = () => { followPublish(); };
 
   setInterval(() => { followBtn.disabled = !emulator; }, 800);
 
