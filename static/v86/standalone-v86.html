@@ -3405,9 +3405,21 @@
   // Keep social button in sync with emulator state
   setInterval(() => { socialBtn.disabled = !emulator; }, 800);
 
-  // ?autoboot=1 [&restore=1]
+  // ?autoboot=1 [&restore=0|1]
+  // When `restore` is unspecified, auto-restore if a snapshot exists for the
+  // current iso (the common SPA case at /shell — users save snapshots and
+  // expect file persistence across reloads). Pass `&restore=0` for a clean boot.
   const qs = new URLSearchParams(location.search);
-  if (qs.get('autoboot') === '1') boot({ restore: qs.get('restore') === '1' });
+  if (qs.get('autoboot') === '1') {
+    (async () => {
+      const restoreParam = qs.get('restore');
+      let wantRestore;
+      if (restoreParam === '1') wantRestore = true;
+      else if (restoreParam === '0') wantRestore = false;
+      else wantRestore = await idbHas(snapKeyFor(isoEl.value)).catch(() => false);
+      boot({ restore: wantRestore });
+    })();
+  }
 })();
 </script>
 </body>
