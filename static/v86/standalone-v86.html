@@ -474,7 +474,9 @@
   async function umountBeforeSave() {
     if (!emulator || !shellReady) return false;
     const tag = 'usv' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    const re = new RegExp('__UMOUNT_OK__:' + tag + '\\b');
+    // Anchor to start-of-line: avoid matching the echoed command line
+    // (which contains the literal printf invocation as a substring).
+    const re = new RegExp('^__UMOUNT_OK__:' + tag + '\\b');
     const wait = awaitGuestMarker(re, 4000);
     sendGuestText(
       "sync; " +
@@ -488,7 +490,7 @@
   async function remountAfterSave() {
     if (!emulator || !shellReady) return false;
     const tag = 'rsv' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    const re = new RegExp('__REMOUNT_OK__:' + tag + '\\b');
+    const re = new RegExp('^__REMOUNT_OK__:' + tag + '\\b');
     const wait = awaitGuestMarker(re, 4000);
     sendGuestText(
       "mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none,access=any," +
