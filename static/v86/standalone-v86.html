@@ -1482,8 +1482,18 @@
     let markerLine = '';
     let queuedLoginKickSent = false;
     let queuedLoginHintShown = false;
+    let queuedPasswordSent = false;
     const SHELL_PROMPT_RE = /^(?!.*login:)(?!.*password:)(?:\x1b\[[0-9;]*m)*(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_.-]+:[^\n]*#\s$/i;
     const LOGIN_PROMPT_RE = /login:\s*$/i;
+    const PASSWORD_PROMPT_RE = /password:\s*$/i;
+    // Optional persisted root password used for auto-login on snapshot restore.
+    // Set via DevTools: localStorage['v86.root.password'] = 'dummy1234!'
+    function getStoredRootPassword() {
+      try {
+        const v = localStorage.getItem('v86.root.password');
+        return (typeof v === 'string' && v.length) ? v : '';
+      } catch (_) { return ''; }
+    }
     const HOST_SYNC_RE = /__HOST_SYNC__:([^\s]+)\s*$/;
     const GUEST_SYNC_OK_RE = /sync9p:\s*ok\s+(\S+)/i;
     const GUEST_SYNC_TIMEOUT_RE = /sync9p:\s*timeout\s+\(no receipt for\s+(\S+)\)/i;
@@ -1686,6 +1696,7 @@
       shellReady = true;
       queuedLoginKickSent = false;
       queuedLoginHintShown = false;
+      queuedPasswordSent = false;
       serialVfs.setReady(true);
       flushPendingGuestCommands();
       // Prime stty with current cols now that we know we're at a shell.
@@ -1735,6 +1746,14 @@
           maybeKickQueuedGuestLogin();
           return;
         }
+        if (!shellReady && queuedLoginKickSent && !queuedPasswordSent && PASSWORD_PROMPT_RE.test(promptLine)) {
+          const pw = getStoredRootPassword();
+          if (pw) {
+            queuedPasswordSent = true;
+            setTimeout(() => { if (emulator && !shellReady) sendGuestText(pw + '\n'); }, 120);
+            return;
+          }
+        }
         // Strip ANSI CSI sequences (e.g. \x1b[6n cursor-position report)
         // before testing — agetty/busybox can append those after `# `.
         const cleanPrompt = promptLine.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
@@ -1775,7 +1794,7 @@
     try { emulator.destroy(); } catch (_) {}
     emulator = null; window.emulator = null;
     shellReady = false; sentCols = 0;
-    queuedLoginKickSent = false; queuedLoginHintShown = false; promptLine = '';
+    queuedLoginKickSent = false; queuedLoginHintShown = false; queuedPasswordSent = false; promptLine = '';
     serialVfs.ready = false; serialVfs.attached = false;
     serialVfs.busy = false; serialVfs.current = null; serialVfs.buf = '';
   }
