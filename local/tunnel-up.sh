@@ -123,6 +123,15 @@ seed_hosts_via_doh
 if ! command -v websocat >/dev/null 2>&1 \
         || ! command -v unbound >/dev/null 2>&1; then
     echo "[tunnel] installing websocat + unbound..."
+    # Alpine ISO/initramfs may ship with only its bundled in-CD repo, which
+    # lacks websocat. Seed edge/main + edge/community (idempotent) so apk
+    # can find it. Safe to add even if apk has e.g. only the iso repo —
+    # apk will just try the new mirrors after DNS is up.
+    grep -q "edge/main" /etc/apk/repositories 2>/dev/null \
+        || echo "https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
+    grep -q "edge/community" /etc/apk/repositories 2>/dev/null \
+        || echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+    apk update >/dev/null 2>&1 || true
     # libcrypto3/libssl3 upgrade is required: the unbound in the current
     # apk index is built against newer openssl symbols
     # (EVP_MD_CTX_get_size_ex) than the libcrypto shipped in older Alpine

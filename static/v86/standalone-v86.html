@@ -4072,14 +4072,37 @@
       fLog('found ' + nFiles + ' file(s) under ' + socialHome + '/public', 'ok');
 
       // 3. Ensure websocat (publish hard-fails without it).
+      // Alpine ISO ships with only its in-CD repo; websocat lives in edge/community.
+      // We seed both edge repos (idempotent) and `apk update` before installing.
       const ws = await followRun('which websocat || true', { timeout: 10000 });
       if (!(ws.stdout || '').trim().startsWith('/')) {
-        fStatus('installing websocat…');
-        fLog('websocat missing — apk add', 'info');
-        const apk = await followRun('apk add --no-cache websocat 2>&1 | tail -5', { timeout: 90000 });
+        fStatus('adding edge repos & installing websocat…');
+        fLog('websocat missing — seeding edge/main + edge/community', 'info');
+        const seedRepos =
+          'grep -q "edge/main" /etc/apk/repositories || ' +
+          'echo "https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories; ' +
+          'grep -q "edge/community" /etc/apk/repositories || ' +
+          'echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories; ' +
+          'apk update 2>&1 | tail -3';
+        await followRun(seedRepos, { timeout: 60000 });
+        fLog('apk add websocat (from edge/community)…', 'info');
+        const apk = await followRun(
+          'apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community websocat 2>&1 | tail -5',
+          { timeout: 120000 }
+        );
         if (apk.exitCode !== 0) {
-          fLog('apk failed; will rely on tunnel-up to install websocat', 'err');
+          fStatus('failed to install websocat', 'err');
+          fLog('Could not install websocat. Check guest networking (DNS / unbound) and try refresh.', 'err');
+          fLog('Manual: apk update && apk add --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community websocat', 'info');
+          return;
         }
+        // Verify
+        const ws2 = await followRun('which websocat || true', { timeout: 10000 });
+        if (!(ws2.stdout || '').trim().startsWith('/')) {
+          fStatus('websocat install reported success but binary not found', 'err');
+          return;
+        }
+        fLog('websocat installed: ' + (ws2.stdout || '').trim(), 'ok');
       } else {
         fLog('websocat: ' + (ws.stdout || '').trim(), 'ok');
       }
