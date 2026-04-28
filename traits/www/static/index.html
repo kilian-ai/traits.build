@@ -210,7 +210,7 @@ const STATIC_RUNTIME_ROUTES = {
   '/shell': (query) => {
     const base = isLocal ? './v86/standalone-v86.html' : '/static/v86/standalone-v86.html';
     const q = query && query.length ? query + '&' : '?';
-    return `${base}${q}autoboot=1&iso=alpine.iso`;
+    return `${base}${q}autoboot=1&iso=alpine.iso&cb=${STATIC_RUNTIME_CB}`;
   },
 };
 
