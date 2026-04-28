@@ -1693,7 +1693,9 @@
     }
 
     function maybeKickQueuedGuestLogin() {
-      if (queuedLoginKickSent || shellReady || !pendingGuestCommands.length) return;
+      if (queuedLoginKickSent || shellReady) return;
+      const haveWork = pendingGuestCommands.length > 0 || (serialVfs && serialVfs.queue.length > 0);
+      if (!haveWork) return;
       queuedLoginKickSent = true;
       if (!queuedLoginHintShown) {
         queuedLoginHintShown = true;
@@ -1749,10 +1751,6 @@
     if (doRestore && !netInited) {
       setTimeout(() => { if (emulator) sendGuestText('\n'); }, 400);
       setTimeout(runNetInit, 1400);
-      // After restore the prompt detector won't fire (no fresh login banner),
-      // but we know the shell is sitting at a prompt. Mark ready so SerialVfs
-      // and other queued helpers can drain.
-      setTimeout(() => { if (emulator) markShellReady(); }, 1600);
     }
 
     resetBtn.disabled = false;
