@@ -1483,6 +1483,7 @@
     let queuedLoginKickSent = false;
     let queuedLoginHintShown = false;
     let queuedPasswordSent = false;
+    let netInitTimer = null;
     const SHELL_PROMPT_RE = /^(?!.*login:)(?!.*password:)(?:\x1b\[[0-9;]*m)*(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_.-]+:[^\n]*#\s$/i;
     const LOGIN_PROMPT_RE = /login:\s*$/i;
     const PASSWORD_PROMPT_RE = /password:\s*$/i;
@@ -1737,6 +1738,13 @@
         markerLine = (markerLine + ch).slice(-512);
       }
       if (!shellReady || !netInited) {
+        // Any incoming byte while netInit is still pending means the guest
+        // is still printing (motd, autologin, shell init) — push the
+        // settle deadline back so we don't type into a half-built shell.
+        if (netInitTimer) {
+          clearTimeout(netInitTimer);
+          netInitTimer = setTimeout(() => { netInitTimer = null; runNetInit(); }, 900);
+        }
         if (ch === '\r' || ch === '\n') {
           promptLine = '';
         } else {
@@ -1761,8 +1769,16 @@
           if (!shellReady) {
             markShellReady();
           }
+          // Debounce netInit start until the serial output goes idle for
+          // ~900ms. On fresh boot, multiple prompt-shaped strings can flash
+          // by during motd / autologin / shell init, and firing the script
+          // on the first one collides with shell setup (BusyBox eats input
+          // mid-redraw and the script half-runs). Reschedule on every new
+          // serial byte; only when nothing has arrived for the idle window
+          // do we actually start typing.
           if (!netInited) {
-            setTimeout(runNetInit, 600);
+            if (netInitTimer) clearTimeout(netInitTimer);
+            netInitTimer = setTimeout(() => { netInitTimer = null; runNetInit(); }, 900);
           }
         }
       }
@@ -1777,7 +1793,13 @@
     // kicker on a plain timer — `runNetInit` is idempotent via `netInited`.
     if (doRestore && !netInited) {
       setTimeout(() => { if (emulator) sendGuestText('\n'); }, 400);
-      setTimeout(runNetInit, 1400);
+      // Fallback kicker: if no prompt-shaped output arrives within the
+      // settle window (HLT'd guest with truly silent serial), force-start.
+      // Cancelled automatically when prompt detection schedules its own
+      // debounced timer above.
+      if (!netInitTimer) {
+        netInitTimer = setTimeout(() => { netInitTimer = null; runNetInit(); }, 1800);
+      }
     }
 
     resetBtn.disabled = false;
