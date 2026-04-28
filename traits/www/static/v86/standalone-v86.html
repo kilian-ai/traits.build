@@ -3267,6 +3267,14 @@
       }
     }
     renderFollowList();
+
+    // Auto-sync immediately so the followed user's published files appear
+    // under /mnt/host/following/<npub>/ without an extra click. Errors are
+    // already surfaced by doSyncOne via sLog (no manifest, write failures).
+    sLog('auto-syncing ' + truncNpub(npub) + '…', 'hint');
+    try { await doSyncOne(npub); } catch (e) {
+      sLog('auto-sync failed: ' + (e && e.message), 'err');
+    }
   }
 
   async function doSyncOne(npub) {
