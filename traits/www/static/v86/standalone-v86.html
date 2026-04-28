@@ -937,10 +937,24 @@
         '      case "$__line" in\n' +
         '        *SYNC9P_RECEIPT:$__n*)\n' +
         '          # Receipt confirms host-marker round-trip, but the guest\n' +
-        '          # 9P client still has cached dentries/readdir for\n' +
-        '          # /mnt/host (especially under cache=loose fallback). Drop\n' +
-        '          # the VFS caches so the next ls/stat/open re-walks 9P.\n' +
+        '          # 9P client carries dentry/inode/readdir caches that\n' +
+        '          # drop_caches alone does NOT fully evict — especially on\n' +
+        '          # snapshot-restored sessions or under cache=loose. The\n' +
+        '          # only reliable invalidation is a full remount: tear down\n' +
+        '          # /mnt/host and re-mount with the same options. Symlinks\n' +
+        '          # under /home/root/host stay valid because the mount\n' +
+        '          # point path is unchanged.\n' +
         '          echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true\n' +
+        '          __cwd=$(pwd 2>/dev/null)\n' +
+        '          case "$__cwd" in /mnt/host*) cd / 2>/dev/null ;; esac\n' +
+        '          __ri=0\n' +
+        '          while grep -q " /mnt/host " /proc/mounts && [ $__ri -lt 8 ]; do\n' +
+        '            umount /mnt/host 2>/dev/null || umount -l /mnt/host 2>/dev/null || break\n' +
+        '            __ri=$((__ri+1))\n' +
+        '          done\n' +
+        '          mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null \\\n' +
+        '            || mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null\n' +
+        '          case "$__cwd" in /mnt/host*) cd "$__cwd" 2>/dev/null || cd / ;; esac\n' +
         '          printf "sync9p: ok %s\\n" "$__n"\n' +
         '          return 0\n' +
         '          ;;\n' +
