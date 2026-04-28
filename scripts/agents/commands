@@ -64,3 +64,18 @@ sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
 wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/local/bin/social
 # optional: force custom location (otherwise social auto-picks /mnt/vfs -> /mnt/host -> $PWD)
 # export SOCIAL_HOME=/mnt/vfs
+
+
+#unblock internet:
+apk add --no-cache --upgrade unbound libcrypto3 libssl3 && \
+printf '%s\n' 'server:' '  interface: 127.0.0.1' '  do-tcp: yes' \
+  'forward-zone:' '  name: "."' '  forward-tcp-upstream: yes' \
+  '  forward-addr: 1.1.1.1' '  forward-addr: 1.0.0.1' > /etc/unbound/unbound.conf && \
+killall -q unbound 2>/dev/null; sleep 1; unbound -c /etc/unbound/unbound.conf & \
+sleep 2 && printf 'nameserver 127.0.0.1\nnameserver 1.1.1.1\n' > /etc/resolv.conf && \
+nslookup google.com
+
+
+#change password:
+printf 'dummy1234!\ndummy1234!\n' | passwd root
+echo 'root:dummy1234!' | chpasswd

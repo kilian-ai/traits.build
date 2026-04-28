@@ -123,7 +123,7 @@
       <div id="viewer-tree"></div>
       <div id="viewer-preview">
         <div id="viewer-empty" class="hint">select a file on the left</div>
-        <iframe id="viewer-frame" hidden sandbox="allow-scripts allow-same-origin"></iframe>
+        <iframe id="viewer-frame" hidden sandbox="allow-scripts"></iframe>
       </div>
     </div>
   </div>
@@ -2026,9 +2026,27 @@
     })[ext] || 'text/plain;charset=utf-8';
   }
 
+  // Hard cap for in-viewer file reads. base64-over-serial is slow and
+  // monopolizes the guest shell while it runs — reading a multi-MB JS/HTML
+  // file made the whole tab look frozen. 1 MiB is a comfortable upper bound
+  // for the kind of preview content this viewer is meant for.
+  const VIEWER_MAX_BYTES = 1024 * 1024;
+
   async function openFile(path) {
     if (!serialVfs || !serialVfs.ready) { vSet('shell not ready', 'err'); return; }
-    vSet('loading ' + path);
+    vSet('checking ' + path);
+    // Probe size first via stat so we never start a multi-minute base64
+    // stream on a huge binary by accident.
+    let size = -1;
+    try {
+      const st = await serialVfs.stat(path);
+      if (st && Number.isFinite(st.size)) size = st.size;
+    } catch (_) {}
+    if (size > VIEWER_MAX_BYTES) {
+      vSet(`too large to preview (${size} bytes > ${VIEWER_MAX_BYTES}). open a shell to inspect.`, 'err');
+      return;
+    }
+    vSet(`loading ${path}${size >= 0 ? ' (' + size + ' B)' : ''}`);
     let data;
     try { data = await serialVfs.read(path); }
     catch (e) { vSet('error: ' + (e && e.message || e), 'err'); return; }
