@@ -924,36 +924,60 @@
         // bidirectional path the shell already uses, so it cannot be
         // poisoned by 9P client-side caching.
         'cat > /etc/profile.d/02sync9p.sh <<\\__SYNC9P_EOF__\n' +
+        'SYNC9P_VERSION="v6-remount-instrumented"\n' +
         'sync9p() {\n' +
         '  __n=$$-$(date +%s 2>/dev/null)-$RANDOM-$RANDOM\n' +
+        '  __v="${SYNC9P_VERSION:-unset}"\n' +
         '  sync 2>/dev/null\n' +
+        '  printf "sync9p[%s]: nonce=%s\\n" "$__v" "$__n"\n' +
         '  printf "__HOST_SYNC__:%s\\n" "$__n"\n' +
         '  # Wait for host to echo SYNC9P_RECEIPT:<nonce> back over serial.\n' +
-        '  # Serial is the canonical bidirectional channel and bypasses 9P\n' +
-        '  # client caches that can survive snapshot restore.\n' +
         '  __i=0\n' +
         '  while [ $__i -lt 30 ]; do\n' +
         '    if IFS= read -r -t 1 __line 2>/dev/null; then\n' +
         '      case "$__line" in\n' +
         '        *SYNC9P_RECEIPT:$__n*)\n' +
-        '          # Receipt confirms host-marker round-trip, but the guest\n' +
-        '          # 9P client carries dentry/inode/readdir caches that\n' +
-        '          # drop_caches alone does NOT fully evict — especially on\n' +
-        '          # snapshot-restored sessions or under cache=loose. The\n' +
-        '          # only reliable invalidation is a full remount: tear down\n' +
-        '          # /mnt/host and re-mount with the same options. Symlinks\n' +
-        '          # under /home/root/host stay valid because the mount\n' +
-        '          # point path is unchanged.\n' +
-        '          echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true\n' +
+        '          printf "sync9p: receipt matched after %ds\\n" "$__i"\n' +
+        '          # 1. drop VFS caches (cheap, may help dentry negative cache)\n' +
+        '          if echo 3 > /proc/sys/vm/drop_caches 2>/dev/null; then\n' +
+        '            printf "sync9p: drop_caches ok\\n"\n' +
+        '          else\n' +
+        '            printf "sync9p: drop_caches FAILED\\n"\n' +
+        '          fi\n' +
+        '          # 2. save cwd, escape if under /mnt/host\n' +
         '          __cwd=$(pwd 2>/dev/null)\n' +
-        '          case "$__cwd" in /mnt/host*) cd / 2>/dev/null ;; esac\n' +
+        '          printf "sync9p: cwd=%s\\n" "$__cwd"\n' +
+        '          case "$__cwd" in /mnt/host*) cd / 2>/dev/null && printf "sync9p: cd / (was under /mnt/host)\\n" ;; esac\n' +
+        '          # 3. show current mount\n' +
+        '          printf "sync9p: pre-mounts: "; grep " /mnt/host " /proc/mounts || printf "(none)\\n"\n' +
+        '          # 4. umount loop\n' +
         '          __ri=0\n' +
         '          while grep -q " /mnt/host " /proc/mounts && [ $__ri -lt 8 ]; do\n' +
-        '            umount /mnt/host 2>/dev/null || umount -l /mnt/host 2>/dev/null || break\n' +
+        '            if umount /mnt/host 2>/dev/null; then\n' +
+        '              printf "sync9p: umount #%d ok\\n" "$__ri"\n' +
+        '            elif umount -l /mnt/host 2>/dev/null; then\n' +
+        '              printf "sync9p: umount -l #%d ok\\n" "$__ri"\n' +
+        '            else\n' +
+        '              printf "sync9p: umount #%d FAILED — break\\n" "$__ri"\n' +
+        '              break\n' +
+        '            fi\n' +
         '            __ri=$((__ri+1))\n' +
         '          done\n' +
-        '          mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null \\\n' +
-        '            || mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null\n' +
+        '          printf "sync9p: post-umount: "; grep " /mnt/host " /proc/mounts || printf "(unmounted)\\n"\n' +
+        '          # 5. remount\n' +
+        '          if mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null; then\n' +
+        '            printf "sync9p: remount ok (cache=none)\\n"\n' +
+        '          elif mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=loose,access=any,dfltuid=0,dfltgid=0,uid=0,gid=0,rw host9p /mnt/host 2>/dev/null; then\n' +
+        '            printf "sync9p: remount ok (cache=loose fallback)\\n"\n' +
+        '          else\n' +
+        '            printf "sync9p: remount FAILED\\n"\n' +
+        '          fi\n' +
+        '          printf "sync9p: post-mounts: "; grep " /mnt/host " /proc/mounts || printf "(none)\\n"\n' +
+        '          # 6. peek root listing for reality check\n' +
+        '          printf "sync9p: ls /mnt/host: "\n' +
+        '          ls -1 /mnt/host 2>/dev/null | tr "\\n" " "\n' +
+        '          printf "\\n"\n' +
+        '          # 7. restore cwd\n' +
         '          case "$__cwd" in /mnt/host*) cd "$__cwd" 2>/dev/null || cd / ;; esac\n' +
         '          printf "sync9p: ok %s\\n" "$__n"\n' +
         '          return 0\n' +
