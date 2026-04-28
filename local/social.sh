@@ -244,16 +244,27 @@ cmd_tunnel_up() {
     ensure_dirs
     ports="${*:-8080}"
     log "starting tunnel for ports: $ports"
-    # tunnel-up.sh prints CODE; capture it
+    # tunnel-up.sh prints CODE; capture it. Installing websocat/unbound on a
+    # fresh guest can take 30-60s, so poll for the pairing code instead of
+    # using a fixed sleep.
     tmp=$(mktemp /tmp/social-tunnel.XXXXXX)
     sh -c "curl -sS https://www.traits.build/local/tunnel-up.sh | sh -s -- $ports" 2>&1 | tee "$tmp" &
-    sleep 6
-    # tunnel-up.sh emits one of:
+    tunnel_pid=$!
+    code=""
+    # Poll up to ~120s for the code. tunnel-up.sh emits:
     #   [tunnel] pairing code: XXXX
-    #   CODE=XXXX   /   CODE: XXXX
-    code=$(grep -oE '(pairing code|CODE)[: =]+[A-Z0-9]{4}' "$tmp" | head -1 | grep -oE '[A-Z0-9]{4}$' || true)
+    timeout="${SOCIAL_TUNNEL_TIMEOUT:-120}"
+    elapsed=0
+    while [ "$elapsed" -lt "$timeout" ]; do
+        sleep 2
+        elapsed=$((elapsed + 2))
+        code=$(grep -oE '(pairing code|CODE)[: =]+[A-Z0-9]{4}' "$tmp" 2>/dev/null | head -1 | grep -oE '[A-Z0-9]{4}$' || true)
+        [ -n "$code" ] && break
+        # tunnel-up.sh may have exited (failure) — bail early
+        kill -0 "$tunnel_pid" 2>/dev/null || break
+    done
     if [ -z "$code" ]; then
-        log "could not parse tunnel code; check output above"
+        log "could not parse tunnel code after ${elapsed}s; check output above"
         rm -f "$tmp"
         return 1
     fi
