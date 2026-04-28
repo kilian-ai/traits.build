@@ -737,8 +737,47 @@
     // and inject the reply back onto the receive side with correct framing.
     installDnsInterceptor(emulator);
 
-    emulator.add_listener('emulator-ready',   () => { sanitizeInodeOwnership(); setStatus('ready'); });
-    emulator.add_listener('emulator-started', () => { sanitizeInodeOwnership(); setStatus(doRestore ? 'restored' : 'running', 'ok'); });
+    // ── virtio-9p post-restore IRQ kick ─────────────────────────────────────
+    // After snapshot restore, the kernel's 9pnet_virtio driver still has
+    // chan->inuse=true from the snapshot-era mount, while the v86 backend
+    // virtqueue has been re-set_state'd with addresses that the kernel may no
+    // longer trust. The deepest fix in pure JS is to issue a virtio
+    // config-change interrupt (VIRTIO_ISR_DEVICE_CFG, ISR bit 2) so the
+    // kernel's virtio_pci core fires its config_changed callback and the
+    // 9pnet_virtio driver gets a chance to revalidate. We also bump
+    // config_generation so the kernel re-reads the device tag/config space.
+    //
+    // Caveats: this is speculative. The Linux 9p driver's config_changed
+    // path doesn't actively clear chan->inuse, but a config IRQ + generation
+    // bump is the only nudge we can deliver from pure JS without patching
+    // libv86.js. If this proves insufficient, the backstop is to detect
+    // mount failure and auto-clear the snapshot for one-reload recovery.
+    function kickVirtio9pAfterRestore() {
+      try {
+        const dev = emulator && emulator.v86 && emulator.v86.cpu && emulator.v86.cpu.devices && emulator.v86.cpu.devices.virtio_9p;
+        if (!dev) { console.warn('[restore] virtio_9p device missing'); return false; }
+        const v = dev.virtio;
+        if (!v) { console.warn('[restore] virtio_9p.virtio missing'); return false; }
+        // Re-bind virtqueue handle in case set_state recreated queues array.
+        if (Array.isArray(v.queues) && v.queues.length > 0) dev.virtqueue = v.queues[0];
+        if (typeof v.notify_config_changes === 'function') {
+          v.notify_config_changes();
+          console.log('[restore] virtio_9p notify_config_changes() fired (ISR bit 2)');
+        }
+        if (typeof v.update_config_generation === 'function') {
+          v.update_config_generation();
+          console.log('[restore] virtio_9p config_generation bumped');
+        }
+        return true;
+      } catch (e) {
+        console.warn('[restore] kickVirtio9pAfterRestore failed:', e);
+        return false;
+      }
+    }
+    window.kickVirtio9pAfterRestore = kickVirtio9pAfterRestore;
+
+    emulator.add_listener('emulator-ready',   () => { sanitizeInodeOwnership(); if (doRestore) kickVirtio9pAfterRestore(); setStatus('ready'); });
+    emulator.add_listener('emulator-started', () => { sanitizeInodeOwnership(); if (doRestore) kickVirtio9pAfterRestore(); setStatus(doRestore ? 'restored' : 'running', 'ok'); });
     emulator.add_listener('emulator-stopped', () => setStatus('stopped'));
 
     // ── Restore-path instrumentation ───────────────────────────────────────
