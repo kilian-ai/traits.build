@@ -587,7 +587,9 @@
 
     async write(path, data) {
       let bytes;
+      const tag = Object.prototype.toString.call(data);
       if (typeof data === 'string') bytes = new TextEncoder().encode(data);
+      else if (tag === '[object Uint8Array]') bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
       else if (data instanceof Uint8Array) bytes = data;
       else if (data && data.buffer instanceof ArrayBuffer) bytes = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength);
       else throw new Error('SerialVfs.write: data must be string or Uint8Array');
@@ -1730,7 +1732,10 @@
           maybeKickQueuedGuestLogin();
           return;
         }
-        if (SHELL_PROMPT_RE.test(promptLine)) {
+        // Strip ANSI CSI sequences (e.g. \x1b[6n cursor-position report)
+        // before testing — agetty/busybox can append those after `# `.
+        const cleanPrompt = promptLine.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+        if (SHELL_PROMPT_RE.test(cleanPrompt)) {
           if (!shellReady) {
             markShellReady();
           }
