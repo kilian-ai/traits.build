@@ -860,14 +860,14 @@ These traits now use `kernel_logic::platform::*` instead of `#[cfg]` blocks:
 - **Port:** 8090 (internal), HTTPS forced
 - **Auto-scaling:** 0–1 machines, auto-stop/auto-start
 - **Health check:** `GET /health` every 30s
-- **Admin auth:** HTTP Basic Auth (`ADMIN_PASSWORD` Fly secret)
+- **Admin auth:** Bearer token (`ADMIN_TOKEN` Fly secret) for `/admin/update`; `www.admin` dashboard uses Basic Auth (`ADMIN_PASSWORD`)
 - **Persistent volume:** `/data` mount — `CMD` prefers `/data/traits` over image binary
 
 Auto-deploy workflow (triggered by tag push from `build.sh`):
 1. `build.sh` creates + pushes git tag (e.g. `v260327.161045`)
 2. GitHub Actions (`.github/workflows/release.yml`) cross-compiles linux/amd64 binary
 3. Binary uploaded as GitHub Release asset (e.g. `traits-linux-x86_64`)
-4. Action curls `POST /admin/update` on Fly.io with Basic Auth
+4. Action curls `POST /admin/update` on Fly.io with `Authorization: Bearer $ADMIN_TOKEN`
 5. Server downloads new binary to `/data/traits`, exits
 6. Fly.io auto-restarts, picks up `/data/traits` (see Dockerfile CMD)
 

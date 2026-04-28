@@ -71,14 +71,14 @@ jobs:
     steps:
       - name: Trigger server self-update
         env:
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           echo "Waiting 10s for release assets to propagate..."
           sleep 10
           echo "Triggering self-update on traits-build.fly.dev..."
-          RESPONSE=$(curl -fsSL --connect-timeout 15 --max-time 30 \
+          RESPONSE=$(curl -fsSL --connect-timeout 15 --max-time 60 \
             -X POST \
-            -u "admin:$ADMIN_PASSWORD" \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
             "https://traits-build.fly.dev/admin/update" 2>&1) || {
             echo "Update request failed (server may be stopped or unrestarting)"
             echo "Response: $RESPONSE"

@@ -90,11 +90,15 @@ fly deploy --now --local-only \
 The `/admin` endpoint provides deploy, scale, and destroy controls protected by HTTP Basic Auth:
 
 ```bash
-# Set the admin password
+# Set the admin password (for the /admin dashboard)
 fly secrets set ADMIN_PASSWORD="your-password"
+
+# Set the admin token (for POST /admin/update — server self-update endpoint)
+fly secrets set ADMIN_TOKEN="$(openssl rand -hex 24)"
 ```
 
 Access at `https://traits.build/admin` with username `admin`.
+Trigger self-update with `curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://traits-build.fly.dev/admin/update`.
 
 ## Auto-scaling
 
