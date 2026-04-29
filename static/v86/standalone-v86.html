@@ -109,20 +109,16 @@
   </div>
   <div id="bar">
     <b>v86</b>
-    <label>image:
-      <select id="iso">
-        <option value="alpine.iso" selected>alpine.iso (48 MB, apk + network)</option>
-        <option value="linux4.iso">linux4.iso (7.4 MB, busybox)</option>
-        <option value="linux3.iso">linux3.iso (8.2 MB)</option>
-        <option value="linux.iso">linux.iso (5.4 MB)</option>
-      </select>
+    <label title="snapshot to boot/restore. Fresh-boot entries (★) start the ISO clean.">snapshot:
+      <select id="snap"></select>
     </label>
-    <label title="enable emulated NIC tunneled over relay.traits.build WebSocket"><input type="checkbox" id="net" checked> network</label>
     <button id="boot">boot</button>
     <button id="reset" disabled>reset</button>
-    <button id="save" disabled>save snapshot</button>
+    <button id="save" disabled title="save into selected snapshot (or creates 'default' from a fresh-boot selection)">save</button>
     <button id="restore" disabled>restore</button>
-    <button id="clear" disabled>clear snapshot</button>
+    <button id="rename" disabled title="rename selected snapshot">rename</button>
+    <button id="clone" disabled title="clone selected snapshot — the clone becomes the active selection">clone</button>
+    <button id="clear" disabled title="delete selected snapshot">delete</button>
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
     <button id="viewer" disabled title="Browse the entire guest filesystem via serial shell (ls/cat). No relay or 9P mount needed.">viewer</button>
     <button id="social" disabled title="Nostr social: publish /mnt/host/public, follow users, sync their content">social</button>
@@ -224,13 +220,24 @@
 <script src="./xterm.js"></script>
 <script src="./xterm-addon-fit.js"></script>
 <script>
-(() => {
+(async () => {
   const $ = id => document.getElementById(id);
-  const termEl = $('term'), isoEl = $('iso');
+  const termEl = $('term'), snapEl = $('snap');
   const bootBtn = $('boot'), resetBtn = $('reset'), saveBtn = $('save');
   const restoreBtn = $('restore'), clearBtn = $('clear');
+  const renameBtn = $('rename'), cloneBtn = $('clone');
   const autosaveEl = $('autosave');
   const statusEl = $('status'), statsEl = $('stats');
+
+  // ---- ISO catalog (was the old <select id="iso"> dropdown) ----
+  // First entry is the default fresh-boot ISO.
+  const ISO_CATALOG = [
+    { iso: 'alpine.iso',  label: 'alpine.iso (48 MB, apk + network)' },
+    { iso: 'linux4.iso',  label: 'linux4.iso (7.4 MB, busybox)' },
+    { iso: 'linux3.iso',  label: 'linux3.iso (8.2 MB)' },
+    { iso: 'linux.iso',   label: 'linux.iso (5.4 MB)' },
+  ];
+  const DEFAULT_ISO = ISO_CATALOG[0].iso;
 
   // ---- xterm.js terminal ----
   const term = new Terminal({
@@ -340,8 +347,11 @@
     if (autosaveEl.checked && emulator) scheduleAutosave();
   };
 
+  // ?iso= URL param selects a fresh-boot of the given ISO (no restore).
+  // Snapshot dropdown is populated dynamically (see populateSnapSelect).
   const qsIso = new URLSearchParams(location.search).get('iso');
-  if (qsIso && [...isoEl.options].some(o => o.value === qsIso)) isoEl.value = qsIso;
+  let initialFreshIso = DEFAULT_ISO;
+  if (qsIso && ISO_CATALOG.some(o => o.iso === qsIso)) initialFreshIso = qsIso;
 
   // ---- Terminal output: xterm.js writes raw VT stream as-is ----
   // v86 emits one byte at a time; we batch within a microtask so xterm.js
@@ -379,7 +389,34 @@
   // without the flag.
   const LEGACY_BOOT = new URLSearchParams(location.search).get('legacy') === '1';
   const SNAP_VER = 'v2';
-  const snapKeyFor = iso => LEGACY_BOOT ? ('snap:' + iso) : ('snap:' + iso + ':' + SNAP_VER);
+  // Multi-named snapshots: snap:<iso>:<ver>:<name>. Legacy single-snapshot
+  // form (`snap:<iso>:<ver>`, no name suffix) is read transparently as the
+  // synthesized name "default" and migrated to the new scheme on first save
+  // or on populateSnapSelect() init.
+  const DEFAULT_SNAP_NAME = 'default';
+  const legacySnapKeyFor = iso => 'snap:' + iso + ':' + SNAP_VER;
+  const snapKeyFor = (iso, name) => {
+    if (LEGACY_BOOT) return 'snap:' + iso;
+    const n = (name == null || name === '') ? DEFAULT_SNAP_NAME : String(name);
+    return 'snap:' + iso + ':' + SNAP_VER + ':' + n;
+  };
+  // Parse a snapshot IDB key. Returns { iso, name } or null if not a
+  // recognized snapshot key. Handles both new (`snap:<iso>:v2:<name>`) and
+  // legacy (`snap:<iso>:v2` with no name, surfaced as DEFAULT_SNAP_NAME).
+  function parseSnapKey(key) {
+    if (typeof key !== 'string' || !key.startsWith('snap:')) return null;
+    const rest = key.slice(5); // strip "snap:"
+    // Find ":<SNAP_VER>" anchor (we only support current SNAP_VER in UI;
+    // older versioned keys are ignored to avoid topology mismatch).
+    const verTag = ':' + SNAP_VER;
+    const verIdx = rest.indexOf(verTag);
+    if (verIdx <= 0) return null;
+    const iso = rest.slice(0, verIdx);
+    const tail = rest.slice(verIdx + verTag.length);
+    if (tail === '') return { iso, name: DEFAULT_SNAP_NAME, legacy: true };
+    if (tail.startsWith(':')) return { iso, name: tail.slice(1), legacy: false };
+    return null;
+  }
   const DB_NAME = 'v86-snapshots', DB_VER = 1, STORE = 'snaps';
   function openDB() {
     return new Promise((resolve, reject) => {
@@ -413,6 +450,144 @@
     });
   }
   async function idbHas(key) { return (await idbGet(key)) != null; }
+  async function idbGetAllKeys() {
+    const db = await openDB();
+    return new Promise((res, rej) => {
+      const req = db.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys();
+      req.onsuccess = () => res(req.result || []); req.onerror = () => rej(req.error);
+    });
+  }
+  async function idbCopy(srcKey, dstKey) {
+    const v = await idbGet(srcKey);
+    if (v == null) throw new Error('source snapshot missing');
+    await idbPut(dstKey, v);
+  }
+
+  // ---- Snapshot dropdown state ----
+  // Selection model: each <option> value is a snapshot IDB key
+  // (`snap:<iso>:v2:<name>`) or a fresh-boot pseudo-key (`fresh:<iso>`).
+  // parseSel(value) returns { iso, name|null, isFresh, key }.
+  const SEL_LS_KEY = 'v86.snap-selection';
+  function parseSel(val) {
+    if (typeof val !== 'string' || val === '') return null;
+    if (val.startsWith('fresh:')) return { iso: val.slice(6), name: null, isFresh: true, key: val };
+    const p = parseSnapKey(val);
+    if (!p) return null;
+    return { iso: p.iso, name: p.name, isFresh: false, key: val };
+  }
+
+  // Migrate any legacy `snap:<iso>:v2` (no :name suffix) into the new
+  // `snap:<iso>:v2:default` form. Idempotent. Runs once at populate.
+  let legacyMigrated = false;
+  async function migrateLegacySnapshots() {
+    if (legacyMigrated || LEGACY_BOOT) return;
+    legacyMigrated = true;
+    try {
+      const keys = await idbGetAllKeys();
+      for (const k of keys) {
+        if (typeof k !== 'string') continue;
+        const p = parseSnapKey(k);
+        if (!p || !p.legacy) continue;
+        const newKey = snapKeyFor(p.iso, DEFAULT_SNAP_NAME);
+        if (k === newKey) continue;
+        const exists = await idbHas(newKey);
+        if (!exists) await idbCopy(k, newKey);
+        await idbDel(k);
+      }
+    } catch (e) {
+      console.warn('[snap] legacy migration failed:', e);
+    }
+  }
+
+  // List all known snapshots (post-migration) sorted by iso then name.
+  async function listSnapshots() {
+    const out = [];
+    try {
+      const keys = await idbGetAllKeys();
+      for (const k of keys) {
+        if (typeof k !== 'string') continue;
+        const p = parseSnapKey(k);
+        if (!p) continue;
+        out.push({ iso: p.iso, name: p.name, key: snapKeyFor(p.iso, p.name) });
+      }
+    } catch (_) {}
+    out.sort((a, b) => a.iso.localeCompare(b.iso) || a.name.localeCompare(b.name));
+    return out;
+  }
+
+  // Re-populate the <select id="snap"> dropdown. If `preferKey` is provided
+  // and exists in the new options, that option is selected; otherwise we
+  // restore the previously persisted selection or fall back to a sensible
+  // default. Called on init, after save/clear/clone/rename.
+  async function populateSnapSelect(preferKey) {
+    await migrateLegacySnapshots();
+    const snaps = await listSnapshots();
+    const groupedByIso = new Map();
+    for (const s of snaps) {
+      if (!groupedByIso.has(s.iso)) groupedByIso.set(s.iso, []);
+      groupedByIso.get(s.iso).push(s);
+    }
+    // Build option list: for each ISO in catalog, a fresh-boot entry, then
+    // its snapshots. Then any "orphan" snapshots whose ISO is not in the
+    // catalog (rare, but we still surface them so the user can boot/rename).
+    const seenIsos = new Set();
+    const opts = [];
+    for (const cat of ISO_CATALOG) {
+      seenIsos.add(cat.iso);
+      opts.push({ value: 'fresh:' + cat.iso, label: '★ fresh boot — ' + cat.label });
+      const list = groupedByIso.get(cat.iso) || [];
+      for (const s of list) opts.push({ value: s.key, label: '  ' + cat.iso + '  /  ' + s.name });
+    }
+    for (const [iso, list] of groupedByIso) {
+      if (seenIsos.has(iso)) continue;
+      opts.push({ value: 'fresh:' + iso, label: '★ fresh boot — ' + iso });
+      for (const s of list) opts.push({ value: s.key, label: '  ' + iso + '  /  ' + s.name });
+    }
+    snapEl.innerHTML = '';
+    for (const o of opts) {
+      const el = document.createElement('option');
+      el.value = o.value; el.textContent = o.label;
+      snapEl.appendChild(el);
+    }
+    // Resolve desired selection
+    const stored = (() => { try { return localStorage.getItem(SEL_LS_KEY) || ''; } catch (_) { return ''; } })();
+    const candidates = [
+      preferKey,
+      stored,
+      // First snapshot for default ISO, else fresh-boot of default ISO
+      (() => {
+        const list = groupedByIso.get(initialFreshIso) || [];
+        return list.length ? list[0].key : ('fresh:' + initialFreshIso);
+      })(),
+      'fresh:' + DEFAULT_ISO,
+    ];
+    for (const c of candidates) {
+      if (c && [...snapEl.options].some(o => o.value === c)) {
+        snapEl.value = c; break;
+      }
+    }
+    persistSelection();
+    updateSnapButtonsState();
+  }
+  function persistSelection() {
+    try { localStorage.setItem(SEL_LS_KEY, snapEl.value); } catch (_) {}
+  }
+  function updateSnapButtonsState() {
+    const sel = parseSel(snapEl.value);
+    const running = !!emulator;
+    const isSnap = !!(sel && !sel.isFresh);
+    // rename/clone/clear require an actual saved snapshot in the selection.
+    if (renameBtn) renameBtn.disabled = !isSnap;
+    if (cloneBtn)  cloneBtn.disabled  = !isSnap;
+    // restore/clear: only meaningful when a snapshot is selected.
+    // (When emulator is running, restore is still allowed — it triggers
+    // a shutdown+reboot path via doRestore().)
+    restoreBtn.disabled = !isSnap;
+    clearBtn.disabled   = !isSnap;
+    // save: always allowed while emulator running. From a fresh-boot
+    // selection, save creates the "default" snapshot for that ISO.
+    saveBtn.disabled = !running;
+  }
 
   // ---- Auto-save: debounced snapshot after activity settles ----
   // Live ISOs write to tmpfs, so the only way to "persist FS changes" is
@@ -451,12 +626,20 @@
       // Take snapshot in unmounted state — see umountBeforeSave() comment.
       await umountBeforeSave();
       const st = await emulator.save_state();
-      await idbPut(snapKeyFor(currentIso), st);
+      // Auto-save always writes back into whatever snapshot is currently
+      // active. If the session started from a fresh-boot selection, we
+      // synthesize the "default" name (and surface it in the dropdown on
+      // next populate).
+      const name = currentSnapName || DEFAULT_SNAP_NAME;
+      await idbPut(snapKeyFor(currentIso, name), st);
+      currentSnapName = name;
       // Restore mount for the live session so the user keeps working.
       await remountAfterSave();
       lastAutosaveAt = Date.now();
       dirty = false;
-      restoreBtn.disabled = false; clearBtn.disabled = false;
+      // The autosave just materialized a snapshot under currentIso/currentSnapName.
+      // Refresh dropdown so a new fresh-boot session gets a real entry.
+      try { await populateSnapSelect(snapKeyFor(currentIso, currentSnapName)); } catch (_) {}
       setStatus(`auto-saved ${(st.byteLength/1048576).toFixed(1)} MB (${lastAutosaveAt - t0} ms)`, 'ok');
       // restore prior status after 2s (unless user changed it)
       setTimeout(() => { if (statusEl.textContent.startsWith('auto-saved')) setStatus(prevStatus); }, 2000);
@@ -466,7 +649,7 @@
   }
 
   // ---- Emulator lifecycle ----
-  let emulator = null, currentIso = null;
+  let emulator = null, currentIso = null, currentSnapName = null;
 
   // ── SerialVfs ───────────────────────────────────────────────────────────
   // JS↔guest filesystem bridge over serial0 — bypasses 9P entirely.
@@ -942,13 +1125,22 @@
   }
 
   async function boot(opts = {}) {
-    const iso = isoEl.value;
+    // Resolve target snapshot from the dropdown selection (or opts.snapKey
+    // override). Fresh-boot selections become a clean ISO boot; named
+    // selections become an idbGet-restore.
+    let sel = opts.snapKey ? parseSel(opts.snapKey) : parseSel(snapEl.value);
+    if (!sel) sel = parseSel('fresh:' + DEFAULT_ISO);
+    const iso = sel.iso;
     currentIso = iso;
-    const snapKey = snapKeyFor(iso);
-    const doRestore = opts.restore && await idbHas(snapKey);
+    currentSnapName = sel.isFresh ? null : sel.name;
+    // doRestore is honored only when the selection is a named snapshot AND
+    // the caller asked for restore. Fresh-boot selections always boot clean.
+    const snapKey = sel.isFresh ? null : sel.key;
+    const doRestore = !!(opts.restore && snapKey && await idbHas(snapKey));
 
-    setStatus(doRestore ? `restoring ${iso}…` : `booting ${iso}…`);
-    bootBtn.disabled = true; isoEl.disabled = true;
+    const labelIso = sel.isFresh ? iso : (iso + ' / ' + sel.name);
+    setStatus(doRestore ? `restoring ${labelIso}…` : `booting ${labelIso}…`);
+    bootBtn.disabled = true; snapEl.disabled = true;
 
     byteCount = 0;
     term.reset();
@@ -992,12 +1184,8 @@
       // Skipped in legacy mode so device topology matches v1 snapshots.
       ...(LEGACY_BOOT ? {} : { filesystem: {} }),
     };
-    // Optional: route emulated NIC through our Cloudflare relay so `apk add`, wget, etc. work.
-    // Default backend is WISP (TCP tunneled over a single WebSocket) backed by
-    // cloudflare:sockets on the relay worker, so real TCP to anywhere on the
-    // internet works. Legacy wsproxy (raw Ethernet) URLs starting with ws:// or
-    // wss:// are still honored via localStorage/?relay= override.
-    const netEl = document.getElementById('net');
+    // Network is always enabled (no checkbox). Route emulated NIC through
+    // the Fly.io WISP relay so `apk add`, wget, etc. work.
     // Migrate legacy relay URLs to the Fly.io WISP endpoint. The Cloudflare
     // Worker relay (wisps://relay.traits.build/wisp) cannot reach CF-fronted
     // hosts like api.openai.com due to CF's loopback-prevention block on
@@ -1021,40 +1209,23 @@
     const relayUrl = new URLSearchParams(location.search).get('relay')
       || localStorage.getItem('v86.relay-url')
       || 'wisps://apptron-traits-build.fly.dev/wisp';
-    if (netEl && netEl.checked) {
-      // v86 selects the backend from the URL scheme:
-      //   wisp://, wisps://  → WispNetworkAdapter (TCP tunneling)
-      //   ws://, wss://      → NetworkAdapter (raw Ethernet wsproxy, legacy)
-      //   "fetch"            → FetchNetworkAdapter (no server, HTTP-only via CORS)
-      // NOTE: v86 only creates a NIC when net_device.type is set explicitly to
-      // "ne2k" or "virtio" (the "default to ne2k" fallback only fires when
-      // net_device is completely absent — see src/browser/starter.js and
-      // src/cpu.js). Passing a net_device object without a type silently
-      // creates NO NIC.
-      //
-      // What works with the config below:
-      //   - NIC bring-up, DHCP lease (192.168.86.100)
-      //   - ICMP (ping 1.1.1.1)
-      //   - TCP (real sockets via WISP to cloudflare:sockets)
-      //   - DNS via DoH proxied through our relay at /dns-query
-      //
-      // The relay /dns-query endpoint wraps 1.1.1.1 and adds CORS headers that
-      // satisfy the browser's preflight. A direct fetch from the page to
-      // cloudflare-dns.com would be rejected by CORS preflight in many contexts
-      // (file:// origins, private-network access), which is why the default
-      // v86 DoH path silently fails.
-      cfg.net_device = {
-        type: 'ne2k',
-        relay_url: relayUrl,
-        // Route v86's DoH through our relay. v86 builds the URL as
-        //   https://{doh_server}/dns-query
-        // so we just pass the relay's hostname here.
-        dns_method: 'doh',
-        doh_server: 'relay.traits.build',
-        // cors_proxy is only used by the "fetch" backend; safe to always set.
-        cors_proxy: 'https://relay.traits.build/cors?url=',
-      };
-    }
+    // v86 selects the backend from the URL scheme: wisp://, wisps:// →
+    // WispNetworkAdapter (TCP tunneling); ws://, wss:// → legacy raw-Ethernet
+    // NetworkAdapter; "fetch" → FetchNetworkAdapter. v86 only creates a NIC
+    // when net_device.type is set explicitly.
+    //
+    // What works with the config below:
+    //   - NIC bring-up, DHCP lease (192.168.86.100)
+    //   - ICMP (ping 1.1.1.1)
+    //   - TCP (real sockets via WISP to cloudflare:sockets)
+    //   - DNS via DoH proxied through our relay at /dns-query
+    cfg.net_device = {
+      type: 'ne2k',
+      relay_url: relayUrl,
+      dns_method: 'doh',
+      doh_server: 'relay.traits.build',
+      cors_proxy: 'https://relay.traits.build/cors?url=',
+    };
     if (doRestore) {
       const blob = await idbGet(snapKey);
       cfg.initial_state = { buffer: blob };
@@ -1198,7 +1369,9 @@
     // Fresh boot: full setup (DHCP + repos + apk upgrade guidance).
     // Snapshot restore: lightweight NIC recovery (DHCP refresh + resolv.conf)
     // to fix stale tunnel/DHCP state after restore.
-    let netInited = !(netEl && netEl.checked);
+    // Network is always enabled (the old #net checkbox was removed). Net
+    // init runs as soon as the guest reaches a shell prompt.
+    let netInited = false;
     // On restore the shell is already up, so enable stty sync immediately.
     if (doRestore) {
       shellReady = true;
@@ -1853,8 +2026,7 @@
 
     resetBtn.disabled = false;
     saveBtn.disabled = false;
-    restoreBtn.disabled = !(await idbHas(snapKey));
-    clearBtn.disabled = restoreBtn.disabled;
+    updateSnapButtonsState();
 
     term.focus();
   }
@@ -1868,14 +2040,20 @@
     queuedLoginKickSent = false; queuedLoginHintShown = false; queuedPasswordSent = false; promptLine = '';
     serialVfs.ready = false; serialVfs.attached = false;
     serialVfs.busy = false; serialVfs.current = null; serialVfs.buf = '';
+    snapEl.disabled = false;
+    bootBtn.disabled = false;
+    updateSnapButtonsState();
   }
 
   async function doReset() { await shutdown(); await boot({ restore: false }); }
   async function doRestore() { await shutdown(); await boot({ restore: true }); }
   async function doClear() {
-    await idbDel(snapKeyFor(currentIso));
+    const sel = parseSel(snapEl.value);
+    if (!sel || sel.isFresh) return;
+    await idbDel(sel.key);
+    if (currentSnapName === sel.name && currentIso === sel.iso) currentSnapName = null;
     setStatus('snapshot cleared');
-    restoreBtn.disabled = true; clearBtn.disabled = true;
+    await populateSnapSelect('fresh:' + sel.iso);
   }
   async function doSave() {
     if (!emulator) return;
@@ -1886,13 +2064,70 @@
       // Take snapshot in unmounted state — see umountBeforeSave() comment.
       await umountBeforeSave();
       const buf = await emulator.save_state();
-      await idbPut(snapKeyFor(currentIso), buf);
+      // Save under whatever snapshot is currently active. If we booted from
+      // a fresh selection, materialize it as the "default" snapshot for
+      // this ISO and re-select it in the dropdown.
+      if (!currentSnapName) currentSnapName = DEFAULT_SNAP_NAME;
+      const key = snapKeyFor(currentIso, currentSnapName);
+      await idbPut(key, buf);
       await remountAfterSave();
-      setStatus(`snapshot saved (${(buf.byteLength/1048576).toFixed(1)} MB)`, 'ok');
-      restoreBtn.disabled = false; clearBtn.disabled = false;
+      setStatus(`snapshot saved as ${currentIso}/${currentSnapName} (${(buf.byteLength/1048576).toFixed(1)} MB)`, 'ok');
+      await populateSnapSelect(key);
     } catch (e) {
       setStatus('save failed: ' + e.message, 'err');
     } finally { saveBtn.disabled = false; saveInProgress = false; }
+  }
+
+  function uniqueSnapName(iso, base, existingNames) {
+    const taken = new Set(existingNames);
+    if (!taken.has(base)) return base;
+    for (let i = 2; i < 1000; i++) {
+      const cand = base + ' ' + i;
+      if (!taken.has(cand)) return cand;
+    }
+    return base + ' ' + Date.now();
+  }
+  async function doRename() {
+    const sel = parseSel(snapEl.value);
+    if (!sel || sel.isFresh) return;
+    const next = window.prompt('Rename snapshot', sel.name);
+    if (next == null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === sel.name) return;
+    if (/[:\\/]/.test(trimmed)) {
+      setStatus('rename failed: name cannot contain : / \\', 'err');
+      return;
+    }
+    const newKey = snapKeyFor(sel.iso, trimmed);
+    if (await idbHas(newKey)) {
+      setStatus('rename failed: name already exists', 'err');
+      return;
+    }
+    try {
+      await idbCopy(sel.key, newKey);
+      await idbDel(sel.key);
+      if (currentIso === sel.iso && currentSnapName === sel.name) currentSnapName = trimmed;
+      setStatus(`renamed to ${sel.iso}/${trimmed}`, 'ok');
+      await populateSnapSelect(newKey);
+    } catch (e) {
+      setStatus('rename failed: ' + e.message, 'err');
+    }
+  }
+  async function doClone() {
+    const sel = parseSel(snapEl.value);
+    if (!sel || sel.isFresh) return;
+    const all = await listSnapshots();
+    const sameIso = all.filter(s => s.iso === sel.iso).map(s => s.name);
+    const cloneName = uniqueSnapName(sel.iso, sel.name + ' clone', sameIso);
+    const newKey = snapKeyFor(sel.iso, cloneName);
+    try {
+      await idbCopy(sel.key, newKey);
+      setStatus(`cloned to ${sel.iso}/${cloneName}`, 'ok');
+      // Per spec: clone is auto-selected as the next restore target.
+      await populateSnapSelect(newKey);
+    } catch (e) {
+      setStatus('clone failed: ' + e.message, 'err');
+    }
   }
 
   bootBtn.onclick    = () => boot({ restore: false });
@@ -1900,12 +2135,22 @@
   saveBtn.onclick    = doSave;
   restoreBtn.onclick = doRestore;
   clearBtn.onclick   = doClear;
+  if (renameBtn) renameBtn.onclick = doRename;
+  if (cloneBtn)  cloneBtn.onclick  = doClone;
 
-  isoEl.onchange = async () => {
-    const has = await idbHas(snapKeyFor(isoEl.value));
-    setStatus(has ? `snapshot available for ${isoEl.value}` : 'no snapshot for this image');
+  snapEl.onchange = async () => {
+    persistSelection();
+    const sel = parseSel(snapEl.value);
+    if (!sel) { updateSnapButtonsState(); return; }
+    if (sel.isFresh) {
+      setStatus(`fresh boot — ${sel.iso}`);
+    } else {
+      const has = await idbHas(sel.key);
+      setStatus(has ? `snapshot ${sel.iso} / ${sel.name}` : 'snapshot missing');
+    }
+    updateSnapButtonsState();
   };
-  isoEl.dispatchEvent(new Event('change'));
+  await populateSnapSelect();
 
   // ---- Keyboard input: xterm.js streams raw VT input directly ----
   // term.onData fires with a string containing already-encoded VT sequences
@@ -4184,10 +4429,14 @@
     window.__v86AutoLogin = true;
     (async () => {
       const restoreParam = qs.get('restore');
+      // Resolve restore intent against the current snapshot dropdown
+      // selection (a fresh-boot entry → no restore; a real snapshot key
+      // → restore unless ?restore=0).
+      const sel = parseSel(snapEl.value);
       let wantRestore;
-      if (restoreParam === '1') wantRestore = true;
+      if (restoreParam === '1') wantRestore = !!(sel && !sel.isFresh);
       else if (restoreParam === '0') wantRestore = false;
-      else wantRestore = await idbHas(snapKeyFor(isoEl.value)).catch(() => false);
+      else wantRestore = !!(sel && !sel.isFresh && await idbHas(sel.key).catch(() => false));
       boot({ restore: wantRestore });
     })();
   }
