@@ -2,12 +2,12 @@
 # social.sh — Nostr-backed public folder follow/sync for v86 Alpine guests.
 #
 # Lays out the canonical guest convention:
-#   /mnt/vfs/public/                      ← what YOU publish (preferred)
-#   /mnt/vfs/.nsec                        ← your private key (hex)
-#   /mnt/vfs/.npub                        ← cached bech32 pubkey
-#   /mnt/vfs/.social.tunnel               ← cached base URL for serving public/
-#   /mnt/vfs/following/.list              ← npubs you follow (one per line)
-#   /mnt/vfs/following/<npub>/            ← mirrored content from each followed user
+#   /mnt/host/public/                     ← what YOU publish
+#   /mnt/host/.nsec                       ← your private key (hex)
+#   /mnt/host/.npub                       ← cached bech32 pubkey
+#   /mnt/host/.social.tunnel              ← cached base URL for serving public/
+#   /mnt/host/following/.list             ← npubs you follow (one per line)
+#   /mnt/host/following/<npub>/           ← mirrored content from each followed user
 #
 # Crypto goes through traits-build.fly.dev REST (social.nostr trait).
 # Relay I/O via websocat. File mirror via wget.
@@ -27,7 +27,7 @@
 # Config (env overrides):
 #   SOCIAL_API     default: https://traits-build.fly.dev/traits/social/nostr
 #   SOCIAL_RELAYS  default: wss://relay.damus.io wss://nos.lol wss://relay.nostr.band
-#   SOCIAL_HOME    default: auto (/mnt/vfs → /mnt/host → current working directory)
+#   SOCIAL_HOME    default: auto (/mnt/host → current working directory)
 
 set -eu
 
@@ -276,7 +276,7 @@ cmd_tunnel_up() {
 }
 
 # Pick a non-empty public dir. Prefer $PUBLIC_DIR; otherwise scan canonical
-# roots (/mnt/vfs, /mnt/host, $HOME) for a public/ that actually has files.
+# roots (/mnt/host, $HOME, $PWD) for a public/ that actually has files.
 # Sets the global PUBLIC_DIR if it found a better candidate.
 resolve_public_dir() {
     if [ -d "$PUBLIC_DIR" ] && [ -n "$(find "$PUBLIC_DIR" -type f 2>/dev/null | head -1)" ]; then
@@ -340,7 +340,6 @@ social: no files to publish under $PUBLIC_DIR
 
 Drop something into one of these and re-run:
   $PUBLIC_DIR/
-  /mnt/vfs/public/
   /mnt/host/public/
 Or override:  SOCIAL_HOME=/some/path social publish
 EOF

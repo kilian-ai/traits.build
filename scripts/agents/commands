@@ -62,8 +62,8 @@ sh <(curl -sS https://www.traits.build/local/tunnel-listen.sh) ARXN 18384 8384
 
 #social:
 wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/local/bin/social
-# optional: force custom location (otherwise social auto-picks /mnt/vfs -> /mnt/host -> $PWD)
-# export SOCIAL_HOME=/mnt/vfs
+# optional: force custom location (otherwise social auto-picks /mnt/host -> $PWD)
+# export SOCIAL_HOME=/mnt/host
 
 
 #unblock internet:
@@ -79,3 +79,10 @@ nslookup google.com
 #change password:
 printf 'dummy1234!\ndummy1234!\n' | passwd root
 echo 'root:dummy1234!' | chpasswd
+
+#apk online
+echo "https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
+echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+apk update
+
+apk add --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main <package>
