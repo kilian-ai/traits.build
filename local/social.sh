@@ -17,7 +17,7 @@
 #   social.sh pubkey                # show your npub
 #   social.sh tunnel-up [ports...]  # start tunnel-up.sh (default: 8080); cache base_url
 #   social.sh publish               # build manifest of SOCIAL_HOME/public, sign, push to relays
-#   social.sh follow <npub>         # add to follow list, create dir
+#   social.sh follow <npub> [--no-sync]   # add to follow list, mkdir, immediate sync
 #   social.sh unfollow <npub> [--purge]
 #   social.sh list                  # show follow list
 #   social.sh sync                  # one-shot: pull each followed user's manifest + mirror files
@@ -398,8 +398,10 @@ EOF
 }
 
 cmd_follow() {
-    npub="${1:?usage: follow <npub>}"
+    npub="${1:?usage: follow <npub> [--no-sync]}"
     case "$npub" in npub1*) ;; *) die "expected npub1...";; esac
+    no_sync=0
+    [ "${2:-}" = "--no-sync" ] && no_sync=1
     ensure_dirs
     if grep -qx "$npub" "$FOLLOW_LIST" 2>/dev/null; then
         echo "already following: $npub"
@@ -407,6 +409,10 @@ cmd_follow() {
         printf '%s\n' "$npub" >> "$FOLLOW_LIST"
         mkdir -p "$FOLLOW_DIR/$npub"
         echo "now following: $npub"
+    fi
+    if [ "$no_sync" -eq 0 ]; then
+        need websocat
+        cmd_sync_one "$npub" || log "initial sync failed (try: social sync)"
     fi
 }
 
