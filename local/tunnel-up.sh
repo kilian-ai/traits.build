@@ -24,6 +24,111 @@ set -u
 # bridge subshell within seconds.
 trap '' HUP
 
+# ── Singleton / lifecycle management ─────────────────────────────────────
+# Stale bridges accumulate fast: each tunnel-up.sh invocation registers a
+# fresh pairing code and spawns POOL_SIZE × len(PORTS) websocat bridges +
+# a reclaim watchdog. Without this guard, re-running the script (e.g.
+# from `social tunnel-up`, the v86 Social overlay, or a respawn loop)
+# leaves the previous generation running indefinitely with its own code.
+#
+# Behavior:
+#   tunnel-up.sh               → if a cached code is active on the relay,
+#                                print + exit 0 (idempotent).
+#   tunnel-up.sh --reset       → kill all prior bridges/watchdogs, drop
+#                                cached state, unregister cached code, exit.
+#   tunnel-up.sh --new ...     → kill priors first, then start fresh.
+#   TUNNEL_FORCE_NEW=1 ...     → same as --new (env-var form).
+TUNNEL_PID_FILE="${TUNNEL_PID_FILE:-/tmp/tunnel.pids}"
+TUNNEL_CODE_FILE="${TUNNEL_CODE_FILE:-/tmp/tunnel.code}"
+TUNNEL_FORCE_NEW="${TUNNEL_FORCE_NEW:-0}"
+
+case "${1:-}" in
+    --reset|--down|--stop)
+        DO_RESET=1; DO_EXIT_AFTER_RESET=1; shift ;;
+    --new|--restart)
+        DO_RESET=1; DO_EXIT_AFTER_RESET=0; shift ;;
+    *)
+        if [ "$TUNNEL_FORCE_NEW" = "1" ]; then
+            DO_RESET=1; DO_EXIT_AFTER_RESET=0
+        else
+            DO_RESET=0; DO_EXIT_AFTER_RESET=0
+        fi ;;
+esac
+
+kill_prior_processes() {
+    # Kill tracked PIDs first (precise).
+    if [ -s "$TUNNEL_PID_FILE" ]; then
+        while IFS= read -r pid; do
+            [ -n "$pid" ] || continue
+            kill "$pid" 2>/dev/null || true
+        done < "$TUNNEL_PID_FILE"
+    fi
+    # Belt-and-suspenders: also pkill any websocat that points at a
+    # tunnel guest URL. This catches bridges from earlier sessions
+    # that pre-date the PID file.
+    pkill -f 'websocat.*port/guest\?code=' 2>/dev/null || true
+    # Kill prior tunnel-up.sh processes EXCEPT ourselves and our parent
+    # (the parent may be a `sh -c "curl ... | sh"` wrapper from
+    # social tunnel-up; killing it would terminate this script too).
+    self_pid=$$
+    parent_pid=$(awk '{print $4}' /proc/$$/stat 2>/dev/null || echo 0)
+    for pid in $(pgrep -f 'tunnel-up\.sh' 2>/dev/null); do
+        [ "$pid" = "$self_pid" ] && continue
+        [ "$pid" = "$parent_pid" ] && continue
+        kill "$pid" 2>/dev/null || true
+    done
+    rm -f "$TUNNEL_PID_FILE"
+}
+
+if [ "${DO_RESET:-0}" = "1" ]; then
+    echo "[tunnel] reset: stopping prior bridges + watchdogs ..."
+    kill_prior_processes
+    if [ -s "$TUNNEL_CODE_FILE" ]; then
+        old_code=$(head -1 "$TUNNEL_CODE_FILE")
+        if [ -n "$old_code" ]; then
+            echo "[tunnel] reset: unregistering $old_code"
+            curl -sS --max-time 5 -X POST \
+                "${TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}/port/unregister" \
+                -H 'Content-Type: application/json' \
+                -d "{\"code\":\"$old_code\"}" >/dev/null 2>&1 || true
+        fi
+        rm -f "$TUNNEL_CODE_FILE"
+    fi
+    if [ "${DO_EXIT_AFTER_RESET:-0}" = "1" ]; then
+        echo "[tunnel] reset: done."
+        exit 0
+    fi
+fi
+
+# Idempotent path: if a cached code exists and the relay still considers
+# it active, reuse it. This makes `tunnel-up.sh` safe to call repeatedly
+# from buttons / cron / agent scripts without stacking processes.
+if [ "${DO_RESET:-0}" = "0" ] && [ -s "$TUNNEL_CODE_FILE" ]; then
+    cached_code=$(head -1 "$TUNNEL_CODE_FILE")
+    if [ -n "$cached_code" ]; then
+        cached_status=$(curl -sS --max-time 4 \
+            "${TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}/port/status?code=$cached_code" \
+            2>/dev/null)
+        case "$cached_status" in
+            *'"active":true'*)
+                echo "[tunnel] already running — pairing code: $cached_code"
+                echo "[tunnel] pid file: $TUNNEL_PID_FILE"
+                echo "[tunnel] to restart: $0 --new"
+                echo "[tunnel] to stop:    $0 --reset"
+                exit 0
+                ;;
+        esac
+        echo "[tunnel] cached code $cached_code no longer active — starting fresh"
+        # Cached but inactive (relay forgot, container reboot, etc.):
+        # kill any orphaned bridges from that session before continuing.
+        kill_prior_processes
+        rm -f "$TUNNEL_CODE_FILE"
+    fi
+fi
+
+: > "$TUNNEL_PID_FILE"
+track_pid() { printf '%s\n' "$1" >> "$TUNNEL_PID_FILE"; }
+
 # Override via env: TUNNEL_BASE=http://localhost:8787 sh tunnel-up.sh
 TUNNEL_BASE="${TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}"
 # Derive default WS URL from TUNNEL_BASE (http→ws, https→wss).
@@ -538,6 +643,7 @@ for PORT in $PORTS; do
             done
         ) >> "/tmp/tunnel-${PORT}.log" 2>&1 &
         BPID=$!
+        track_pid "$BPID"
         echo "[tunnel] port $PORT → bridge $n/$POOL_SIZE PID $BPID  log: /tmp/tunnel-${PORT}.log"
     done
 done
@@ -582,7 +688,7 @@ echo ""
 echo "[tunnel] Bridges running. Press Ctrl-C to teardown."
 
 # Save code for scripts that need it
-printf '%s\n' "$CODE" > /tmp/tunnel.code
+printf '%s\n' "$CODE" > "$TUNNEL_CODE_FILE"
 export TUNNEL_CODE="$CODE"
 
 # Wait for interrupt, then unregister
@@ -590,10 +696,16 @@ trap '
     echo ""
     echo "[tunnel] unregistering $CODE ..."
     [ -n "${RECLAIM_PID:-}" ] && kill "$RECLAIM_PID" 2>/dev/null
+    # Kill all tracked bridge subshells so websocat exits with them.
+    if [ -s "$TUNNEL_PID_FILE" ]; then
+        while IFS= read -r tp; do
+            [ -n "$tp" ] && kill "$tp" 2>/dev/null
+        done < "$TUNNEL_PID_FILE"
+    fi
     curl -sS -X POST "$TUNNEL_BASE/port/unregister" \
         -H "Content-Type: application/json" \
         -d "{\"code\":\"$CODE\"}" > /dev/null
-    rm -f /tmp/tunnel.code
+    rm -f "$TUNNEL_CODE_FILE" "$TUNNEL_PID_FILE"
     echo "[tunnel] done."
     exit 0
 ' INT TERM
@@ -637,8 +749,13 @@ RECLAIM_INTERVAL="${TUNNEL_RECLAIM_INTERVAL:-20}"
         RECLAIM_RESP=$(curl -sS --max-time 8 -X POST "$TUNNEL_BASE/port/register" \
             -H 'Content-Type: application/json' \
             -d "{\"code\":\"$CODE\",\"ports\":${PORTS_JSON}}" 2>&1)
+        # Both backends respond with a JSON object echoing our code+ports.
+        # CF uses {"code":"...","registered_ports":[...]}; Fly returns
+        # {"code":"...","token":null,"ports":[...],"relay":"..."}. Both
+        # are success — the only failure modes are HTTP/curl errors
+        # (non-JSON output) or a different code being returned.
         case "$RECLAIM_RESP" in
-            *'"registered_ports"'*|*'"ok":true'*)
+            *"\"code\":\"$CODE\""*)
                 echo "[tunnel] reclaim: $CODE reclaimed — bridges will reconnect on next respawn"
                 ;;
             *)
@@ -648,6 +765,7 @@ RECLAIM_INTERVAL="${TUNNEL_RECLAIM_INTERVAL:-20}"
     done
 ) &
 RECLAIM_PID=$!
+track_pid "$RECLAIM_PID"
 echo "[tunnel] reclaim watchdog PID $RECLAIM_PID (every ${RECLAIM_INTERVAL}s)"
 
 # Keep alive (background bridges continue)

@@ -243,6 +243,27 @@ cmd_tunnel_up() {
     need curl
     ensure_dirs
     ports="${*:-8080}"
+    # Reuse an existing tunnel if one is already running and the relay
+    # still considers its code active. This prevents accumulating stale
+    # bridges/watchdogs from repeated `social tunnel-up` invocations
+    # (v86 Social overlay buttons, agent calls, manual re-runs).
+    if [ -s "$TUNNEL_FILE" ]; then
+        cached_url=$(head -1 "$TUNNEL_FILE" 2>/dev/null)
+        # Extract code from .../port/http/CODE/8080
+        cached_code=$(printf '%s' "$cached_url" | sed -n 's|.*/port/http/\([A-Z0-9]\{4\}\)/.*|\1|p')
+        if [ -n "$cached_code" ]; then
+            base="${SOCIAL_TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}"
+            status=$(curl -sS --max-time 4 "$base/port/status?code=$cached_code" 2>/dev/null)
+            case "$status" in
+                *'"active":true'*)
+                    echo "tunnel code: $cached_code  (reusing — already active)"
+                    echo "base_url:    $cached_url"
+                    return 0
+                    ;;
+            esac
+            log "cached tunnel $cached_code no longer active — starting fresh"
+        fi
+    fi
     log "starting tunnel for ports: $ports"
     # tunnel-up.sh prints CODE; capture it. Installing websocat/unbound on a
     # fresh guest can take 30-60s, so poll for the pairing code instead of
@@ -253,6 +274,7 @@ cmd_tunnel_up() {
     code=""
     # Poll up to ~120s for the code. tunnel-up.sh emits:
     #   [tunnel] pairing code: XXXX
+    #   [tunnel] already running — pairing code: XXXX   (idempotent path)
     timeout="${SOCIAL_TUNNEL_TIMEOUT:-120}"
     elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
