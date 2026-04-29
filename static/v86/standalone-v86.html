@@ -165,11 +165,11 @@
       <div class="fp-section">
         <div class="fp-label">actions (placeholders)</div>
         <div class="row-flex" style="display:flex;gap:6px;flex-wrap:wrap">
-          <button id="follow-action-follow" disabled title="placeholder">follow user…</button>
-          <button id="follow-action-sync" disabled title="placeholder">sync all</button>
-          <button id="follow-action-publish" disabled title="placeholder">publish</button>
-          <button id="follow-action-list" disabled title="placeholder">list following</button>
-          <button id="follow-action-search" disabled title="placeholder">search</button>
+          <button id="follow-action-follow" disabled title="follow an npub (auto-syncs files)">follow user…</button>
+          <button id="follow-action-sync" disabled title="re-sync all followed users">sync all</button>
+          <button id="follow-action-publish" disabled title="publish your public/ folder">publish</button>
+          <button id="follow-action-list" disabled title="show follow list">list following</button>
+          <button id="follow-action-search" disabled title="NIP-50 search">search</button>
         </div>
       </div>
       <div class="fp-section">
@@ -181,7 +181,7 @@
   <div id="social-overlay" hidden>
     <div id="social-hdr">
       <b>social</b>
-      <span class="hint" style="margin-left:6px">Nostr public-folder sharing — publish /mnt/vfs/public, follow &amp; sync users</span>
+      <span class="hint" style="margin-left:6px">Nostr public-folder sharing — publish /mnt/host/public, follow &amp; sync users</span>
       <button id="social-close" style="margin-left:auto">close</button>
     </div>
     <div id="social-body">
@@ -192,7 +192,7 @@
         <div class="row-flex" style="margin-top:6px">
           <button id="social-generate">generate identity</button>
           <button id="social-debug-pubkey">debug pubkey</button>
-          <button id="social-publish" disabled>publish /vfs/public</button>
+          <button id="social-publish" disabled>publish /public</button>
           <button id="social-sync-now" disabled>sync all</button>
           <select id="social-sync-interval">
             <option value="0">auto-sync: off</option>
@@ -1394,14 +1394,12 @@
         '__SYNC9P_EOF__\n' +
         '. /etc/profile.d/02sync9p.sh 2>/dev/null || true\n';
 
-      // Guest-local open-permission VFS (tmpfs) for workflows that should not
-      // depend on 9P UID metadata semantics. Keep /mnt/host as optional bridge.
-      const mountGuestVfsCmd =
-        'mkdir -p /mnt/vfs 2>/dev/null\n' +
-        'mountpoint -q /mnt/vfs || mount -t tmpfs -o size=512m,mode=0777 tmpfs /mnt/vfs 2>/dev/null\n' +
-        'mkdir -p -m 0777 /mnt/vfs/public /mnt/vfs/following /mnt/vfs/following_new /mnt/vfs/social_following 2>/dev/null\n' +
-        'chmod 0777 /mnt/vfs/public /mnt/vfs/following /mnt/vfs/following_new /mnt/vfs/social_following 2>/dev/null || true\n' +
-        'ln -sfn /mnt/vfs /home/root/vfs 2>/dev/null\n' +
+      // /mnt/host (9P share) is the canonical SOCIAL_HOME. Ensure the
+      // expected subdirs exist with permissive modes so social.sh + the
+      // overlay can write into them without UID translation surprises.
+      const ensureHostDirsCmd =
+        'mkdir -p -m 0777 /mnt/host/public /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null || true\n' +
+        'chmod 0777 /mnt/host/public /mnt/host/following /mnt/host/following_new /mnt/host/social_following 2>/dev/null || true\n' +
         'export SOCIAL_HOME=/mnt/host\n';
 
       // Seed /etc/hosts via DoH (DNS-over-HTTPS to 1.1.1.1).
@@ -1480,7 +1478,7 @@
       const restoreNetCmd =
         rootfsCmd +
         mount9pCmd +
-        mountGuestVfsCmd +
+        ensureHostDirsCmd +
         'killall -q udhcpc 2>/dev/null\n' +
         'ip link set eth0 down 2>/dev/null\n' +
         'sleep 1\n' +
@@ -1498,7 +1496,7 @@
       const freshBootCmd =
         rootfsCmd +
         mount9pCmd +
-        mountGuestVfsCmd +
+        ensureHostDirsCmd +
         'ip link set eth0 up 2>/dev/null\n' +
         'udhcpc -i eth0 -q -n -f -T 2 -t 3 >/dev/null 2>&1\n' +
         'printf "nameserver 1.1.1.1\\nnameserver 1.0.0.1\\n" > /etc/resolv.conf\n' +
@@ -2209,7 +2207,7 @@
   setInterval(syncViewerBtn, 800);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Social — Nostr public-folder sharing via /vfs (maps to guest /mnt/vfs)
+  // Social — Nostr public-folder sharing via /vfs (9P share root, maps to guest /mnt/host)
   // - Identity (nsec/npub) stored in localStorage
   // - Publish: read /vfs/public via fs9p, sha256 each file, sign a
   //   kind-30000 manifest event, broadcast to Nostr relays
@@ -2586,12 +2584,12 @@
       .join(' ');
     const argString = ((options && options.args) || []).map(shQuote).join(' ');
     const statusShell = [
-      'mkdir -p /mnt/vfs/.guest-runner /mnt/host >/dev/null 2>&1 || true',
-      `_tb_status_guest=/mnt/vfs/.guest-runner/${runId}.status`,
+      'mkdir -p /mnt/host/.guest-runner >/dev/null 2>&1 || true',
+      `_tb_status_guest=/mnt/host/.guest-runner/${runId}.status`,
       `_tb_status_host=/mnt/host/tb-runner-${runId}.status`,
-      `_tb_out_guest=/mnt/vfs/.guest-runner/${runId}.out`,
+      `_tb_out_guest=/mnt/host/.guest-runner/${runId}.out`,
       `_tb_out_host=/mnt/host/tb-runner-${runId}.out`,
-      `_tb_trace_guest=/mnt/vfs/.guest-runner/${runId}.trace`,
+      `_tb_trace_guest=/mnt/host/.guest-runner/${runId}.trace`,
       `_tb_trace_host=/mnt/host/tb-runner-${runId}.trace`,
       'rm -f "$_tb_status_guest" "$_tb_status_host" >/dev/null 2>&1 || true',
       'rm -f "$_tb_out_guest" "$_tb_out_host" >/dev/null 2>&1 || true',
@@ -2672,7 +2670,7 @@
     // Poll up to ~6s, then run. Also retry once on non-zero rc to absorb
     // transient ENOENT.
     const waitForScript = `_tb_path=/mnt/host/tb-runner-${runId}.sh; _tb_i=0; while [ ! -s "$_tb_path" ] && [ $_tb_i -lt 30 ]; do sleep 0.2; _tb_i=$((_tb_i+1)); done`;
-    const launchCmd = `${waitForScript}; /bin/sh "$_tb_path"; _tb_run_rc=$?; if [ $_tb_run_rc -ne 0 ] && [ ! -s "$_tb_path" ]; then sleep 0.5; sh "$_tb_path"; _tb_run_rc=$?; fi; _tb_status_line=$(cat /mnt/vfs/.guest-runner/${runId}.status 2>/dev/null | tr -d '\\r\\n'); [ -n "$_tb_status_line" ] || _tb_status_line=nostatus; if [ ! -s "$_tb_path" ]; then _tb_status_line="missing-script:$_tb_status_line"; fi; echo ${runMarker}:rc=$_tb_run_rc:status=$_tb_status_line`;
+    const launchCmd = `${waitForScript}; /bin/sh "$_tb_path"; _tb_run_rc=$?; if [ $_tb_run_rc -ne 0 ] && [ ! -s "$_tb_path" ]; then sleep 0.5; sh "$_tb_path"; _tb_run_rc=$?; fi; _tb_status_line=$(cat /mnt/host/.guest-runner/${runId}.status 2>/dev/null | tr -d '\\r\\n'); [ -n "$_tb_status_line" ] || _tb_status_line=nostatus; if [ ! -s "$_tb_path" ]; then _tb_status_line="missing-script:$_tb_status_line"; fi; echo ${runMarker}:rc=$_tb_run_rc:status=$_tb_status_line`;
     dispatchGuestCommand(launchCmd, options && options.label, {
       afterRun,
       afterDelayMs: options && options.afterDelayMs,
@@ -2807,33 +2805,9 @@
     }
   }
 
-  // Mirror canonical identity from 9P share root (/mnt/host/) into /mnt/vfs/ tmpfs
-  // so `SOCIAL_HOME=/mnt/vfs social pubkey` returns the same identity as `SOCIAL_HOME=/mnt/host`.
-  function socialMirrorToGuestSnippet() {
-    return [
-      'mkdir -p /mnt/vfs /mnt/vfs/public /mnt/vfs/following >/dev/null 2>&1',
-      '[ -f /mnt/host/.nsec ] && cp /mnt/host/.nsec /mnt/vfs/.nsec 2>/dev/null || true',
-      '[ -f /mnt/host/.npub ] && cp /mnt/host/.npub /mnt/vfs/.npub 2>/dev/null || true',
-      '[ -f /mnt/host/.social.tunnel ] && cp /mnt/host/.social.tunnel /mnt/vfs/.social.tunnel 2>/dev/null || true',
-      '[ -f /mnt/host/following/.list ] && cp /mnt/host/following/.list /mnt/vfs/following/.list 2>/dev/null || true',
-    ].join('; ');
-  }
-
-  // Mirror identity from /mnt/vfs/ tmpfs back to canonical 9P share root
-  // (used when guest CLI has written identity locally and we want to persist it).
-  function socialMirrorFromGuestSnippet() {
-    return [
-      'mkdir -p /mnt/host /mnt/host/public /mnt/host/following >/dev/null 2>&1',
-      '[ -f /mnt/vfs/.nsec ] && cp /mnt/vfs/.nsec /mnt/host/.nsec 2>/dev/null || true',
-      '[ -f /mnt/vfs/.npub ] && cp /mnt/vfs/.npub /mnt/host/.npub 2>/dev/null || true',
-      '[ -f /mnt/vfs/.social.tunnel ] && cp /mnt/vfs/.social.tunnel /mnt/host/.social.tunnel 2>/dev/null || true',
-      '[ -f /mnt/vfs/following/.list ] && cp /mnt/vfs/following/.list /mnt/host/following/.list 2>/dev/null || true',
-    ].join('; ');
-  }
-
+  // /mnt/host (9P share) is the only social home. No tmpfs mirror needed.
   async function syncSocialMirrorToGuest({ fillMissingOnly = false } = {}) {
     await syncSocialStateToGuest({ fillMissingOnly });
-    runGuestShellSnippet(socialMirrorToGuestSnippet(), 'sync social state into /mnt/vfs');
   }
 
   async function runGuestSocialCommand(args, label, options = {}) {
@@ -3055,26 +3029,15 @@
   let socialIdentityRescueDone = false;
 
   async function rescueGuestIdentityToVfs() {
-    const rescueScript = [
-      'mkdir -p /mnt/vfs /mnt/host/vfs >/dev/null 2>&1',
-      '_tb_src=""',
-      'for _tb_d in /mnt/vfs /mnt/host /mnt/host/vfs /root /home/root .; do',
-      '  [ -z "$_tb_src" ] && [ -f "$_tb_d/.nsec" ] && _tb_src="$_tb_d"',
-      'done',
-      'if [ -n "$_tb_src" ]; then',
-      '  [ -f "$_tb_src/.nsec" ] && cp "$_tb_src/.nsec" /mnt/vfs/.nsec 2>/dev/null || true',
-      '  [ -f "$_tb_src/.npub" ] && cp "$_tb_src/.npub" /mnt/vfs/.npub 2>/dev/null || true',
-      '  [ -f /mnt/vfs/.nsec ] && cp /mnt/vfs/.nsec /mnt/host/vfs/.nsec 2>/dev/null || true',
-      '  [ -f /mnt/vfs/.npub ] && cp /mnt/vfs/.npub /mnt/host/vfs/.npub 2>/dev/null || true',
-      '  printf "rescued:%s\\n" "$_tb_src"',
-      'fi',
-    ].join('\n');
+    // Legacy /mnt/vfs rescue path is gone. /mnt/host is the only social home;
+    // identity files are already on the 9P share. Re-hydrate browser state
+    // from there for callers that still invoke this.
     return runGuestCommand({
       candidates: ['/bin/sh'],
       commandName: 'sh',
-      args: ['-c', rescueScript],
-      label: 'rescue guest social identity into /mnt/vfs',
-      afterDelayMs: 400,
+      args: ['-c', 'true'],
+      label: 'rehydrate social identity from /mnt/host',
+      afterDelayMs: 200,
       afterRun: async () => {
         await hydrateSocialStateFromGuest();
       },
@@ -3631,7 +3594,7 @@
       return;
     }
 
-    // Step 2: read tunnel base URL from /mnt/vfs/.social.tunnel (fallback to legacy root path).
+    // Step 2: read tunnel base URL from /.social.tunnel on the 9P share (= guest /mnt/host/.social.tunnel).
     let baseUrl = '';
     try {
       const data = await fs.read_file(SOCIAL_VFS_ROOT + '/.social.tunnel');
@@ -3873,9 +3836,8 @@
   socialBtn.onclick = async () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
     socialOverlay.hidden = false;
-    // Pull current guest state into the host-visible /vfs mirror first.
-    runGuestShellSnippet(socialMirrorFromGuestSnippet(), 'sync social state from /mnt/vfs');
-    await new Promise(resolve => setTimeout(resolve, 220));
+    // /mnt/host (9P share) is canonical; just seed any missing files into it
+    // and pull current state into the browser.
     await syncSocialMirrorToGuest({ fillMissingOnly: true });
     await hydrateSocialStateFromGuest();
     socialInit();
@@ -4001,6 +3963,14 @@
         // Enable real actions now that we have an identity.
         followPublishBtn.disabled = false;
         followPublishBtn.title = 'Publish $SOCIAL_HOME/public to Nostr relays';
+        followFollowBtn.disabled = false;
+        followFollowBtn.title = 'Follow an npub and mirror their published files';
+        followSyncBtn.disabled = false;
+        followSyncBtn.title = 'Re-sync all followed users';
+        followListBtn.disabled = false;
+        followListBtn.title = 'Show who you currently follow';
+        followSearchBtn.disabled = false;
+        followSearchBtn.title = 'NIP-50 keyword search across relays';
       } else {
         followNpubEl.innerHTML = '<span class="hint">(could not determine npub — see log)</span>';
         fStatus('failed to obtain npub', 'err');
@@ -4036,6 +4006,10 @@
   //      run `social tunnel-up 8080` if missing.
   //   5. Run `social publish 2>&1` and surface the result.
   const followPublishBtn = $('follow-action-publish');
+  const followFollowBtn  = $('follow-action-follow');
+  const followSyncBtn    = $('follow-action-sync');
+  const followListBtn    = $('follow-action-list');
+  const followSearchBtn  = $('follow-action-search');
   let followPublishInFlight = false;
   async function followPublish() {
     if (followPublishInFlight) return;
@@ -4046,13 +4020,13 @@
     try {
       // 1. Locate SOCIAL_HOME via the nsec file social.sh writes.
       const home = await followRun(
-        'for d in /mnt/vfs /mnt/host "$HOME" "$PWD"; do if [ -f "$d/.nsec" ]; then echo "$d"; break; fi; done',
+        'for d in /mnt/host "$HOME" "$PWD"; do if [ -f "$d/.nsec" ]; then echo "$d"; break; fi; done',
         { timeout: 10000 }
       );
       const socialHome = (home.stdout || '').trim();
       if (!socialHome) {
         fStatus('no identity yet — run refresh', 'err');
-        fLog('no .nsec file found in /mnt/vfs, /mnt/host, $HOME, or $PWD', 'err');
+        fLog('no .nsec file found in /mnt/host, $HOME, or $PWD', 'err');
         return;
       }
       fLog('SOCIAL_HOME = ' + socialHome, 'ok');
@@ -4149,6 +4123,55 @@
     }
   }
   followPublishBtn.onclick = () => { followPublish(); };
+
+  // ── follow / sync / list / search ────────────────────────────────────
+  // Wired to social.sh CLI commands. social follow auto-syncs the new
+  // npub (creates /mnt/host/following/<npub>/ and mirrors files in one shot).
+  let followActionInFlight = false;
+  async function followAction(label, cmd, timeout) {
+    if (followActionInFlight) return;
+    followActionInFlight = true;
+    [followFollowBtn, followSyncBtn, followListBtn, followSearchBtn].forEach(b => b.disabled = true);
+    fStatus(label + '…');
+    fLog('── ' + label + ' start ──', 'info');
+    try {
+      const r = await followRun(cmd, { timeout: timeout || 120000 });
+      if (r.exitCode === 0) {
+        fStatus(label + ' ok', 'ok');
+        fLog('── ' + label + ' ok ──', 'ok');
+      } else {
+        fStatus(label + ' failed (exit ' + r.exitCode + ')', 'err');
+        fLog('── ' + label + ' failed ──', 'err');
+      }
+    } catch (err) {
+      fStatus('error: ' + (err && err.message || err), 'err');
+      fLog('exception: ' + (err && err.stack || err), 'err');
+    } finally {
+      followActionInFlight = false;
+      [followFollowBtn, followSyncBtn, followListBtn, followSearchBtn].forEach(b => b.disabled = false);
+    }
+  }
+
+  followFollowBtn.onclick = () => {
+    const npub = (prompt('Follow which npub?\n(paste npub1...)') || '').trim();
+    if (!npub) return;
+    if (!/^npub1[0-9a-z]{20,}$/i.test(npub)) {
+      fStatus('invalid npub', 'err');
+      fLog('expected npub1... — got: ' + npub, 'err');
+      return;
+    }
+    // social follow auto-syncs (mirrors files into /mnt/host/following/<npub>/)
+    followAction('follow ' + npub.slice(0, 12) + '…', 'social follow ' + npub + ' 2>&1', 180000);
+  };
+  followSyncBtn.onclick   = () => followAction('sync all',  'social sync 2>&1', 240000);
+  followListBtn.onclick   = () => followAction('list',      'social list 2>&1', 15000);
+  followSearchBtn.onclick = () => {
+    const q = (prompt('Search Nostr profiles for:') || '').trim();
+    if (!q) return;
+    // shell-escape: replace single-quotes with '\''
+    const safe = q.replace(/'/g, "'\\''");
+    followAction('search ' + q, "social search '" + safe + "' 2>&1", 60000);
+  };
 
   setInterval(() => { followBtn.disabled = !emulator; }, 800);
 
