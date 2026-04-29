@@ -90,23 +90,10 @@
   .hint { color:#6b7380; }
   .ok { color:#4ade80; }
   .err { color:#f87171; }
-  #tab-warn {
-    display:none; padding:6px 12px; background:#5a3a00; color:#ffd066; font-size:12px;
-    border-bottom:1px solid #7a5300;
-  }
-  #tab-warn.show { display:block; }
-  #tab-warn b { color:#fff; }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="tab-warn">
-    <b>⚠ multiple v86 tabs detected.</b>
-    Each tab runs its own emulator with its own in-memory 9P filesystem — they do <b>not</b> sync.
-    The viewer here only shows <b>this tab's</b> /mnt/host. SFTP via <code>tunnel-up.sh</code> writes
-    into the tab whose code you registered. Close the other tab(s) to avoid confusion.
-    <a href="#" id="tab-warn-dismiss" style="color:#ffd066;margin-left:8px">dismiss</a>
-  </div>
   <div id="bar">
     <b>v86</b>
     <label title="snapshot to boot/restore. Fresh-boot entries (★) start the ISO clean.">snapshot:
@@ -293,52 +280,6 @@
   let byteCount = 0;
 
   const setStatus = (msg, cls) => { statusEl.textContent = msg; statusEl.className = cls || 'hint'; };
-
-  // ---- Multi-tab guard ----
-  // Each v86 tab runs its own emulator with its own in-memory fs9p. Two tabs
-  // open at the same URL diverge after boot — SFTP via tunnel-up.sh writes
-  // into one tab's fs9p, while the viewer in another tab shows stale content.
-  // BroadcastChannel detects sibling tabs; show a persistent banner so the
-  // user knows. Dismiss is per-tab (sessionStorage), not global.
-  (function setupTabGuard() {
-    try {
-      const warnEl = document.getElementById('tab-warn');
-      const dismissEl = document.getElementById('tab-warn-dismiss');
-      if (!warnEl || !('BroadcastChannel' in window)) return;
-      const ch = new BroadcastChannel('v86-tab-presence');
-      const myId = Math.random().toString(36).slice(2, 10);
-      const peers = new Set();
-      const dismissed = () => sessionStorage.getItem('v86.tab-warn.dismissed') === '1';
-      function showIfPeers() {
-        if (peers.size > 0 && !dismissed()) warnEl.classList.add('show');
-        else warnEl.classList.remove('show');
-      }
-      ch.onmessage = (ev) => {
-        const m = ev.data || {};
-        if (m.id === myId) return;
-        if (m.kind === 'hello') {
-          peers.add(m.id);
-          ch.postMessage({ kind: 'ack', id: myId });
-          showIfPeers();
-        } else if (m.kind === 'ack') {
-          peers.add(m.id);
-          showIfPeers();
-        } else if (m.kind === 'bye') {
-          peers.delete(m.id);
-          showIfPeers();
-        }
-      };
-      ch.postMessage({ kind: 'hello', id: myId });
-      window.addEventListener('beforeunload', () => {
-        try { ch.postMessage({ kind: 'bye', id: myId }); ch.close(); } catch (_) {}
-      });
-      if (dismissEl) dismissEl.onclick = (e) => {
-        e.preventDefault();
-        sessionStorage.setItem('v86.tab-warn.dismissed', '1');
-        warnEl.classList.remove('show');
-      };
-    } catch (_) { /* BroadcastChannel unsupported — silent */ }
-  })();
 
   // Persist autosave toggle
   autosaveEl.checked = localStorage.getItem('v86.autosave') === '1';
