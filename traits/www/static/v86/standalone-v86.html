@@ -1140,7 +1140,7 @@
 
     const labelIso = sel.isFresh ? iso : (iso + ' / ' + sel.name);
     setStatus(doRestore ? `restoring ${labelIso}…` : `booting ${labelIso}…`);
-    bootBtn.disabled = true; snapEl.disabled = true;
+    bootBtn.disabled = true;
 
     byteCount = 0;
     term.reset();
@@ -2040,7 +2040,6 @@
     queuedLoginKickSent = false; queuedLoginHintShown = false; queuedPasswordSent = false; promptLine = '';
     serialVfs.ready = false; serialVfs.attached = false;
     serialVfs.busy = false; serialVfs.current = null; serialVfs.buf = '';
-    snapEl.disabled = false;
     bootBtn.disabled = false;
     updateSnapButtonsState();
   }
@@ -2064,14 +2063,19 @@
       // Take snapshot in unmounted state — see umountBeforeSave() comment.
       await umountBeforeSave();
       const buf = await emulator.save_state();
-      // Save under whatever snapshot is currently active. If we booted from
-      // a fresh selection, materialize it as the "default" snapshot for
-      // this ISO and re-select it in the dropdown.
-      if (!currentSnapName) currentSnapName = DEFAULT_SNAP_NAME;
-      const key = snapKeyFor(currentIso, currentSnapName);
+      // Save into the dropdown's currently-selected slot. Fresh-boot
+      // selections materialize as DEFAULT_SNAP_NAME for that ISO. Named
+      // selections overwrite that snapshot. This lets users switch the
+      // dropdown mid-run to pick a save target.
+      const selSave = parseSel(snapEl.value) || { iso: currentIso, isFresh: true };
+      const targetIso = selSave.iso || currentIso;
+      const targetName = (!selSave.isFresh && selSave.name) ? selSave.name : DEFAULT_SNAP_NAME;
+      currentIso = targetIso;
+      currentSnapName = targetName;
+      const key = snapKeyFor(targetIso, targetName);
       await idbPut(key, buf);
       await remountAfterSave();
-      setStatus(`snapshot saved as ${currentIso}/${currentSnapName} (${(buf.byteLength/1048576).toFixed(1)} MB)`, 'ok');
+      setStatus(`snapshot saved as ${targetIso}/${targetName} (${(buf.byteLength/1048576).toFixed(1)} MB)`, 'ok');
       await populateSnapSelect(key);
     } catch (e) {
       setStatus('save failed: ' + e.message, 'err');
