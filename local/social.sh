@@ -280,23 +280,27 @@ cmd_tunnel_up() {
     fi
 
     chosen_code=""
-    # Priority 1: live code from /tmp/tunnel.code, if relay confirms a guest.
-    if [ -n "$live_code" ] && tunnel_alive "$live_code"; then
+    chosen_reason=""
+    # Priority 1 (UNCONDITIONAL): live code from /tmp/tunnel.code is the
+    # source of truth. The local tunnel-up.sh respawn loop is actively
+    # re-registering against the relay with this code; trust it over any
+    # stale relay status (Fly tunnel-server keeps in-memory phantom
+    # records across instance restarts that report active=true / phantom
+    # guest_ports for codes that no longer have live websockets).
+    if [ -n "$live_code" ]; then
         chosen_code="$live_code"
-    # Priority 2: cached code, but only if relay still has a guest bridge.
+        chosen_reason="adopted from $live_code_file"
+    # Priority 2: cached code, but only if relay confirms a live guest.
     elif [ -n "$cached_code" ] && tunnel_alive "$cached_code"; then
         chosen_code="$cached_code"
+        chosen_reason="reusing — already active"
     fi
 
     if [ -n "$chosen_code" ]; then
         new_url="$base_host/port/http/$chosen_code/8080"
         prev_url="$cached_url"
         printf '%s\n' "$new_url" > "$TUNNEL_FILE"
-        if [ "$chosen_code" = "$cached_code" ]; then
-            echo "tunnel code: $chosen_code  (reusing — already active)"
-        else
-            echo "tunnel code: $chosen_code  (adopted from $live_code_file)"
-        fi
+        echo "tunnel code: $chosen_code  ($chosen_reason)"
         echo "base_url:    $new_url"
         # Auto-republish if URL changed and we have an identity + content.
         if [ "${SOCIAL_TUNNEL_NO_PUBLISH:-0}" != "1" ] \
