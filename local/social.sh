@@ -291,10 +291,26 @@ cmd_tunnel_up() {
         return 1
     fi
     base_url="${SOCIAL_TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}/port/http/$code/8080"
+    prev_url=""
+    [ -f "$TUNNEL_FILE" ] && prev_url=$(head -1 "$TUNNEL_FILE" 2>/dev/null)
     printf '%s\n' "$base_url" > "$TUNNEL_FILE"
     rm -f "$tmp"
     echo "tunnel code: $code"
     echo "base_url:    $base_url"
+
+    # If the base_url changed (new pairing code) and an identity exists,
+    # auto-republish the manifest. Otherwise followers keep fetching the
+    # stale code and get HTTP 503 from the relay.
+    # Skip with SOCIAL_TUNNEL_NO_PUBLISH=1.
+    if [ "${SOCIAL_TUNNEL_NO_PUBLISH:-0}" != "1" ] \
+        && [ -f "$NSEC_FILE" ] \
+        && [ "$base_url" != "$prev_url" ]; then
+        nfiles=$(count_public_files 2>/dev/null || echo 0)
+        if [ "$nfiles" -gt 0 ]; then
+            log "tunnel code changed — republishing manifest (set SOCIAL_TUNNEL_NO_PUBLISH=1 to skip)"
+            cmd_publish || log "auto-publish failed — run 'social publish' manually"
+        fi
+    fi
 }
 
 # Pick a non-empty public dir. Prefer $PUBLIC_DIR; otherwise scan canonical
@@ -352,6 +368,31 @@ cmd_publish() {
     base=""
     [ -f "$TUNNEL_FILE" ] && base=$(cat "$TUNNEL_FILE")
 
+    # Verify the cached base_url is still active. If the tunnel code was
+    # rotated (new tunnel-up.sh invocation, Fly redeploy + reclaim
+    # failure, etc.) we'd publish a manifest pointing at a 503'ing URL.
+    if [ -n "$base" ] && [ "${SOCIAL_PUBLISH_SKIP_CHECK:-0}" != "1" ]; then
+        cached_code=$(printf '%s' "$base" | sed -n 's|.*/port/http/\([A-Z0-9]\{4\}\)/.*|\1|p')
+        if [ -n "$cached_code" ]; then
+            tbase="${SOCIAL_TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}"
+            status=$(curl -sS --max-time 4 "$tbase/port/status?code=$cached_code" 2>/dev/null)
+            case "$status" in
+                *'"active":true'*) ;;
+                *)
+                    # Also try CF fallback before warning.
+                    fb="${SOCIAL_TUNNEL_FALLBACK:-https://tunnel.traits.build}"
+                    status2=$(curl -sS --max-time 4 "$fb/port/status?code=$cached_code" 2>/dev/null)
+                    case "$status2" in
+                        *'"active":true'*) ;;
+                        *)
+                            log "WARNING: tunnel code $cached_code looks inactive on both endpoints"
+                            log "         followers will get HTTP 503. run 'social tunnel-up' first to refresh."
+                            ;;
+                    esac
+                    ;;
+            esac
+        fi
+    fi
     # Resolve non-empty public dir. If still empty, refuse to publish a
     # 0-file manifest — that just litters the relays with noise.
     resolve_public_dir || true
