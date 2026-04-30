@@ -729,39 +729,97 @@ trap '
 # the old code keep working after a Fly redeploy.
 #
 # Override poll interval with TUNNEL_RECLAIM_INTERVAL=N (seconds, default 20).
+# Override fallback endpoint with TUNNEL_FALLBACK_BASE=... (default CF Worker).
+# Inline retries: on register failure, try both endpoints up to N times
+# (with backoff) before giving up and waiting the full poll interval.
 RECLAIM_INTERVAL="${TUNNEL_RECLAIM_INTERVAL:-20}"
+TUNNEL_FALLBACK_BASE="${TUNNEL_FALLBACK_BASE:-https://tunnel.traits.build}"
+RECLAIM_TRIES="${TUNNEL_RECLAIM_TRIES:-3}"
+# Generous timeouts: Fly machines can cold-start for 15-25s after idle
+# auto-stop. The previous 8s budget guaranteed a timeout in that window.
+RECLAIM_CONNECT_TIMEOUT="${TUNNEL_RECLAIM_CONNECT_TIMEOUT:-10}"
+RECLAIM_MAX_TIME="${TUNNEL_RECLAIM_MAX_TIME:-30}"
+STATUS_MAX_TIME="${TUNNEL_STATUS_MAX_TIME:-10}"
 (
     trap '' HUP
+    # Track which endpoint last succeeded so reclaim sticks to a working
+    # backend (avoids hammering a cold/dead Fly machine when CF is healthy).
+    active_base="$TUNNEL_BASE"
+    fallback_base="$TUNNEL_FALLBACK_BASE"
+    [ "$active_base" = "$fallback_base" ] && fallback_base=""
+
+    check_status() {
+        # $1 = base url. Echos curl body, returns curl exit.
+        curl -sS --connect-timeout 5 --max-time "$STATUS_MAX_TIME" \
+            "$1/port/status?code=$CODE" 2>/dev/null
+    }
+    do_register() {
+        # $1 = base url. Echos response (or curl error). Returns curl exit.
+        curl -sS \
+            --connect-timeout "$RECLAIM_CONNECT_TIMEOUT" \
+            --max-time "$RECLAIM_MAX_TIME" \
+            -X POST "$1/port/register" \
+            -H 'Content-Type: application/json' \
+            -d "{\"code\":\"$CODE\",\"ports\":${PORTS_JSON}}" 2>&1
+    }
+
     while :; do
         sleep "$RECLAIM_INTERVAL" 2>/dev/null || sleep 30
-        STATUS=$(curl -sS --max-time 5 "$TUNNEL_BASE/port/status?code=$CODE" 2>/dev/null)
-        # Both backends report inactive sessions as either:
-        #   {"active":false,"error":"code not found"}   (Fly)
-        #   {"active":false,...}                         (CF, after eviction)
-        # Or status may fail entirely (curl error → empty STATUS) on full
-        # relay outage. In all those cases, attempt re-register; if the
-        # relay is healthy and we just had a transient curl error, the
-        # re-register is a cheap no-op (server returns same code/ports).
+
+        # Probe active endpoint first; if it claims the code is gone (or
+        # is unreachable), also probe the fallback before declaring loss.
+        STATUS=$(check_status "$active_base")
         case "$STATUS" in
             *'"active":true'*) continue ;;
         esac
+        if [ -n "$fallback_base" ]; then
+            ALT_STATUS=$(check_status "$fallback_base")
+            case "$ALT_STATUS" in
+                *'"active":true'*)
+                    echo "[tunnel] reclaim: $CODE active on fallback ($fallback_base) — switching"
+                    tmp="$active_base"; active_base="$fallback_base"; fallback_base="$tmp"
+                    continue
+                    ;;
+            esac
+        fi
+
         echo "[tunnel] reclaim: relay forgot $CODE (status=${STATUS:-<no response>}), re-registering ..."
-        RECLAIM_RESP=$(curl -sS --max-time 8 -X POST "$TUNNEL_BASE/port/register" \
-            -H 'Content-Type: application/json' \
-            -d "{\"code\":\"$CODE\",\"ports\":${PORTS_JSON}}" 2>&1)
-        # Both backends respond with a JSON object echoing our code+ports.
-        # CF uses {"code":"...","registered_ports":[...]}; Fly returns
-        # {"code":"...","token":null,"ports":[...],"relay":"..."}. Both
-        # are success — the only failure modes are HTTP/curl errors
-        # (non-JSON output) or a different code being returned.
-        case "$RECLAIM_RESP" in
-            *"\"code\":\"$CODE\""*)
-                echo "[tunnel] reclaim: $CODE reclaimed — bridges will reconnect on next respawn"
-                ;;
-            *)
-                echo "[tunnel] reclaim: failed (resp=$RECLAIM_RESP) — will retry in ${RECLAIM_INTERVAL}s"
-                ;;
-        esac
+
+        i=0
+        ok=0
+        while [ "$i" -lt "$RECLAIM_TRIES" ]; do
+            i=$((i + 1))
+            for base in "$active_base" "$fallback_base"; do
+                [ -z "$base" ] && continue
+                RESP=$(do_register "$base")
+                case "$RESP" in
+                    *"\"code\":\"$CODE\""*)
+                        echo "[tunnel] reclaim: $CODE reclaimed via $base (try $i)"
+                        active_base="$base"
+                        # Demote the other endpoint to fallback for next round.
+                        if [ "$base" = "$TUNNEL_BASE" ]; then
+                            fallback_base="$TUNNEL_FALLBACK_BASE"
+                        else
+                            fallback_base="$TUNNEL_BASE"
+                        fi
+                        [ "$active_base" = "$fallback_base" ] && fallback_base=""
+                        ok=1
+                        break
+                        ;;
+                    *)
+                        # Trim resp to a single line for log readability.
+                        short=$(printf '%s' "$RESP" | tr '\n' ' ' | cut -c1-120)
+                        echo "[tunnel] reclaim try $i via $base failed: ${short}"
+                        ;;
+                esac
+            done
+            [ "$ok" = 1 ] && break
+            # Short backoff before next try (don't burn the whole interval).
+            sleep 3 2>/dev/null || sleep 5
+        done
+        if [ "$ok" != 1 ]; then
+            echo "[tunnel] reclaim: all retries failed — will retry in ${RECLAIM_INTERVAL}s"
+        fi
     done
 ) &
 RECLAIM_PID=$!
