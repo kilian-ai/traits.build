@@ -16,9 +16,17 @@
   #bar .stat { color:#888; margin-left:auto; }
   #term { flex:1; min-height:0; padding:6px 8px; background:#0b0d10; }
   #term .xterm { height:100%; }
-  /* viewer overlay sits above #term, leaves bottom 45% for the terminal so it stays visible underneath */
-  #viewer-overlay { position:absolute; left:0; right:0; top:36px; bottom:45%; display:flex; flex-direction:column; background:#0b0d10; z-index:50; border-bottom:1px solid #2a2f36; }
+  body.term-hidden #term { display:none; }
+  /* viewer overlay sits above #term, leaves bottom var(--term-h) for the terminal so it stays visible underneath */
+  #viewer-overlay { position:absolute; left:0; right:0; top:36px; bottom:var(--term-h, 45%); display:flex; flex-direction:column; background:#0b0d10; z-index:50; border-bottom:1px solid #2a2f36; }
+  body.term-hidden #viewer-overlay { bottom:0; border-bottom:0; }
   #viewer-overlay[hidden] { display:none; }
+  /* draggable divider between viewer and terminal */
+  #viewer-divider { position:absolute; left:0; right:0; bottom:var(--term-h, 45%); height:8px; margin-bottom:-4px; cursor:row-resize; z-index:51; background:transparent; }
+  #viewer-divider::before { content:''; display:block; margin:3px auto 0; width:60px; height:2px; background:#3a424d; border-radius:2px; transition:background 0.15s; }
+  #viewer-divider:hover::before, body.dragging-divider #viewer-divider::before { background:#7a8392; }
+  #viewer-divider[hidden] { display:none; }
+  body.dragging-divider { cursor:row-resize; user-select:none; }
   #viewer-bar { display:flex; gap:8px; align-items:center; padding:6px 10px; background:#161a1f; border-bottom:1px solid #2a2f36; font-size:12px; }
   #viewer-bar input { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 8px; font:inherit; flex:0 1 320px; }
   #viewer-bar button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; }
@@ -135,7 +143,8 @@
       <datalist id="viewer-path-empty-list"></datalist>
       <button id="viewer-refresh" title="reload listing">refresh</button>
       <span class="hint" id="viewer-status"></span>
-      <button id="viewer-close" style="margin-left:auto">close</button>
+      <button id="viewer-fullscreen" style="margin-left:auto" title="hide terminal — full-screen viewer">⤢</button>
+      <button id="viewer-close" title="close viewer">close</button>
     </div>
     <div id="viewer-body">
       <div id="viewer-tree"></div>
@@ -154,6 +163,7 @@
       </div>
     </div>
   </div>
+  <div id="viewer-divider" hidden title="drag to resize"></div>
   <div id="follow-panel" hidden>
     <div id="follow-hdr">
       <b>social</b>
@@ -2553,12 +2563,64 @@
   };
   // No onblur normalizer — we never want to mutate what the user typed.
   // Normalization happens at submit time (Enter / refresh / openViewer).
-  closeBtn.onclick = () => { overlay.hidden = true; term.focus(); };
+  const divider = $('viewer-divider');
+  const fullscreenBtn = $('viewer-fullscreen');
+  function setViewerOpen(open) {
+    overlay.hidden = !open;
+    if (divider) divider.hidden = !open;
+    if (!open) {
+      // restore terminal if we were full-screen
+      document.body.classList.remove('term-hidden');
+      if (fullscreenBtn) fullscreenBtn.textContent = '\u2922';
+    }
+  }
+  closeBtn.onclick = () => { setViewerOpen(false); term.focus(); };
+  if (fullscreenBtn) fullscreenBtn.onclick = () => {
+    const hidden = document.body.classList.toggle('term-hidden');
+    fullscreenBtn.textContent = hidden ? '\u2923' : '\u2922';
+    fullscreenBtn.title = hidden ? 'show terminal' : 'hide terminal \u2014 full-screen viewer';
+    if (!hidden) try { term.focus(); } catch {}
+  };
+  // Divider drag → resize terminal area
+  if (divider) {
+    let dragging = false;
+    const onMove = (e) => {
+      if (!dragging) return;
+      const y = e.touches ? e.touches[0].clientY : e.clientY;
+      const vh = window.innerHeight;
+      // clamp terminal height between 80px and (vh - 36 - 120)
+      let termH = vh - y;
+      if (termH < 80) termH = 80;
+      if (termH > vh - 36 - 120) termH = vh - 36 - 120;
+      document.documentElement.style.setProperty('--term-h', termH + 'px');
+      e.preventDefault();
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove('dragging-divider');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+    const onDown = (e) => {
+      dragging = true;
+      document.body.classList.add('dragging-divider');
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchmove', onMove, { passive:false });
+      window.addEventListener('touchend', onUp);
+      e.preventDefault();
+    };
+    divider.addEventListener('mousedown', onDown);
+    divider.addEventListener('touchstart', onDown, { passive:false });
+  }
   viewerBtn.onclick = async () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
     if (!overlay.hidden) {
       // toggle off
-      overlay.hidden = true;
+      setViewerOpen(false);
       term.focus();
       return;
     }
@@ -2571,7 +2633,7 @@
     if (!serialVfs.ready && typeof serialVfs.setReady === 'function') {
       serialVfs.setReady(true);
     }
-    overlay.hidden = false;
+    setViewerOpen(true);
     vSet('listing…');
     if (!pathEl.value) pathEl.value = VIEWER_ROOT;
     expanded.clear();
