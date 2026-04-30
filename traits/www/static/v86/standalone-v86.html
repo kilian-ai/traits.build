@@ -16,8 +16,8 @@
   #bar .stat { color:#888; margin-left:auto; }
   #term { flex:1; min-height:0; padding:6px 8px; background:#0b0d10; }
   #term .xterm { height:100%; }
-  /* viewer overlay sits above #term, fills the same flex slot */
-  #viewer-overlay { position:absolute; left:0; right:0; top:36px; bottom:0; display:flex; flex-direction:column; background:#0b0d10; z-index:50; }
+  /* viewer overlay sits above #term, leaves bottom 45% for the terminal so it stays visible underneath */
+  #viewer-overlay { position:absolute; left:0; right:0; top:36px; bottom:45%; display:flex; flex-direction:column; background:#0b0d10; z-index:50; border-bottom:1px solid #2a2f36; }
   #viewer-overlay[hidden] { display:none; }
   #viewer-bar { display:flex; gap:8px; align-items:center; padding:6px 10px; background:#161a1f; border-bottom:1px solid #2a2f36; font-size:12px; }
   #viewer-bar input { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 8px; font:inherit; flex:0 1 320px; }
@@ -2556,6 +2556,12 @@
   closeBtn.onclick = () => { overlay.hidden = true; term.focus(); };
   viewerBtn.onclick = async () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
+    if (!overlay.hidden) {
+      // toggle off
+      overlay.hidden = true;
+      term.focus();
+      return;
+    }
     if (!serialVfs) { setStatus('serial vfs unavailable', 'err'); return; }
     // Trust the user: if they clicked the viewer button, assume the shell is
     // up. The prompt-detector sometimes misses the prompt (snapshot restore,
@@ -2723,6 +2729,14 @@
 
   followBtn.onclick = async () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
+    if (!followPanel.hidden) {
+      // toggle off
+      followPanel.hidden = true;
+      term.focus();
+      return;
+    }
+    // mutually exclusive with tunnels panel
+    if (tunnelsPanel && !tunnelsPanel.hidden) tunnelsPanel.hidden = true;
     followPanel.hidden = false;
     // Auto-run bootstrap once when first opened (log empty == fresh).
     if (!followLogEl.children.length) {
@@ -3201,6 +3215,14 @@
 
   tunnelsBtn.onclick = () => {
     if (!emulator) { setStatus('boot v86 first', 'err'); return; }
+    if (!tunnelsPanel.hidden) {
+      // toggle off
+      tunnelsPanel.hidden = true;
+      term.focus();
+      return;
+    }
+    // mutually exclusive with social/follow panel
+    if (followPanel && !followPanel.hidden) followPanel.hidden = true;
     tunnelsPanel.hidden = false;
     tnRefresh();
   };
