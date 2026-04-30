@@ -68,12 +68,16 @@ type WsSender = mpsc::Sender<Vec<u8>>;
 struct StreamState {
     // Channel into the per-stream TCP writer task.
     tx: mpsc::Sender<Vec<u8>>,
+    // Bytes received from client since last CONTINUE grant — when half the
+    // initial WISP_BUFFER has been drained to upstream TCP we issue a fresh
+    // CONTINUE so the client can keep sending. This is the ONLY direction
+    // with credit control in WISP v1: server->client uses raw WS/TCP
+    // backpressure (bounded out_tx channel + actix-ws backpressure).
     bytes_since_credit: u64,
-    // Server->client credit window (granted by client CONTINUE frames).
-    outbound_credit: u64,
+    // Notify used during teardown to wake any task that was waiting on this
+    // stream (kept for forward compatibility; currently only signaled on
+    // close so writer/reader tasks exit cleanly).
     credit_notify: Arc<tokio::sync::Notify>,
-    credits_issued: u64,
-    credits_received: u64,
 }
 
 pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<HttpResponse> {
@@ -156,10 +160,7 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
                                     StreamState {
                                         tx: in_tx,
                                         bytes_since_credit: 0,
-                                        outbound_credit: WISP_BUFFER as u64,
                                         credit_notify: Arc::new(tokio::sync::Notify::new()),
-                                        credits_issued: WISP_BUFFER as u64,
-                                        credits_received: 0,
                                     },
                                 );
                             }
@@ -200,24 +201,8 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
                             }
                         }
                         T_CONTINUE => {
-                            if payload.len() >= 4 {
-                                let grant = u32::from_le_bytes([
-                                    payload[0], payload[1], payload[2], payload[3],
-                                ]) as u64;
-                                let notify = {
-                                    let mut guard = streams_inner.lock().await;
-                                    if let Some(s) = guard.get_mut(&stream_id) {
-                                        s.outbound_credit = s.outbound_credit.saturating_add(grant);
-                                        s.credits_received = s.credits_received.saturating_add(grant);
-                                        Some(s.credit_notify.clone())
-                                    } else {
-                                        None
-                                    }
-                                };
-                                if let Some(n) = notify {
-                                    n.notify_waiters();
-                                }
-                            }
+                            // WISP v1 has client->server credit control only;
+                            // clients do not send CONTINUE. Ignore if present.
                         }
                         _ => {}
                     }
@@ -275,12 +260,6 @@ async fn handle_connect(
 
     // Flow credit so client knows connect succeeded and can send more DATA.
     let _ = out_tx.send(encode_continue(stream_id, WISP_BUFFER)).await;
-    {
-        let mut guard = streams.lock().await;
-        if let Some(s) = guard.get_mut(&stream_id) {
-            s.credits_issued = s.credits_issued.saturating_add(WISP_BUFFER as u64);
-        }
-    }
     info!(
         "WISP: connect_ok conn_id={} sid={} {}:{}",
         conn_id, stream_id, hostname, port
@@ -312,7 +291,6 @@ async fn handle_connect(
                     s.bytes_since_credit = s.bytes_since_credit.saturating_add(chunk.len() as u64);
                     if s.bytes_since_credit >= (WISP_BUFFER as u64 / 2) {
                         s.bytes_since_credit = 0;
-                        s.credits_issued = s.credits_issued.saturating_add(WISP_BUFFER as u64);
                         grant = true;
                     }
                 } else {
@@ -346,39 +324,9 @@ async fn handle_connect(
                     return;
                 }
                 Ok(n) => {
-                    // Respect outbound credit (granted by client CONTINUE).
-                    // We wait for enough credit to send this frame, otherwise close on timeout.
-                    loop {
-                        let notify = {
-                            let mut guard = streams.lock().await;
-                            if let Some(s) = guard.get_mut(&stream_id) {
-                                let need = n as u64;
-                                if s.outbound_credit >= need {
-                                    s.outbound_credit -= need;
-                                    None
-                                } else {
-                                    Some(s.credit_notify.clone())
-                                }
-                            } else {
-                                return;
-                            }
-                        };
-
-                        let Some(notify) = notify else { break };
-                        if tokio::time::timeout(Duration::from_secs(30), notify.notified())
-                            .await
-                            .is_err()
-                        {
-                            warn!(
-                                "WISP: outbound_credit_timeout conn_id={} sid={} {}:{}",
-                                conn_id_r, stream_id, host_r, port_r
-                            );
-                            let _ = out_tx.send(encode_close(stream_id, CLOSE_NET_ERR)).await;
-                            streams.lock().await.remove(&stream_id);
-                            return;
-                        }
-                    }
-
+                    // WISP v1 has no server->client credit control; rely on
+                    // bounded `out_tx` channel + actix-ws backpressure to
+                    // throttle when the client (or WS link) is slow.
                     let frame = encode_frame(T_DATA, stream_id, &buf[..n]);
                     if out_tx.send(frame).await.is_err() {
                         streams.lock().await.remove(&stream_id);
