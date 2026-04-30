@@ -32,8 +32,18 @@
   #viewer-tree .dir.open::before { content:"▾ "; color:#7a8392; }
   #viewer-tree .file::before { content:"· "; color:#5a6371; }
   #viewer-tree .indent-1 { padding-left:24px; } #viewer-tree .indent-2 { padding-left:36px; } #viewer-tree .indent-3 { padding-left:48px; } #viewer-tree .indent-4 { padding-left:60px; } #viewer-tree .indent-5 { padding-left:72px; }
-  #viewer-preview { flex:1; min-width:0; position:relative; background:#0b0d10; }
+  #viewer-preview { flex:1; min-width:0; position:relative; background:#0b0d10; display:flex; flex-direction:column; }
+  #viewer-tabs { display:flex; gap:4px; padding:4px 8px; background:#161a1f; border-bottom:1px solid #2a2f36; align-items:center; font-size:11px; }
+  #viewer-tabs[hidden] { display:none; }
+  #viewer-tabs button { background:#222830; color:#aaa; border:1px solid #3a424d; border-radius:4px; padding:2px 10px; font:inherit; cursor:pointer; }
+  #viewer-tabs button:hover { background:#2d343d; }
+  #viewer-tabs button.vt-active { background:#2d3a4d; color:#fff; border-color:#4a5a73; }
+  #viewer-tabs button[hidden] { display:none; }
+  #viewer-tabs .vt-status { margin-left:auto; color:#7a8392; }
+  #viewer-stage { position:relative; flex:1; min-height:0; }
+  #viewer-stage > * { position:absolute; inset:0; }
   #viewer-preview iframe { width:100%; height:100%; border:0; background:#fff; }
+  #viewer-editor { background:#1e1e1e; }
   #viewer-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
   #viewer-empty[hidden] { display:none !important; }
   /* ── social overlay ── */
@@ -127,8 +137,17 @@
     <div id="viewer-body">
       <div id="viewer-tree"></div>
       <div id="viewer-preview">
-        <div id="viewer-empty" class="hint">select a file on the left</div>
-        <iframe id="viewer-frame" hidden sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-pointer-lock"></iframe>
+        <div id="viewer-tabs" hidden>
+          <button id="viewer-tab-render" class="vt-active" data-tab="render">render</button>
+          <button id="viewer-tab-source" data-tab="source">source</button>
+          <button id="viewer-save" hidden title="save changes to guest file">save</button>
+          <span class="vt-status" id="viewer-tab-status"></span>
+        </div>
+        <div id="viewer-stage">
+          <div id="viewer-empty" class="hint">select a file on the left</div>
+          <iframe id="viewer-frame" hidden sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-pointer-lock"></iframe>
+          <div id="viewer-editor" hidden></div>
+        </div>
       </div>
     </div>
   </div>
@@ -2312,6 +2331,179 @@
   // for the kind of preview content this viewer is meant for.
   const VIEWER_MAX_BYTES = 1024 * 1024;
 
+  // ── Render/Source tabs + Monaco editor ──────────────────────────────
+  const tabsEl       = $('viewer-tabs');
+  const tabRenderBtn = $('viewer-tab-render');
+  const tabSourceBtn = $('viewer-tab-source');
+  const vSaveBtn      = $('viewer-save');
+  const tabStatusEl  = $('viewer-tab-status');
+  const editorEl     = $('viewer-editor');
+
+  // Per-file state for the currently-open file.
+  const cur = {
+    path: null,
+    bytes: null,        // Uint8Array — original bytes
+    text: null,         // decoded text if printable
+    isText: false,
+    mime: null,
+    dirty: false,
+    tab: 'render',      // 'render' | 'source'
+  };
+
+  let monacoLoading  = null;   // Promise resolving to monaco namespace
+  let monacoEditor   = null;   // monaco.editor.IStandaloneCodeEditor
+  let monacoModel    = null;
+
+  const MONACO_BASE = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min';
+
+  function loadMonaco() {
+    if (monacoLoading) return monacoLoading;
+    monacoLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = MONACO_BASE + '/vs/loader.js';
+      s.onload = () => {
+        try {
+          window.require.config({ paths: { vs: MONACO_BASE + '/vs' } });
+          window.MonacoEnvironment = {
+            getWorkerUrl: () => `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+              self.MonacoEnvironment = { baseUrl: '${MONACO_BASE}/' };
+              importScripts('${MONACO_BASE}/vs/base/worker/workerMain.js');
+            `)}`,
+          };
+          window.require(['vs/editor/editor.main'], () => resolve(window.monaco));
+        } catch (e) { reject(e); }
+      };
+      s.onerror = () => reject(new Error('failed to load monaco loader'));
+      document.head.appendChild(s);
+    });
+    return monacoLoading;
+  }
+
+  function langFor(path) {
+    const ext = (path.split('.').pop() || '').toLowerCase();
+    return ({
+      html:'html', htm:'html', xml:'xml', svg:'xml',
+      js:'javascript', mjs:'javascript', cjs:'javascript',
+      ts:'typescript', tsx:'typescript', jsx:'javascript',
+      css:'css', scss:'scss', less:'less',
+      json:'json', md:'markdown', markdown:'markdown',
+      py:'python', rs:'rust', go:'go', sh:'shell', bash:'shell',
+      yml:'yaml', yaml:'yaml', toml:'ini', ini:'ini', conf:'ini',
+      sql:'sql', lua:'lua', c:'c', h:'c', cpp:'cpp', hpp:'cpp',
+      java:'java', kt:'kotlin', rb:'ruby', php:'php', dockerfile:'dockerfile',
+      txt:'plaintext', log:'plaintext',
+    })[ext] || 'plaintext';
+  }
+
+  // Heuristic: treat as text if no NUL bytes and ≥95% printable/whitespace.
+  function isLikelyText(bytes) {
+    if (!bytes || !bytes.length) return true;
+    const sample = bytes.subarray(0, Math.min(bytes.length, 4096));
+    let printable = 0;
+    for (let i = 0; i < sample.length; i++) {
+      const b = sample[i];
+      if (b === 0) return false;
+      if (b === 9 || b === 10 || b === 13 || (b >= 32 && b < 127) || b >= 128) printable++;
+    }
+    return printable / sample.length > 0.95;
+  }
+
+  async function ensureEditor() {
+    const monaco = await loadMonaco();
+    if (!monacoEditor) {
+      monacoEditor = monaco.editor.create(editorEl, {
+        value: '',
+        language: 'plaintext',
+        theme: 'vs-dark',
+        automaticLayout: true,
+        lineNumbers: 'on',
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        fontSize: 12,
+        wordWrap: 'on',
+        tabSize: 2,
+      });
+      monacoEditor.onDidChangeModelContent(() => {
+        if (!cur.path) return;
+        cur.dirty = true;
+        cur.text  = monacoEditor.getValue();
+        vSaveBtn.hidden = false;
+        vSaveBtn.textContent = 'save *';
+      });
+      // Cmd/Ctrl+S to save
+      monacoEditor.addCommand(
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+        () => saveCurrent()
+      );
+    }
+    return monaco;
+  }
+
+  async function setSourceFromCurrent() {
+    if (!cur.path) return;
+    const monaco = await ensureEditor();
+    const lang = langFor(cur.path);
+    if (monacoModel) { try { monacoModel.dispose(); } catch (_) {} monacoModel = null; }
+    monacoModel = monaco.editor.createModel(cur.text || '', lang);
+    monacoEditor.setModel(monacoModel);
+    monacoEditor.setScrollTop(0);
+  }
+
+  function setRenderFromCurrent() {
+    if (!cur.path || !cur.bytes) return;
+    if (lastBlobUrl) { try { URL.revokeObjectURL(lastBlobUrl); } catch (_) {} lastBlobUrl = null; }
+    const blob = new Blob([cur.bytes], { type: cur.mime || mimeFor(cur.path) });
+    lastBlobUrl = URL.createObjectURL(blob);
+    frameEl.src = lastBlobUrl;
+  }
+
+  async function showTab(tab) {
+    cur.tab = tab;
+    tabRenderBtn.classList.toggle('vt-active', tab === 'render');
+    tabSourceBtn.classList.toggle('vt-active', tab === 'source');
+    if (tab === 'render') {
+      frameEl.hidden  = false;
+      editorEl.hidden = true;
+    } else {
+      editorEl.hidden = false;
+      frameEl.hidden  = true;
+      await setSourceFromCurrent();
+      try { monacoEditor && monacoEditor.layout(); } catch (_) {}
+    }
+  }
+
+  async function saveCurrent() {
+    if (!cur.path) return;
+    if (!cur.dirty) { tabStatusEl.textContent = 'no changes'; return; }
+    if (!cur.isText) { tabStatusEl.textContent = 'binary file — refusing to save'; return; }
+    const text = monacoEditor ? monacoEditor.getValue() : cur.text;
+    vSaveBtn.disabled = true;
+    vSaveBtn.textContent = 'saving…';
+    tabStatusEl.textContent = 'writing ' + cur.path + '…';
+    try {
+      await serialVfs.write(cur.path, text);
+      cur.text  = text;
+      cur.bytes = new TextEncoder().encode(text);
+      cur.dirty = false;
+      vSaveBtn.textContent = 'saved';
+      tabStatusEl.textContent = 'saved (' + cur.bytes.length + ' B)';
+      // If the render tab is currently shown, refresh the iframe content.
+      if (cur.tab === 'render') setRenderFromCurrent();
+      setTimeout(() => {
+        if (!cur.dirty) vSaveBtn.textContent = 'save';
+      }, 1500);
+    } catch (e) {
+      tabStatusEl.textContent = 'save failed: ' + (e && e.message || e);
+      vSaveBtn.textContent = 'save';
+    } finally {
+      vSaveBtn.disabled = false;
+    }
+  }
+
+  tabRenderBtn.addEventListener('click', () => showTab('render'));
+  tabSourceBtn.addEventListener('click', () => showTab('source'));
+  vSaveBtn.addEventListener('click', () => saveCurrent());
+
   async function openFile(path) {
     if (!serialVfs || !serialVfs.ready) { vSet('shell not ready', 'err'); return; }
     vSet('checking ' + path);
@@ -2331,12 +2523,29 @@
     try { data = await serialVfs.read(path); }
     catch (e) { vSet('error: ' + (e && e.message || e), 'err'); return; }
     if (!data) { vSet('empty or missing: ' + path, 'err'); return; }
-    if (lastBlobUrl) { try { URL.revokeObjectURL(lastBlobUrl); } catch (_) {} lastBlobUrl = null; }
-    const blob = new Blob([data], { type: mimeFor(path) });
-    lastBlobUrl = URL.createObjectURL(blob);
-    frameEl.src = lastBlobUrl;
-    frameEl.hidden = false;
+
+    cur.path   = path;
+    cur.bytes  = data;
+    cur.mime   = mimeFor(path);
+    cur.isText = isLikelyText(data);
+    cur.text   = cur.isText ? new TextDecoder('utf-8', { fatal: false }).decode(data) : null;
+    cur.dirty  = false;
+
     emptyEl.hidden = true;
+    tabsEl.hidden  = false;
+    vSaveBtn.hidden = !cur.isText;
+    vSaveBtn.textContent = 'save';
+    tabStatusEl.textContent = '';
+
+    setRenderFromCurrent();
+    if (cur.tab === 'source') {
+      await setSourceFromCurrent();
+      editorEl.hidden = false;
+      frameEl.hidden  = true;
+    } else {
+      frameEl.hidden  = false;
+      editorEl.hidden = true;
+    }
     vSet(`${path} (${data.length} bytes)`, 'ok');
   }
 
