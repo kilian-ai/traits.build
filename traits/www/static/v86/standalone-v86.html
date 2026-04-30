@@ -46,30 +46,6 @@
   #viewer-editor { background:#1e1e1e; }
   #viewer-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
   #viewer-empty[hidden] { display:none !important; }
-  /* ── social overlay ── */
-  #social-overlay { position:absolute; left:0; right:0; top:36px; bottom:0; display:flex; flex-direction:column; background:#0b0d10; z-index:51; }
-  #social-overlay[hidden] { display:none; }
-  #social-hdr { display:flex; gap:8px; align-items:center; padding:6px 10px; background:#161a1f; border-bottom:1px solid #2a2f36; font-size:12px; }
-  #social-hdr button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; }
-  #social-hdr button:hover { background:#2d343d; }
-  #social-body { flex:1; min-height:0; overflow:auto; padding:12px 16px; display:flex; flex-direction:column; gap:10px; }
-  .ss { background:#161a1f; border:1px solid #2a2f36; border-radius:6px; padding:10px 14px; }
-  .ss-label { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#7a8392; margin-bottom:6px; }
-  .social-npub { font-size:11px; color:#4ade80; word-break:break-all; }
-  #social-log { margin-top:6px; font-size:11px; max-height:60px; overflow:auto; }
-  .slog-line { white-space:pre-wrap; line-height:1.4; }
-  #social-body input,#social-body select { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 8px; font:inherit; }
-  #social-body input { flex:1; }
-  #social-body button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; white-space:nowrap; }
-  #social-body button:hover:not(:disabled) { background:#2d343d; }
-  #social-body button:disabled { opacity:0.4; cursor:not-allowed; }
-  .row-flex { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-  #social-list { display:flex; flex-direction:column; gap:8px; }
-  .follow-card { background:#161a1f; border:1px solid #2a2f36; border-radius:6px; padding:10px 14px; }
-  .fc-npub { font-size:11px; color:#7ab8f5; word-break:break-all; }
-  .fc-meta { font-size:10px; color:#5a6370; word-break:break-all; }
-  .fc-actions { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
-  #social-search-results { font-size:11px; margin-top:4px; }
   /* ── follow panel (side panel, leaves terminal visible) ── */
   #follow-panel { position:absolute; right:0; top:36px; bottom:0; width:460px; max-width:55vw; display:flex; flex-direction:column; background:#0b0d10; border-left:1px solid #2a2f36; z-index:50; box-shadow:-4px 0 12px rgba(0,0,0,0.5); }
   #follow-panel[hidden] { display:none; }
@@ -91,6 +67,33 @@
   #follow-body button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; white-space:nowrap; }
   #follow-body button:hover:not(:disabled) { background:#2d343d; }
   #follow-body button:disabled { opacity:0.4; cursor:not-allowed; }
+  /* ── tunnels panel ── */
+  #tunnels-panel { position:absolute; right:0; top:36px; bottom:0; width:520px; max-width:60vw; display:flex; flex-direction:column; background:#0b0d10; border-left:1px solid #2a2f36; z-index:50; box-shadow:-4px 0 12px rgba(0,0,0,0.5); }
+  #tunnels-panel[hidden] { display:none; }
+  #tunnels-hdr { display:flex; gap:8px; align-items:center; padding:6px 10px; background:#161a1f; border-bottom:1px solid #2a2f36; font-size:12px; }
+  #tunnels-hdr button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; }
+  #tunnels-hdr button:hover:not(:disabled) { background:#2d343d; }
+  #tunnels-hdr button:disabled { opacity:0.4; cursor:not-allowed; }
+  #tunnels-body { flex:1; min-height:0; overflow:auto; padding:12px 14px; display:flex; flex-direction:column; gap:10px; font-size:12px; }
+  #tunnels-list { display:flex; flex-direction:column; gap:8px; }
+  #tunnels-list .tn-row { background:#161a1f; border:1px solid #2a2f36; border-radius:6px; padding:10px 12px; display:flex; flex-direction:column; gap:4px; }
+  #tunnels-list .tn-row.tn-empty { color:#7a8392; }
+  #tunnels-list .tn-code { color:#7ab8f5; font-weight:600; letter-spacing:0.04em; }
+  #tunnels-list .tn-meta { color:#aab2bc; word-break:break-all; }
+  #tunnels-list .tn-relay-ok { color:#4ade80; }
+  #tunnels-list .tn-relay-warn { color:#facc15; }
+  #tunnels-list .tn-relay-err { color:#f87171; }
+  #tunnels-list .tn-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+  #tunnels-list .tn-actions button { background:#222830; color:#ddd; border:1px solid #3a424d; border-radius:4px; padding:2px 10px; font:inherit; cursor:pointer; }
+  #tunnels-list .tn-actions button:hover:not(:disabled) { background:#2d343d; }
+  #tunnels-list .tn-actions button:disabled { opacity:0.4; cursor:not-allowed; }
+  #tunnels-list .tn-cmd { font-family:'Menlo','Monaco','Consolas',monospace; font-size:11px; color:#7a8392; word-break:break-all; }
+  #tunnels-log { font-size:11px; line-height:1.45; max-height:240px; overflow:auto; background:#0b0d10; border:1px solid #2a2f36; border-radius:4px; padding:8px; font-family:'Menlo','Monaco','Consolas',monospace; }
+  #tunnels-log .tl-cmd { color:#7ab8f5; white-space:pre-wrap; word-break:break-all; }
+  #tunnels-log .tl-out { color:#aab2bc; white-space:pre-wrap; word-break:break-all; padding-left:8px; }
+  #tunnels-log .tl-ok { color:#4ade80; }
+  #tunnels-log .tl-err { color:#f87171; }
+  #tunnels-log .tl-info { color:#7a8392; }
   /* Always reserve scrollbar space so xterm's fit calculation doesn't
      oscillate by 2 cols when a scrollbar appears/disappears. */
   #term .xterm-viewport { background:#0b0d10 !important; overflow-y: scroll !important; }
@@ -118,8 +121,8 @@
     <button id="clear" disabled title="delete selected snapshot">delete</button>
     <label title="auto-save snapshot ~3s after any serial activity"><input type="checkbox" id="autosave"> auto-save</label>
     <button id="viewer" disabled title="Browse the entire guest filesystem via serial shell (ls/cat). No relay or 9P mount needed.">viewer</button>
-    <button id="social" disabled title="Nostr social: publish /mnt/host/public, follow users, sync their content">social</button>
-    <button id="follow" disabled title="Follow panel — bootstraps social CLI and shows your npub. Side panel leaves terminal visible.">follow</button>
+    <button id="follow" disabled title="social — bootstraps social CLI, shows your npub, follow/sync/publish via guest CLI">social</button>
+    <button id="tunnels" disabled title="manage running tunnels (ports, codes, lifecycle, edit CLI)">tunnels</button>
     <span id="status" class="hint">idle</span>
     <span class="stat" id="stats"></span>
   </div>
@@ -153,8 +156,8 @@
   </div>
   <div id="follow-panel" hidden>
     <div id="follow-hdr">
-      <b>follow</b>
-      <span class="hint" style="margin-left:6px;font-size:11px">social bootstrap</span>
+      <b>social</b>
+      <span class="hint" style="margin-left:6px;font-size:11px">Nostr public-folder sharing</span>
       <button id="follow-refresh" title="re-run bootstrap pipeline">refresh</button>
       <button id="follow-close" style="margin-left:auto">close</button>
     </div>
@@ -180,44 +183,16 @@
       </div>
     </div>
   </div>
-  <div id="social-overlay" hidden>
-    <div id="social-hdr">
-      <b>social</b>
-      <span class="hint" style="margin-left:6px">Nostr public-folder sharing — publish /mnt/host/public, follow &amp; sync users</span>
-      <button id="social-close" style="margin-left:auto">close</button>
+  <div id="tunnels-panel" hidden>
+    <div id="tunnels-hdr">
+      <b>tunnels</b>
+      <span class="hint" style="margin-left:6px;font-size:11px">running tunnel processes — guest /tmp/tunnel.* + relay status</span>
+      <button id="tunnels-refresh" title="re-scan guest + relay">refresh</button>
+      <button id="tunnels-close" style="margin-left:auto">close</button>
     </div>
-    <div id="social-body">
-      <!-- identity + controls -->
-      <div class="ss">
-        <div class="ss-label">identity</div>
-        <div id="social-npub-display"><span class="hint">no identity — generate one below</span></div>
-        <div class="row-flex" style="margin-top:6px">
-          <button id="social-generate">generate identity</button>
-          <button id="social-debug-pubkey">debug pubkey</button>
-          <button id="social-publish" disabled>publish /public</button>
-          <button id="social-sync-now" disabled>sync all</button>
-          <select id="social-sync-interval">
-            <option value="0">auto-sync: off</option>
-            <option value="60000">every 1 min</option>
-            <option value="300000" selected>every 5 min</option>
-            <option value="600000">every 10 min</option>
-          </select>
-        </div>
-        <div id="social-log"></div>
-      </div>
-      <!-- follow + search -->
-      <div class="ss">
-        <div class="ss-label">follow</div>
-        <div class="row-flex">
-          <input id="social-follow-input" placeholder="npub1… paste a public key" spellcheck="false">
-          <button id="social-follow-btn">follow</button>
-          <input id="social-search-input" placeholder="search by keyword (NIP-50)" spellcheck="false" style="flex:0 1 240px">
-          <button id="social-search-btn">search</button>
-        </div>
-        <div id="social-search-results"></div>
-      </div>
-      <!-- follow list -->
-      <div id="social-list"></div>
+    <div id="tunnels-body">
+      <div id="tunnels-list"></div>
+      <div id="tunnels-log"></div>
     </div>
   </div>
 </div>
@@ -229,6 +204,8 @@
 (async () => {
   const $ = id => document.getElementById(id);
   const termEl = $('term'), snapEl = $('snap');
+  // sLog: console-only stub (original wrote into #social-log which is gone)
+  function sLog(msg, cls) { try { console.log('[social]', msg, cls || ''); } catch (_) {} }
   const bootBtn = $('boot'), resetBtn = $('reset'), saveBtn = $('save');
   const restoreBtn = $('restore'), clearBtn = $('clear');
   const renameBtn = $('rename'), cloneBtn = $('clone');
@@ -2605,1646 +2582,6 @@
   }
   setInterval(syncViewerBtn, 800);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Social — Nostr public-folder sharing via /vfs (9P share root, maps to guest /mnt/host)
-  // - Identity (nsec/npub) stored in localStorage
-  // - Publish: read /vfs/public via fs9p, sha256 each file, sign a
-  //   kind-30000 manifest event, broadcast to Nostr relays
-  // - Follow: store npub list, create /vfs/following/<npub>/ in 9P
-  // - Sync: REQ kind-30000 from relays, fetch files via tunnel HTTP proxy,
-  //   write to /vfs/following/<npub>/
-  // - Auto-sync: setInterval
-  // ─────────────────────────────────────────────────────────────────────────
-  const SOCIAL_NSEC_KEY      = 'traits.secret.NOSTR_NSEC';
-    // ── Local JS Nostr crypto (secp256k1 schnorr + bech32) — no server needed ──
-    (function() {
-      const P  = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F');
-      const N  = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141');
-      const Gx = BigInt('0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798');
-      const Gy = BigInt('0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8');
-      const mod = (a, m = P) => { const r = a % m; return r < 0n ? r + m : r; };
-      const pow = (b, e, m) => { let r = 1n; b %= m; while (e > 0n) { if (e & 1n) r = r * b % m; e >>= 1n; b = b * b % m; } return r; };
-      const inv = (n, m = P) => pow(mod(n, m), m - 2n, m);
-      const b2h = b => Array.from(b).map(x => x.toString(16).padStart(2,'0')).join('');
-      const h2b = h => Uint8Array.from(h.match(/.{2}/g).map(c => parseInt(c,16)));
-      const n2b = n => h2b(n.toString(16).padStart(64,'0'));
-      const b2n = b => BigInt('0x' + b2h(b));
-      class Pt {
-        constructor(x,y,z=1n){this.x=x;this.y=y;this.z=z;}
-        static Z = new Pt(0n,1n,0n);
-        static G = new Pt(Gx,Gy);
-        af(){if(this.z===1n)return this;const iz=inv(this.z);return new Pt(mod(this.x*iz),mod(this.y*iz));}
-        dbl(){const{x,y,z}=this,YY=mod(y*y),S=mod(4n*x*YY),M=mod(3n*x*x),x2=mod(M*M-2n*S),y2=mod(M*(S-x2)-8n*YY*YY),z2=mod(2n*y*z);return new Pt(x2,y2,z2);}
-        add(Q){if(!this.z)return Q;if(!Q.z)return this;const{x:X1,y:Y1,z:Z1}=this,{x:X2,y:Y2,z:Z2}=Q,U1=mod(X1*Z2*Z2),U2=mod(X2*Z1*Z1),S1=mod(Y1*Z2*Z2*Z2),S2=mod(Y2*Z1*Z1*Z1),H=mod(U2-U1),R=mod(S2-S1);if(!H)return R?Pt.Z:this.dbl();const H2=mod(H*H),H3=mod(H*H2),x3=mod(R*R-H3-2n*U1*H2),y3=mod(R*(U1*H2-x3)-S1*H3),z3=mod(H*Z1*Z2);return new Pt(x3,y3,z3);}
-        mul(k){let n=mod(k,N),Q=Pt.Z,P=this;while(n>0n){if(n&1n)Q=Q.add(P);P=P.dbl();n>>=1n;}return Q;}
-        get xo(){return this.af().x;}
-        get ya(){return this.af().y;}
-      }
-      const sha256 = async b => new Uint8Array(await crypto.subtle.digest('SHA-256', b));
-      // bech32
-      const CS='qpzry9x8gf2tvdw0s3jn54khce6mua7l';
-      const GN=[0x3b6a57b2,0x26508e6d,0x1ea119fa,0x3d4233dd,0x2a1462b3];
-      function b32poly(v){let c=1;for(const x of v){const t=c>>25;c=(c&0x1ffffff)<<5^x;for(let i=0;i<5;i++)if((t>>i)&1)c^=GN[i];}return c;}
-      function b32hrp(s){const r=[];for(const c of s)r.push(c.charCodeAt(0)>>5);r.push(0);for(const c of s)r.push(c.charCodeAt(0)&31);return r;}
-      function b32enc(hrp,ws){const c=[...ws,0,0,0,0,0,0],ck=b32poly([...b32hrp(hrp),...c])^1,cs=Array.from({length:6},(_,i)=>(ck>>(5*(5-i)))&31);return hrp+'1'+[...ws,...cs].map(d=>CS[d]).join('');}
-      function b32dec(s){s=s.toLowerCase();const p=s.lastIndexOf('1'),ws=s.slice(p+1).split('').map(c=>CS.indexOf(c));return{hrp:s.slice(0,p),words:ws.slice(0,-6)};}
-      function b2w(bytes){let a=0,b=0;const r=[];for(const x of bytes){a=(a<<8)|x;b+=8;while(b>=5){b-=5;r.push((a>>b)&31);}}if(b>0)r.push((a<<(5-b))&31);return r;}
-      function w2b(ws){let a=0,b=0;const r=[];for(const w of ws){a=(a<<5)|w;b+=5;while(b>=8){b-=8;r.push((a>>b)&0xff);}}return new Uint8Array(r);}
-      // schnorr sign (BIP-340)
-      async function schnorrSign(privHex, msgBytes) {
-        const d = b2n(h2b(privHex));
-        const P0 = Pt.G.mul(d);
-        // deterministic nonce: SHA256(privkey || msg)
-        const k0 = mod(b2n(await sha256(new Uint8Array([...n2b(d), ...msgBytes]))), N);
-        const k = k0 === 0n ? 1n : k0;
-        const R = Pt.G.mul(k);
-        const kf = R.ya % 2n !== 0n ? N - k : k;
-        const rx = R.xo;
-        const px = P0.xo;
-        const eIn = new Uint8Array([...n2b(rx), ...n2b(px), ...msgBytes]);
-        const e = mod(b2n(await sha256(eIn)), N);
-        const s = mod(kf + e * d, N);
-        return new Uint8Array([...n2b(rx), ...n2b(s)]);
-      }
-      window._nostrLocalCrypto = {
-        async keygen() {
-          const priv = new Uint8Array(32); crypto.getRandomValues(priv);
-          // ensure scalar < N (rejection sampling would be purer but this is safe enough for 32 bytes)
-          const privKey = mod(b2n(priv), N - 1n) + 1n;
-          const pub = Pt.G.mul(privKey).xo;
-          return { nsec: n2b(privKey).reduce((s,x)=>s+x.toString(16).padStart(2,'0'),''), npub: n2b(pub).reduce((s,x)=>s+x.toString(16).padStart(2,'0'),'') };
-        },
-        async pubkey(nsecHex) { return n2b(Pt.G.mul(b2n(h2b(nsecHex))).xo).reduce((s,x)=>s+x.toString(16).padStart(2,'0'),''); },
-        async encode_npub(pubHex) { return b32enc('npub', b2w(h2b(pubHex))); },
-        async decode_npub(npub) { const {words} = b32dec(npub); return b2h(w2b(words)); },
-        async sign_event(nsecHex, kind, content, tagsJson, createdAt) {
-          const pubHex = await this.pubkey(nsecHex);
-          const kindInt = parseInt(kind), tags = JSON.parse(tagsJson), ts = parseInt(createdAt) || Math.floor(Date.now()/1000);
-          const canonical = JSON.stringify([0, pubHex, ts, kindInt, tags, content]);
-          const idBytes = await sha256(new TextEncoder().encode(canonical));
-          const id = b2h(idBytes);
-          const sig = b2h(await schnorrSign(nsecHex, idBytes));
-          return { id, pubkey: pubHex, created_at: ts, kind: kindInt, tags, content, sig };
-        },
-      };
-    })();
-
-  const SOCIAL_FOLLOWING_KEY = 'traits.nostr.following';
-  const NOSTR_RELAYS = [
-    'wss://relay.damus.io',
-    'wss://nos.lol',
-    'wss://relay.nostr.band',
-    'wss://relay.primal.net',
-    'wss://nostr.wine',
-  ];
-  let socialSyncTimer = null;
-    const SOCIAL_VFS_ROOT = '';
-  const SOCIAL_PUBLIC_ROOT = SOCIAL_VFS_ROOT + '/public';
-  const DEFAULT_FOLLOW_ROOT = SOCIAL_VFS_ROOT + '/following';
-  const SOCIAL_FOLLOW_ROOT_KEY = 'traits.nostr.follow_root';
-
-  function hasPathInFs(fs, path) {
-    try {
-      const r = fs && fs.SearchPath && fs.SearchPath(path);
-      return !!(r && r.id !== -1);
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function resolveGuestBinaryShell(options) {
-    const candidates = ((options && options.candidates) || []).filter(Boolean);
-    const fallbackName = (options && options.commandName)
-      || (candidates.length ? String(candidates[0]).split('/').pop() : '');
-    const lines = ['_tb_cmd=""'];
-    if (candidates.length) {
-      const candidateList = candidates.map(shQuote).join(' ');
-      lines.push(`for _tb_candidate in ${candidateList}; do [ -x "$_tb_candidate" ] && { _tb_cmd="$_tb_candidate"; break; }; done`);
-    }
-    if (fallbackName) {
-      lines.push(`[ -n "$_tb_cmd" ] || _tb_cmd=$(command -v ${shQuote(fallbackName)} 2>/dev/null || true)`);
-    }
-    lines.push('[ -n "$_tb_cmd" ] || echo "[guest-runner] command not found" >&2');
-    return lines.join('; ');
-  }
-
-  function shQuote(s) {
-    return "'" + String(s).replace(/'/g, "'\\''") + "'";
-  }
-
-  function shAssign(name, value) {
-    return `${name}=${shQuote(value)}`;
-  }
-
-  async function fsWriteFileCompat(fs, path, bytes) {
-    if (!fs) throw new Error('fs unavailable');
-    const t0 = Date.now();
-    let api = 'unknown', err = null;
-    try {
-      if (typeof fs.write_file === 'function') {
-        api = 'write_file';
-        return await fs.write_file(path, bytes);
-      }
-      if (typeof fs.writeFile === 'function') {
-        api = 'writeFile';
-        return await fs.writeFile(path, bytes);
-      }
-      if (typeof fs.CreateBinaryFile === 'function') {
-        api = 'CreateBinaryFile';
-        const normalized = String(path || '');
-        const parts = normalized.split('/').filter(Boolean);
-        const fileName = parts.pop() || '';
-        const parentPath = '/' + parts.join('/');
-        const search = fs.SearchPath && fs.SearchPath(parentPath || '/');
-        const parentId = search && typeof search.id === 'number' ? search.id : -1;
-        if (!fileName || parentId < 0) {
-          throw new Error('CreateBinaryFile parent resolution failed for ' + normalized);
-        }
-        return await fs.CreateBinaryFile(fileName, parentId, bytes);
-      }
-      if (typeof emulator !== 'undefined' && emulator && typeof emulator.create_file === 'function') {
-        api = 'emulator.create_file';
-        return await emulator.create_file(path, bytes);
-      }
-      throw new Error('fs.write_file is not a function');
-    } catch (e) {
-      err = e;
-      throw e;
-    } finally {
-      try {
-        const w = window._sync9pDiag && window._sync9pDiag.fsWrites;
-        if (w) {
-          w.count++;
-          w.byApi[api] = (w.byApi[api] || 0) + 1;
-          const rec = { t: Date.now(), api, path, bytes: (bytes && bytes.length) || 0,
-            ms: Date.now() - t0, error: err ? String(err.message || err) : null };
-          w.last = rec;
-          if (err) {
-            w.errors.push(rec);
-            if (w.errors.length > 25) w.errors.shift();
-          }
-        }
-      } catch (_) {}
-    }
-  }
-
-  function runGuestShellSnippet(snippet, label) {
-    if (!snippet || !emulator) return false;
-    return dispatchGuestCommand(snippet, label);
-  }
-
-  async function guestWriteText(fs, path, value) {
-    const parts = String(path).split('/').filter(Boolean);
-    let current = '';
-    for (let index = 0; index < parts.length - 1; index++) {
-      current += '/' + parts[index];
-      try { fs.create_directory(current); } catch (_) {}
-    }
-    await fsWriteFileCompat(fs, path, new TextEncoder().encode(String(value)));
-  }
-
-  function parseGuestRunStatus(raw) {
-    const text = String(raw || '').trim();
-    if (!text) return { ok: false, state: 'empty', raw: text };
-    if (text === 'missing') return { ok: false, state: 'missing', missing: true, raw: text };
-    if (text.startsWith('rc:')) {
-      const m = text.match(/^rc:([0-9-]+)(?:\s+npub:([^\s]*))?(?:\s+nsec:([^\s]*))?/);
-      const code = m ? Number(m[1]) : Number(text.slice(3));
-      const npub = m && m[2] ? m[2] : '';
-      const nsec = m && m[3] ? m[3] : '';
-      return {
-        ok: Number.isFinite(code) ? code === 0 : false,
-        state: 'exit',
-        exitCode: Number.isFinite(code) ? code : null,
-        npub,
-        nsec,
-        raw: text,
-      };
-    }
-    return { ok: false, state: 'unknown', raw: text };
-  }
-
-  async function waitForGuestRunStatus(runId, timeoutMs = 25000) {
-    const fs = emulator && emulator.fs9p;
-    if (!fs || !runId) return { ok: false, state: 'unavailable' };
-    const statusPaths = [
-      SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.status',
-      '/tb-runner-' + runId + '.status',
-    ];
-    const started = Date.now();
-    while ((Date.now() - started) < timeoutMs) {
-      for (const statusPath of statusPaths) {
-        try {
-          const bytes = await Promise.race([
-            fs.read_file(statusPath),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
-          ]);
-          const text = (typeof bytes === 'string')
-            ? bytes
-            : new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
-          return parseGuestRunStatus(text);
-        } catch (_) {}
-      }
-      await new Promise(resolve => setTimeout(resolve, 220));
-    }
-    return { ok: false, state: 'timeout' };
-  }
-
-  async function readGuestRunOutput(runId, timeoutMs = 1200) {
-    const fs = emulator && emulator.fs9p;
-    if (!fs || !runId) return '';
-    const outPaths = [
-      SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.out',
-      '/tb-runner-' + runId + '.out',
-    ];
-    const started = Date.now();
-    while ((Date.now() - started) < timeoutMs) {
-      for (const outPath of outPaths) {
-        try {
-          const bytes = await Promise.race([
-            fs.read_file(outPath),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
-          ]);
-          if (typeof bytes === 'string') return bytes;
-          return new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
-        } catch (_) {}
-      }
-      await new Promise(resolve => setTimeout(resolve, 120));
-    }
-    return '';
-  }
-
-  async function readGuestRunTrace(runId, timeoutMs = 1200) {
-    const fs = emulator && emulator.fs9p;
-    if (!fs || !runId) return '';
-    const tracePaths = [
-      SOCIAL_VFS_ROOT + '/.guest-runner/' + runId + '.trace',
-      '/tb-runner-' + runId + '.trace',
-    ];
-    const started = Date.now();
-    while ((Date.now() - started) < timeoutMs) {
-      for (const tracePath of tracePaths) {
-        try {
-          const bytes = await Promise.race([
-            fs.read_file(tracePath),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('read timeout')), 260)),
-          ]);
-          if (typeof bytes === 'string') return bytes;
-          return new TextDecoder().decode(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
-        } catch (_) {}
-      }
-      await new Promise(resolve => setTimeout(resolve, 120));
-    }
-    return '';
-  }
-
-  function extractNostrIdentityFromText(text) {
-    const body = String(text || '');
-    // Find LAST npub/nsec match (most recent in serial output) so stale lines
-    // from previous commands don't shadow the freshly-printed identity.
-    const npubMatches = body.match(/\bnpub1[023456789acdefghjklmnpqrstuvwxyz]+\b/gi);
-    const nsecMatches = body.match(/\bnsec1[023456789acdefghjklmnpqrstuvwxyz]+\b/gi);
-    return {
-      npub: npubMatches ? npubMatches[npubMatches.length - 1] : '',
-      nsec: nsecMatches ? nsecMatches[nsecMatches.length - 1] : '',
-    };
-  }
-
-  function promoteNostrIdentityFromText(text) {
-    console.log('[promoteNostrIdentityFromText] input text (first 300 chars):', String(text || '').slice(0, 300));
-    const parsed = extractNostrIdentityFromText(text);
-    console.log('[promoteNostrIdentityFromText] parsed result:', JSON.stringify(parsed));
-    if (parsed.nsec) {
-      localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
-      console.log('[promoteNostrIdentityFromText] stored nsec:', parsed.nsec);
-    }
-    if (parsed.npub) {
-      localStorage.setItem('traits.nostr.npub', parsed.npub);
-      console.log('[promoteNostrIdentityFromText] stored npub:', parsed.npub);
-    }
-    console.log('[promoteNostrIdentityFromText] final parsed object:', parsed);
-    return parsed;
-  }
-
-  async function tryUpdateIdentityFromPubkey() {
-    console.log('[tryUpdateIdentityFromPubkey] starting');
-    if (!shellReady) {
-      console.log('[tryUpdateIdentityFromPubkey] shell not ready');
-      sLog('shell not ready yet; try again in a moment', 'hint');
-      return;
-    }
-    sLog('running social pubkey to extract identity…', 'hint');
-    const tailStart = serialTextTail.length;
-    console.log('[tryUpdateIdentityFromPubkey] sending command: SOCIAL_HOME=/mnt/host social pubkey');
-    dispatchGuestCommand('SOCIAL_HOME=/mnt/host social pubkey', 'social pubkey (manual)');
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    const newTail = serialTextTail.slice(tailStart);
-    console.log('[tryUpdateIdentityFromPubkey] captured output (first 400 chars):', newTail.slice(0, 400));
-    console.log('[tryUpdateIdentityFromPubkey] captured output full length:', newTail.length);
-    const parsed = promoteNostrIdentityFromText(newTail);
-    console.log('[tryUpdateIdentityFromPubkey] parsed result:', parsed);
-    console.log('[tryUpdateIdentityFromPubkey] parsed.npub exists:', !!parsed.npub);
-    if (parsed.npub) {
-      console.log('[tryUpdateIdentityFromPubkey] success - npub found:', parsed.npub);
-      sLog('identity detected: ' + truncNpub(parsed.npub), 'ok');
-      await socialInit();
-    } else {
-      console.log('[tryUpdateIdentityFromPubkey] failure - no npub in output');
-      sLog('no npub found in output; try running social init first', 'hint');
-    }
-  }
-
-  async function runGuestCommand(options) {
-    const fs = emulator && emulator.fs9p;
-    if (!emulator || !fs) return false;
-
-    const runId = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
-    const runMarker = '__TB_RUNNER_' + runId + '__';
-
-    const afterRun = options && typeof options.afterRun === 'function'
-      ? async () => {
-          const runStatus = await waitForGuestRunStatus(runId, (options && options.statusTimeoutMs) || 25000);
-          const runOutput = await readGuestRunOutput(runId, (options && options.outputTimeoutMs) || 1500);
-          const runTrace = await readGuestRunTrace(runId, (options && options.traceTimeoutMs) || 1200);
-          const markerSeen = serialTextTail.includes(runMarker);
-          const markerMatch = serialTextTail.match(new RegExp(runMarker + ':rc=([0-9-]+):status=([^\\s]+)'));
-          const markerRc = markerMatch ? Number(markerMatch[1]) : null;
-          const markerStatus = markerMatch ? String(markerMatch[2] || '') : '';
-          await options.afterRun({ fs, binary: null, runStatus, runId, runOutput, runTrace, runMarker, markerSeen, markerRc, markerStatus });
-        }
-      : null;
-
-    if (options && typeof options.beforeRun === 'function') {
-      await options.beforeRun({ fs, binary: null });
-    }
-
-    const envPrefix = Object.entries((options && options.env) || {})
-      .map(([name, value]) => shAssign(name, value))
-      .join(' ');
-    const argString = ((options && options.args) || []).map(shQuote).join(' ');
-    const statusShell = [
-      'mkdir -p /mnt/host/.guest-runner >/dev/null 2>&1 || true',
-      `_tb_status_guest=/mnt/host/.guest-runner/${runId}.status`,
-      `_tb_status_host=/mnt/host/tb-runner-${runId}.status`,
-      `_tb_out_guest=/mnt/host/.guest-runner/${runId}.out`,
-      `_tb_out_host=/mnt/host/tb-runner-${runId}.out`,
-      `_tb_trace_guest=/mnt/host/.guest-runner/${runId}.trace`,
-      `_tb_trace_host=/mnt/host/tb-runner-${runId}.trace`,
-      'rm -f "$_tb_status_guest" "$_tb_status_host" >/dev/null 2>&1 || true',
-      'rm -f "$_tb_out_guest" "$_tb_out_host" >/dev/null 2>&1 || true',
-      'rm -f "$_tb_trace_guest" "$_tb_trace_host" >/dev/null 2>&1 || true',
-    ].join('; ');
-    const beforeShellRaw = (options && options.beforeShell) ? String(options.beforeShell).trim() : '';
-    const beforeShell = beforeShellRaw;
-    const afterShell = (options && options.afterShell) ? String(options.afterShell).trim() : '';
-    const resolver = resolveGuestBinaryShell(options || {});
-    const cmd = `${envPrefix ? envPrefix + ' ' : ''}"$_tb_cmd"${argString ? ' ' + argString : ''}`;
-    const runOutTmp = `/tmp/.tb-run-${runId}.out`;
-    const traceLine =
-      '_tb_trace() { printf "%s\\n" "$1" >> "$_tb_trace_guest"; cp "$_tb_trace_guest" "$_tb_trace_host" 2>/dev/null || true; };';
-    const executeKnownCommand =
-      '_tb_trace "phase:exec:start"; ' +
-      `_tb_out_tmp=${shQuote(runOutTmp)}; { ` + cmd + '; } > "$_tb_out_tmp" 2>&1; ' +
-      '_tb_rc=$?; cp "$_tb_out_tmp" "$_tb_out_guest" 2>/dev/null || true; ' +
-      'cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true; ' +
-      `_tb_npub=$(grep -aoE "npub1[023456789acdefghjklmnpqrstuvwxyz]+" "$_tb_out_tmp" | head -1 2>/dev/null || true); ` +
-      `_tb_nsec=$(grep -aoE "nsec1[023456789acdefghjklmnpqrstuvwxyz]+" "$_tb_out_tmp" | head -1 2>/dev/null || true); ` +
-      'rm -f "$_tb_out_tmp" 2>/dev/null || true; ' +
-      'printf "rc:%s npub:%s nsec:%s\\n" "$_tb_rc" "$_tb_npub" "$_tb_nsec" > "$_tb_status_guest"; ' +
-      'cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true; ' +
-      '_tb_trace "phase:exec:done rc=$_tb_rc npub=${_tb_npub:+yes} nsec=${_tb_nsec:+yes}";';
-    const executeShell = [
-      '_tb_trace "phase:resolve:start"',
-      'if [ -z "$_tb_cmd" ]; then',
-      'printf "[guest-runner] command not found\\n" > "$_tb_out_guest"; cp "$_tb_out_guest" "$_tb_out_host" 2>/dev/null || true;',
-      'printf "missing\\n" > "$_tb_status_guest"; cp "$_tb_status_guest" "$_tb_status_host" 2>/dev/null || true;',
-      '_tb_trace "phase:resolve:missing";',
-      'else',
-      '_tb_trace "phase:resolve:ok cmd=$_tb_cmd";',
-      executeKnownCommand,
-      'fi',
-    ].join('\n');
-
-    const runnerScript = [
-      '#!/bin/sh',
-      'set +e',
-      statusShell,
-      traceLine,
-      '_tb_trace "phase:init"',
-      beforeShell,
-      '_tb_trace "phase:before-shell:done"',
-      resolver,
-      executeShell,
-      '_tb_trace "phase:after-shell:start"',
-      afterShell,
-      '_tb_trace "phase:after-shell:done"',
-    ].filter(Boolean).join('\n') + '\n';
-
-    const hostScriptPath = '/tb-runner-' + runId + '.sh';
-    await guestWriteText(fs, hostScriptPath, runnerScript);
-
-    // JS-side verification: confirm the script bytes are readable through
-    // fs9p before dispatching. Some write paths (CreateBinaryFile, fallback
-    // emulator.create_file) succeed without the file being visible to a
-    // subsequent read_file. Retry the write up to 4 times on mismatch.
-    let writeVerified = false;
-    for (let attempt = 0; attempt < 4 && !writeVerified; attempt++) {
-      try {
-        const bytes = await fs.read_file(hostScriptPath);
-        if (bytes && bytes.length > 0) { writeVerified = true; break; }
-      } catch (_) {}
-      if (attempt < 3) {
-        await new Promise(r => setTimeout(r, 120));
-        try { await guestWriteText(fs, hostScriptPath, runnerScript); } catch (_) {}
-      }
-    }
-    if (!writeVerified) {
-      console.warn('[guest-runner] fs9p write of', hostScriptPath, 'not verifiable from JS side after 4 attempts; dispatching anyway');
-    } else {
-      console.log('[guest-runner] script ready at', hostScriptPath, '(verified via fs.read_file)');
-    }
-
-    // Guest-side: wait for /mnt/host/<script> to be visible before exec'ing.
-    // 9P client may not see a freshly-written host file for a few hundred ms.
-    // Poll up to ~6s, then run. Also retry once on non-zero rc to absorb
-    // transient ENOENT.
-    const waitForScript = `_tb_path=/mnt/host/tb-runner-${runId}.sh; _tb_i=0; while [ ! -s "$_tb_path" ] && [ $_tb_i -lt 30 ]; do sleep 0.2; _tb_i=$((_tb_i+1)); done`;
-    const launchCmd = `${waitForScript}; /bin/sh "$_tb_path"; _tb_run_rc=$?; if [ $_tb_run_rc -ne 0 ] && [ ! -s "$_tb_path" ]; then sleep 0.5; sh "$_tb_path"; _tb_run_rc=$?; fi; _tb_status_line=$(cat /mnt/host/.guest-runner/${runId}.status 2>/dev/null | tr -d '\\r\\n'); [ -n "$_tb_status_line" ] || _tb_status_line=nostatus; if [ ! -s "$_tb_path" ]; then _tb_status_line="missing-script:$_tb_status_line"; fi; echo ${runMarker}:rc=$_tb_run_rc:status=$_tb_status_line`;
-    dispatchGuestCommand(launchCmd, options && options.label, {
-      afterRun,
-      afterDelayMs: options && options.afterDelayMs,
-    });
-    return true;
-  }
-
-  async function hydrateSocialStateFromGuest() {
-    const fs = emulator && emulator.fs9p;
-    if (!fs) return;
-    try {
-      const nsec = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/.nsec')).trim();
-      if (nsec) localStorage.setItem(SOCIAL_NSEC_KEY, nsec);
-    } catch (_) {}
-    try {
-      const npub = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/.npub')).trim();
-      if (npub) localStorage.setItem('traits.nostr.npub', npub);
-    } catch (_) {}
-    // Follow list: localStorage is the canonical UI-owned source. Only hydrate
-    // from 9P when localStorage is empty (initial migration / fresh tab on a
-    // session that already has a guest-side .list). Otherwise the UI's pending
-    // follow/unfollow would be clobbered by a stale guest .list.
-    try {
-      const existingLocal = getFollowing();
-      if (!existingLocal.length) {
-        const lines = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/following/.list'))
-          .split(/\r?\n/)
-          .map(s => s.trim())
-          .filter(Boolean);
-        if (lines.length) saveFollowing(Array.from(new Set(lines)));
-      }
-    } catch (_) {}
-  }
-
-  // Force-push the localStorage follow list to /following/.list on the 9P
-  // share (= guest /mnt/host/following/.list). Used after UI follow/unfollow
-  // so the guest CLI sees the authoritative list.
-  async function pushFollowingListTo9P() {
-    const fs = emulator && emulator.fs9p;
-    if (!fs) return false;
-    const list = getFollowing();
-    try { fs.create_directory(SOCIAL_VFS_ROOT + '/following'); } catch (_) {}
-    try {
-      await guestWriteText(fs, SOCIAL_VFS_ROOT + '/following/.list', list.join('\n') + (list.length ? '\n' : ''));
-      return true;
-    } catch (e) {
-      console.warn('[pushFollowingListTo9P] failed:', e && e.message);
-      return false;
-    }
-  }
-
-  // Single source of truth reconciliation:
-  //   9P share root (browser: fs9p root; guest: /mnt/host/) is CANONICAL.
-  //   localStorage is a cache for nostrCall (signing).
-  //   On reconcile: 9P wins. If 9P empty but localStorage has nsec, write to 9P.
-  async function reconcileSocialIdentity() {
-    const fs = emulator && emulator.fs9p;
-    if (!fs) return { source: 'localStorage-only' };
-    let nineP_nsec = '', nineP_npub = '';
-    try { nineP_nsec = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/.nsec')).trim(); } catch (_) {}
-    try { nineP_npub = new TextDecoder().decode(await fs.read_file(SOCIAL_VFS_ROOT + '/.npub')).trim(); } catch (_) {}
-    const ls_nsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
-    const ls_npub = (localStorage.getItem('traits.nostr.npub') || '').trim();
-
-    if (nineP_nsec) {
-      if (ls_nsec && ls_nsec !== nineP_nsec) {
-        sLog('identity mismatch: localStorage differs from /mnt/host/.nsec — using 9P (canonical)', 'hint');
-        if (ls_npub) sLog('  localStorage npub was: ' + truncNpub(ls_npub), 'hint');
-      }
-      localStorage.setItem(SOCIAL_NSEC_KEY, nineP_nsec);
-      if (nineP_npub) localStorage.setItem('traits.nostr.npub', nineP_npub);
-      return { source: '9p', nsec: nineP_nsec, npub: nineP_npub };
-    }
-    if (ls_nsec) {
-      // Seed 9P from localStorage so guest CLI sees the same identity
-      try {
-        await guestWriteText(fs, SOCIAL_VFS_ROOT + '/.nsec', ls_nsec + '\n');
-        if (ls_npub) await guestWriteText(fs, SOCIAL_VFS_ROOT + '/.npub', ls_npub + '\n');
-        sLog('seeded 9P /mnt/host/.nsec from localStorage', 'ok');
-      } catch (e) {
-        sLog('failed to seed 9P from localStorage: ' + (e && e.message ? e.message : e), 'err');
-      }
-      return { source: 'localStorage', nsec: ls_nsec, npub: ls_npub };
-    }
-    return { source: 'none' };
-  }
-
-  async function syncSocialStateToGuest({ fillMissingOnly = false } = {}) {
-    const fs = emulator && emulator.fs9p;
-      if (!fs) {
-        console.log('[syncSocialStateToGuest] 9P filesystem not available, skipping VFS sync');
-        return;
-      }
-
-      // Test if 9P is actually usable by trying to read root
-      try {
-        fs.SearchPath && fs.SearchPath('/');
-      } catch (e) {
-        console.warn('[syncSocialStateToGuest] 9P filesystem not ready:', e && e.message);
-        return;
-      }
-
-    const localNsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
-    const localNpub = (localStorage.getItem('traits.nostr.npub') || '').trim();
-    const localFollowing = getFollowing();
-
-    try { fs.create_directory(SOCIAL_VFS_ROOT); } catch (e) {
-      console.warn('[syncSocialStateToGuest] failed to create /vfs:', e && e.message);
-    }
-    try { fs.create_directory(DEFAULT_FOLLOW_ROOT); } catch (_) {}
-
-    const maybeWrite = async (path, value) => {
-      if (!value) return;
-      if (fillMissingOnly && hasPathInFs(fs, path)) return;
-      try {
-        await guestWriteText(fs, path, value.endsWith('\n') ? value : value + '\n');
-        console.log('[syncSocialStateToGuest] wrote ' + path + ': ' + (value.length > 50 ? value.slice(0, 50) + '...' : value));
-      } catch (err) {
-        console.warn('[syncSocialStateToGuest] failed to write ' + path + ':', err && err.message);
-      }
-    };
-
-    await maybeWrite(SOCIAL_VFS_ROOT + '/.nsec', localNsec);
-    await maybeWrite(SOCIAL_VFS_ROOT + '/.npub', localNpub);
-    if (localFollowing.length && !(fillMissingOnly && hasPathInFs(fs, DEFAULT_FOLLOW_ROOT + '/.list'))) {
-      try {
-        await guestWriteText(fs, DEFAULT_FOLLOW_ROOT + '/.list', localFollowing.join('\n') + '\n');
-        console.log('[syncSocialStateToGuest] wrote following list: ' + localFollowing.length + ' entries');
-      } catch (err) {
-        console.warn('[syncSocialStateToGuest] failed to write following list:', err && err.message);
-      }
-    }
-  }
-
-  // /mnt/host (9P share) is the only social home. No tmpfs mirror needed.
-  async function syncSocialMirrorToGuest({ fillMissingOnly = false } = {}) {
-    await syncSocialStateToGuest({ fillMissingOnly });
-  }
-
-  async function runGuestSocialCommand(args, label, options = {}) {
-    const afterRun = async (ctx) => {
-      let status = (ctx && ctx.runStatus) || {};
-      const output = String((ctx && ctx.runOutput) || '');
-      const trace = String((ctx && ctx.runTrace) || '').trim();
-      const markerSeen = !!(ctx && ctx.markerSeen);
-      const markerRc = (ctx && typeof ctx.markerRc === 'number' && Number.isFinite(ctx.markerRc)) ? ctx.markerRc : null;
-      const markerStatus = String((ctx && ctx.markerStatus) || '').trim();
-      if ((status.state === 'empty' || status.state === 'unknown' || status.state === 'timeout') && markerStatus.startsWith('rc:')) {
-        status = parseGuestRunStatus(markerStatus);
-      }
-      const parsed = extractNostrIdentityFromText(output);
-      const statusNpub = (status && status.npub) ? String(status.npub).trim() : '';
-      const statusNsec = (status && status.nsec) ? String(status.nsec).trim() : '';
-      const serialParsed = extractNostrIdentityFromText(serialTextTail);
-      if (output.trim() && Array.isArray(args) && (args[0] === 'pubkey' || args[0] === 'init')) {
-        const firstLine = output.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || '(empty output)';
-        sLog('guest social output: ' + firstLine.slice(0, 180), 'hint');
-      }
-      const mergedNsec = parsed.nsec || statusNsec || serialParsed.nsec;
-      const mergedNpub = parsed.npub || statusNpub || serialParsed.npub;
-      if (trace) {
-        const traceLines = trace.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-        const tail = traceLines.slice(-3).join(' | ');
-        if (tail) sLog('guest runner trace: ' + tail.slice(0, 220), 'hint');
-      }
-      sLog('guest runner dispatch marker seen=' + (markerSeen ? 'yes' : 'no') + (markerRc == null ? '' : ' rc=' + markerRc) + (markerStatus ? ' status=' + markerStatus : ''), markerSeen ? 'ok' : 'hint');
-      if (mergedNsec) localStorage.setItem(SOCIAL_NSEC_KEY, mergedNsec);
-      if (mergedNpub) localStorage.setItem('traits.nostr.npub', mergedNpub);
-      if (status.state === 'missing') {
-        sLog('guest social command missing; install it in guest with:', 'err');
-        sLog('  wget -O /usr/local/bin/social https://www.traits.build/local/social.sh && chmod +x /usr/local/bin/social', 'hint');
-      } else if (status.state === 'exit' && status.exitCode !== 0) {
-        sLog('guest social command exited with code ' + status.exitCode + ' (see terminal output)', 'hint');
-      } else if (status.state === 'exit' && status.exitCode === 0 && mergedNpub) {
-        sLog('guest identity detected: ' + truncNpub(mergedNpub), 'ok');
-      } else if (status.state === 'timeout') {
-        sLog('guest social command is still running or hung (status timeout)', 'hint');
-      } else {
-        sLog('guest social runner status=' + (status.state || 'unknown') + ' raw=' + (status.raw || '(empty)'), 'hint');
-      }
-      await hydrateSocialStateFromGuest();
-      if (typeof options.afterRun === 'function') {
-        await options.afterRun(ctx || {});
-      }
-    };
-    return runGuestCommand({
-      candidates: ['/usr/local/bin/social', '/usr/bin/social'],
-      commandName: 'social',
-      env: { SOCIAL_HOME: '/mnt/host' },
-      args,
-      label,
-      beforeRun: async () => {
-        await syncSocialStateToGuest({ fillMissingOnly: true });
-        if (typeof options.beforeRun === 'function') await options.beforeRun();
-      },
-      afterRun,
-      afterDelayMs: options.afterDelayMs == null ? 350 : options.afterDelayMs,
-      statusTimeoutMs: options.statusTimeoutMs,
-      outputTimeoutMs: options.outputTimeoutMs,
-    });
-  }
-
-  function socialGuestPath(fsPath) {
-    if (typeof fsPath !== 'string' || !fsPath.startsWith('/')) return fsPath;
-    const suffix = fsPath.startsWith('/vfs') ? fsPath.slice(4) : fsPath;
-      return '/mnt/host' + suffix;
-  }
-  let socialFollowRoot = null;
-
-  function getFollowRoot() {
-    return socialFollowRoot || localStorage.getItem(SOCIAL_FOLLOW_ROOT_KEY) || DEFAULT_FOLLOW_ROOT;
-  }
-
-  // Best-effort: create the canonical follow root and any chain of subdirs.
-  // We deliberately do NOT do a probe write here — earlier probes were
-  // unreliable on virtio-9p (write into a just-created subdir rejected even
-  // though create_directory succeeded), which made every sync fail with
-  // "no writable follow directory under …" before any real I/O was attempted.
-  // If individual writes during sync fail, those errors are surfaced per-file.
-  async function ensureFollowRoot(fs) {
-    if (!fs) return DEFAULT_FOLLOW_ROOT;
-    const root = DEFAULT_FOLLOW_ROOT;
-    try { fs.create_directory(root); } catch (_) {}
-    socialFollowRoot = root;
-    localStorage.setItem(SOCIAL_FOLLOW_ROOT_KEY, root);
-    return root;
-  }
-  // Legacy alias preserved so other callers keep working.
-  async function resolveFollowRoot(fs) { return ensureFollowRoot(fs); }
-
-  // mkdir -p chain in fs9p, swallowing already-exists.
-  function ensureDirChain(fs, fullPath) {
-    const parts = String(fullPath).split('/').filter(Boolean);
-    let cur = '';
-    for (let i = 0; i < parts.length; i++) {
-      cur += '/' + parts[i];
-      try { fs.create_directory(cur); } catch (_) {}
-    }
-  }
-
-  // social.nostr REST dispatch
-  async function nostrRest(action, ...args) {
-    const res = await fetch('https://traits-build.fly.dev/traits/social/nostr', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ args: [action, ...args] }),
-    });
-    const j = await res.json();
-    if (j && j.result !== undefined) return j.result;
-    return j;
-  }
-
-  // Try local JS crypto (offline, no server) → WASM SDK → REST fallback
-  async function nostrCall(action, ...args) {
-    const local = window._nostrLocalCrypto;
-    if (local && typeof local[action] === 'function') {
-      try { return await local[action](...args); } catch (e) { console.warn('nostr local err:', e); }
-    }
-    try {
-      const sdk = window._traitsSDK;
-      if (sdk) {
-        const r = await sdk.call('social.nostr', [action, ...args]);
-        if (r !== null && r !== undefined) return r;
-      }
-    } catch (_) {}
-    return nostrRest(action, ...args);
-  }
-
-  // Minimal NIP-01 REQ — returns array of matching events from all relays
-  function nostrReq(relays, filter, timeoutMs = 7000) {
-    return new Promise(resolve => {
-      const events = [];
-      let done = 0;
-      const total = relays.length;
-      if (!total) { resolve([]); return; }
-      const finish = () => { if (++done >= total) resolve(events); };
-      const subId = Math.random().toString(36).slice(2, 9);
-      for (const url of relays) {
-        let ws;
-        const timer = setTimeout(() => { try { ws.close(); } catch (_) {} }, timeoutMs);
-        try {
-          ws = new WebSocket(url);
-          ws.onopen = () => ws.send(JSON.stringify(['REQ', subId, filter]));
-          ws.onmessage = e => {
-            try {
-              const msg = JSON.parse(e.data);
-              if (msg[0] === 'EVENT' && msg[1] === subId) events.push(msg[2]);
-              if (msg[0] === 'EOSE'  && msg[1] === subId) { clearTimeout(timer); ws.close(); }
-            } catch (_) {}
-          };
-          ws.onclose = () => { clearTimeout(timer); finish(); };
-          ws.onerror = () => { clearTimeout(timer); try { ws.close(); } catch (_) {} };
-        } catch (_) { finish(); }
-      }
-    });
-  }
-
-  // Broadcast a signed event to all relays
-  function nostrPublish(relays, event) {
-    return Promise.all(relays.map(url => new Promise(resolve => {
-      let ws;
-      const timer = setTimeout(() => { try { ws.close(); } catch (_) {} resolve(); }, 7000);
-      try {
-        ws = new WebSocket(url);
-        ws.onopen  = () => ws.send(JSON.stringify(['EVENT', event]));
-        ws.onmessage = () => { clearTimeout(timer); ws.close(); resolve(); };
-        ws.onclose = ws.onerror = () => { clearTimeout(timer); resolve(); };
-      } catch (_) { resolve(); }
-    })));
-  }
-
-  async function sha256hex(data) {
-    // crypto.subtle.digest accepts any BufferSource (Uint8Array, ArrayBuffer, …)
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  // ── DOM refs
-  const socialBtn      = $('social');
-  const socialOverlay  = $('social-overlay');
-  const socialCloseBtn = $('social-close');
-  const npubDisplay    = $('social-npub-display');
-  const generateBtn    = $('social-generate');
-  const debugPubkeyBtn = $('social-debug-pubkey');
-  const publishBtn     = $('social-publish');
-  const syncNowBtn     = $('social-sync-now');
-  const syncIntervalEl = $('social-sync-interval');
-  const socialLogEl    = $('social-log');
-  const followInput    = $('social-follow-input');
-  const followBtnEl    = $('social-follow-btn');
-  const searchInput    = $('social-search-input');
-  const searchBtnEl    = $('social-search-btn');
-  const searchResults  = $('social-search-results');
-  const socialList     = $('social-list');
-  const socialStepDebugMode = (new URLSearchParams(location.search).get('social_debug') || '1') !== '0';
-
-  function sLog(msg, cls = '') {
-    const d = document.createElement('div');
-    d.className = 'slog-line ' + (cls || 'hint');
-    d.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
-    socialLogEl.appendChild(d);
-    socialLogEl.scrollTop = socialLogEl.scrollHeight;
-  }
-
-  function getFollowing() {
-    try { return JSON.parse(localStorage.getItem(SOCIAL_FOLLOWING_KEY) || '[]'); } catch (_) { return []; }
-  }
-  function saveFollowing(list) { localStorage.setItem(SOCIAL_FOLLOWING_KEY, JSON.stringify(list)); }
-
-  function truncNpub(n) {
-    if (!n || n.length < 16) return n || '';
-    return n.slice(0, 12) + '…' + n.slice(-6);
-  }
-
-  let socialIdentityProbeDone = false;
-  let socialIdentityRescueDone = false;
-
-  async function rescueGuestIdentityToVfs() {
-    // Legacy /mnt/vfs rescue path is gone. /mnt/host is the only social home;
-    // identity files are already on the 9P share. Re-hydrate browser state
-    // from there for callers that still invoke this.
-    return runGuestCommand({
-      candidates: ['/bin/sh'],
-      commandName: 'sh',
-      args: ['-c', 'true'],
-      label: 'rehydrate social identity from /mnt/host',
-      afterDelayMs: 200,
-      afterRun: async () => {
-        await hydrateSocialStateFromGuest();
-      },
-      statusTimeoutMs: 9000,
-      outputTimeoutMs: 1200,
-    });
-  }
-
-  async function debugGuestPubkeyFlow() {
-    sLog('debug: running guest social pubkey…');
-    if (!shellReady) {
-      sLog('debug: shell not ready yet', 'hint');
-      await socialInit();
-      return;
-    }
-    const tailStart = serialTextTail.length;
-    // Run social pubkey AND dump the canonical nsec/npub from /mnt/host so we
-    // can resync localStorage to whatever the guest CLI is actually using.
-    // Without the nsec dump the UI would display the right npub but derive a
-    // mismatched hex hint from a stale localStorage nsec.
-    dispatchGuestCommand(
-      'SOCIAL_HOME=/mnt/host social pubkey; cat /mnt/host/.nsec 2>/dev/null; cat /mnt/host/.npub 2>/dev/null',
-      'social pubkey + nsec dump'
-    );
-    // Poll for npub in serial output (REST call to Fly can take 1-3+ seconds)
-    const deadline = Date.now() + 8000;
-    let parsed = { npub: '', nsec: '' };
-    while (Date.now() < deadline) {
-      await new Promise(resolve => setTimeout(resolve, 250));
-      const tail = serialTextTail.slice(tailStart);
-      parsed = extractNostrIdentityFromText(tail);
-      if (parsed.npub && parsed.nsec) break;
-    }
-    if (parsed.nsec) localStorage.setItem(SOCIAL_NSEC_KEY, parsed.nsec);
-    if (parsed.npub) localStorage.setItem('traits.nostr.npub', parsed.npub);
-    // Mirror back into 9P so future reconciles see the same canonical pair.
-    if (parsed.nsec || parsed.npub) {
-      const fs = emulator && emulator.fs9p;
-      if (fs) {
-        try {
-          if (parsed.nsec) await guestWriteText(fs, SOCIAL_VFS_ROOT + '/.nsec', parsed.nsec + '\n');
-          if (parsed.npub) await guestWriteText(fs, SOCIAL_VFS_ROOT + '/.npub', parsed.npub + '\n');
-        } catch (_) {}
-      }
-    }
-    if (parsed.npub || parsed.nsec) {
-      sLog('debug: identity from social pubkey: ' + truncNpub(parsed.npub) +
-        (parsed.nsec ? ' (nsec captured)' : ' (nsec NOT in output — hex hint may be stale)'),
-        parsed.nsec ? 'ok' : 'hint');
-    } else {
-      sLog('debug: no identity found in serial output (timed out after 8s)', 'hint');
-    }
-    await socialInit();
-  }
-
-  // Refresh identity display and enable/disable action buttons.
-  // Single source of truth: `social pubkey` output (run in guest with SOCIAL_HOME=/mnt/host).
-  // The npub displayed here is the EXACT bytes the guest CLI prints — never re-encoded.
-  async function socialInit() {
-    // Reconcile 9P (canonical) ↔ localStorage (cache) before reading state
-    await reconcileSocialIdentity();
-    // Always re-verify identity from the guest CLI when the shell is ready.
-    // This guarantees the UI shows whatever `social pubkey` would print at this moment.
-    if (shellReady && !socialIdentityProbeDone) {
-      socialIdentityProbeDone = true;
-      npubDisplay.innerHTML = '<span class="hint">running social pubkey…</span>';
-      publishBtn.disabled = true;
-      syncNowBtn.disabled = true;
-      await debugGuestPubkeyFlow();
-      return; // debugGuestPubkeyFlow calls socialInit() again when done
-    }
-    let nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
-    let npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
-    if (!nsec && !npubOnly) {
-      const fromSerial = promoteNostrIdentityFromText(serialTextTail);
-      if (fromSerial.nsec || fromSerial.npub) {
-        nsec = localStorage.getItem(SOCIAL_NSEC_KEY);
-        npubOnly = (localStorage.getItem('traits.nostr.npub') || '').trim();
-        sLog('identity hydrated from terminal output (social pubkey)', 'ok');
-      }
-    }
-    if (!nsec && !npubOnly) {
-      // Show "no identity" with a manual re-check button
-      const updateBtn = document.createElement('button');
-      updateBtn.id = 'social-update-from-pubkey';
-      updateBtn.textContent = 'Check for identity';
-      updateBtn.title = 'Run social pubkey and extract npub';
-      updateBtn.style.cssText = 'padding:4px 12px;font-size:11px;margin-left:8px;cursor:pointer;background:#4b5563;border:1px solid #6b7280;color:#fff;border-radius:3px';
-      updateBtn.onclick = async () => {
-        socialIdentityProbeDone = false;
-        updateBtn.disabled = true;
-        updateBtn.textContent = 'Checking…';
-        try {
-          await socialInit();
-        } catch (e) {
-          sLog('error checking identity: ' + (e && e.message ? e.message : e), 'err');
-          updateBtn.disabled = false;
-          updateBtn.textContent = 'Check for identity';
-        }
-      };
-      const container = document.createElement('div');
-      container.style.cssText = 'display:flex;align-items:center';
-      container.innerHTML = '<span class="hint">no identity — generate one below</span>';
-      container.appendChild(updateBtn);
-      npubDisplay.innerHTML = '';
-      npubDisplay.appendChild(container);
-      publishBtn.disabled = true;
-      syncNowBtn.disabled = true;
-    }
-    if (!nsec && npubOnly) {
-      npubDisplay.innerHTML =
-        `<span class="social-npub">${truncNpub(npubOnly)}</span>` +
-        ` <span class="hint" style="font-size:10px">(guest identity; nsec not mirrored)</span>`;
-      publishBtn.disabled = !emulator;
-      syncNowBtn.disabled = false;
-      renderFollowList();
-      return;
-    }
-    if (nsec) {
-      // Display the npub stored from `social pubkey` output (canonical).
-      // Fall back to nostrCall derivation only when guest hasn't reported yet.
-      let displayNpub = npubOnly;
-      let pubkey = '';
-      try {
-        const res = await nostrCall('pubkey', nsec);
-        pubkey = typeof res === 'string' ? res : (res.pubkey || String(res));
-        if (!displayNpub) {
-          const enc = await nostrCall('encode_npub', pubkey);
-          displayNpub = typeof enc === 'string' ? enc : JSON.stringify(enc);
-          localStorage.setItem('traits.nostr.npub', displayNpub);
-        }
-      } catch (e) {
-        if (!displayNpub) {
-          npubDisplay.innerHTML = `<span class="err">key error: ${e.message}</span>`;
-          return;
-        }
-      }
-      try {
-        npubDisplay.innerHTML =
-          `<span class="social-npub">${truncNpub(displayNpub)}</span>` +
-          ` <button id="social-copy-npub" title="Copy full npub to clipboard" style="padding:1px 8px; font-size:10px; margin:0 6px;">copy npub</button>` +
-          (pubkey ? ` <span class="hint" style="font-size:10px">${pubkey.slice(0, 16)}…</span>` : '');
-        const copyBtn = $('social-copy-npub');
-        if (copyBtn) {
-          copyBtn.onclick = async () => {
-            try {
-              if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(displayNpub);
-              } else {
-                const ta = document.createElement('textarea');
-                ta.value = displayNpub;
-                ta.style.position = 'fixed';
-                ta.style.left = '-9999px';
-                document.body.appendChild(ta);
-                ta.focus();
-                ta.select();
-                document.execCommand('copy');
-                ta.remove();
-              }
-              sLog('copied ' + truncNpub(displayNpub) + ' to clipboard', 'ok');
-            } catch (e) {
-              sLog('copy failed: ' + (e && e.message ? e.message : e), 'err');
-            }
-          };
-        }
-        publishBtn.disabled = !emulator;
-        syncNowBtn.disabled = false;
-      } catch (e) {
-        npubDisplay.innerHTML = `<span class="err">render error: ${e.message}</span>`;
-      }
-    }
-    renderFollowList();
-  }
-
-  function renderFollowList() {
-    const following = getFollowing();
-    if (!following.length) {
-      socialList.innerHTML =
-        '<div class="hint" style="font-size:12px;padding:4px 0">no followed users yet — paste a npub above and click follow</div>';
-      return;
-    }
-    socialList.innerHTML = following.map(npub =>
-      `<div class="follow-card" data-npub="${npub}">
-        <div class="fc-npub">${truncNpub(npub)}</div>
-        <div class="fc-meta">${npub}</div>
-        <div class="fc-actions">
-          <button class="fc-sync-btn" data-npub="${npub}">sync</button>
-          <button class="fc-view-btn" data-npub="${npub}">view files</button>
-          <button class="fc-unfollow-btn" data-npub="${npub}" style="margin-left:auto;color:#f87171">unfollow</button>
-        </div>
-      </div>`
-    ).join('');
-  }
-
-  async function doFollow(npub) {
-    npub = npub.trim();
-    if (!npub.startsWith('npub1') || npub.length < 30) {
-      sLog('invalid npub — must start with npub1 and be at least 30 chars', 'err'); return;
-    }
-
-    // Update localStorage (canonical UI source) FIRST so renderFollowList sees
-    // the new entry immediately, and so any subsequent hydrate sees a non-empty
-    // local list and won't clobber it from a stale 9P .list.
-    {
-      const following = getFollowing();
-      if (!following.includes(npub)) {
-        following.push(npub);
-        saveFollowing(following);
-      }
-      renderFollowList();
-    }
-    // Push merged list to 9P directly so the guest CLI sees it before it runs.
-    await pushFollowingListTo9P();
-
-    // Run the guest CLI (best-effort, fire-and-forget for echo only). We do
-    // NOT early-return on its outcome — auto-sync below must always run.
-    try {
-      await runGuestSocialCommand(['follow', npub], 'social follow ' + truncNpub(npub), {
-        afterRun: async () => {
-          // Do NOT hydrate the follow list here — localStorage is canonical
-          // and the guest CLI's view of /following/.list may lag or be empty
-          // after a 9P writability rmdir+mkdir recovery in social.sh.
-          renderFollowList();
-        },
-      });
-    } catch (e) {
-      console.warn('[follow] guest CLI follow failed (non-fatal):', e && e.message);
-    }
-
-    sLog('following ' + truncNpub(npub), 'ok');
-    // Create directory in 9P share: <follow_root>/<npub>
-    const fs = emulator && emulator.fs9p;
-    if (fs) {
-      try {
-        const followRoot = await resolveFollowRoot(fs);
-        try { fs.create_directory(followRoot); } catch (_) {}
-        fs.create_directory(followRoot + '/' + npub);
-        sLog('created ' + socialGuestPath(followRoot) + '/' + truncNpub(npub), 'ok');
-      } catch (e) {
-        sLog('note: follow dir creation failed: ' + e.message, 'hint');
-      }
-    }
-    renderFollowList();
-
-    // Auto-sync immediately so the followed user's published files appear
-    // under /mnt/host/following/<npub>/ without an extra click. Errors are
-    // already surfaced by doSyncOne via sLog (no manifest, write failures).
-    sLog('auto-syncing ' + truncNpub(npub) + '…', 'hint');
-    try { await doSyncOne(npub); } catch (e) {
-      sLog('auto-sync failed: ' + (e && e.message), 'err');
-    }
-  }
-
-  async function doSyncOne(npub) {
-    npub = npub.trim();
-    const t0 = performance.now();
-    const ts = () => '[+' + Math.round(performance.now() - t0) + 'ms]';
-    console.group('[sync] doSyncOne ' + truncNpub(npub));
-    sLog('syncing ' + truncNpub(npub) + '…');
-    let pubkeyHex;
-    try {
-      const res = await nostrCall('decode_npub', npub);
-      pubkeyHex = typeof res === 'string' ? res : (res.pubkey || JSON.stringify(res));
-      console.log('[sync]', ts(), 'decoded pubkey hex:', pubkeyHex.slice(0, 16) + '…');
-    } catch (e) {
-      console.error('[sync] decode_npub failed', e);
-      console.groupEnd();
-      sLog('decode_npub failed: ' + e.message, 'err');
-      return;
-    }
-
-    const fs = emulator && emulator.fs9p;
-    // Prefer serialVfs (writes via guest root, no 9P uid issues) and target
-    // the canonical guest path /mnt/host/following/<npub>. Fall back to fs9p
-    // when the shell isn't ready (e.g. cold boot before login).
-    const useSerial = !!(serialVfs && serialVfs.ready);
-    const guestUserDir = '/mnt/host/following/' + npub;
-    let followRoot = DEFAULT_FOLLOW_ROOT;
-    if (fs) {
-      followRoot = await ensureFollowRoot(fs);
-      console.log('[sync]', ts(), 'followRoot:', followRoot, '→ guest:', socialGuestPath(followRoot));
-    } else if (!useSerial) {
-      console.warn('[sync] fs9p and serialVfs both unavailable — sync will not persist files');
-    }
-    // Create the per-user folder UP FRONT, regardless of whether the
-    // manifest lookup later succeeds. This guarantees that following a user
-    // always materializes /mnt/host/following/<npub>/ on disk, even if the
-    // user has not published yet (the dir will be empty until next sync).
-    if (useSerial) {
-      console.log('[sync]', ts(), 'using serialVfs → guest path', guestUserDir);
-      try {
-        await serialVfs.mkdir(guestUserDir);
-        sLog('created ' + guestUserDir, 'ok');
-      } catch (e) {
-        console.warn('[sync] serialVfs.mkdir failed:', e && e.message);
-      }
-    } else if (fs) {
-      const userDir = followRoot + '/' + npub;
-      try {
-        ensureDirChain(fs, userDir);
-        console.log('[sync]', ts(), '9p mkdir', userDir);
-        sLog('created ' + socialGuestPath(userDir) + ' (9p)', 'ok');
-      } catch (e) {
-        console.warn('[sync] 9p mkdir failed:', e && e.message);
-      }
-    }
-
-    console.log('[sync]', ts(), 'requesting kind-30000 manifest from relays:', NOSTR_RELAYS);
-    let events = await nostrReq(NOSTR_RELAYS, {
-      kinds: [30000], authors: [pubkeyHex], '#d': ['public-folder'], limit: 5,
-    });
-    console.log('[sync]', ts(), '#d-filtered query returned', events.length, 'event(s)');
-
-    // Fallback: some relays don't honor NIP-12 #d tag filters. Refetch all
-    // kind-30000 events for this author and filter client-side on the
-    // d=public-folder tag.
-    if (!events.length) {
-      console.log('[sync]', ts(), 'retrying without #d filter (client-side filtering)…');
-      const all = await nostrReq(NOSTR_RELAYS, {
-        kinds: [30000], authors: [pubkeyHex], limit: 20,
-      });
-      console.log('[sync]', ts(), 'unfiltered kind-30000 returned', all.length, 'event(s)');
-      events = all.filter(ev => Array.isArray(ev.tags) && ev.tags.some(t =>
-        Array.isArray(t) && t[0] === 'd' && t[1] === 'public-folder'
-      ));
-      console.log('[sync]', ts(), 'after client-side d-tag filter:', events.length);
-    }
-
-    let manifest = null;
-    if (events.length) {
-      const ev = events.sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
-      console.log('[sync]', ts(), 'newest event id=' + (ev.id || '').slice(0, 16) + '… created_at=' + ev.created_at);
-      try {
-        manifest = JSON.parse(ev.content);
-        const manifestJson = JSON.stringify(manifest, null, 2);
-        const payload = new TextEncoder().encode(manifestJson);
-        if (useSerial) {
-          try {
-            await serialVfs.write(guestUserDir + '/.manifest.json', manifestJson);
-            console.log('[sync]', ts(), 'cached manifest at', guestUserDir + '/.manifest.json (serial)');
-          } catch (e) {
-            console.warn('[sync] serial manifest write failed:', e && e.message);
-          }
-        } else if (fs) {
-          const userDir = followRoot + '/' + npub;
-          ensureDirChain(fs, userDir);
-          const cachePath = userDir + '/.manifest.json';
-          try {
-            await fsWriteFileCompat(fs, cachePath, payload);
-            console.log('[sync]', ts(), 'cached manifest at', cachePath, '(9p)');
-          } catch (e) {
-            console.warn('[sync] cache manifest write failed:', e && e.message);
-          }
-        }
-      } catch (e) {
-        console.error('[sync] invalid manifest JSON', e);
-        console.groupEnd();
-        sLog('invalid manifest: ' + e.message, 'err');
-        return;
-      }
-    } else {
-      // Try cached manifest (serial first, then 9P)
-      let cached = null;
-      if (useSerial) {
-        try { cached = await serialVfs.cat(guestUserDir + '/.manifest.json'); } catch (_) {}
-      }
-      if (!cached && fs) {
-        const cachePath = followRoot + '/' + npub + '/.manifest.json';
-        try {
-          const buf = await fs.read_file(cachePath);
-          cached = new TextDecoder().decode(buf);
-        } catch (_) {}
-      }
-      if (cached) {
-        try {
-          manifest = JSON.parse(cached);
-          console.log('[sync]', ts(), 'falling back to cached manifest');
-          sLog('no relay manifest; using cached manifest', 'hint');
-        } catch (_) {}
-      }
-      if (!manifest && fs) {
-        const ownNpub = localStorage.getItem('traits.nostr.npub') || '';
-        if (ownNpub === npub) {
-          try {
-            const localManifest = await fs.read_file(SOCIAL_PUBLIC_ROOT + '/.manifest.json');
-            manifest = JSON.parse(new TextDecoder().decode(localManifest));
-            console.log('[sync]', ts(), 'using own local /public manifest');
-            sLog('no relay manifest; using local /public manifest', 'hint');
-          } catch (_) {}
-        }
-      }
-    }
-
-    if (!manifest) {
-      console.warn('[sync] no manifest available for pubkey', pubkeyHex);
-      console.groupEnd();
-      sLog('no manifest found for ' + truncNpub(npub) + ' on any relay', 'hint');
-      sLog('checked relays: ' + NOSTR_RELAYS.join(', '), 'hint');
-      sLog('pubkey hex: ' + pubkeyHex, 'hint');
-      sLog('that user must run: social tunnel-up 8080 && social publish', 'hint');
-      return;
-    }
-    if (!manifest.base || !Array.isArray(manifest.files)) {
-      console.error('[sync] manifest missing base/files', manifest);
-      console.groupEnd();
-      sLog('manifest missing base/files', 'err');
-      return;
-    }
-    console.log('[sync]', ts(), 'manifest base=' + manifest.base, 'files=' + manifest.files.length);
-    sLog('manifest: ' + manifest.files.length + ' file(s) from ' + manifest.base);
-
-    let synced = 0;
-    let writeFailed = 0;
-    for (const f of manifest.files) {
-      try {
-        const url = manifest.base.replace(/\/+$/, '') + '/' + f.p.replace(/^\/+/, '');
-        console.log('[sync] fetch', f.p, '←', url);
-        const resp = await fetch(url);
-        if (!resp.ok) {
-          console.warn('[sync] http', resp.status, 'on', f.p);
-          sLog('fetch ' + f.p + ' → ' + resp.status, 'hint');
-          continue;
-        }
-        const buf = await resp.arrayBuffer();
-        if (f.h && f.h.startsWith('sha256:')) {
-          const got = 'sha256:' + (await sha256hex(buf));
-          if (got !== f.h) {
-            console.warn('[sync] hash mismatch', { file: f.p, expected: f.h, got });
-            sLog('hash mismatch: ' + f.p, 'err');
-            continue;
-          }
-        }
-        const relPath = f.p.replace(/^\/+/, '');
-        if (useSerial) {
-          const guestPath = guestUserDir + '/' + relPath;
-          const lastSlash = guestPath.lastIndexOf('/');
-          if (lastSlash > 0) {
-            try { await serialVfs.mkdir(guestPath.slice(0, lastSlash)); } catch (_) {}
-          }
-          try {
-            await serialVfs.write(guestPath, new Uint8Array(buf));
-            console.log('[sync] wrote', guestPath, 'bytes=' + buf.byteLength, '(serial)');
-          } catch (e) {
-            writeFailed++;
-            console.error('[sync] serial write failed', guestPath, e);
-            sLog('write failed: ' + guestPath + ': ' + (e && e.message), 'err');
-            continue;
-          }
-        } else if (fs) {
-          const dest = followRoot + '/' + npub + '/' + relPath;
-          const lastSlash = dest.lastIndexOf('/');
-          if (lastSlash > 0) ensureDirChain(fs, dest.slice(0, lastSlash));
-          try {
-            await fsWriteFileCompat(fs, dest, new Uint8Array(buf));
-            console.log('[sync] wrote', dest, 'bytes=' + buf.byteLength, '(9p)');
-          } catch (e) {
-            writeFailed++;
-            console.error('[sync] 9p write failed', dest, e);
-            sLog('write failed: ' + socialGuestPath(dest) + ': ' + (e && e.message), 'err');
-            continue;
-          }
-        }
-        synced++;
-      } catch (e) {
-        console.error('[sync] error on', f.p, e);
-        sLog('error on ' + f.p + ': ' + e.message, 'err');
-      }
-    }
-    console.log('[sync]', ts(), 'done: synced=' + synced + '/' + manifest.files.length + ' writeFailed=' + writeFailed,
-      useSerial ? '(serial)' : '(9p)');
-    console.groupEnd();
-    sLog(`synced ${synced}/${manifest.files.length} for ${truncNpub(npub)} → ${useSerial ? guestUserDir : socialGuestPath(followRoot + '/' + npub)}`
-      + (writeFailed ? ` (${writeFailed} write fail)` : ''),
-      synced > 0 ? 'ok' : 'hint');
-  }
-
-  async function doSyncAll() {
-    const following = getFollowing();
-    if (!following.length) { sLog('no followed users to sync'); return; }
-    sLog('syncing ' + following.length + ' user(s)…');
-    for (const npub of following) await doSyncOne(npub);
-    sLog('sync complete', 'ok');
-    // Fire-and-forget guest CLI for terminal echo (relay broadcast logging).
-    void runGuestSocialCommand(['sync'], 'social sync');
-  }
-
-  async function doPublish() {
-    const t0 = performance.now();
-    const ts = () => '[+' + Math.round(performance.now() - t0) + 'ms]';
-    console.group('[publish] doPublish() invoked');
-    console.log('[publish]', ts(), 'start');
-
-    // Step 1: resolve identity (localStorage cache → 9P canonical → guest CLI rescue).
-    let nsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
-    let npub = (localStorage.getItem('traits.nostr.npub') || '').trim();
-    console.log('[publish]', ts(), 'identity#1 from localStorage:',
-      { nsec: nsec ? nsec.slice(0, 12) + '…' : '(empty)', npub: npub ? truncNpub(npub) : '(empty)' });
-
-    if (!nsec) {
-      console.log('[publish]', ts(), 'localStorage missing nsec → reconcileSocialIdentity()');
-      try {
-        const rec = await reconcileSocialIdentity();
-        console.log('[publish]', ts(), 'reconcile result:', {
-          source: rec && rec.source,
-          nsec: rec && rec.nsec ? rec.nsec.slice(0, 12) + '…' : '(empty)',
-          npub: rec && rec.npub ? truncNpub(rec.npub) : '(empty)',
-        });
-      } catch (e) {
-        console.warn('[publish]', ts(), 'reconcile threw:', e && e.message);
-      }
-      nsec = (localStorage.getItem(SOCIAL_NSEC_KEY) || '').trim();
-      npub = (localStorage.getItem('traits.nostr.npub') || '').trim();
-      console.log('[publish]', ts(), 'identity#2 after reconcile:',
-        { nsec: nsec ? nsec.slice(0, 12) + '…' : '(empty)', npub: npub ? truncNpub(npub) : '(empty)' });
-    }
-
-    if (!nsec) {
-      // Last-resort rescue: try reading .nsec directly off both vfs paths.
-      const fsProbe = emulator && emulator.fs9p;
-      if (fsProbe) {
-        for (const path of [SOCIAL_VFS_ROOT + '/.nsec', '/.nsec']) {
-          try {
-            const buf = await fsProbe.read_file(path);
-            const txt = new TextDecoder().decode(buf || new Uint8Array()).trim();
-            console.log('[publish]', ts(), 'fs9p direct read', path, '→', txt ? txt.slice(0, 12) + '…' : '(empty)');
-            if (txt) {
-              localStorage.setItem(SOCIAL_NSEC_KEY, txt);
-              nsec = txt;
-              break;
-            }
-          } catch (e) {
-            console.log('[publish]', ts(), 'fs9p read failed', path, ':', e && e.message);
-          }
-        }
-      }
-    }
-
-    if (!nsec) {
-      console.warn('[publish]', ts(), 'NO nsec found — bailing out');
-      console.groupEnd();
-      const hasNpub = !!npub;
-      sLog(hasNpub
-        ? 'publish blocked: guest reports identity ' + truncNpub(npub) + ' but private key (nsec) is not mirrored to host. Run in terminal: social pubkey  (or generate fresh)'
-        : 'no identity — generate one first', 'err');
-      return;
-    }
-    console.log('[publish]', ts(), 'identity OK — proceeding to manifest build');
-
-    const fs = emulator && emulator.fs9p;
-    if (!fs) {
-      console.warn('[publish]', ts(), 'fs9p not available');
-      console.groupEnd();
-      sLog('9P share not available — boot v86 first', 'err');
-      return;
-    }
-
-    // Step 2: read tunnel base URL from /.social.tunnel on the 9P share (= guest /mnt/host/.social.tunnel).
-    let baseUrl = '';
-    try {
-      const data = await fs.read_file(SOCIAL_VFS_ROOT + '/.social.tunnel');
-      baseUrl = new TextDecoder().decode(data).trim();
-      console.log('[publish]', ts(), 'tunnel base from', SOCIAL_VFS_ROOT + '/.social.tunnel:', baseUrl || '(empty)');
-    } catch (_) {
-      try {
-        const legacy = await fs.read_file('/.social.tunnel');
-        baseUrl = new TextDecoder().decode(legacy).trim();
-        console.log('[publish]', ts(), 'tunnel base from /.social.tunnel (legacy):', baseUrl || '(empty)');
-      } catch (_) {
-        console.log('[publish]', ts(), 'no .social.tunnel found — manifest without fetch URL');
-        sLog('no .social.tunnel — publishing manifest without fetch URL', 'hint');
-        sLog('  run in terminal: social tunnel-up 8080  (then click publish again)', 'hint');
-      }
-    }
-
-    // Step 3: walk /vfs/public via fs9p, compute sha256 of each file.
-    sLog('reading ' + socialGuestPath(SOCIAL_PUBLIC_ROOT) + '…');
-    console.log('[publish]', ts(), 'walking', SOCIAL_PUBLIC_ROOT);
-    const files = [];
-    async function walkPublic(dir) {
-      const entries = listDir(dir);
-      console.log('[publish]', ts(), 'listDir', dir, '→', entries.length, 'entries');
-      for (const e of entries) {
-        if (e.dir) { await walkPublic(e.path); }
-        else {
-          try {
-            const data = await fs.read_file(e.path);
-            if (!data) { console.log('[publish] skip empty', e.path); continue; }
-            const h = 'sha256:' + (await sha256hex(data));
-            const relPath = e.path
-              .replace(/^\/vfs\/public\/?/, '')
-              .replace(/^\/public\/?/, '');
-            const size = data.byteLength || data.length;
-            files.push({ p: relPath, h, s: size });
-            console.log('[publish] file', relPath, 'size=' + size, 'hash=' + h.slice(0, 24) + '…');
-          } catch (e2) {
-            console.warn('[publish] read failed', e.path, ':', e2 && e2.message);
-            sLog('skip ' + e.path + ': ' + e2.message, 'hint');
-          }
-        }
-      }
-    }
-    await walkPublic(SOCIAL_PUBLIC_ROOT);
-    console.log('[publish]', ts(), 'walk complete — total files:', files.length);
-
-    if (!files.length) {
-      console.warn('[publish]', ts(), 'empty public folder — nothing to publish');
-      console.groupEnd();
-      sLog('no files in ' + socialGuestPath(SOCIAL_PUBLIC_ROOT), 'hint');
-      return;
-    }
-    sLog('found ' + files.length + ' file(s) — signing manifest…');
-
-    const manifestObj = { v: 1, base: baseUrl, files };
-    const content  = JSON.stringify(manifestObj);
-    const tags = baseUrl
-      ? [['d', 'public-folder'], ['r', baseUrl]]
-      : [['d', 'public-folder']];
-    const tagsJson = JSON.stringify(tags);
-    const now      = String(Math.floor(Date.now() / 1000));
-    console.log('[publish]', ts(), 'manifest size=' + content.length, 'tags=' + tagsJson, 'created_at=' + now);
-
-    // Step 4: keep a local copy for offline/self testing and relay-miss fallback.
-    try {
-      const payload = new TextEncoder().encode(JSON.stringify(manifestObj, null, 2));
-      await fsWriteFileCompat(fs, SOCIAL_PUBLIC_ROOT + '/.manifest.json', payload);
-      await fsWriteFileCompat(fs, SOCIAL_PUBLIC_ROOT + '/manifest.json', payload);
-      console.log('[publish]', ts(), 'local manifest written:', SOCIAL_PUBLIC_ROOT + '/.manifest.json');
-      sLog('wrote local manifest: ' + socialGuestPath(SOCIAL_PUBLIC_ROOT + '/.manifest.json'), 'ok');
-    } catch (e) {
-      console.warn('[publish]', ts(), 'local manifest write failed:', e && e.message);
-      sLog('could not write local manifest file: ' + e.message, 'hint');
-    }
-
-    // Step 5: sign event via nostrCall (REST) using our nsec.
-    let event;
-    try {
-      console.log('[publish]', ts(), 'calling nostrCall sign_event…');
-      const res = await nostrCall('sign_event', nsec, '30000', content, tagsJson, now);
-      event = typeof res === 'string' ? JSON.parse(res) : res;
-      console.log('[publish]', ts(), 'signed event:', { id: event.id, pubkey: event.pubkey, kind: event.kind });
-    } catch (e) {
-      console.error('[publish]', ts(), 'sign_event failed:', e);
-      console.groupEnd();
-      sLog('sign_event failed: ' + e.message, 'err');
-      return;
-    }
-
-    // Step 6: broadcast to relays.
-    console.log('[publish]', ts(), 'broadcasting to relays:', NOSTR_RELAYS);
-    sLog('broadcasting to ' + NOSTR_RELAYS.length + ' relays…');
-    await nostrPublish(NOSTR_RELAYS, event);
-    console.log('[publish]', ts(), 'broadcast complete; id=' + event.id);
-    sLog('published! id: ' + (event.id || '').slice(0, 16) + '…', 'ok');
-    // Fire-and-forget guest CLI for terminal echo (parallel relay broadcast).
-    void runGuestSocialCommand(['publish'], 'social publish');
-    console.log('[publish]', ts(), 'doPublish() complete');
-    console.groupEnd();
-  }
-
-  async function doSearch(query) {
-    query = query.trim();
-    if (!query) return;
-    sLog('searching "' + query + '"…');
-    searchResults.innerHTML = '<span class="hint">searching…</span>';
-    const events = await nostrReq(NOSTR_RELAYS, {
-      kinds: [30000], '#d': ['public-folder'], search: query, limit: 10,
-    }, 9000);
-    if (!events.length) {
-      searchResults.innerHTML = '<span class="hint">no results</span>';
-      sLog('no results for "' + query + '"', 'hint');
-      return;
-    }
-    sLog('found ' + events.length + ' result(s)', 'ok');
-    searchResults.innerHTML = events.map(ev => {
-      let base = '';
-      try { base = JSON.parse(ev.content).base || ''; } catch (_) {}
-      return `<div class="row-flex" style="margin-top:4px">
-        <span class="hint" style="word-break:break-all;flex:1">${ev.pubkey.slice(0, 16)}… ${base ? '→ ' + base.slice(0, 48) : ''}</span>
-        <button class="search-follow-btn" data-pubkey="${ev.pubkey}">follow</button>
-      </div>`;
-    }).join('');
-  }
-
-  // ── Event handlers
-  generateBtn.onclick = async () => {
-    if (!confirm('Generate a new Nostr identity? Existing key in localStorage will be overwritten.')) return;
-    if (await runGuestSocialCommand(['init'], 'social init', {
-      afterRun: async () => {
-        await hydrateSocialStateFromGuest();
-        await socialInit();
-      },
-    })) {
-      return;
-    }
-    sLog('generating keypair…');
-    try {
-      const res = await nostrCall('keygen');
-      const d = typeof res === 'string' ? JSON.parse(res) : res;
-      const nsec = d.nsec || d.secret_key || d[0] || '';
-      if (!nsec) throw new Error('keygen returned no nsec: ' + JSON.stringify(d));
-      localStorage.setItem(SOCIAL_NSEC_KEY, nsec);
-      try {
-        const pubRes = await nostrCall('pubkey', nsec);
-        const pubHex = typeof pubRes === 'string' ? pubRes : (pubRes.pubkey || String(pubRes));
-        const npubRes = await nostrCall('encode_npub', pubHex);
-        const npub = typeof npubRes === 'string' ? npubRes : JSON.stringify(npubRes);
-        localStorage.setItem('traits.nostr.npub', npub);
-      } catch (_) {}
-      await syncSocialMirrorToGuest({ fillMissingOnly: false });
-      sLog('identity generated!', 'ok');
-      await socialInit();
-    } catch (e) { sLog('keygen failed: ' + e.message, 'err'); }
-  };
-
-  debugPubkeyBtn.onclick = () => {
-    void debugGuestPubkeyFlow();
-  };
-
-  publishBtn.onclick  = doPublish;
-  syncNowBtn.onclick  = doSyncAll;
-
-  syncIntervalEl.onchange = () => {
-    clearInterval(socialSyncTimer);
-    const ms = parseInt(syncIntervalEl.value);
-    if (ms > 0) {
-      socialSyncTimer = setInterval(doSyncAll, ms);
-      sLog('auto-sync every ' + (ms / 60000) + ' min', 'ok');
-    } else { sLog('auto-sync disabled'); }
-  };
-
-  followBtnEl.onclick = () => { doFollow(followInput.value); followInput.value = ''; };
-  followInput.onkeydown = e => { if (e.key === 'Enter') followBtnEl.onclick(); };
-  searchBtnEl.onclick = () => doSearch(searchInput.value);
-  searchInput.onkeydown = e => { if (e.key === 'Enter') searchBtnEl.onclick(); };
-
-  socialList.addEventListener('click', e => {
-    const btn = e.target.closest('button'); if (!btn) return;
-    const npub = btn.dataset.npub;
-    if (btn.classList.contains('fc-sync-btn'))     doSyncOne(npub);
-    if (btn.classList.contains('fc-view-btn')) {
-      // Open viewer overlay on <follow_root>/<npub>. If the dir is empty,
-      // trigger a sync first so the viewer has files to show.
-      void (async () => {
-        try {
-          const fs = emulator && emulator.fs9p;
-          let root = getFollowRoot();
-          if (fs) {
-            try { root = await resolveFollowRoot(fs); } catch (_) {}
-          }
-          const userDir = root + '/' + npub;
-          let hasFiles = false;
-          if (fs) {
-            try {
-              const entries = listDir(userDir);
-              hasFiles = entries.some(e => !e.dir && !e.path.endsWith('/.manifest.json'));
-            } catch (_) {}
-          }
-          if (!hasFiles) {
-            sLog('no synced files for ' + truncNpub(npub) + ' — syncing first…', 'hint');
-            await doSyncOne(npub);
-          }
-          if (pathEl) pathEl.value = userDir;
-          overlay.hidden = false; renderTree(); vSet('ready');
-        } catch (e) {
-          sLog('view files: ' + e.message, 'err');
-        }
-      })();
-    }
-    if (btn.classList.contains('fc-unfollow-btn')) {
-      if (!confirm('Unfollow ' + truncNpub(npub) + '?')) return;
-      // localStorage is canonical: remove first, render, push to 9P, THEN
-      // dispatch the guest CLI for relay-side broadcast.
-      saveFollowing(getFollowing().filter(n => n !== npub));
-      renderFollowList();
-      sLog('unfollowed ' + truncNpub(npub));
-      void (async () => {
-        await pushFollowingListTo9P();
-        void runGuestSocialCommand(['unfollow', npub], 'social unfollow ' + truncNpub(npub), {
-          afterRun: async () => {
-            // Do NOT hydrate from 9P — that would re-add the npub if the guest
-            // CLI failed to update its .list (9P writability or social.sh die).
-            renderFollowList();
-          },
-        });
-      })();
-    }
-  });
-
-  searchResults.addEventListener('click', e => {
-    const btn = e.target.closest('.search-follow-btn'); if (!btn) return;
-    nostrCall('encode_npub', btn.dataset.pubkey).then(res => {
-      doFollow(typeof res === 'string' ? res : JSON.stringify(res));
-    }).catch(err => sLog('encode_npub: ' + err.message, 'err'));
-  });
-
-  socialBtn.onclick = async () => {
-    if (!emulator) { setStatus('boot v86 first', 'err'); return; }
-    socialOverlay.hidden = false;
-    // /mnt/host (9P share) is canonical; just seed any missing files into it
-    // and pull current state into the browser.
-    await syncSocialMirrorToGuest({ fillMissingOnly: true });
-    await hydrateSocialStateFromGuest();
-    socialInit();
-  };
-  socialCloseBtn.onclick = () => { socialOverlay.hidden = true; term.focus(); };
-
-  // Keep social button in sync with emulator state
-  setInterval(() => { socialBtn.disabled = !emulator; }, 800);
 
   // ── follow panel ──────────────────────────────────────────────────────
   // Side panel (does not fully overlap the terminal). Bootstrap pipeline:
@@ -4573,6 +2910,304 @@
   };
 
   setInterval(() => { followBtn.disabled = !emulator; }, 800);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tunnels panel — manages lifecycle of running tunnels (ssh, social, etc.)
+  // Reads guest state from /tmp/tunnel.code, /tmp/tunnel.pids, /tmp/tunnel.cmd
+  // Pretty-formats one row per tunnel with relay-side status, supports
+  // start / stop / restart / edit-cmd. Edited commands are persisted to
+  // localStorage (per pairing-code) and used by future restart actions.
+  // ─────────────────────────────────────────────────────────────────────────
+  const tunnelsBtn         = $('tunnels');
+  const tunnelsPanel       = $('tunnels-panel');
+  const tunnelsCloseBtn    = $('tunnels-close');
+  const tunnelsRefreshBtn  = $('tunnels-refresh');
+  const tunnelsListEl      = $('tunnels-list');
+  const tunnelsLogEl       = $('tunnels-log');
+
+  const TUNNEL_CMD_OVERRIDE_PREFIX = 'traits.tunnels.cmd.';
+  const TUNNEL_DEFAULT_CMD = 'sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) 22 8080 22000 8384';
+  const TUNNEL_RELAY_ENDPOINTS = [
+    'https://traits-build-tunnel.fly.dev',
+    'https://tunnel.traits.build',
+  ];
+
+  function tnLog(line, cls) {
+    const d = document.createElement('div');
+    d.className = 'tl-' + (cls || 'info');
+    d.textContent = line;
+    tunnelsLogEl.appendChild(d);
+    tunnelsLogEl.scrollTop = tunnelsLogEl.scrollHeight;
+  }
+
+  async function tnExec(cmd, opts) {
+    if (!serialVfs || !serialVfs.ready) {
+      if (serialVfs && typeof serialVfs.setReady === 'function') {
+        try { serialVfs.setReady(true); } catch (_) {}
+      }
+    }
+    if (!serialVfs) return { stdout: '', exitCode: -1, timedOut: true };
+    return serialVfs.exec(cmd, opts || { timeout: 20000 });
+  }
+
+  function tnGetCmdOverride(code) {
+    if (!code) return null;
+    try { return localStorage.getItem(TUNNEL_CMD_OVERRIDE_PREFIX + code); } catch (_) { return null; }
+  }
+  function tnSetCmdOverride(code, cmd) {
+    if (!code) return;
+    try {
+      if (cmd && cmd.trim()) localStorage.setItem(TUNNEL_CMD_OVERRIDE_PREFIX + code, cmd);
+      else localStorage.removeItem(TUNNEL_CMD_OVERRIDE_PREFIX + code);
+    } catch (_) {}
+  }
+  function tnEffectiveCmd(code) {
+    return tnGetCmdOverride(code) || TUNNEL_DEFAULT_CMD;
+  }
+
+  async function tnFetchRelayStatus(code) {
+    if (!code) return null;
+    for (const base of TUNNEL_RELAY_ENDPOINTS) {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 4000);
+        const r = await fetch(base + '/port/status?code=' + encodeURIComponent(code), { signal: ctrl.signal });
+        clearTimeout(t);
+        if (!r.ok) continue;
+        const j = await r.json();
+        return { endpoint: base, ...j };
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  async function tnDiscoverTunnels() {
+    // Single guest call to gather everything we need.
+    // Outputs distinct sections marked with sentinels for easy parsing.
+    const cmd =
+      'echo __TUNNEL_CODE__; cat /tmp/tunnel.code 2>/dev/null; ' +
+      'echo __TUNNEL_PORTS__; cat /tmp/tunnel.ports 2>/dev/null; ' +
+      'echo __TUNNEL_PIDS__; cat /tmp/tunnel.pids 2>/dev/null; ' +
+      'echo __TUNNEL_CMD__; cat /tmp/tunnel.cmd 2>/dev/null; ' +
+      'echo __TUNNEL_PS__; ps -o pid,args 2>/dev/null | grep -E "websocat|tunnel-up" | grep -v grep || true; ' +
+      'echo __TUNNEL_END__';
+    const r = await tnExec(cmd, { timeout: 15000 });
+    const out = (r.stdout || '').replace(/\r/g, '');
+    function section(name) {
+      const re = new RegExp('__' + name + '__\\n([\\s\\S]*?)(?=__TUNNEL_[A-Z]+__|$)');
+      const m = out.match(re);
+      return m ? m[1].trim() : '';
+    }
+    const code  = section('TUNNEL_CODE');
+    const ports = section('TUNNEL_PORTS').split(/\s+/).filter(Boolean);
+    const pids  = section('TUNNEL_PIDS').split(/\s+/).filter(Boolean);
+    const cmdFile = section('TUNNEL_CMD');
+    const ps    = section('TUNNEL_PS').split(/\n/).map(s => s.trim()).filter(Boolean);
+
+    const tunnels = [];
+    if (code) {
+      tunnels.push({
+        id: code,
+        code,
+        ports,
+        pids,
+        cmd: cmdFile || null,
+        ps,
+      });
+    } else if (ps.length) {
+      // No code file but websocat processes running.
+      tunnels.push({ id: 'unmanaged', code: null, ports: [], pids: [], cmd: null, ps });
+    }
+    return tunnels;
+  }
+
+  function tnRenderRow(t) {
+    const row = document.createElement('div');
+    row.className = 'tn-row';
+    row.dataset.code = t.code || '';
+
+    const head = document.createElement('div');
+    head.innerHTML = '<span class="tn-code">' + (t.code ? 'code: ' + t.code : '(no pairing code)') + '</span>';
+    row.appendChild(head);
+
+    if (t.ports && t.ports.length) {
+      const meta = document.createElement('div');
+      meta.className = 'tn-meta';
+      meta.textContent = 'ports: ' + t.ports.join(', ');
+      row.appendChild(meta);
+    }
+    if (t.pids && t.pids.length) {
+      const meta = document.createElement('div');
+      meta.className = 'tn-meta';
+      meta.textContent = 'pids: ' + t.pids.join(' ') + ' (' + t.pids.length + ' bridge proc' + (t.pids.length === 1 ? '' : 's') + ')';
+      row.appendChild(meta);
+    }
+    if (t.ps && t.ps.length) {
+      const meta = document.createElement('div');
+      meta.className = 'tn-meta';
+      meta.textContent = 'ps: ' + t.ps.length + ' matching process' + (t.ps.length === 1 ? '' : 'es');
+      meta.title = t.ps.join('\n');
+      row.appendChild(meta);
+    }
+
+    const relay = document.createElement('div');
+    relay.className = 'tn-meta';
+    relay.textContent = 'relay: querying…';
+    row.appendChild(relay);
+
+    if (t.code) {
+      tnFetchRelayStatus(t.code).then(s => {
+        if (!s) {
+          relay.className = 'tn-meta tn-relay-err';
+          relay.textContent = 'relay: unreachable';
+          return;
+        }
+        const active = !!s.active;
+        const guestPorts = (s.guest_ports && Object.keys(s.guest_ports)) || [];
+        const queueDepth = s.guest_queue_depth || {};
+        const pairs = s.active_pairs || {};
+        const age = (typeof s.age_s === 'number') ? Math.round(s.age_s) + 's' : '';
+        const parts = [];
+        parts.push(active ? '✓ active' : '✗ inactive');
+        if (guestPorts.length) parts.push('guest=' + guestPorts.join(','));
+        if (Object.keys(pairs).length) parts.push('pairs=' + JSON.stringify(pairs));
+        if (Object.keys(queueDepth).length) parts.push('queue=' + JSON.stringify(queueDepth));
+        if (age) parts.push('age=' + age);
+        relay.className = 'tn-meta ' + (active && guestPorts.length ? 'tn-relay-ok' : (active ? 'tn-relay-warn' : 'tn-relay-err'));
+        relay.textContent = 'relay: ' + parts.join('  ');
+        relay.title = JSON.stringify(s, null, 2);
+      });
+    } else {
+      relay.className = 'tn-meta tn-relay-warn';
+      relay.textContent = 'relay: (no code)';
+    }
+
+    const cmdShown = t.code ? tnEffectiveCmd(t.code) : (t.cmd || TUNNEL_DEFAULT_CMD);
+    const cmdEl = document.createElement('div');
+    cmdEl.className = 'tn-cmd';
+    cmdEl.textContent = '$ ' + cmdShown;
+    if (t.code && tnGetCmdOverride(t.code)) cmdEl.title = 'overridden via localStorage';
+    row.appendChild(cmdEl);
+
+    const actions = document.createElement('div');
+    actions.className = 'tn-actions';
+    const btnRestart = document.createElement('button');
+    btnRestart.textContent = 'restart';
+    btnRestart.onclick = () => tnRestartTunnel(t);
+    const btnStop = document.createElement('button');
+    btnStop.textContent = 'stop';
+    btnStop.onclick = () => tnStopTunnel(t);
+    const btnEdit = document.createElement('button');
+    btnEdit.textContent = 'edit cmd';
+    btnEdit.onclick = () => tnEditCmd(t);
+    actions.appendChild(btnRestart);
+    actions.appendChild(btnStop);
+    actions.appendChild(btnEdit);
+    row.appendChild(actions);
+
+    return row;
+  }
+
+  async function tnRefresh() {
+    if (!emulator) {
+      tunnelsListEl.innerHTML = '<div class="tn-row tn-empty">boot v86 first</div>';
+      return;
+    }
+    tunnelsListEl.innerHTML = '<div class="tn-row tn-empty">scanning guest…</div>';
+    let tunnels = [];
+    try {
+      tunnels = await tnDiscoverTunnels();
+    } catch (e) {
+      tunnelsListEl.innerHTML = '';
+      tnLog('discover failed: ' + (e && e.message || e), 'err');
+      return;
+    }
+    tunnelsListEl.innerHTML = '';
+    if (!tunnels.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tn-row tn-empty';
+      empty.innerHTML =
+        'no tunnels detected. start one with the default command below or click <b>restart</b> after editing.<br>' +
+        '<div class="tn-cmd" style="margin-top:6px">$ ' + TUNNEL_DEFAULT_CMD + '</div>';
+      const actions = document.createElement('div');
+      actions.className = 'tn-actions';
+      const startBtn = document.createElement('button');
+      startBtn.textContent = 'start default';
+      startBtn.onclick = () => tnRestartTunnel({ id: 'default', code: null });
+      const editBtn = document.createElement('button');
+      editBtn.textContent = 'edit cmd';
+      editBtn.onclick = () => tnEditCmd({ id: 'default', code: null });
+      actions.appendChild(startBtn);
+      actions.appendChild(editBtn);
+      empty.appendChild(actions);
+      tunnelsListEl.appendChild(empty);
+      return;
+    }
+    tunnels.forEach(t => tunnelsListEl.appendChild(tnRenderRow(t)));
+  }
+
+  async function tnStopTunnel(t) {
+    tnLog('$ stop ' + (t.code || '(unmanaged)'), 'cmd');
+    const cmd =
+      'if [ -s /tmp/tunnel.pids ]; then ' +
+        'while read p; do kill "$p" 2>/dev/null; done < /tmp/tunnel.pids; ' +
+        'sleep 0.3; ' +
+        'while read p; do kill -9 "$p" 2>/dev/null; done < /tmp/tunnel.pids; ' +
+      'fi; ' +
+      'pkill -f websocat 2>/dev/null; ' +
+      'rm -f /tmp/tunnel.code /tmp/tunnel.pids /tmp/tunnel.cmd /tmp/tunnel.ports 2>/dev/null; ' +
+      'echo stopped';
+    const r = await tnExec(cmd, { timeout: 10000 });
+    tnLog((r.stdout || '').trim() || '(no output)', r.exitCode === 0 ? 'ok' : 'err');
+    setTimeout(tnRefresh, 400);
+  }
+
+  async function tnRestartTunnel(t) {
+    const code = t.code || (t.id !== 'default' ? t.id : null);
+    const cmd = code ? tnEffectiveCmd(code) : TUNNEL_DEFAULT_CMD;
+    tnLog('$ restart ' + (code || '(default)'), 'cmd');
+    tnLog(cmd, 'out');
+    // Stop first so respawn loops are gone, then start fresh.
+    await tnStopTunnel(t).catch(() => {});
+    // Run the effective command in the background so the panel does not hang
+    // on websocat's foreground respawn loop. We background it via `&` and
+    // detach stdout/stderr to a log so subsequent guest commands still work.
+    const wrapped = '( ' + cmd + ' ) >/tmp/tunnel.last.log 2>&1 &';
+    const r = await tnExec(wrapped, { timeout: 8000 });
+    tnLog('launched (exit=' + r.exitCode + ')', r.exitCode === 0 ? 'ok' : 'err');
+    // Give tunnel-up.sh a moment to write /tmp/tunnel.code, then refresh.
+    setTimeout(tnRefresh, 4000);
+  }
+
+  function tnEditCmd(t) {
+    const code = t.code || (t.id && t.id !== 'default' ? t.id : null);
+    const current = code ? tnEffectiveCmd(code) : TUNNEL_DEFAULT_CMD;
+    const next = window.prompt(
+      'Edit start command for ' + (code ? 'code ' + code : 'default tunnel') +
+      '.\n\nLeave empty to clear override and revert to default.',
+      current
+    );
+    if (next === null) return; // cancelled
+    if (!code) {
+      // No code yet — store as default override under sentinel key.
+      tnSetCmdOverride('__default__', next);
+      tnLog('default cmd updated', 'ok');
+    } else {
+      tnSetCmdOverride(code, next);
+      tnLog('override saved for ' + code + (next.trim() ? '' : ' (cleared)'), 'ok');
+    }
+    tnRefresh();
+  }
+
+  tunnelsBtn.onclick = () => {
+    if (!emulator) { setStatus('boot v86 first', 'err'); return; }
+    tunnelsPanel.hidden = false;
+    tnRefresh();
+  };
+  tunnelsCloseBtn.onclick = () => { tunnelsPanel.hidden = true; term.focus(); };
+  tunnelsRefreshBtn.onclick = () => tnRefresh();
+
+  setInterval(() => { tunnelsBtn.disabled = !emulator; }, 800);
 
   // ?autoboot=1 [&restore=0|1]
   // When `restore` is unspecified, auto-restore if a snapshot exists for the
