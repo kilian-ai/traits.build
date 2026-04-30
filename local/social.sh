@@ -243,28 +243,80 @@ cmd_tunnel_up() {
     need curl
     ensure_dirs
     ports="${*:-8080}"
-    # Reuse an existing tunnel if one is already running and the relay
-    # still considers its code active. This prevents accumulating stale
-    # bridges/watchdogs from repeated `social tunnel-up` invocations
-    # (v86 Social overlay buttons, agent calls, manual re-runs).
+
+    # Prefer the locally running tunnel's actual code over the social cache.
+    # tunnel-up.sh writes the live pairing code to /tmp/tunnel.code (or
+    # $TUNNEL_CODE_FILE). If that file exists and the relay still has a real
+    # guest bridge on port 8080, just adopt it — even if .social.tunnel
+    # disagrees (common after a relay restart, manual tunnel-up.sh restart,
+    # or stale social cache).
+    live_code_file="${TUNNEL_CODE_FILE:-/tmp/tunnel.code}"
+    live_code=""
+    [ -s "$live_code_file" ] && live_code=$(head -1 "$live_code_file" 2>/dev/null | tr -dc 'A-Z0-9')
+    base_host="${SOCIAL_TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}"
+
+    # Strict-check helper: returns 0 only if relay has a guest bridge on :8080
+    # for the given code (active=true alone is not enough — the session can
+    # outlive its websockets).
+    tunnel_alive() {
+        c="$1"
+        [ -n "$c" ] || return 1
+        s=$(curl -sS --max-time 4 "$base_host/port/status?code=$c" 2>/dev/null) || return 1
+        case "$s" in *'"code not found"'*|'') return 1 ;; esac
+        # Look for "guest_ports":[...8080...] OR a non-zero queue/pair on 8080.
+        case "$s" in
+            *'"guest_ports":['*'8080'*) return 0 ;;
+            *'"guest_queue_depth":{'*'"8080":'[1-9]*) return 0 ;;
+            *'"active_pairs":{'*'"8080":'[1-9]*) return 0 ;;
+        esac
+        return 1
+    }
+
+    cached_url=""
+    cached_code=""
     if [ -s "$TUNNEL_FILE" ]; then
         cached_url=$(head -1 "$TUNNEL_FILE" 2>/dev/null)
-        # Extract code from .../port/http/CODE/8080
         cached_code=$(printf '%s' "$cached_url" | sed -n 's|.*/port/http/\([A-Z0-9]\{4\}\)/.*|\1|p')
-        if [ -n "$cached_code" ]; then
-            base="${SOCIAL_TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}"
-            status=$(curl -sS --max-time 4 "$base/port/status?code=$cached_code" 2>/dev/null)
-            case "$status" in
-                *'"active":true'*)
-                    echo "tunnel code: $cached_code  (reusing — already active)"
-                    echo "base_url:    $cached_url"
-                    return 0
-                    ;;
-            esac
-            log "cached tunnel $cached_code no longer active — starting fresh"
+    fi
+
+    chosen_code=""
+    # Priority 1: live code from /tmp/tunnel.code, if relay confirms a guest.
+    if [ -n "$live_code" ] && tunnel_alive "$live_code"; then
+        chosen_code="$live_code"
+    # Priority 2: cached code, but only if relay still has a guest bridge.
+    elif [ -n "$cached_code" ] && tunnel_alive "$cached_code"; then
+        chosen_code="$cached_code"
+    fi
+
+    if [ -n "$chosen_code" ]; then
+        new_url="$base_host/port/http/$chosen_code/8080"
+        prev_url="$cached_url"
+        printf '%s\n' "$new_url" > "$TUNNEL_FILE"
+        if [ "$chosen_code" = "$cached_code" ]; then
+            echo "tunnel code: $chosen_code  (reusing — already active)"
+        else
+            echo "tunnel code: $chosen_code  (adopted from $live_code_file)"
         fi
+        echo "base_url:    $new_url"
+        # Auto-republish if URL changed and we have an identity + content.
+        if [ "${SOCIAL_TUNNEL_NO_PUBLISH:-0}" != "1" ] \
+            && [ -f "$NSEC_FILE" ] \
+            && [ "$new_url" != "$prev_url" ]; then
+            nfiles=$(count_public_files 2>/dev/null || echo 0)
+            if [ "$nfiles" -gt 0 ]; then
+                log "tunnel code changed ($prev_url -> $new_url) — republishing manifest"
+                cmd_publish || log "auto-publish failed — run 'social publish' manually"
+            fi
+        fi
+        return 0
+    fi
+
+    # Nothing usable — start a fresh tunnel.
+    if [ -n "$cached_code" ] || [ -n "$live_code" ]; then
+        log "no live tunnel found (cached=$cached_code live=$live_code) — starting fresh"
     fi
     log "starting tunnel for ports: $ports"
+
     # tunnel-up.sh prints CODE; capture it. Installing websocat/unbound on a
     # fresh guest can take 30-60s, so poll for the pairing code instead of
     # using a fixed sleep.
@@ -376,21 +428,19 @@ cmd_publish() {
         if [ -n "$cached_code" ]; then
             tbase="${SOCIAL_TUNNEL_BASE:-https://traits-build-tunnel.fly.dev}"
             status=$(curl -sS --max-time 4 "$tbase/port/status?code=$cached_code" 2>/dev/null)
+            # Strict: require an actual guest bridge on port 8080. The
+            # session can survive past websocket drop and report
+            # active=true while serving 503s, so look for guest_ports/queue.
+            ok=0
             case "$status" in
-                *'"active":true'*) ;;
-                *)
-                    # Also try CF fallback before warning.
-                    fb="${SOCIAL_TUNNEL_FALLBACK:-https://tunnel.traits.build}"
-                    status2=$(curl -sS --max-time 4 "$fb/port/status?code=$cached_code" 2>/dev/null)
-                    case "$status2" in
-                        *'"active":true'*) ;;
-                        *)
-                            log "WARNING: tunnel code $cached_code looks inactive on both endpoints"
-                            log "         followers will get HTTP 503. run 'social tunnel-up' first to refresh."
-                            ;;
-                    esac
-                    ;;
+                *'"guest_ports":['*'8080'*) ok=1 ;;
+                *'"guest_queue_depth":{'*'"8080":'[1-9]*) ok=1 ;;
+                *'"active_pairs":{'*'"8080":'[1-9]*) ok=1 ;;
             esac
+            if [ "$ok" -ne 1 ]; then
+                log "WARNING: tunnel code $cached_code has no live guest bridge on :8080"
+                log "         followers will get HTTP 503. run 'social tunnel-up' first to refresh."
+            fi
         fi
     fi
     # Resolve non-empty public dir. If still empty, refuse to publish a
