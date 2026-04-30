@@ -2109,7 +2109,59 @@
   term.onData(data => {
     sendGuestText(data);
   });
+  // Cmd/Ctrl+C: when there's a terminal selection, copy via browser instead of
+  // sending Ctrl+C to the guest (xterm's default). Cmd/Ctrl+V: paste from
+  // clipboard. Cmd/Ctrl+A: select all visible buffer.
+  term.attachCustomKeyEventHandler((ev) => {
+    if (ev.type !== 'keydown') return true;
+    const mod = ev.metaKey || ev.ctrlKey;
+    if (!mod) return true;
+    const k = (ev.key || '').toLowerCase();
+    if (k === 'c' && term.hasSelection()) {
+      try { navigator.clipboard.writeText(term.getSelection()); } catch {}
+      return false;
+    }
+    if (k === 'v') {
+      navigator.clipboard.readText().then(t => {
+        if (t) sendGuestText(t);
+      }).catch(() => {});
+      return false;
+    }
+    if (k === 'a' && ev.shiftKey === false) {
+      // Cmd+A (no shift) → select all in terminal buffer
+      try { term.selectAll(); } catch {}
+      return false;
+    }
+    return true;
+  });
   termEl.addEventListener('click', () => term.focus());
+
+  // ── Global Cmd/Ctrl+C fallback ───────────────────────────────────────────
+  // When the active selection is OUTSIDE xterm (viewer source/editor, panels,
+  // tunnel logs, etc.), some browsers route the keystroke to the focused
+  // element instead of the document selection. This handler catches Cmd/Ctrl+C
+  // when there's a window-level selection and delegates to the clipboard.
+  window.addEventListener('keydown', (ev) => {
+    const mod = ev.metaKey || ev.ctrlKey;
+    if (!mod) return;
+    const k = (ev.key || '').toLowerCase();
+    if (k !== 'c') return;
+    // If event already targets an editable input/textarea, let the browser
+    // handle it natively.
+    const t = ev.target;
+    const tag = (t && t.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+    // If terminal has a selection, the xterm handler above already runs.
+    if (term.hasSelection && term.hasSelection()) return;
+    // Otherwise copy the document selection (works inside #viewer-editor /
+    // #viewer-tree contents / log areas that aren't user-select:none).
+    const sel = window.getSelection && window.getSelection();
+    const txt = sel ? sel.toString() : '';
+    if (txt) {
+      try { navigator.clipboard.writeText(txt); } catch {}
+      ev.preventDefault();
+    }
+  }, true);
 
   setInterval(() => { statsEl.textContent = emulator ? `${byteCount} bytes` : ''; }, 500);
 
