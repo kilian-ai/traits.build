@@ -1,0 +1,1 @@
+/Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/sys/chat_protocols-component/target/wasm32-wasip1/release/sys_chat_protocols_component.wasm: /Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/sys/chat_protocols-component/src/bindings.rs /Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/sys/chat_protocols-component/src/lib.rs

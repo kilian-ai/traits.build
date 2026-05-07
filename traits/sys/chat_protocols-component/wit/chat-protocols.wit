@@ -1,0 +1,14 @@
+package traits:sys-chat-protocols@0.1.0;
+
+interface chat-protocols {
+  chat-protocols: func(
+    workspace-id: string,
+    method: option<string>,
+    base-dir: option<string>
+  ) -> result<string, string>;
+}
+
+world chat-protocols-world {
+  import traits:kernel-host/dispatch@0.1.0;
+  export chat-protocols;
+}

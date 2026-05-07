@@ -1,0 +1,5 @@
+package traits:kernel-host@0.1.0;
+
+interface dispatch {
+  call: func(trait-path: string, args-json: string) -> result<string, string>;
+}
