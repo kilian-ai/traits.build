@@ -208,6 +208,14 @@ fn main() {
     ct.push_str("            return Some(result);\n");
     ct.push_str("        }\n");
     ct.push_str("    }\n");
+    ct.push_str("    dispatch_skip_components(trait_path, args)\n");
+    ct.push_str("}\n\n");
+
+    // dispatch_skip_components: same cascade minus the component layer.
+    ct.push_str("/// Dispatch skipping the component-model loader. Used by kernel-host's\n");
+    ct.push_str("/// `call-native` import so delegator components can forward back to\n");
+    ct.push_str("/// their own native impl without re-entering wasm.\n");
+    ct.push_str("pub fn dispatch_skip_components(trait_path: &str, args: &[serde_json::Value]) -> Option<serde_json::Value> {\n");
     ct.push_str("    if let Some(loader) = crate::dylib_loader::LOADER.get() {\n");
     ct.push_str("        if let Some(result) = loader.dispatch(trait_path, args) {\n");
     ct.push_str("            return Some(result);\n");

@@ -37,6 +37,23 @@ pub struct TraitToml {
     pub requires: Option<HashMap<String, String>>,
     #[serde(default)]
     pub config: Option<HashMap<String, toml::Value>>,
+    /// Optional `[component]` section opting this trait into auto-generated
+    /// WebAssembly Component Model packaging.
+    #[serde(default)]
+    pub component: Option<ComponentToml>,
+}
+
+/// `[component]` section in a `.trait.toml`. Drives `gen-component`.
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct ComponentToml {
+    /// Generate a delegator component for this trait.
+    #[serde(default)]
+    pub auto: bool,
+    /// Trait path the generated component should forward calls to. When
+    /// omitted, defaults to the trait's own path (the host import will use
+    /// the native bypass to avoid re-entering the component loader).
+    #[serde(default)]
+    pub delegates_to: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -71,33 +71,60 @@ impl ComponentLoader {
         wasmtime_wasi::add_to_linker_sync(&mut linker)?;
 
         // Define the kernel host import: traits:kernel-host/dispatch@0.1.0
-        // exposes a single function `call(trait-path: string, args-json: string)
-        // -> result<string, string>` that re-enters the kernel dispatcher.
-        // Components that need to delegate to other traits import this.
+        // exposes two functions:
+        //   call(trait-path, args-json)        — full dispatcher (component → dylib → builtin)
+        //   call-native(trait-path, args-json) — skip the component loader (used to
+        //                                        forward back to the trait's native
+        //                                        impl without re-entering wasm).
         {
             let mut inst = linker
                 .instance("traits:kernel-host/dispatch@0.1.0")
                 .map_err(|e| anyhow!("define kernel-host instance: {}", e))?;
-            inst.func_new("call", |_store, args, results| {
+
+            fn unpack_args(args: &[Val]) -> Result<(String, Vec<Value>)> {
                 let trait_path = match args.first() {
                     Some(Val::String(s)) => s.clone(),
-                    _ => return Err(anyhow::anyhow!("kernel-host.call: arg 0 not string")),
+                    _ => return Err(anyhow!("kernel-host: arg 0 must be string")),
                 };
                 let args_json = match args.get(1) {
                     Some(Val::String(s)) => s.clone(),
-                    _ => return Err(anyhow::anyhow!("kernel-host.call: arg 1 not string")),
+                    _ => return Err(anyhow!("kernel-host: arg 1 must be string")),
                 };
                 let parsed: Vec<Value> =
-                    serde_json::from_str(&args_json).unwrap_or_else(|_| Vec::new());
-                let result = kernel_logic::platform::dispatch(&trait_path, &parsed)
-                    .unwrap_or_else(|| serde_json::json!({"error": format!("trait '{}' not found", trait_path)}));
-                let json_out = serde_json::to_string(&result).unwrap_or_else(|_| "null".into());
+                    serde_json::from_str(&args_json).unwrap_or_default();
+                Ok((trait_path, parsed))
+            }
+
+            fn pack_result(value: Value, slot: &mut Val) {
+                let json_out = serde_json::to_string(&value).unwrap_or_else(|_| "null".into());
+                *slot = Val::Result(Ok(Some(Box::new(Val::String(json_out)))));
+            }
+
+            inst.func_new("call", |_store, args, results| {
+                let (path, parsed) = unpack_args(args)?;
+                let result = kernel_logic::platform::dispatch(&path, &parsed)
+                    .unwrap_or_else(|| serde_json::json!({"error": format!("trait '{}' not found", path)}));
                 if let Some(slot) = results.get_mut(0) {
-                    *slot = Val::Result(Ok(Some(Box::new(Val::String(json_out)))));
+                    pack_result(result, slot);
                 }
                 Ok(())
             })
             .map_err(|e| anyhow!("define kernel-host.call: {}", e))?;
+
+            // call-native: bypass the component loader and dispatch to dylib /
+            // builtin / compiled fallback only. Required for delegator components
+            // whose target is the same trait path they export — without this
+            // bypass, the dispatcher would re-enter the component loader and loop.
+            inst.func_new("call-native", |_store, args, results| {
+                let (path, parsed) = unpack_args(args)?;
+                let result = kernel_logic::platform::dispatch_skip_components(&path, &parsed)
+                    .unwrap_or_else(|| serde_json::json!({"error": format!("native trait '{}' not found", path)}));
+                if let Some(slot) = results.get_mut(0) {
+                    pack_result(result, slot);
+                }
+                Ok(())
+            })
+            .map_err(|e| anyhow!("define kernel-host.call-native: {}", e))?;
         }
 
         Ok(Self {

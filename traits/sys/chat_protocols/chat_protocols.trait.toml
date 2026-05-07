@@ -43,3 +43,6 @@ description = "Structured chat transcript data from the bound provider"
 language = "rust"
 source = "builtin"
 entry = "chat_protocols"
+[component]
+auto = true
+delegates_to = "sys.chat_protocols.vscode"

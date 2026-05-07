@@ -283,6 +283,7 @@ pub fn bootstrap(config: &Config) -> Result<Dispatcher, Box<dyn std::error::Erro
     // Initialize platform abstraction layer (dispatch, registry, config, secrets)
     kernel_logic::platform::init(kernel_logic::platform::Platform {
         dispatch: |path, args| crate::dispatcher::compiled::dispatch(path, args),
+        dispatch_skip_components: |path, args| crate::dispatcher::compiled::dispatch_skip_components(path, args),
         registry_all: || {
             match crate::globals::REGISTRY.get() {
                 Some(reg) => {

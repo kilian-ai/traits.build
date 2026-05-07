@@ -22,6 +22,12 @@ use std::sync::{Mutex, OnceLock};
 pub struct Platform {
     /// Dispatch a trait call by path. Returns None if trait not found.
     pub dispatch: fn(&str, &[Value]) -> Option<Value>,
+    /// Dispatch a trait call by path, skipping the WebAssembly Component
+    /// Model loader. Used by `kernel-host.call-native` so a delegator
+    /// component can forward back to its own native (dylib/builtin)
+    /// implementation without re-entering the component loader and looping.
+    /// Falls back to `dispatch` when not provided.
+    pub dispatch_skip_components: fn(&str, &[Value]) -> Option<Value>,
     /// Return all registered traits as JSON summary objects.
     pub registry_all: fn() -> Vec<Value>,
     /// Count of registered traits.
@@ -78,6 +84,12 @@ fn platform() -> &'static Platform {
 /// Dispatch a trait call. Returns None if trait not found.
 pub fn dispatch(path: &str, args: &[Value]) -> Option<Value> {
     (platform().dispatch)(path, args)
+}
+
+/// Dispatch a trait call but skip the component-model loader. Used by the
+/// kernel-host `call-native` import to break delegator self-loops.
+pub fn dispatch_skip_components(path: &str, args: &[Value]) -> Option<Value> {
+    (platform().dispatch_skip_components)(path, args)
 }
 
 /// All registered traits as JSON summary objects.

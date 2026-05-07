@@ -1465,6 +1465,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gen-component"
+version = "0.1.0"
+dependencies = [
+ "kernel-logic",
+ "toml",
+ "walkdir",
+]
+
+[[package]]
 name = "gen-wit"
 version = "0.1.0"
 dependencies = [
@@ -1974,7 +1983,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-logic"
-version = "0.260507.43218"
+version = "0.260507.43832"
 dependencies = [
  "js-sys",
  "serde",
@@ -3677,7 +3686,7 @@ dependencies = [
 
 [[package]]
 name = "trait-sys-checksum"
-version = "0.260507.43218"
+version = "0.260507.43832"
 dependencies = [
  "regex",
  "serde_json",
@@ -3687,7 +3696,7 @@ dependencies = [
 
 [[package]]
 name = "traits"
-version = "0.260507.43218"
+version = "0.260507.43832"
 dependencies = [
  "actix-cors",
  "actix-rt",
@@ -3736,7 +3745,7 @@ dependencies = [
 
 [[package]]
 name = "traits-plugin-api"
-version = "0.260507.43218"
+version = "0.260507.43832"
 dependencies = [
  "serde_json",
 ]
@@ -3761,7 +3770,7 @@ dependencies = [
 
 [[package]]
 name = "traits-wasm"
-version = "0.260507.43218"
+version = "0.260507.43832"
 dependencies = [
  "bech32",
  "getrandom 0.2.17",
