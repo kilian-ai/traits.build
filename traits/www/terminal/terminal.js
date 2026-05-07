@@ -614,7 +614,7 @@ export async function createTerminal(mountEl, opts = {}) {
             if (restSentinel) {
             // Write visible part (loading message) without the sentinel
                 const visible = restSentinel.visible;
-                if (visible) term.write(visible);
+                if (visible) term.write(decodeEscapedAnsi(visible));
 
             // Parse dispatch info and call via SDK cascade (WASM → helper → REST)
             // Supports @target routing: sentinel JSON may contain "t" field (rest/relay/helper/wasm)
