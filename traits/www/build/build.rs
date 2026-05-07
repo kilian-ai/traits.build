@@ -177,7 +177,9 @@ async function fetchTraits() {
   try {
     const sdk = window._traitsSDK;
     if (sdk && typeof sdk.call === 'function') {
-      return await sdk.call('sys.list', []);
+      const res = await sdk.call('sys.list', []);
+      const list = (res && typeof res === 'object' && 'ok' in res) ? (res.ok ? res.result : null) : res;
+      if (Array.isArray(list)) return list;
     }
     // Static deploy: prerendered JSON shipped alongside the page.
     for (const url of ['./traits.json', '/traits.json', '/api/list']) {
