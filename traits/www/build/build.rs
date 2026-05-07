@@ -121,36 +121,46 @@ async function bootKernel() {
     const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     mod.initSync({ module: bin });
     JSON.parse(mod.init());
-    const callWasm = (path, args) => {
+    let _callable = new Set();
+    try { _callable = new Set(JSON.parse(mod.callable_traits()).map(t => t.path || t)); } catch (_) {}
+    const callWasmRaw = (path, args) => {
       const raw = mod.call(path, JSON.stringify(args || []));
       try { return JSON.parse(raw); } catch (_) { return raw; }
     };
-    // Direct background-call shim that the shared terminal expects.
-    // Routes cli_input / cli_welcome to TraitsWasm; everything else goes
-    // through `mod.call`.
+    // SDK-shape call: returns { ok, result?, error? } as terminal.js expects.
+    const sdkCall = async (path, args /*, opts */) => {
+      try {
+        if (!_callable.has(path)) {
+          return { ok: false, error: `Trait "${path}" is not available in browser-only mode (requires the local binary or a connected helper).` };
+        }
+        const result = callWasmRaw(path, args);
+        if (result && typeof result === 'object' && result.error && Object.keys(result).length === 1) {
+          return { ok: false, error: String(result.error) };
+        }
+        return { ok: true, result };
+      } catch (e) {
+        return { ok: false, error: String(e?.message || e) };
+      }
+    };
     const backgroundCall = async (cmd, payload = {}) => {
       try {
-        if (cmd === 'cli_input') {
-          return { ok: true, result: mod.cli_input(payload.data || '') };
+        if (cmd === 'cli_input')   return { ok: true, result: mod.cli_input(payload.data || '') };
+        if (cmd === 'cli_welcome') return { ok: true, result: mod.cli_welcome ? mod.cli_welcome() : '' };
+        if (cmd === 'cli_format_rest_result' && mod.cli_format_rest_result) {
+          return { ok: true, result: mod.cli_format_rest_result(payload.path, payload.args_json, payload.result_json) };
         }
-        if (cmd === 'cli_welcome') {
-          return { ok: true, result: mod.cli_welcome ? mod.cli_welcome() : '' };
-        }
-        if (cmd === 'call' && payload.path) {
-          return { ok: true, result: callWasm(payload.path, payload.args) };
-        }
-        return { ok: false, error: 'unsupported: ' + cmd };
+        if (cmd === 'call' && payload.path) return sdkCall(payload.path, payload.args);
+        return { ok: false, error: 'unsupported background cmd: ' + cmd };
       } catch (e) {
-        return { ok: false, error: String(e) };
+        return { ok: false, error: String(e?.message || e) };
       }
     };
     window._traitsSDK = {
-      call: async (path, args) => callWasm(path, args),
+      call: sdkCall,
       backgroundCall,
       initWorkerPool: async () => {},
-      status: { wasm: true, callable: (() => {
-        try { return JSON.parse(mod.callable_traits()).length; } catch (_) { return 0; }
-      })() },
+      attachWasm: () => {},
+      status: { wasm: true, callable: _callable.size },
     };
   } catch (e) {
     console.warn('WASM kernel boot failed:', e);
