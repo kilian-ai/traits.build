@@ -621,7 +621,7 @@ export async function createTerminal(mountEl, opts = {}) {
             // Chat mode: "rp" = return prompt (instead of PROMPT), "sid" = session ID for VFS storage
                 try {
                     const { p, a, t, rp, sid, stream: useStream, unknown_agent: unknownAgent } = parseSentinelPayload(restSentinel.payload);
-                    const returnPrompt = rp || PROMPT;
+                    const returnPrompt = decodeEscapedAnsi(rp || PROMPT);
                     restPending = true;
                     const callOpts = t ? { force: t } : {};
                     // Force WASM dispatch for unknown-command agent calls so sys.shell
