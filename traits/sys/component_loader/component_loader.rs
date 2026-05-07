@@ -73,6 +73,36 @@ impl ComponentLoader {
         let mut linker: Linker<HostState> = Linker::new(&engine);
         wasmtime_wasi::add_to_linker_sync(&mut linker)?;
 
+        // Define the kernel host import: traits:kernel-host/dispatch@0.1.0
+        // exposes a single function `call(trait-path: string, args-json: string)
+        // -> result<string, string>` that re-enters the kernel dispatcher.
+        // Components that need to delegate to other traits import this.
+        {
+            let mut inst = linker
+                .instance("traits:kernel-host/dispatch@0.1.0")
+                .map_err(|e| anyhow!("define kernel-host instance: {}", e))?;
+            inst.func_new("call", |_store, args, results| {
+                let trait_path = match args.first() {
+                    Some(Val::String(s)) => s.clone(),
+                    _ => return Err(anyhow::anyhow!("kernel-host.call: arg 0 not string")),
+                };
+                let args_json = match args.get(1) {
+                    Some(Val::String(s)) => s.clone(),
+                    _ => return Err(anyhow::anyhow!("kernel-host.call: arg 1 not string")),
+                };
+                let parsed: Vec<Value> =
+                    serde_json::from_str(&args_json).unwrap_or_else(|_| Vec::new());
+                let result = kernel_logic::platform::dispatch(&trait_path, &parsed)
+                    .unwrap_or_else(|| serde_json::json!({"error": format!("trait '{}' not found", trait_path)}));
+                let json_out = serde_json::to_string(&result).unwrap_or_else(|_| "null".into());
+                if let Some(slot) = results.get_mut(0) {
+                    *slot = Val::Result(Ok(Some(Box::new(Val::String(json_out)))));
+                }
+                Ok(())
+            })
+            .map_err(|e| anyhow!("define kernel-host.call: {}", e))?;
+        }
+
         Ok(Self {
             engine,
             linker: Arc::new(linker),
@@ -221,18 +251,21 @@ impl ComponentLoader {
             .get_func(&mut store, func_idx)
             .ok_or_else(|| anyhow!("export is not a function"))?;
 
-        // Marshal inputs.
+        // Marshal inputs. Optional / Null-typed params can be omitted by the
+        // caller; we pad with `Value::Null` (which json_to_val turns into
+        // `Val::Option(None)` for option types).
         let params = &comp.signature.params;
-        if args.len() != params.len() {
+        if args.len() > params.len() {
             return Err(anyhow!(
-                "argument count mismatch: got {}, expected {}",
+                "argument count mismatch: got {}, expected at most {}",
                 args.len(),
                 params.len()
             ));
         }
         let mut inputs: Vec<Val> = Vec::with_capacity(params.len());
         for (i, p) in params.iter().enumerate() {
-            inputs.push(json_to_val(&args[i], &p.param_type).map_err(|e| {
+            let v = args.get(i).cloned().unwrap_or(Value::Null);
+            inputs.push(json_to_val(&v, &p.param_type).map_err(|e| {
                 anyhow!("param '{}' ({}): {}", p.name, type_name(&p.param_type), e)
             })?);
         }
@@ -272,13 +305,22 @@ fn read_signature(toml_path: &Path) -> Result<TraitSignature> {
     let params = sig
         .params
         .into_iter()
-        .map(|p| ParamDef {
-            name: p.name,
-            param_type: parse_type(&p.param_type),
-            description: p.description,
-            optional: p.optional,
-            pipe: p.pipe,
-            example: None,
+        .map(|p| {
+            // gen-wit wraps `optional = true` (or `required = false`) types as
+            // `option<T>`, so the loader must do the same for type marshaling.
+            let is_optional = p.is_optional();
+            let mut t = parse_type(&p.param_type);
+            if is_optional && !matches!(t, TraitType::Optional(_)) {
+                t = TraitType::Optional(Box::new(t));
+            }
+            ParamDef {
+                name: p.name,
+                param_type: t,
+                description: p.description,
+                optional: is_optional,
+                pipe: p.pipe,
+                example: None,
+            }
         })
         .collect();
     let returns = ReturnDef {

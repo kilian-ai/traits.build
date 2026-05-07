@@ -1,0 +1,8 @@
+package traits:kernel-host@0.1.0;
+
+interface dispatch {
+  /// Synchronous re-entry into the kernel dispatcher.
+  /// Returns the JSON-encoded result of calling `trait-path` with the
+  /// JSON-array of `args-json`.
+  call: func(trait-path: string, args-json: string) -> result<string, string>;
+}

@@ -1,0 +1,31 @@
+[package]
+name = "sys-list-component"
+version = "0.1.0"
+edition = "2021"
+description = "sys.list as a WebAssembly Component Model component"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen-rt = { version = "0.39", features = ["bitflags"] }
+serde_json = "1"
+
+[package.metadata.component]
+package = "traits:sys-list"
+
+[package.metadata.component.target]
+path = "wit"
+world = "list-world"
+
+[package.metadata.component.target.dependencies]
+"traits:kernel-host" = { path = "wit/deps/kernel-host" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1
+
+[workspace]

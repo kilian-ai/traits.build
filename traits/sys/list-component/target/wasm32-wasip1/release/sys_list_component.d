@@ -1,0 +1,1 @@
+/Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/sys/list-component/target/wasm32-wasip1/release/sys_list_component.wasm: /Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/sys/list-component/src/bindings.rs /Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/sys/list-component/src/lib.rs
