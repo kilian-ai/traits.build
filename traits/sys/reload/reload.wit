@@ -1,0 +1,19 @@
+// @generated from reload.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.reload
+// Source version: v260320
+
+package traits:sys-reload@0.1.0;
+
+/// Reload trait registry from disk
+interface reload {
+  /// Reload trait registry from disk
+  ///
+  /// Returns: Reload status with trait count
+  reload: func() -> result<string, string>;
+}
+
+world reload-world {
+  export reload;
+}

@@ -1,0 +1,1 @@
+/Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/sys/checksum-component/target/wasm32-wasip1/release/sys_checksum_component.wasm: /Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/sys/checksum-component/src/bindings.rs /Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/sys/checksum-component/src/lib.rs

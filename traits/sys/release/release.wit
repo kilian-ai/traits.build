@@ -1,0 +1,28 @@
+// @generated from release.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.release
+// Source version: v260323.152654
+
+package traits:sys-release@0.1.0;
+
+/// Configurable release pipeline: build → test → commit → push → tag → publish → deploy
+interface release {
+  /// Configurable release pipeline: build → test → commit → push → tag → publish → deploy
+  ///
+  /// Parameters:
+  /// - `steps`: string (optional) — Comma-separated steps to run: build,test,commit,push,tag,publish,deploy. Use 'all' for the full pipeline, 'ci' for commit+push+tag, 'ship' for ci+deploy. [example: build,test]
+  /// - `message`: string (optional) — Git commit message (default: 'release: vYYMMDD') [example: release: v260324]
+  /// - `dry_run`: bool (optional) — If true, show what would happen without executing [example: true]
+  ///
+  /// Returns: { ok, version, steps: [{name, ok, output?, error?, skipped?}] }
+  release: func(
+    steps: option<string>,
+    message: option<string>,
+    dry-run: option<bool>
+  ) -> result<string, string>;
+}
+
+world release-world {
+  export release;
+}

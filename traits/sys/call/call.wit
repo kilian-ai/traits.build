@@ -1,0 +1,32 @@
+// @generated from call.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.call
+// Source version: v260328
+
+package traits:sys-call@0.1.0;
+
+/// Make outbound HTTP/REST API calls. Supports JSON APIs with Bearer auth via secrets store.
+interface call {
+  /// Make outbound HTTP/REST API calls. Supports JSON APIs with Bearer auth via secrets store.
+  ///
+  /// Parameters:
+  /// - `url`: string — Full URL to call (e.g. https://api.openai.com/v1/chat/completions) [example: https://httpbin.org/post]
+  /// - `body`: any (optional) — Request body — object/string sent as JSON [example: hello]
+  /// - `auth_secret`: string (optional) — Secret ID for Bearer token auth (looked up in secrets store, falls back to env var with same name uppercased) [example: OPENAI_API_KEY]
+  /// - `method`: string (optional) — HTTP method: GET, POST, PUT, PATCH, DELETE (default: POST if body given, GET otherwise) [example: POST]
+  /// - `headers`: any (optional) — Additional headers as {key: value} object [example: X-Custom: value]
+  ///
+  /// Returns: { ok, status, body } — body is parsed JSON if Content-Type is application/json, otherwise raw string
+  call: func(
+    url: string,
+    body: option<string>,
+    auth-secret: option<string>,
+    method: option<string>,
+    headers: option<string>
+  ) -> result<string, string>;
+}
+
+world call-world {
+  export call;
+}

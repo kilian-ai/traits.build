@@ -1,0 +1,26 @@
+// @generated from memory.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice.memory
+// Source version: v260330
+
+package traits:sys-memory@0.1.0;
+
+/// Persistent cross-session memory notes the voice model writes for itself — loaded into every session as context
+interface memory {
+  /// Persistent cross-session memory notes the voice model writes for itself — loaded into every session as context
+  ///
+  /// Parameters:
+  /// - `action`: string — add | list | remove | clear [example: list]
+  /// - `text`: string (optional) — Note text (for add) or note ID/prefix (for remove)
+  ///
+  /// Returns: {ok: bool, notes: [{id, text, created}], count: int}
+  memory: func(
+    action: string,
+    text: option<string>
+  ) -> result<string, string>;
+}
+
+world memory-world {
+  export memory;
+}

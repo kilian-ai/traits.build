@@ -1,0 +1,19 @@
+// @generated from api.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.docs.api
+// Source version: v260416.024647
+
+package traits:www-api@0.1.0;
+
+/// Serve the API documentation page (Redoc)
+interface api {
+  /// Serve the API documentation page (Redoc)
+  ///
+  /// Returns: HTML page with Redoc API documentation
+  api: func() -> result<string, string>;
+}
+
+world api-world {
+  export api;
+}

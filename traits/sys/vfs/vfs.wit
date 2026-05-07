@@ -1,0 +1,28 @@
+// @generated from vfs.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.vfs
+// Source version: v260403
+
+package traits:sys-vfs@0.1.0;
+
+/// Persistent virtual filesystem — read, write, list, delete files (localStorage on WASM, filesystem on native)
+interface vfs {
+  /// Persistent virtual filesystem — read, write, list, delete files (localStorage on WASM, filesystem on native)
+  ///
+  /// Parameters:
+  /// - `action`: string — Operation: read, write, list, delete, exists
+  /// - `path`: string (optional) — File path (relative, no leading /)
+  /// - `content`: string (optional) — File content (for write action)
+  ///
+  /// Returns: { ok, content?, files?, count?, deleted?, exists?, error? }
+  vfs: func(
+    action: string,
+    path: option<string>,
+    content: option<string>
+  ) -> result<string, string>;
+}
+
+world vfs-world {
+  export vfs;
+}

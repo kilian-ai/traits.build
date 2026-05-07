@@ -1,0 +1,26 @@
+// @generated from registry.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.registry
+// Source version: v260326
+
+package traits:sys-registry@0.1.0;
+
+/// Registry read API — list, info, query, search, and inspect registered traits
+interface registry {
+  /// Registry read API — list, info, query, search, and inspect registered traits
+  ///
+  /// Parameters:
+  /// - `action`: string (optional) — Action: list|info|tree|namespaces|count|get|search|namespace [example: info]
+  /// - `arg`: string (optional) — Argument for info/get/search/namespace/list actions [example: sys.checksum]
+  ///
+  /// Returns: Registry data (tree, namespace list, count, trait entry, or search results)
+  registry: func(
+    action: option<string>,
+    arg: option<string>
+  ) -> result<string, string>;
+}
+
+world registry-world {
+  export registry;
+}

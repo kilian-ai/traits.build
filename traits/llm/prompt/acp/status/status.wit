@@ -1,0 +1,19 @@
+// @generated from status.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt.acp.status
+// Source version: v260328.164750
+
+package traits:llm-status@0.1.0;
+
+/// Check the status of the ACP proxy
+interface status {
+  /// Check the status of the ACP proxy
+  ///
+  /// Returns: Status object: {running: bool, port: int, pid: int?}
+  status: func() -> result<string, string>;
+}
+
+world status-world {
+  export status;
+}

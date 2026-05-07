@@ -1,0 +1,32 @@
+// @generated from llm.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.llm
+// Source version: v260326
+
+package traits:sys-llm@0.1.0;
+
+/// Unified LLM inference — routes to OpenAI API or a local model server (wgml, ollama, llama.cpp)
+interface llm {
+  /// Unified LLM inference — routes to OpenAI API or a local model server (wgml, ollama, llama.cpp)
+  ///
+  /// Parameters:
+  /// - `prompt`: string — User message / prompt text [example: Explain traits.build in one sentence]
+  /// - `provider`: string (optional) — Backend: 'openai' (default) or 'local' [example: openai]
+  /// - `model`: string (optional) — Model name (default: gpt-4.1-nano for openai, or model loaded on local server) [example: gpt-4.1-nano]
+  /// - `context`: string (optional) — System message / context to prepend (e.g. contents of reference .md files) [example: You are a helpful assistant.]
+  /// - `local_url`: string (optional) — Local inference server base URL (default: http://127.0.0.1:8080) [example: http://127.0.0.1:8080]
+  ///
+  /// Returns: { ok, provider, model, content, usage? }
+  llm: func(
+    prompt: string,
+    provider: option<string>,
+    model: option<string>,
+    context: option<string>,
+    local-url: option<string>
+  ) -> result<string, string>;
+}
+
+world llm-world {
+  export llm;
+}

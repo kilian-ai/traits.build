@@ -1,0 +1,30 @@
+// @generated from screenshot.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: browser.screenshot
+// Source version: v260331
+
+package traits:browser-screenshot@0.1.0;
+
+/// Screenshot a URL using Chrome headless. Returns a base64-encoded PNG data URI.
+interface screenshot {
+  /// Screenshot a URL using Chrome headless. Returns a base64-encoded PNG data URI.
+  ///
+  /// Parameters:
+  /// - `url`: string — URL to screenshot [example: https://example.com]
+  /// - `width`: int (optional) — Viewport width in pixels (default 1280) [example: 1280]
+  /// - `height`: int (optional) — Viewport height in pixels (default 800) [example: 800]
+  /// - `full_page`: bool (optional) — Capture full scrollable page height (default false) [example: true]
+  ///
+  /// Returns: { ok, url, image (data:image/png;base64,...), width, height, bytes }
+  screenshot: func(
+    url: string,
+    width: option<s64>,
+    height: option<s64>,
+    full-page: option<bool>
+  ) -> result<string, string>;
+}
+
+world screenshot-world {
+  export screenshot;
+}

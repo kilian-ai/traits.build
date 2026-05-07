@@ -1,0 +1,19 @@
+// @generated from next.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: skills.spotify.next
+// Source version: v260402
+
+package traits:skills-next@0.1.0;
+
+/// Skip to the next track on Spotify
+interface next {
+  /// Skip to the next track on Spotify
+  ///
+  /// Returns: Result with ok status
+  next: func() -> result<string, string>;
+}
+
+world next-world {
+  export next;
+}

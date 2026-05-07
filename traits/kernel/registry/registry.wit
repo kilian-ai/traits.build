@@ -1,0 +1,24 @@
+// @generated from registry.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.registry
+// Source version: v260326
+
+package traits:kernel-registry@0.1.0;
+
+/// Trait registry: loading, lookup, interface resolution, bindings, TraitEntry management
+interface registry {
+  /// Trait registry: loading, lookup, interface resolution, bindings, TraitEntry management
+  ///
+  /// Parameters:
+  /// - `filter`: string (optional) — Optional namespace or path prefix to filter by
+  ///
+  /// Returns: Registry stats and trait listing
+  registry: func(
+    filter: option<string>
+  ) -> result<string, string>;
+}
+
+world registry-world {
+  export registry;
+}

@@ -1,0 +1,19 @@
+// @generated from install.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.local.install
+// Source version: v260325.184451
+
+package traits:www-install@0.1.0;
+
+/// Shell script to install the traits helper permanently
+interface install {
+  /// Shell script to install the traits helper permanently
+  ///
+  /// Returns: Shell script content (text/plain)
+  install: func() -> result<string, string>;
+}
+
+world install-world {
+  export install;
+}

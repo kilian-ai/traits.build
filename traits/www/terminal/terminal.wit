@@ -1,0 +1,16 @@
+// @generated from terminal.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.terminal
+// Source version: v260324
+
+package traits:www-terminal@0.1.0;
+
+/// Shared xterm.js terminal component — WASM-powered CLI for all pages
+interface terminal {
+  // No signature declared in trait.toml — metadata-only trait.
+}
+
+world terminal-world {
+  export terminal;
+}

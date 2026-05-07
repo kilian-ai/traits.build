@@ -1,0 +1,26 @@
+// @generated from save-config.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.admin.save_config
+// Source version: v260324
+
+package traits:www-save-config@0.1.0;
+
+/// Save deploy configuration to traits.toml
+interface save-config {
+  /// Save deploy configuration to traits.toml
+  ///
+  /// Parameters:
+  /// - `fly_app`: string — Fly.io app name [example: polygrait-api]
+  /// - `fly_region`: string — Fly.io region code [example: iad]
+  ///
+  /// Returns: Save result with ok status
+  save-config: func(
+    fly-app: string,
+    fly-region: string
+  ) -> result<string, string>;
+}
+
+world save-config-world {
+  export save-config;
+}

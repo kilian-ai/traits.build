@@ -1,0 +1,19 @@
+// @generated from main.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.main
+// Source version: v260402
+
+package traits:kernel-main@0.1.0;
+
+/// Binary entry point, system bootstrap, and trait-exists probe
+interface main {
+  /// Binary entry point, system bootstrap, and trait-exists probe
+  ///
+  /// Returns: Binary metadata, compiled modules, bootstrap status
+  main: func() -> result<string, string>;
+}
+
+world main-world {
+  export main;
+}

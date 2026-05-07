@@ -1,0 +1,28 @@
+// @generated from bindings.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.bindings
+// Source version: v260326.134540
+
+package traits:sys-bindings@0.1.0;
+
+/// Runtime binding management: hot-swap interface implementations without recompilation
+interface bindings {
+  /// Runtime binding management: hot-swap interface implementations without recompilation
+  ///
+  /// Parameters:
+  /// - `action`: string — Action: set, get, list, clear [example: set]
+  /// - `interface`: string? (optional) — Interface path (e.g. llm/prompt). Required for set, get, clear. [example: llm/prompt]
+  /// - `impl_path`: string? (optional) — Implementation trait path (e.g. llm.prompt.openai). Required for set. [example: llm.prompt.openai]
+  ///
+  /// Returns: { ok, action, interface?, impl?, bindings? }
+  bindings: func(
+    action: string,
+    %interface: option<string>,
+    impl-path: option<string>
+  ) -> result<string, string>;
+}
+
+world bindings-world {
+  export bindings;
+}

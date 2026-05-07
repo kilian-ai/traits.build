@@ -1,0 +1,19 @@
+// @generated from stop.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt.acp.stop
+// Source version: v260328.164750
+
+package traits:llm-stop@0.1.0;
+
+/// Stop the ACP proxy
+interface stop {
+  /// Stop the ACP proxy
+  ///
+  /// Returns: Status message
+  stop: func() -> result<string, string>;
+}
+
+world stop-world {
+  export stop;
+}

@@ -1,0 +1,26 @@
+// @generated from %list.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt.acp.list
+// Source version: v260328.191320
+
+package traits:llm-%list@0.1.0;
+
+/// List available models on the running ACP agent
+interface %list {
+  /// List available models on the running ACP agent
+  ///
+  /// Parameters:
+  /// - `agent`: string (optional) — ACP agent: opencode, claude, codex, copilot
+  /// - `cwd`: string (optional) — Working directory for the ACP session
+  ///
+  /// Returns: Model state: {currentModelId, availableModels: [{id, displayName, ...}]}
+  %list: func(
+    agent: option<string>,
+    cwd: option<string>
+  ) -> result<string, string>;
+}
+
+world %list-world {
+  export %list;
+}

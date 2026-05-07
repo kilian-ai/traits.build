@@ -1,0 +1,19 @@
+// @generated from homepage.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.homepage
+// Source version: v260405.150808
+
+package traits:www-homepage@0.1.0;
+
+/// Interactive voice-driven homepage for traits.build
+interface homepage {
+  /// Interactive voice-driven homepage for traits.build
+  ///
+  /// Returns: Interactive HTML homepage with voice onboarding
+  homepage: func() -> result<string, string>;
+}
+
+world homepage-world {
+  export homepage;
+}

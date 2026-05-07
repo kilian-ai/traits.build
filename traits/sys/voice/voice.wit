@@ -1,0 +1,30 @@
+// @generated from voice.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice
+// Source version: v260413
+
+package traits:sys-voice@0.1.0;
+
+/// Real-time voice chat via OpenAI Realtime API — speech-to-speech over WebSocket
+interface voice {
+  /// Real-time voice chat via OpenAI Realtime API — speech-to-speech over WebSocket
+  ///
+  /// Parameters:
+  /// - `voice`: string (optional) — Voice: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
+  /// - `model`: string (optional) — Realtime model: gpt-realtime-mini-2025-12-15, gpt-4o-realtime-preview
+  /// - `agent`: string (optional) — ACP agent name for context (opencode, claude, codex, copilot)
+  /// - `session_id`: string (optional) — Chat session ID to persist voice turns to
+  ///
+  /// Returns: {ok: bool, turns?: int, error?: string}
+  voice: func(
+    voice: option<string>,
+    model: option<string>,
+    agent: option<string>,
+    session-id: option<string>
+  ) -> result<string, string>;
+}
+
+world voice-world {
+  export voice;
+}

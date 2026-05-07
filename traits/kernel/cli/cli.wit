@@ -1,0 +1,24 @@
+// @generated from cli.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.cli
+// Source version: v260419.040400
+
+package traits:kernel-cli@0.1.0;
+
+/// Portable CLI command processor — shared between WASM and native targets
+interface cli {
+  /// Portable CLI command processor — shared between WASM and native targets
+  ///
+  /// Parameters:
+  /// - `line`: string — Command line to execute
+  ///
+  /// Returns: ANSI-formatted output text
+  cli: func(
+    line: string
+  ) -> result<string, string>;
+}
+
+world cli-world {
+  export cli;
+}

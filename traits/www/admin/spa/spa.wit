@@ -1,0 +1,19 @@
+// @generated from spa.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.admin.spa
+// Source version: v260328.114100
+
+package traits:www-spa@0.1.0;
+
+/// SPA-only local admin workspace
+interface spa {
+  /// SPA-only local admin workspace
+  ///
+  /// Returns: HTML SPA admin workspace
+  spa: func() -> result<string, string>;
+}
+
+world spa-world {
+  export spa;
+}

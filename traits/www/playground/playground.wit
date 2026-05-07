@@ -1,0 +1,19 @@
+// @generated from playground.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.playground
+// Source version: v260326
+
+package traits:www-playground@0.1.0;
+
+/// Interactive trait playground — call any trait from the browser
+interface playground {
+  /// Interactive trait playground — call any trait from the browser
+  ///
+  /// Returns: HTML playground page
+  playground: func() -> result<string, string>;
+}
+
+world playground-world {
+  export playground;
+}

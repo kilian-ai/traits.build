@@ -1,0 +1,26 @@
+// @generated from canvas.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.canvas
+// Source version: v260402
+
+package traits:sys-canvas@0.1.0;
+
+/// VFS-backed HTML/JS canvas — set, append, get, clear, path, save/load/list/delete projects. Content persists in canvas/app.html on VFS.
+interface canvas {
+  /// VFS-backed HTML/JS canvas — set, append, get, clear, path, save/load/list/delete projects. Content persists in canvas/app.html on VFS.
+  ///
+  /// Parameters:
+  /// - `action`: string — Action: set, append, get, clear, path, save, load, projects, delete_project
+  /// - `content`: string (optional) — HTML/JS content (for set/append) or project name (for save/load/delete_project)
+  ///
+  /// Returns: Result with ok, action, content (for get), and length
+  canvas: func(
+    action: string,
+    content: option<string>
+  ) -> result<string, string>;
+}
+
+world canvas-world {
+  export canvas;
+}

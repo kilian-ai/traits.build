@@ -1,0 +1,30 @@
+// @generated from speak.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.voice.speak
+// Source version: v260329.214606
+
+package traits:llm-speak@0.1.0;
+
+/// Text-to-speech synthesis using OpenAI TTS API
+interface speak {
+  /// Text-to-speech synthesis using OpenAI TTS API
+  ///
+  /// Parameters:
+  /// - `text`: string — Text to synthesize into speech
+  /// - `voice`: string (optional) — Voice: alloy, echo, fable, onyx, nova, shimmer (default: nova)
+  /// - `model`: string (optional) — TTS model: tts-1, tts-1-hd (default: tts-1)
+  /// - `play`: bool (optional) — Play audio immediately after synthesis (default: true)
+  ///
+  /// Returns: {ok: bool, file?: string, error?: string}
+  speak: func(
+    text: string,
+    voice: option<string>,
+    model: option<string>,
+    play: option<bool>
+  ) -> result<string, string>;
+}
+
+world speak-world {
+  export speak;
+}

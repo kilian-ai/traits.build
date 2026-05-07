@@ -1,0 +1,28 @@
+// @generated from spa.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.spa
+// Source version: v260331
+
+package traits:sys-spa@0.1.0;
+
+/// SPA session control — navigate pages, click elements, type into fields/terminal, query DOM, evaluate JS
+interface spa {
+  /// SPA session control — navigate pages, click elements, type into fields/terminal, query DOM, evaluate JS
+  ///
+  /// Parameters:
+  /// - `action`: string — Action: navigate, click, type, terminal, query, eval, route
+  /// - `target`: string (optional) — Route path (navigate), CSS selector (click/type/query), text (terminal), or JS code (eval)
+  /// - `value`: string (optional) — Text to type (for type action)
+  ///
+  /// Returns: Action result with ok status and spa_action descriptor
+  spa: func(
+    action: string,
+    target: option<string>,
+    value: option<string>
+  ) -> result<string, string>;
+}
+
+world spa-world {
+  export spa;
+}

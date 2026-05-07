@@ -1,0 +1,26 @@
+// @generated from fetch.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: browser.fetch
+// Source version: v260331
+
+package traits:browser-fetch@0.1.0;
+
+/// Fetch a URL and return readable Markdown content. Uses Chrome headless for JS-rendered pages (with curl fallback). Supports CSS selector targeting.
+interface fetch {
+  /// Fetch a URL and return readable Markdown content. Uses Chrome headless for JS-rendered pages (with curl fallback). Supports CSS selector targeting.
+  ///
+  /// Parameters:
+  /// - `url`: string — URL to fetch (must start with http:// or https://) [example: https://example.com]
+  /// - `selector`: string (optional) — CSS selector to extract specific element (e.g. 'main', 'article', '#content') [example: article]
+  ///
+  /// Returns: { ok, url, title, content (markdown text), links: [{text, href}] }
+  fetch: func(
+    url: string,
+    selector: option<string>
+  ) -> result<string, string>;
+}
+
+world fetch-world {
+  export fetch;
+}

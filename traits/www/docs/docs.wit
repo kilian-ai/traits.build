@@ -1,0 +1,19 @@
+// @generated from docs.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.docs
+// Source version: v260324.221202
+
+package traits:www-docs@0.1.0;
+
+/// Serve the documentation site — all docs rendered from markdown
+interface docs {
+  /// Serve the documentation site — all docs rendered from markdown
+  ///
+  /// Returns: HTML documentation page with all docs and sidebar navigation
+  docs: func() -> result<string, string>;
+}
+
+world docs-world {
+  export docs;
+}

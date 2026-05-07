@@ -1,0 +1,19 @@
+// @generated from openai.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.llm.openai
+// Source version: v260326
+
+package traits:www-openai@0.1.0;
+
+/// LLM Chat UI — simple prompt interface for OpenAI
+interface openai {
+  /// LLM Chat UI — simple prompt interface for OpenAI
+  ///
+  /// Returns: HTML chat interface
+  openai: func() -> result<string, string>;
+}
+
+world openai-world {
+  export openai;
+}

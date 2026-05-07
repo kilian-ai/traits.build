@@ -1,0 +1,19 @@
+// @generated from logic.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.logic
+// Source version: v260326
+
+package traits:kernel-logic@0.1.0;
+
+/// Shared pure-logic kernel library: type system, registry data model, TOML parsing, platform abstraction
+interface logic {
+  /// Shared pure-logic kernel library: type system, registry data model, TOML parsing, platform abstraction
+  ///
+  /// Returns: Library crate — not callable as a trait
+  logic: func() -> result<_, string>;
+}
+
+world logic-world {
+  export logic;
+}

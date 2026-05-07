@@ -1,0 +1,24 @@
+// @generated from docs.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.agent.docs
+// Source version: v260402.115951
+
+package traits:llm-docs@0.1.0;
+
+/// Return raw markdown content from project documentation — for LLM agent context
+interface docs {
+  /// Return raw markdown content from project documentation — for LLM agent context
+  ///
+  /// Parameters:
+  /// - `slug`: string (optional) — Doc slug (e.g. 'architecture', 'cli'). Use 'list' for index, 'agent' for agent instructions, empty/all for everything.
+  ///
+  /// Returns: { ok, docs: [{slug, title, category, content}] } or { ok, slug, title, content } for single doc
+  docs: func(
+    slug: option<string>
+  ) -> result<string, string>;
+}
+
+world docs-world {
+  export docs;
+}

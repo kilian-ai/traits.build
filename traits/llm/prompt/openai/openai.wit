@@ -1,0 +1,28 @@
+// @generated from openai.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt.openai
+// Source version: v260328
+
+package traits:llm-openai@0.1.0;
+
+/// OpenAI-compatible prompt→response inference (implements llm/prompt)
+interface openai {
+  /// OpenAI-compatible prompt→response inference (implements llm/prompt)
+  ///
+  /// Parameters:
+  /// - `prompt`: string — User message to send to the model
+  /// - `model`: string (optional) — OpenAI model (default: gpt-4o-mini)
+  /// - `context`: string (optional) — Comma-separated file paths or globs to include as context (e.g. 'agent.md,docs/*.md')
+  ///
+  /// Returns: Assistant response text
+  openai: func(
+    prompt: string,
+    model: option<string>,
+    context: option<string>
+  ) -> result<string, string>;
+}
+
+world openai-world {
+  export openai;
+}

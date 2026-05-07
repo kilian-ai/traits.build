@@ -1,0 +1,24 @@
+// @generated from echo.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.echo
+// Source version: v260331.011807
+
+package traits:sys-echo@0.1.0;
+
+/// Display text on screen — used by voice agent to show links, code, or anything hard to speak aloud
+interface echo {
+  /// Display text on screen — used by voice agent to show links, code, or anything hard to speak aloud
+  ///
+  /// Parameters:
+  /// - `text`: string — Text to display (links, code, file paths, etc.) [example: https://www.traits.build]
+  ///
+  /// Returns: {ok: bool, text: string}
+  echo: func(
+    text: string
+  ) -> result<string, string>;
+}
+
+world echo-world {
+  export echo;
+}

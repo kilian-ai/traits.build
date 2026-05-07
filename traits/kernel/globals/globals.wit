@@ -1,0 +1,19 @@
+// @generated from globals.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.globals
+// Source version: v260327
+
+package traits:kernel-globals@0.1.0;
+
+/// Global OnceLock statics: REGISTRY, CONFIG, TRAITS_DIR, HANDLES, START_TIME
+interface globals {
+  /// Global OnceLock statics: REGISTRY, CONFIG, TRAITS_DIR, HANDLES, START_TIME
+  ///
+  /// Returns: Global state summary: initialization status, uptime, epoch
+  globals: func() -> result<string, string>;
+}
+
+world globals-world {
+  export globals;
+}

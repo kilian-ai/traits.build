@@ -1,0 +1,28 @@
+// @generated from chat-protocols.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.chat_protocols
+// Source version: v260325.134206
+
+package traits:sys-chat-protocols@0.1.0;
+
+/// Read chat protocol history through a swappable chat/protocol-reader interface
+interface chat-protocols {
+  /// Read chat protocol history through a swappable chat/protocol-reader interface
+  ///
+  /// Parameters:
+  /// - `workspace_id`: string — VS Code workspaceStorage hash to inspect [example: c1d008f1cc5c2b413e09715a6b6588dc]
+  /// - `method`: string (optional) — Extraction method: auto | json | state_vscdb | all [example: auto]
+  /// - `base_dir`: string (optional) — Optional workspaceStorage root override for tests or non-standard installs [example: /Users/me/Library/Application Support/Code/User/workspaceStorage]
+  ///
+  /// Returns: Structured chat transcript data from the bound provider
+  chat-protocols: func(
+    workspace-id: string,
+    method: option<string>,
+    base-dir: option<string>
+  ) -> result<string, string>;
+}
+
+world chat-protocols-world {
+  export chat-protocols;
+}

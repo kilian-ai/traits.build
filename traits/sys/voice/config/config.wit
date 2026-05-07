@@ -1,0 +1,28 @@
+// @generated from config.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice.config
+// Source version: v260331
+
+package traits:sys-config@0.1.0;
+
+/// Get or set persistent voice chat preferences (voice, model, agent) — changes apply immediately and become defaults
+interface config {
+  /// Get or set persistent voice chat preferences (voice, model, agent) — changes apply immediately and become defaults
+  ///
+  /// Parameters:
+  /// - `action`: string — get | set [example: set]
+  /// - `key`: string — Preference key: voice, model, or agent [example: voice]
+  /// - `value`: string (optional) — New value (required for set) [example: shimmer]
+  ///
+  /// Returns: {ok: bool, key, value, previous?}
+  config: func(
+    action: string,
+    key: string,
+    value: option<string>
+  ) -> result<string, string>;
+}
+
+world config-world {
+  export config;
+}

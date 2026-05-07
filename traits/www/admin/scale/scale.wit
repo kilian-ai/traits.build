@@ -1,0 +1,24 @@
+// @generated from scale.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.admin.scale
+// Source version: v260322.003611
+
+package traits:www-scale@0.1.0;
+
+/// Scale Fly.io machines (0 = stop all, 1+ = start)
+interface scale {
+  /// Scale Fly.io machines (0 = stop all, 1+ = start)
+  ///
+  /// Parameters:
+  /// - `count`: int — Target machine count (0 to stop, 1 to start) [example: 1]
+  ///
+  /// Returns: Scale operation result
+  scale: func(
+    count: s64
+  ) -> result<string, string>;
+}
+
+world scale-world {
+  export scale;
+}

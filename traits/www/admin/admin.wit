@@ -1,0 +1,19 @@
+// @generated from admin.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.admin
+// Source version: v260401
+
+package traits:www-admin@0.1.0;
+
+/// Admin dashboard for traits.build deployment
+interface admin {
+  /// Admin dashboard for traits.build deployment
+  ///
+  /// Returns: HTML admin dashboard
+  admin: func() -> result<string, string>;
+}
+
+world admin-world {
+  export admin;
+}

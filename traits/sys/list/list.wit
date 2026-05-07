@@ -1,0 +1,24 @@
+// @generated from %list.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.list
+// Source version: v260326.175920
+
+package traits:sys-%list@0.1.0;
+
+/// List all registered traits
+interface %list {
+  /// List all registered traits
+  ///
+  /// Parameters:
+  /// - `namespace`: string (optional) — Filter by namespace prefix [example: sys]
+  ///
+  /// Returns: Array of trait summaries
+  %list: func(
+    namespace: option<string>
+  ) -> result<list<string>, string>;
+}
+
+world %list-world {
+  export %list;
+}

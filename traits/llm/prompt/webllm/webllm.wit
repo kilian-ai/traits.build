@@ -1,0 +1,28 @@
+// @generated from webllm.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt.webllm
+// Source version: v260328.234248
+
+package traits:llm-webllm@0.1.0;
+
+/// In-browser LLM inference via WebLLM (WebGPU) — implements llm/prompt
+interface webllm {
+  /// In-browser LLM inference via WebLLM (WebGPU) — implements llm/prompt
+  ///
+  /// Parameters:
+  /// - `prompt`: string — User message to send to the model
+  /// - `model`: string (optional) — WebLLM model ID (e.g. Llama-3.1-8B-Instruct-q4f32_1-MLC)
+  /// - `context`: string (optional) — Comma-separated file paths or globs to include as context (e.g. 'agent.md,docs/*.md')
+  ///
+  /// Returns: Assistant response text from in-browser model
+  webllm: func(
+    prompt: string,
+    model: option<string>,
+    context: option<string>
+  ) -> result<string, string>;
+}
+
+world webllm-world {
+  export webllm;
+}

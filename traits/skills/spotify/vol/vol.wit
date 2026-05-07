@@ -1,0 +1,24 @@
+// @generated from vol.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: skills.spotify.vol
+// Source version: v260402
+
+package traits:skills-vol@0.1.0;
+
+/// Set Spotify volume (0-100)
+interface vol {
+  /// Set Spotify volume (0-100)
+  ///
+  /// Parameters:
+  /// - `level`: int — Volume level 0–100
+  ///
+  /// Returns: Result with ok status
+  vol: func(
+    level: s64
+  ) -> result<string, string>;
+}
+
+world vol-world {
+  export vol;
+}

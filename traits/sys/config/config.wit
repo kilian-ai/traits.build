@@ -1,0 +1,30 @@
+// @generated from config.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.config
+// Source version: v260324.010921
+
+package traits:sys-config@0.1.0;
+
+/// Manage persistent trait config values — set, get, delete, list config with full resolution layer visibility
+interface config {
+  /// Manage persistent trait config values — set, get, delete, list config with full resolution layer visibility
+  ///
+  /// Parameters:
+  /// - `action`: string — Action: set | get | delete | list [example: get]
+  /// - `trait_path`: string (optional) — Trait path in dot notation (e.g. www.admin) [example: www.admin]
+  /// - `key`: string (optional) — Config key (e.g. fly_app) [example: fly_app]
+  /// - `value`: string (optional) — Config value (only for 'set' action) [example: polygrait-api]
+  ///
+  /// Returns: Result object — varies by action
+  config: func(
+    action: string,
+    trait-path: option<string>,
+    key: option<string>,
+    value: option<string>
+  ) -> result<string, string>;
+}
+
+world config-world {
+  export config;
+}

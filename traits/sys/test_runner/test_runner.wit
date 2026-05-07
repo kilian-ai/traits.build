@@ -1,0 +1,28 @@
+// @generated from test-runner.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.test_runner
+// Source version: v260415
+
+package traits:sys-test-runner@0.1.0;
+
+/// Generic test runner. Discovers .features.json files for traits matching a glob pattern, runs example-based tests (via internal dispatch) and shell command tests, reports structured pass/fail results.
+interface test-runner {
+  /// Generic test runner. Discovers .features.json files for traits matching a glob pattern, runs example-based tests (via internal dispatch) and shell command tests, reports structured pass/fail results.
+  ///
+  /// Parameters:
+  /// - `pattern`: string — Glob pattern: 'sys.*', '*', 'sys.checksum', etc. [example: sys.*]
+  /// - `verbose`: boolean (optional) — If true, include full output/checks in results. [example: false]
+  /// - `skip_commands`: boolean (optional) — If true, skip shell command tests (avoids deadlock when called via HTTP). [example: false]
+  ///
+  /// Returns: { ok, pattern, summary: { traits, examples, commands, skipped, total_passed, total_failed }, results }
+  test-runner: func(
+    pattern: string,
+    verbose: option<bool>,
+    skip-commands: option<bool>
+  ) -> result<string, string>;
+}
+
+world test-runner-world {
+  export test-runner;
+}

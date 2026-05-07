@@ -1,0 +1,19 @@
+// @generated from stop.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: skills.spotify.stop
+// Source version: v260402.135434
+
+package traits:skills-stop@0.1.0;
+
+/// Stop Spotify playback (pause and rewind to start)
+interface stop {
+  /// Stop Spotify playback (pause and rewind to start)
+  ///
+  /// Returns: Result with ok status
+  stop: func() -> result<string, string>;
+}
+
+world stop-world {
+  export stop;
+}

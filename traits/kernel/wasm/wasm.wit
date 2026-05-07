@@ -1,0 +1,19 @@
+// @generated from wasm.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.wasm
+// Source version: v260326
+
+package traits:kernel-wasm@0.1.0;
+
+/// WASM browser kernel — compiles portable traits to wasm32-unknown-unknown via wasm-pack
+interface wasm {
+  /// WASM browser kernel — compiles portable traits to wasm32-unknown-unknown via wasm-pack
+  ///
+  /// Returns: WASM compilation target — not callable as a trait
+  wasm: func() -> result<_, string>;
+}
+
+world wasm-world {
+  export wasm;
+}

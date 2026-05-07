@@ -1,0 +1,19 @@
+// @generated from dylib-loader.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.dylib_loader
+// Source version: v260322
+
+package traits:sys-dylib-loader@0.1.0;
+
+/// Dynamic shared-library loader for trait cdylib plugins
+interface dylib-loader {
+  /// Dynamic shared-library loader for trait cdylib plugins
+  ///
+  /// Returns: Loaded dylib info: count, trait paths, search directories
+  dylib-loader: func() -> result<string, string>;
+}
+
+world dylib-loader-world {
+  export dylib-loader;
+}

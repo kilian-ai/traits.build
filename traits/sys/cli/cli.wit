@@ -1,0 +1,19 @@
+// @generated from cli.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.cli
+// Source version: v260420
+
+package traits:sys-cli@0.1.0;
+
+/// CLI bootstrap, trait dispatch, stdin injection, arg parsing, result formatting
+interface cli {
+  /// CLI bootstrap, trait dispatch, stdin injection, arg parsing, result formatting
+  ///
+  /// Returns: CLI capabilities: features, dispatch flow, formatter status
+  cli: func() -> result<string, string>;
+}
+
+world cli-world {
+  export cli;
+}

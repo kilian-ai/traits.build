@@ -1,0 +1,26 @@
+// @generated from wasm.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.cli.wasm
+// Source version: v260324.225054
+
+package traits:sys-wasm@0.1.0;
+
+/// WASM terminal CLI backend — provides dispatch and registry access for the browser CLI
+interface wasm {
+  /// WASM terminal CLI backend — provides dispatch and registry access for the browser CLI
+  ///
+  /// Parameters:
+  /// - `method`: string (optional) — Backend method: call, list_all, get_info, search, all_paths, version, load_examples [example: list_all]
+  /// - `args`: any (optional) — Method arguments (varies by method)
+  ///
+  /// Returns: Method-dependent return value
+  wasm: func(
+    method: option<string>,
+    args: option<string>
+  ) -> result<string, string>;
+}
+
+world wasm-world {
+  export wasm;
+}

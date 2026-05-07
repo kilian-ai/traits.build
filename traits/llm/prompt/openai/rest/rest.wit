@@ -1,0 +1,26 @@
+// @generated from rest.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt.openai.rest
+// Source version: v260325
+
+package traits:llm-rest@0.1.0;
+
+/// Default REST-backed provider for llm.prompt.openai
+interface rest {
+  /// Default REST-backed provider for llm.prompt.openai
+  ///
+  /// Parameters:
+  /// - `prompt`: string — User message to send to the model
+  /// - `model`: string (optional) — OpenAI model
+  ///
+  /// Returns: Assistant response text
+  rest: func(
+    prompt: string,
+    model: option<string>
+  ) -> result<string, string>;
+}
+
+world rest-world {
+  export rest;
+}

@@ -1,0 +1,19 @@
+// @generated from dispatcher.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.dispatcher
+// Source version: v260329
+
+package traits:kernel-dispatcher@0.1.0;
+
+/// Core trait execution engine: path resolution, arg validation, dispatch, handle management
+interface dispatcher {
+  /// Core trait execution engine: path resolution, arg validation, dispatch, handle management
+  ///
+  /// Returns: Dispatcher status: dispatch layers, dylib info, features
+  dispatcher: func() -> result<string, string>;
+}
+
+world dispatcher-world {
+  export dispatcher;
+}

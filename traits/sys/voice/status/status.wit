@@ -1,0 +1,19 @@
+// @generated from status.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice.status
+// Source version: v260331
+
+package traits:sys-status@0.1.0;
+
+/// Introspect current voice session state — model, voice, agent, tools, session ID
+interface status {
+  /// Introspect current voice session state — model, voice, agent, tools, session ID
+  ///
+  /// Returns: {ok, model, voice, agent, session_id, tool_count, memory_count, instructions_source}
+  status: func() -> result<string, string>;
+}
+
+world status-world {
+  export status;
+}

@@ -1,0 +1,28 @@
+// @generated from prompt.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt
+// Source version: v260326
+
+package traits:llm-prompt@0.1.0;
+
+/// Interface for simple prompt→response LLM inference (prompt + model)
+interface prompt {
+  /// Interface for simple prompt→response LLM inference (prompt + model)
+  ///
+  /// Parameters:
+  /// - `prompt`: string — User message to send to the model
+  /// - `model`: string (optional) — Model name (provider-specific)
+  /// - `context`: string (optional) — Comma-separated file paths or globs to include as context
+  ///
+  /// Returns: Assistant response text
+  prompt: func(
+    prompt: string,
+    model: option<string>,
+    context: option<string>
+  ) -> result<string, string>;
+}
+
+world prompt-world {
+  export prompt;
+}

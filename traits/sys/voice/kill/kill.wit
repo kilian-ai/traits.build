@@ -1,0 +1,19 @@
+// @generated from kill.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice.kill
+// Source version: v260331
+
+package traits:sys-kill@0.1.0;
+
+/// Kill orphaned voice agent processes (sox rec/play)
+interface kill {
+  /// Kill orphaned voice agent processes (sox rec/play)
+  ///
+  /// Returns: Report of killed processes
+  kill: func() -> result<list<tuple<string, string>>, string>;
+}
+
+world kill-world {
+  export kill;
+}

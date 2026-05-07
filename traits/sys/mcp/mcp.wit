@@ -1,0 +1,19 @@
+// @generated from mcp.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.mcp
+// Source version: v260330
+
+package traits:sys-mcp@0.1.0;
+
+/// MCP stdio server — exposes all traits as MCP tools via JSON-RPC 2.0 over stdin/stdout
+interface mcp {
+  /// MCP stdio server — exposes all traits as MCP tools via JSON-RPC 2.0 over stdin/stdout
+  ///
+  /// Returns: Runs MCP stdio loop (blocks until stdin closes)
+  mcp: func() -> result<_, string>;
+}
+
+world mcp-world {
+  export mcp;
+}

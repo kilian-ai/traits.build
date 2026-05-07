@@ -1,0 +1,19 @@
+// @generated from pause.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: skills.spotify.pause
+// Source version: v260402.143126
+
+package traits:skills-pause@0.1.0;
+
+/// Pause Spotify playback
+interface pause {
+  /// Pause Spotify playback
+  ///
+  /// Returns: Result with ok status
+  pause: func() -> result<string, string>;
+}
+
+world pause-world {
+  export pause;
+}

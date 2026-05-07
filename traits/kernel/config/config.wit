@@ -1,0 +1,24 @@
+// @generated from config.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.config
+// Source version: v260330
+
+package traits:kernel-config@0.1.0;
+
+/// Configuration loader: traits.toml parsing, env var overrides, runtime config
+interface config {
+  /// Configuration loader: traits.toml parsing, env var overrides, runtime config
+  ///
+  /// Parameters:
+  /// - `query`: string (optional) — Optional: 'schema' to get field descriptions
+  ///
+  /// Returns: Current runtime configuration or schema description
+  config: func(
+    query: option<string>
+  ) -> result<string, string>;
+}
+
+world config-world {
+  export config;
+}

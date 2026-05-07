@@ -1,0 +1,24 @@
+// @generated from control.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice.control
+// Source version: v260401
+
+package traits:sys-control@0.1.0;
+
+/// Voice session control — mute, unmute, toggle, start, stop, and query status of the global voice overlay
+interface control {
+  /// Voice session control — mute, unmute, toggle, start, stop, and query status of the global voice overlay
+  ///
+  /// Parameters:
+  /// - `action`: string — Action: mute, unmute, toggle, start, stop, status
+  ///
+  /// Returns: Control result with ok, active, muted fields
+  control: func(
+    action: string
+  ) -> result<string, string>;
+}
+
+world control-world {
+  export control;
+}

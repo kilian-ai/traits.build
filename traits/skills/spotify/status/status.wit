@@ -1,0 +1,19 @@
+// @generated from status.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: skills.spotify.status
+// Source version: v260331.121011
+
+package traits:skills-status@0.1.0;
+
+/// Get current Spotify playback status (track, artist, album, state, volume)
+interface status {
+  /// Get current Spotify playback status (track, artist, album, state, volume)
+  ///
+  /// Returns: Playback status with track, artist, album, state, volume
+  status: func() -> result<string, string>;
+}
+
+world status-world {
+  export status;
+}

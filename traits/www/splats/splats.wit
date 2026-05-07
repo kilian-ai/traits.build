@@ -1,0 +1,26 @@
+// @generated from splats.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.splats
+// Source version: v260402
+
+package traits:www-splats@0.1.0;
+
+/// 3D Gaussian splat viewer using WebGPU — fetches and renders real .splat files with orbit camera, depth sorting, and scene gallery
+interface splats {
+  /// 3D Gaussian splat viewer using WebGPU — fetches and renders real .splat files with orbit camera, depth sorting, and scene gallery
+  ///
+  /// Parameters:
+  /// - `action`: string (optional) — Action: render (returns HTML viewer), gallery (returns list of example scenes) [example: render]
+  /// - `url`: string (optional) — URL to a .splat binary file to load (default: bonsai-7k-mini) [example: https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bonsai/bonsai-7k-mi…]
+  ///
+  /// Returns: HTML page with WebGPU Gaussian splat renderer, or gallery JSON
+  splats: func(
+    action: option<string>,
+    url: option<string>
+  ) -> result<string, string>;
+}
+
+world splats-world {
+  export splats;
+}

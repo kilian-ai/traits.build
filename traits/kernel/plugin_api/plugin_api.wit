@@ -1,0 +1,19 @@
+// @generated from plugin-api.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.plugin_api
+// Source version: v260321.024324
+
+package traits:kernel-plugin-api@0.1.0;
+
+/// C ABI export macro for cdylib trait plugins
+interface plugin-api {
+  /// C ABI export macro for cdylib trait plugins
+  ///
+  /// Returns: Plugin ABI contract and installed plugins
+  plugin-api: func() -> result<string, string>;
+}
+
+world plugin-api-world {
+  export plugin-api;
+}

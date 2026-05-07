@@ -1,0 +1,24 @@
+// @generated from play.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: skills.spotify.play
+// Source version: v260402.140224
+
+package traits:skills-play@0.1.0;
+
+/// Play a track, album, artist, or playlist on Spotify. Resume if no query given.
+interface play {
+  /// Play a track, album, artist, or playlist on Spotify. Resume if no query given.
+  ///
+  /// Parameters:
+  /// - `query`: string (optional) — Track name, artist, album, playlist, or Spotify URI. Empty to resume.
+  ///
+  /// Returns: Result with ok status
+  play: func(
+    query: option<string>
+  ) -> result<string, string>;
+}
+
+world play-world {
+  export play;
+}

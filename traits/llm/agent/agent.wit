@@ -1,0 +1,40 @@
+// @generated from agent.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.agent
+// Source version: v260419.044454
+
+package traits:llm-agent@0.1.0;
+
+/// WASM-compatible LLM agent loop — calls OpenAI API with trait-based tool calling, session compaction, usage tracking, and turn-based buddy mode
+interface agent {
+  /// WASM-compatible LLM agent loop — calls OpenAI API with trait-based tool calling, session compaction, usage tracking, and turn-based buddy mode
+  ///
+  /// Parameters:
+  /// - `prompt`: string — User message to send to the agent
+  /// - `system`: string (optional) — System prompt (default: general coding assistant)
+  /// - `tools`: string (optional) — Comma-separated trait paths to expose as tools (default: sys.call,sys.list,sys.registry,kernel.call)
+  /// - `model`: string (optional) — OpenAI model to use (default: gpt-4o-mini)
+  /// - `max_steps`: int (optional) — Maximum agent loop iterations (default: 10)
+  /// - `api_secret`: string (optional) — Name of the secret holding the OpenAI API key (default: openai_api_key)
+  /// - `mode`: string (optional) — Agent mode: 'full' (run to completion) or 'turn' (single turn for buddy/companion UX)
+  /// - `session`: any (optional) — Previous messages array OR session id string for multi-turn sessions
+  /// - `session_id`: string (optional) — Persisted session key for automatic chat continuity (default: default)
+  ///
+  /// Returns: { ok, done, response, tool_calls, step_count, usage: {input_tokens, output_tokens, total_tokens}, compacted_messages, session }
+  agent: func(
+    prompt: string,
+    system: option<string>,
+    tools: option<string>,
+    model: option<string>,
+    max-steps: option<s64>,
+    api-secret: option<string>,
+    mode: option<string>,
+    session: option<string>,
+    session-id: option<string>
+  ) -> result<string, string>;
+}
+
+world agent-world {
+  export agent;
+}

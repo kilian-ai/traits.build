@@ -1,0 +1,26 @@
+// @generated from js.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.js
+// Source version: v260419
+
+package traits:sys-js@0.1.0;
+
+/// Execute JavaScript snippets (WASM/browser runtime)
+interface js {
+  /// Execute JavaScript snippets (WASM/browser runtime)
+  ///
+  /// Parameters:
+  /// - `code`: string — JavaScript source code to run [example: console.log('hello from js')]
+  /// - `input`: any (optional) — Optional JSON input exposed as input argument [example: { score = 42, user = "alice" }]
+  ///
+  /// Returns: {ok, stdout, stderr, result, error?}
+  js: func(
+    code: string,
+    input: option<string>
+  ) -> result<string, string>;
+}
+
+world js-world {
+  export js;
+}

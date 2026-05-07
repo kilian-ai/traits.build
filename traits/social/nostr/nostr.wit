@@ -1,0 +1,34 @@
+// @generated from nostr.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: social.nostr
+// Source version: v260427
+
+package traits:social-nostr@0.1.0;
+
+/// Nostr protocol (NIP-01) — pure crypto + manifest helpers. Stateless: keys and relay I/O are managed by the JS/SPA layer. Actions: keygen | pubkey | import_nsec | encode_npub | decode_npub | event_id | sign_event | verify_event | manifest_build
+interface nostr {
+  /// Nostr protocol (NIP-01) — pure crypto + manifest helpers. Stateless: keys and relay I/O are managed by the JS/SPA layer. Actions: keygen | pubkey | import_nsec | encode_npub | decode_npub | event_id | sign_event | verify_event | manifest_build
+  ///
+  /// Parameters:
+  /// - `action`: string — Action name [example: keygen]
+  /// - `arg1`: string (optional) — First positional argument (varies by action) [example: ]
+  /// - `arg2`: string (optional) — Second positional argument [example: ]
+  /// - `arg3`: string (optional) — Third positional argument [example: ]
+  /// - `arg4`: string (optional) — Fourth positional argument [example: ]
+  /// - `arg5`: string (optional) — Fifth positional argument [example: ]
+  ///
+  /// Returns: Result varies by action
+  nostr: func(
+    action: string,
+    arg1: option<string>,
+    arg2: option<string>,
+    arg3: option<string>,
+    arg4: option<string>,
+    arg5: option<string>
+  ) -> result<string, string>;
+}
+
+world nostr-world {
+  export nostr;
+}

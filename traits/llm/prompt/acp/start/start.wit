@@ -1,0 +1,24 @@
+// @generated from start.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt.acp.start
+// Source version: v260328.171525
+
+package traits:llm-start@0.1.0;
+
+/// Start the ACP proxy for a specified agent
+interface start {
+  /// Start the ACP proxy for a specified agent
+  ///
+  /// Parameters:
+  /// - `agent`: string (optional) — ACP agent to start proxy for: opencode, claude, codex, copilot
+  ///
+  /// Returns: Status message
+  start: func(
+    agent: option<string>
+  ) -> result<string, string>;
+}
+
+world start-world {
+  export start;
+}

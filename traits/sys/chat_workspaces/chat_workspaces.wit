@@ -1,0 +1,24 @@
+// @generated from chat-workspaces.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.chat_workspaces
+// Source version: v260325.140954
+
+package traits:sys-chat-workspaces@0.1.0;
+
+/// List VS Code workspaceStorage folders that contain chat-related data
+interface chat-workspaces {
+  /// List VS Code workspaceStorage folders that contain chat-related data
+  ///
+  /// Parameters:
+  /// - `base_dir`: string (optional) — Optional workspaceStorage root override
+  ///
+  /// Returns: Workspace storage directories and available chat artifacts
+  chat-workspaces: func(
+    base-dir: option<string>
+  ) -> result<string, string>;
+}
+
+world chat-workspaces-world {
+  export chat-workspaces;
+}

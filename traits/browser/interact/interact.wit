@@ -1,0 +1,30 @@
+// @generated from interact.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: browser.interact
+// Source version: v260331.190313
+
+package traits:browser-interact@0.1.0;
+
+/// Interact with a web page using Playwright (click, type, evaluate JS, screenshot, wait). Requires Node.js and @playwright/browser-chromium installed.
+interface interact {
+  /// Interact with a web page using Playwright (click, type, evaluate JS, screenshot, wait). Requires Node.js and @playwright/browser-chromium installed.
+  ///
+  /// Parameters:
+  /// - `url`: string — Starting URL to navigate to [example: https://example.com]
+  /// - `actions`: list<map> (optional) — Ordered list of actions to perform. Each action: { type, selector, value, script, timeout }. Types: click, type, fill, evaluate, screenshot, wait, navigate, select, check, hover, scroll [example: [{"type":"click","selector":"button"},{"type":"screenshot"}]]
+  /// - `headless`: bool (optional) — Run in headless mode (default true) [example: true]
+  /// - `allow_local`: bool (optional) — Allow localhost/private-network targets (default false for safety) [example: false]
+  ///
+  /// Returns: { ok, url, results: [{ action, ok, value, error }], screenshot (base64 data URI of final state) }
+  interact: func(
+    url: string,
+    actions: option<list<string>>,
+    headless: option<bool>,
+    allow-local: option<bool>
+  ) -> result<string, string>;
+}
+
+world interact-world {
+  export interact;
+}

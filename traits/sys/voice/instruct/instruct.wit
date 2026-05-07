@@ -1,0 +1,28 @@
+// @generated from instruct.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice.instruct
+// Source version: v260407
+
+package traits:sys-instruct@0.1.0;
+
+/// Read, replace, or reset the voice agent's system instructions — the model can edit its own personality
+interface instruct {
+  /// Read, replace, or reset the voice agent's system instructions — the model can edit its own personality
+  ///
+  /// Parameters:
+  /// - `action`: string — get | set | reset | append | build [example: get]
+  /// - `text`: string (optional) — New instructions (for set/append) or agent name (for build)
+  /// - `session_id`: string (optional) — Session ID for chat history injection (for build only)
+  ///
+  /// Returns: {ok: bool, instructions: string, source: 'custom'|'default'}
+  instruct: func(
+    action: string,
+    text: option<string>,
+    session-id: option<string>
+  ) -> result<string, string>;
+}
+
+world instruct-world {
+  export instruct;
+}

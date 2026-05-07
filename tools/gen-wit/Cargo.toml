@@ -1,0 +1,15 @@
+[package]
+name = "gen-wit"
+version = "0.1.0"
+edition = "2021"
+description = "Generate WIT (WebAssembly Component Model) files from .trait.toml definitions"
+publish = false
+
+[[bin]]
+name = "gen-wit"
+path = "src/main.rs"
+
+[dependencies]
+kernel-logic = { path = "../../traits/kernel/logic" }
+toml = "0.8"
+walkdir = "2"

@@ -1,0 +1,28 @@
+// @generated from ws.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt.openai.ws
+// Source version: v260401.102329
+
+package traits:llm-ws@0.1.0;
+
+/// Streaming OpenAI-compatible inference via fetch() SSE in browser — implements llm/prompt
+interface ws {
+  /// Streaming OpenAI-compatible inference via fetch() SSE in browser — implements llm/prompt
+  ///
+  /// Parameters:
+  /// - `prompt`: string — User message to send to the model
+  /// - `model`: string (optional) — OpenAI model (default: gpt-4o-mini)
+  /// - `context`: string (optional) — Comma-separated file paths or globs for context injection
+  ///
+  /// Returns: Assistant response text (streamed in browser, buffered on native)
+  ws: func(
+    prompt: string,
+    model: option<string>,
+    context: option<string>
+  ) -> result<string, string>;
+}
+
+world ws-world {
+  export ws;
+}

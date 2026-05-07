@@ -1,0 +1,34 @@
+// @generated from audio.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.audio
+// Source version: v260401
+
+package traits:sys-audio@0.1.0;
+
+/// WebAudio API — generate tones, sequences, drums, noise, chords, and frequency sweeps in the browser
+interface audio {
+  /// WebAudio API — generate tones, sequences, drums, noise, chords, and frequency sweeps in the browser
+  ///
+  /// Parameters:
+  /// - `action`: string — Action: tone, sequence, drum, noise, chord, sweep, stop, status [example: tone]
+  /// - `arg1`: any (optional) — Primary arg: freq (tone), notes array (sequence), pattern string (drum), noise type, freqs array (chord), start_freq (sweep)
+  /// - `arg2`: any (optional) — Secondary arg: duration (tone/noise/chord), tempo (sequence), bpm (drum), end_freq (sweep)
+  /// - `arg3`: any (optional) — Tertiary arg: waveform (tone/chord), volume (sequence/noise), loops (drum), duration (sweep)
+  /// - `arg4`: any (optional) — Quaternary arg: volume (tone/chord/drum), waveform (sweep)
+  /// - `arg5`: any (optional) — Quinary arg: volume (sweep)
+  ///
+  /// Returns: Action descriptor with audio_action field — executed by JS bridge via WebAudio API
+  audio: func(
+    action: string,
+    arg1: option<string>,
+    arg2: option<string>,
+    arg3: option<string>,
+    arg4: option<string>,
+    arg5: option<string>
+  ) -> result<string, string>;
+}
+
+world audio-world {
+  export audio;
+}

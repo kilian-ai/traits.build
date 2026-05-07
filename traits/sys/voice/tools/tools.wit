@@ -1,0 +1,24 @@
+// @generated from tools.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice.tools
+// Source version: v260407.165830
+
+package traits:sys-tools@0.1.0;
+
+/// Build OpenAI Realtime API tool definitions from the trait registry — canonical tool list used by both native WebSocket and browser WebRTC voice sessions
+interface tools {
+  /// Build OpenAI Realtime API tool definitions from the trait registry — canonical tool list used by both native WebSocket and browser WebRTC voice sessions
+  ///
+  /// Parameters:
+  /// - `page`: string (optional) — Active page context ('canvas' restricts to canvas tools)
+  ///
+  /// Returns: {ok: bool, tools: array, count: int}
+  tools: func(
+    page: option<string>
+  ) -> result<string, string>;
+}
+
+world tools-world {
+  export tools;
+}

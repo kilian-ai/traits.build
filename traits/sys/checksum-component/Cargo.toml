@@ -1,0 +1,29 @@
+[package]
+name = "sys-checksum-component"
+version = "0.1.0"
+edition = "2021"
+description = "sys.checksum as a WebAssembly Component Model component (Stage 3 proof of concept)"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen-rt = { version = "0.39", features = ["bitflags"] }
+sha2 = "0.10"
+serde_json = "1"
+
+[package.metadata.component]
+package = "traits:sys-checksum"
+
+[package.metadata.component.target]
+path = "wit"
+world = "checksum-world"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1
+
+[workspace]

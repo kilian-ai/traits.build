@@ -1,0 +1,24 @@
+// @generated from snapshot.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.snapshot
+// Source version: v260322
+
+package traits:sys-snapshot@0.1.0;
+
+/// Snapshot a trait version: sets version in its .trait.toml to YYMMDD, or YYMMDD.HHMMSS if today's date is already the current version
+interface snapshot {
+  /// Snapshot a trait version: sets version in its .trait.toml to YYMMDD, or YYMMDD.HHMMSS if today's date is already the current version
+  ///
+  /// Parameters:
+  /// - `trait_path`: string — Trait path in dot notation (e.g. sys.checksum) [example: sys.checksum]
+  ///
+  /// Returns: { ok, trait_path, old_version, new_version, toml_path }
+  snapshot: func(
+    trait-path: string
+  ) -> result<string, string>;
+}
+
+world snapshot-world {
+  export snapshot;
+}

@@ -1,0 +1,24 @@
+// @generated from info.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.info
+// Source version: v260327
+
+package traits:sys-info@0.1.0;
+
+/// System status overview or detailed trait info with dispatch location
+interface info {
+  /// System status overview or detailed trait info with dispatch location
+  ///
+  /// Parameters:
+  /// - `path`: string (optional) (accepts stdin) — Optional: dot-notation trait path for detailed info. Omit for system status. [example: sys.checksum]
+  ///
+  /// Returns: System status (no args) or trait metadata with dispatch location
+  info: func(
+    path: option<string>
+  ) -> result<string, string>;
+}
+
+world info-world {
+  export info;
+}

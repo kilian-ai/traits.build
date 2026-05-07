@@ -1,0 +1,19 @@
+// @generated from quit.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice.quit
+// Source version: v260330.022427
+
+package traits:sys-quit@0.1.0;
+
+/// Gracefully end the active voice session
+interface quit {
+  /// Gracefully end the active voice session
+  ///
+  /// Returns: Confirmation that the voice session is ending
+  quit: func() -> result<list<tuple<string, string>>, string>;
+}
+
+world quit-world {
+  export quit;
+}

@@ -1,0 +1,19 @@
+// @generated from sdk.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.sdk
+// Source version: v260324
+
+package traits:www-sdk@0.1.0;
+
+/// JavaScript SDK client for traits.build — unified WASM + REST dispatch
+interface sdk {
+  /// JavaScript SDK client for traits.build — unified WASM + REST dispatch
+  ///
+  /// Returns: SDK source code (JavaScript ES module)
+  sdk: func() -> result<string, string>;
+}
+
+world sdk-world {
+  export sdk;
+}

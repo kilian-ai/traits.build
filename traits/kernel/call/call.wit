@@ -1,0 +1,26 @@
+// @generated from call.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.call
+// Source version: v260402
+
+package traits:kernel-call@0.1.0;
+
+/// Call another trait by dot-notation path
+interface call {
+  /// Call another trait by dot-notation path
+  ///
+  /// Parameters:
+  /// - `trait_path`: string — Dot-notation trait path, e.g. sys.checksum
+  /// - `args`: list<any> (optional) — Arguments forwarded to the target trait
+  ///
+  /// Returns: Result from the called trait
+  call: func(
+    trait-path: string,
+    args: option<list<string>>
+  ) -> result<string, string>;
+}
+
+world call-world {
+  export call;
+}

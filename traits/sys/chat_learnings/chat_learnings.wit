@@ -1,0 +1,36 @@
+// @generated from chat-learnings.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.chat_learnings
+// Source version: v260401
+
+package traits:sys-chat-learnings@0.1.0;
+
+/// Extract durable learnings from chat history and append them to LEARNINGS.md
+interface chat-learnings {
+  /// Extract durable learnings from chat history and append them to LEARNINGS.md
+  ///
+  /// Parameters:
+  /// - `workspace_id`: string — VS Code workspaceStorage hash to inspect
+  /// - `instruction`: string — Prompt that tells the LLM what durable learnings to extract
+  /// - `output_path`: string (optional) — Markdown file to append learnings to [example: LEARNINGS.md]
+  /// - `base_dir`: string (optional) — Optional workspaceStorage root override
+  /// - `method`: string (optional) — Extraction method: auto | json | state_vscdb | all
+  /// - `model`: string (optional) — Model passed to the llm/prompt interface
+  /// - `mock_response`: string (optional) — Optional deterministic markdown response for tests
+  ///
+  /// Returns: Learning extraction status, appended response, and tracked comment hashes
+  chat-learnings: func(
+    workspace-id: string,
+    instruction: string,
+    output-path: option<string>,
+    base-dir: option<string>,
+    method: option<string>,
+    model: option<string>,
+    mock-response: option<string>
+  ) -> result<string, string>;
+}
+
+world chat-learnings-world {
+  export chat-learnings;
+}

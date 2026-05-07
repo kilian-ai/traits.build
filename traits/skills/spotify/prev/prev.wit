@@ -1,0 +1,19 @@
+// @generated from prev.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: skills.spotify.prev
+// Source version: v260402
+
+package traits:skills-prev@0.1.0;
+
+/// Go back to the previous track on Spotify
+interface prev {
+  /// Go back to the previous track on Spotify
+  ///
+  /// Returns: Result with ok status
+  prev: func() -> result<string, string>;
+}
+
+world prev-world {
+  export prev;
+}

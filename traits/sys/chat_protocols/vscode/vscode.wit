@@ -1,0 +1,28 @@
+// @generated from vscode.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.chat_protocols.vscode
+// Source version: v260325.134206
+
+package traits:sys-vscode@0.1.0;
+
+/// Read VS Code chat history from chatSessions JSON logs or copied state.vscdb snapshots
+interface vscode {
+  /// Read VS Code chat history from chatSessions JSON logs or copied state.vscdb snapshots
+  ///
+  /// Parameters:
+  /// - `workspace_id`: string — VS Code workspaceStorage hash to inspect [example: c1d008f1cc5c2b413e09715a6b6588dc]
+  /// - `method`: string (optional) — Extraction method: auto | json | state_vscdb | all [example: state_vscdb]
+  /// - `base_dir`: string (optional) — Optional workspaceStorage root override for tests or non-standard installs [example: /Users/me/Library/Application Support/Code/User/workspaceStorage]
+  ///
+  /// Returns: VS Code chat transcript data and metadata
+  vscode: func(
+    workspace-id: string,
+    method: option<string>,
+    base-dir: option<string>
+  ) -> result<string, string>;
+}
+
+world vscode-world {
+  export vscode;
+}

@@ -1,0 +1,19 @@
+// @generated from testing.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.testing
+// Source version: v260419.172946
+
+package traits:www-testing@0.1.0;
+
+/// Testing suite for traits-runtimes abstraction layer
+interface testing {
+  /// Testing suite for traits-runtimes abstraction layer
+  ///
+  /// Returns: HTML testing page
+  testing: func() -> result<string, string>;
+}
+
+world testing-world {
+  export testing;
+}

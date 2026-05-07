@@ -1,0 +1,19 @@
+[trait]
+description = "Demo: call sys.checksum via WebAssembly Component Model from the JS console"
+version = "v260507.030330"
+checksum = "14022277a522807ab45d8dfd7274232a50ab2ec4fa0d7d24cee28dc23f7583f7"
+author = "system"
+tags = ["www", "webpage", "wasm", "components", "demo"]
+provides = ["www/webpage"]
+
+[signature]
+
+[signature.returns]
+type = "string"
+description = "HTML demo page that loads the sys-checksum component via jco-transpiled ESM"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "components_demo_page"
+wasm = true

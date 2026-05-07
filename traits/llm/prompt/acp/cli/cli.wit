@@ -1,0 +1,26 @@
+// @generated from cli.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.prompt.acp.cli
+// Source version: v260329
+
+package traits:llm-cli@0.1.0;
+
+/// Interactive chat CLI for ACP agents (Claude, Codex, Copilot, OpenCode)
+interface cli {
+  /// Interactive chat CLI for ACP agents (Claude, Codex, Copilot, OpenCode)
+  ///
+  /// Parameters:
+  /// - `agent`: string (optional) — ACP agent: opencode, claude, codex, copilot
+  /// - `model`: string (optional) — Model ID (empty = agent default)
+  ///
+  /// Returns: Usage instructions and available / commands
+  cli: func(
+    agent: option<string>,
+    model: option<string>
+  ) -> result<string, string>;
+}
+
+world cli-world {
+  export cli;
+}

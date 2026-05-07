@@ -1,0 +1,26 @@
+// @generated from skills.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.docs.skills
+// Source version: v260322.215420
+
+package traits:sys-skills@0.1.0;
+
+/// Generate a SKILL.md file from the OpenAPI spec — teaches AI agents to use traits as MCP tools
+interface skills {
+  /// Generate a SKILL.md file from the OpenAPI spec — teaches AI agents to use traits as MCP tools
+  ///
+  /// Parameters:
+  /// - `action`: string (optional) — Action: generate (default) | write [example: generate]
+  /// - `openapi_json`: any (optional) — OpenAPI spec JSON object (omit to use live sys.openapi)
+  ///
+  /// Returns: Generated SKILL.md markdown content
+  skills: func(
+    action: option<string>,
+    openapi-json: option<string>
+  ) -> result<string, string>;
+}
+
+world skills-world {
+  export skills;
+}

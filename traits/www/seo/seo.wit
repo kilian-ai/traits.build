@@ -1,0 +1,19 @@
+// @generated from seo.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.seo
+// Source version: v260326.180527
+
+package traits:www-seo@0.1.0;
+
+/// SEO settings editor — configure meta tags, Open Graph, Twitter cards, and JSON-LD
+interface seo {
+  /// SEO settings editor — configure meta tags, Open Graph, Twitter cards, and JSON-LD
+  ///
+  /// Returns: HTML SEO settings page
+  seo: func() -> result<string, string>;
+}
+
+world seo-world {
+  export seo;
+}

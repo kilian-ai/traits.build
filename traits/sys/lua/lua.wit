@@ -1,0 +1,26 @@
+// @generated from lua.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.lua
+// Source version: v260418.201748
+
+package traits:sys-lua@0.1.0;
+
+/// Execute Lua scripts via Fengari (WASM) or mlua (native)
+interface lua {
+  /// Execute Lua scripts via Fengari (WASM) or mlua (native)
+  ///
+  /// Parameters:
+  /// - `code`: string — Lua source code to run [example: print('hello from lua')]
+  /// - `input`: any (optional) — Optional JSON input exposed as __traits_input_json and input global [example: { score = 42, user = "alice" }]
+  ///
+  /// Returns: {ok, stdout, stderr, result, error?}
+  lua: func(
+    code: string,
+    input: option<string>
+  ) -> result<string, string>;
+}
+
+world lua-world {
+  export lua;
+}

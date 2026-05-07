@@ -1,0 +1,19 @@
+// @generated from ps.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.ps
+// Source version: v260328
+
+package traits:sys-ps@0.1.0;
+
+/// List running background tasks via the platform abstraction layer
+interface ps {
+  /// List running background tasks via the platform abstraction layer
+  ///
+  /// Returns: { ok, processes: [...] } on native; { ok, runtime, wasm: {...} } on WASM
+  ps: func() -> result<string, string>;
+}
+
+world ps-world {
+  export ps;
+}

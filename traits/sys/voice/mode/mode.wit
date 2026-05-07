@@ -1,0 +1,26 @@
+// @generated from mode.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.voice.mode
+// Source version: v260401
+
+package traits:sys-mode@0.1.0;
+
+/// Voice mode management — get/set preferred voice mode (local vs realtime) and check API key availability
+interface mode {
+  /// Voice mode management — get/set preferred voice mode (local vs realtime) and check API key availability
+  ///
+  /// Parameters:
+  /// - `action`: string — Action: get, set, has_key
+  /// - `value`: string (optional) — Mode value for set action: 'local' or 'realtime'
+  ///
+  /// Returns: Mode status with ok, mode, has_key fields
+  mode: func(
+    action: string,
+    value: option<string>
+  ) -> result<string, string>;
+}
+
+world mode-world {
+  export mode;
+}

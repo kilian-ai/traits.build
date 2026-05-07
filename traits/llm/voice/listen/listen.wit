@@ -1,0 +1,28 @@
+// @generated from listen.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: llm.voice.listen
+// Source version: v260329.222538
+
+package traits:llm-listen@0.1.0;
+
+/// Speech-to-text transcription using OpenAI Whisper API
+interface listen {
+  /// Speech-to-text transcription using OpenAI Whisper API
+  ///
+  /// Parameters:
+  /// - `file`: string (optional) — Path to audio file to transcribe (if empty, records from microphone)
+  /// - `duration`: int (optional) — Max recording duration in seconds (default: 10, max: 30)
+  /// - `language`: string (optional) — Language hint (ISO 639-1, e.g. 'en')
+  ///
+  /// Returns: {ok: bool, text?: string, file?: string, error?: string}
+  listen: func(
+    file: option<string>,
+    duration: option<s64>,
+    language: option<string>
+  ) -> result<string, string>;
+}
+
+world listen-world {
+  export listen;
+}

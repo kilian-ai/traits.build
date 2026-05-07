@@ -1,0 +1,30 @@
+// @generated from chat.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.chat
+// Source version: v260329.220223
+
+package traits:sys-chat@0.1.0;
+
+/// Chat session management — list, create, switch, delete sessions (MCP-callable)
+interface chat {
+  /// Chat session management — list, create, switch, delete sessions (MCP-callable)
+  ///
+  /// Parameters:
+  /// - `action`: string — Action: list, get, new, switch, delete, current, append
+  /// - `session_id`: string (optional) — Session ID (for get/switch/delete/append) or agent name (for new)
+  /// - `data`: string (optional) — Extra data: model (for new), role (for append), message content
+  /// - `extra`: string (optional) — Message content (for append when data=role)
+  ///
+  /// Returns: {ok: bool, sessions?: [...], session?: {...}, error?: string}
+  chat: func(
+    action: string,
+    session-id: option<string>,
+    data: option<string>,
+    extra: option<string>
+  ) -> result<string, string>;
+}
+
+world chat-world {
+  export chat;
+}

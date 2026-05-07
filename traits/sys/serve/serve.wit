@@ -1,0 +1,24 @@
+// @generated from serve.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.serve
+// Source version: v260428
+
+package traits:sys-serve@0.1.0;
+
+/// Start the HTTP API server
+interface serve {
+  /// Start the HTTP API server
+  ///
+  /// Parameters:
+  /// - `port`: int (optional) — Port to listen on (default: from config) [example: 8090]
+  ///
+  /// Returns: Server status (never returns while running)
+  serve: func(
+    port: option<s64>
+  ) -> result<string, string>;
+}
+
+world serve-world {
+  export serve;
+}

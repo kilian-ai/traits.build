@@ -1,0 +1,28 @@
+// @generated from chat-delete.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.chat_delete
+// Source version: v260331.182702
+
+package traits:sys-chat-delete@0.1.0;
+
+/// Delete a VS Code Copilot chat session from workspace storage (removes from state.vscdb index and chatSessions JSON file)
+interface chat-delete {
+  /// Delete a VS Code Copilot chat session from workspace storage (removes from state.vscdb index and chatSessions JSON file)
+  ///
+  /// Parameters:
+  /// - `workspace_id`: string — VS Code workspaceStorage hash [example: c1d008f1cc5c2b413e09715a6b6588dc]
+  /// - `session_id`: string — Session UUID to delete [example: 5c9fdb74-1234-5678-abcd-ef0123456789]
+  /// - `base_dir`: string (optional) — Optional workspaceStorage root override
+  ///
+  /// Returns: { ok, session_id, removed_from_db, removed_json }
+  chat-delete: func(
+    workspace-id: string,
+    session-id: string,
+    base-dir: option<string>
+  ) -> result<string, string>;
+}
+
+world chat-delete-world {
+  export chat-delete;
+}

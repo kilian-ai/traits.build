@@ -1,0 +1,19 @@
+// @generated from openapi.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.openapi
+// Source version: v260417
+
+package traits:sys-openapi@0.1.0;
+
+/// Generate OpenAPI 3.0 specification from the trait registry
+interface openapi {
+  /// Generate OpenAPI 3.0 specification from the trait registry
+  ///
+  /// Returns: OpenAPI 3.0 JSON specification object
+  openapi: func() -> result<string, string>;
+}
+
+world openapi-world {
+  export openapi;
+}

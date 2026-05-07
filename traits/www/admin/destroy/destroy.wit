@@ -1,0 +1,19 @@
+// @generated from destroy.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.admin.destroy
+// Source version: v260321.120132
+
+package traits:www-destroy@0.1.0;
+
+/// Destroy all Fly.io machines for the app
+interface destroy {
+  /// Destroy all Fly.io machines for the app
+  ///
+  /// Returns: Destroy operation result
+  destroy: func() -> result<string, string>;
+}
+
+world destroy-world {
+  export destroy;
+}

@@ -1,0 +1,19 @@
+// @generated from types.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: kernel.types
+// Source version: v260325.131632
+
+package traits:kernel-types@0.1.0;
+
+/// Cross-language type system: TraitType, TraitValue, ParamDef, wire protocol types
+interface types {
+  /// Cross-language type system: TraitType, TraitValue, ParamDef, wire protocol types
+  ///
+  /// Returns: Type system documentation: trait types, languages, wire protocol
+  types: func() -> result<string, string>;
+}
+
+world types-world {
+  export types;
+}

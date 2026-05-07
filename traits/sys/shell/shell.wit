@@ -1,0 +1,28 @@
+// @generated from shell.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: sys.shell
+// Source version: v260419
+
+package traits:sys-shell@0.1.0;
+
+/// Execute a shell command and return stdout, stderr, and exit code (native process on host, CLI session engine on WASM)
+interface shell {
+  /// Execute a shell command and return stdout, stderr, and exit code (native process on host, CLI session engine on WASM)
+  ///
+  /// Parameters:
+  /// - `command`: string — Shell command to execute (passed to sh -c) [example: ls -la]
+  /// - `cwd`: string (optional) — Working directory (optional, defaults to current dir)
+  /// - `timeout`: int (optional) — Timeout in seconds (default 60, max 300)
+  ///
+  /// Returns: {ok: bool, exit_code: int, stdout: string, stderr: string}
+  shell: func(
+    command: string,
+    cwd: option<string>,
+    timeout: option<s64>
+  ) -> result<string, string>;
+}
+
+world shell-world {
+  export shell;
+}
