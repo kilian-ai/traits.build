@@ -104,6 +104,14 @@ function loadScriptOnce(src) {
 }
 async function bootKernel() {
   if (window._traitsSDK && typeof window._traitsSDK.call === 'function') return;
+  // Drop legacy "WASM kernel not loaded" banner cached from earlier broken
+  // deploys so a stale scrollback doesn't masquerade as a runtime error.
+  try {
+    const sb = localStorage.getItem('traits.terminal.scrollback') || '';
+    if (sb.includes('WASM kernel not loaded')) {
+      localStorage.removeItem('traits.terminal.scrollback');
+    }
+  } catch (_) {}
   try {
     await loadScriptOnce('/wasm-runtime.js');
     const mod = window.TraitsWasm;
