@@ -139,6 +139,7 @@ async function bootKernel() {
     window._traitsSDK = {
       call: async (path, args) => callWasm(path, args),
       backgroundCall,
+      initWorkerPool: async () => {},
       status: { wasm: true, callable: (() => {
         try { return JSON.parse(mod.callable_traits()).length; } catch (_) { return 0; }
       })() },
