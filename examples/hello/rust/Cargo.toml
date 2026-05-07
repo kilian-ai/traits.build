@@ -1,0 +1,20 @@
+[package]
+name = "hello-rust"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen-rt = { version = "0.39", features = ["bitflags"] }
+
+[package.metadata.component]
+package = "hello:rust"
+
+[package.metadata.component.target]
+path = "wit"
+world = "hello-world"
+
+[workspace]

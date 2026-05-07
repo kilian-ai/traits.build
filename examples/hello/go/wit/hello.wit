@@ -1,0 +1,15 @@
+package hello:go@0.1.0;
+
+interface hello {
+    hello: func(name: string) -> result<string, string>;
+}
+
+world hello-world {
+    // TinyGo's wasip2 runtime imports wasi:cli/wasi:io/wasi:filesystem/etc.
+    // Including wasi:cli/imports brings them into the world so that
+    // wasm-tools can validate the embedded component.
+    include wasi:cli/imports@0.2.0;
+
+    export hello;
+}
+

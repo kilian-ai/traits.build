@@ -1,0 +1,19 @@
+// @generated from %static.trait.toml — DO NOT EDIT
+// Regenerate with: cargo run -p gen-wit
+//
+// Trait path: www.static
+// Source version: v260324.153121
+
+package traits:www-%static@0.1.0;
+
+/// Self-contained static website — WASM kernel + SDK, no server required
+interface %static {
+  /// Self-contained static website — WASM kernel + SDK, no server required
+  ///
+  /// Returns: HTML page: self-contained SPA with WASM kernel and SDK
+  %static: func() -> result<string, string>;
+}
+
+world %static-world {
+  export %static;
+}

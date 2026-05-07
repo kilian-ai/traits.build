@@ -221,21 +221,28 @@ impl ComponentLoader {
         let (interface_name, func_name) = {
             use wasmtime::component::types::ComponentItem;
             let ty = component.component_type();
-            let mut found: Option<(String, String)> = None;
+            // Collect all exported (interface, fn) pairs, then prefer
+            // package-qualified interfaces (e.g. `hello:python/hello@0.1.0`)
+            // over toolchain-internal anonymous ones (e.g. componentize-py's
+            // bare `exports` interface), which usually don't carry the user's
+            // actual contract.
+            let mut candidates: Vec<(String, String)> = Vec::new();
             for (iname, item) in ty.exports(&self.engine) {
                 if let ComponentItem::ComponentInstance(inst) = item {
                     for (fname, sub) in inst.exports(&self.engine) {
                         if matches!(sub, ComponentItem::ComponentFunc(_)) {
-                            found = Some((iname.to_string(), fname.to_string()));
+                            candidates.push((iname.to_string(), fname.to_string()));
                             break;
                         }
                     }
-                    if found.is_some() {
-                        break;
-                    }
                 }
             }
-            found.ok_or_else(|| {
+            let pick = candidates
+                .iter()
+                .find(|(i, _)| i.contains(':'))
+                .or_else(|| candidates.first())
+                .cloned();
+            pick.ok_or_else(|| {
                 anyhow!(
                     "component {} exports no interface with a function — \
                      does it target the gen-component WIT contract?",
@@ -268,7 +275,17 @@ impl ComponentLoader {
     /// each invocation builds its own Store, so concurrent calls are safe.
     pub fn dispatch(&self, trait_path: &str, args: &[Value]) -> Option<Value> {
         let comp = self.components.read().ok()?.get(trait_path).cloned()?;
-        match self.invoke(&comp, args) {
+        // wasmtime-wasi's sync layer calls `block_on` internally for any
+        // async-only resource (e.g. wasi:cli/stdin pollables used by JS
+        // components). If we're already on a tokio runtime worker thread,
+        // that nested block_on panics. `block_in_place` lifts the worker so
+        // wasmtime-wasi can safely create its own runtime context.
+        let result = if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::block_in_place(|| self.invoke(&comp, args))
+        } else {
+            self.invoke(&comp, args)
+        };
+        match result {
             Ok(v) => Some(v),
             Err(e) => Some(serde_json::json!({
                 "error": format!("component dispatch failed: {:#}", e),

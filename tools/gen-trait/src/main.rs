@@ -57,8 +57,15 @@ fn main() -> Result<()> {
     let world = &resolve.worlds[world_id];
 
     // Find a single exported interface that contains a single function.
+    // Prefer named (`WorldKey::Interface`) exports — anonymous inline exports
+    // (`WorldKey::Name`) are typically toolchain-internal (e.g.
+    // componentize-py's runtime "exports" interface) and not what users mean
+    // to expose.
     let mut iface_pick = None;
     for (key, item) in &world.exports {
+        if !matches!(key, wit_parser::WorldKey::Interface(_)) {
+            continue;
+        }
         if let WorldItem::Interface { id, .. } = item {
             let iface = &resolve.interfaces[*id];
             if iface.functions.len() != 1 {
@@ -67,6 +74,21 @@ fn main() -> Result<()> {
             let (fn_name, func) = iface.functions.iter().next().unwrap();
             iface_pick = Some((key.clone(), *id, fn_name.clone(), func.clone()));
             break;
+        }
+    }
+    // Fallback: accept anonymous/inline exports too if no named interface
+    // matched (covers components built without a package-level WIT world).
+    if iface_pick.is_none() {
+        for (key, item) in &world.exports {
+            if let WorldItem::Interface { id, .. } = item {
+                let iface = &resolve.interfaces[*id];
+                if iface.functions.len() != 1 {
+                    continue;
+                }
+                let (fn_name, func) = iface.functions.iter().next().unwrap();
+                iface_pick = Some((key.clone(), *id, fn_name.clone(), func.clone()));
+                break;
+            }
         }
     }
     let (key, iface_id, fn_name, func) = iface_pick

@@ -1,0 +1,9 @@
+package hello:javascript@0.1.0;
+
+interface hello {
+    hello: func(name: string) -> result<string, string>;
+}
+
+world hello-world {
+    export hello;
+}
