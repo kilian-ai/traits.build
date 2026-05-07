@@ -32,10 +32,11 @@ const HTML: &str = r##"<!DOCTYPE html>
   .btn.primary { background:#f97316; border-color:#f97316; color:#0d1117; font-weight:600; }
   .btn.primary:hover { background:#fb923c; color:#0d1117; }
 
-  .ide { display:grid; height:calc(100vh - 49px); grid-template-columns:280px 1fr; grid-template-rows:1fr 320px; grid-template-areas: "tree editor" "tree term"; }
+  .ide { display:grid; height:calc(100vh - 49px); grid-template-columns:280px 1fr; grid-template-rows:1fr 320px; grid-template-areas: "tree editor" "tree term"; transition: grid-template-rows 0.15s ease; }
+  .ide.term-collapsed { grid-template-rows: 1fr 34px; }
   .pane-tree { grid-area:tree; background:#0a0e14; border-right:1px solid #222; overflow:auto; }
   .pane-editor { grid-area:editor; background:#1e1e1e; min-height:0; }
-  .pane-term { grid-area:term; background:#0d1117; border-top:1px solid #222; display:flex; flex-direction:column; min-height:0; }
+  .pane-term { grid-area:term; background:#0d1117; border-top:1px solid #222; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
   .term-header { display:flex; align-items:center; gap:1rem; padding:0.4rem 0.9rem; background:#161b22; border-bottom:1px solid #222; user-select:none; }
   .term-toggle { background:none; border:none; color:#8b949e; font-size:0.85rem; font-weight:600; cursor:pointer; padding:0; }
   .term-status { font-size:0.7rem; color:#8b949e; margin-left:auto; }
@@ -202,6 +203,26 @@ async function selectTrait(path) {
 }
 
 // ── Terminal ───────────────────────────────────────────────────────
+// Always-available collapse toggle (works even without the kernel runtime).
+(function wireTerminalToggle(){
+  const ide = document.querySelector('.ide');
+  const btn = document.getElementById('termToggle');
+  if (!ide || !btn) return;
+  function apply() {
+    const collapsed = ide.classList.contains('term-collapsed');
+    btn.textContent = (collapsed ? '▲' : '▼') + ' Terminal';
+    if (terminalInstance && terminalInstance.fit && !collapsed) {
+      try { terminalInstance.fit(); } catch (_) {}
+    }
+  }
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    ide.classList.toggle('term-collapsed');
+    apply();
+  });
+  apply();
+})();
+
 async function ensureTerminal() {
   if (terminalInstance) return terminalInstance;
   let createTerminal = window.createTerminal;
@@ -261,6 +282,8 @@ document.getElementById('btnReload').addEventListener('click', async () => {
   if (hasKernel()) {
     setTimeout(() => { ensureTerminal().catch(console.error); }, 250);
   } else {
+    document.querySelector('.ide')?.classList.add('term-collapsed');
+    document.getElementById('termToggle').textContent = '▲ Terminal';
     showStaticNotice('Read-only mode — install the binary to run traits locally.');
   }
 })();
