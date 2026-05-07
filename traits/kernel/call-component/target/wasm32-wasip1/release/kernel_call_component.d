@@ -1,0 +1,1 @@
+/Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/kernel/call-component/target/wasm32-wasip1/release/kernel_call_component.wasm: /Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/kernel/call-component/src/bindings.rs /Users/kilian/.ai/traits/Polygrait/A.\ traits.build/traits/kernel/call-component/src/lib.rs

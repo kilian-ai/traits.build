@@ -26,6 +26,7 @@ COMPONENTS=(
   "traits/sys/checksum-component        sys-checksum     sys_checksum_component.wasm           traits/sys/checksum"
   "traits/sys/echo-component            sys-echo         sys_echo_component.wasm               traits/sys/echo"
   "traits/sys/list-component            sys-list         sys_list_component.wasm               traits/sys/list"
+  "traits/kernel/call-component         kernel-call      kernel_call_component.wasm            traits/kernel/call"
   "traits/www/local/helper-component    www-local-helper www_local_helper_component.wasm       traits/www/local/helper"
   "traits/www/local/install-component   www-local-install www_local_install_component.wasm     traits/www/local/install"
 )

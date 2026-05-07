@@ -19,7 +19,7 @@ use kernel_logic::types::{ParamDef, ReturnDef, TraitSignature, TraitType};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use tracing::{info, warn};
 use wasmtime::component::{Component, Linker, Val};
 use wasmtime::{Engine, Store};
@@ -58,9 +58,6 @@ pub struct ComponentLoader {
     linker: Arc<Linker<HostState>>,
     components: RwLock<HashMap<String, Arc<LoadedComponent>>>,
     search_dirs: Vec<PathBuf>,
-    /// One Store is created per call (cheap with wasmtime engines), but we
-    /// serialize calls per-component to avoid hitting any non-Send corners.
-    call_lock: Mutex<()>,
 }
 
 impl ComponentLoader {
@@ -108,7 +105,6 @@ impl ComponentLoader {
             linker: Arc::new(linker),
             components: RwLock::new(HashMap::new()),
             search_dirs,
-            call_lock: Mutex::new(()),
         })
     }
 
@@ -206,10 +202,13 @@ impl ComponentLoader {
     /// Dispatch a call. Returns `None` if the trait path isn't loaded as a
     /// component; otherwise returns `Some(json)` with success or error embedded
     /// in the JSON (mirroring how dylib loader behaves).
+    ///
+    /// Note: we deliberately do **not** hold a global call lock here. Components
+    /// can re-enter the kernel via the `traits:kernel-host/dispatch` import,
+    /// which would deadlock. wasmtime's Engine + Component are Send+Sync, and
+    /// each invocation builds its own Store, so concurrent calls are safe.
     pub fn dispatch(&self, trait_path: &str, args: &[Value]) -> Option<Value> {
         let comp = self.components.read().ok()?.get(trait_path).cloned()?;
-        // Serialize across calls — we only need correctness, not throughput.
-        let _g = self.call_lock.lock().unwrap();
         match self.invoke(&comp, args) {
             Ok(v) => Some(v),
             Err(e) => Some(serde_json::json!({
