@@ -113,11 +113,35 @@ async function bootKernel() {
     const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     mod.initSync({ module: bin });
     JSON.parse(mod.init());
+    const callWasm = (path, args) => {
+      const raw = mod.call(path, JSON.stringify(args || []));
+      try { return JSON.parse(raw); } catch (_) { return raw; }
+    };
+    // Direct background-call shim that the shared terminal expects.
+    // Routes cli_input / cli_welcome to TraitsWasm; everything else goes
+    // through `mod.call`.
+    const backgroundCall = async (cmd, payload = {}) => {
+      try {
+        if (cmd === 'cli_input') {
+          return { ok: true, result: mod.cli_input(payload.data || '') };
+        }
+        if (cmd === 'cli_welcome') {
+          return { ok: true, result: mod.cli_welcome ? mod.cli_welcome() : '' };
+        }
+        if (cmd === 'call' && payload.path) {
+          return { ok: true, result: callWasm(payload.path, payload.args) };
+        }
+        return { ok: false, error: 'unsupported: ' + cmd };
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    };
     window._traitsSDK = {
-      call: async (path, args) => {
-        const raw = mod.call(path, JSON.stringify(args || []));
-        try { return JSON.parse(raw); } catch (_) { return raw; }
-      },
+      call: async (path, args) => callWasm(path, args),
+      backgroundCall,
+      status: { wasm: true, callable: (() => {
+        try { return JSON.parse(mod.callable_traits()).length; } catch (_) { return 0; }
+      })() },
     };
   } catch (e) {
     console.warn('WASM kernel boot failed:', e);
