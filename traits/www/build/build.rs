@@ -147,8 +147,7 @@ document.getElementById('treeFilter').addEventListener('input', e => renderTree(
 
 // ── Source loading ─────────────────────────────────────────────────
 async function loadSource(path) {
-  // Try sys.registry info → returns trait file paths; then fetch via sys.shell or static file.
-  // Fallback: render the trait metadata as JSON.
+  // Live mode: ask the kernel for richer registry info.
   try {
     const sdk = window._traitsSDK;
     if (sdk && typeof sdk.call === 'function') {
@@ -156,7 +155,10 @@ async function loadSource(path) {
       if (meta && typeof meta === 'object') return JSON.stringify(meta, null, 2);
     }
   } catch (_) {}
-  return `// ${path}\n// (Source viewer is read-only metadata for now.)\n// Use the terminal below to run: call ${path} <args>\n`;
+  // Static / fallback: render the entry from the prerendered trait list.
+  const t = TRAITS.find(x => x && x.path === path);
+  if (t) return JSON.stringify(t, null, 2);
+  return JSON.stringify({ path, error: 'trait not found in registry' }, null, 2);
 }
 
 async function ensureMonaco() {
@@ -182,9 +184,21 @@ async function ensureMonaco() {
 async function selectTrait(path) {
   ACTIVE = path;
   renderTree(document.getElementById('treeFilter').value);
-  const monaco = await ensureMonaco();
-  const src = await loadSource(path);
   const host = document.getElementById('editor');
+  let monaco, src;
+  try {
+    monaco = await ensureMonaco();
+    src = await loadSource(path);
+  } catch (e) {
+    console.error('selectTrait failed', e);
+    host.classList.remove('editor-empty');
+    host.textContent = '';
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'padding:1rem;color:#f85149;white-space:pre-wrap;margin:0;font:12px ui-monospace,monospace';
+    pre.textContent = `Failed to load editor for ${path}\n\n${e && e.message || e}`;
+    host.appendChild(pre);
+    return;
+  }
   if (!monacoEditor) {
     host.classList.remove('editor-empty');
     host.textContent = '';
