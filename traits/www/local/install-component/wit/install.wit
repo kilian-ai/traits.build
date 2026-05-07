@@ -1,0 +1,9 @@
+package traits:www-install@0.1.0;
+
+interface install {
+  install: func() -> result<string, string>;
+}
+
+world install-world {
+  export install;
+}

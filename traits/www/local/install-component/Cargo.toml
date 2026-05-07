@@ -1,0 +1,27 @@
+[package]
+name = "www-local-install-component"
+version = "0.1.0"
+edition = "2021"
+description = "www.local.install as a WebAssembly Component Model component"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen-rt = { version = "0.39", features = ["bitflags"] }
+
+[package.metadata.component]
+package = "traits:www-install"
+
+[package.metadata.component.target]
+path = "wit"
+world = "install-world"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1
+
+[workspace]

@@ -1,0 +1,9 @@
+package traits:www-helper@0.1.0;
+
+interface helper {
+  helper: func() -> result<string, string>;
+}
+
+world helper-world {
+  export helper;
+}
