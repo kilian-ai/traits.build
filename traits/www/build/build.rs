@@ -36,6 +36,7 @@ const HTML: &str = r##"<!DOCTYPE html>
   .ide.term-collapsed { grid-template-rows: 1fr 34px; }
   .pane-tree { grid-area:tree; background:#0a0e14; border-right:1px solid #222; overflow:auto; }
   .pane-editor { grid-area:editor; background:#1e1e1e; min-height:0; }
+  #editor { width:100%; height:100%; }
   .pane-term { grid-area:term; background:#0d1117; border-top:1px solid #222; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
   .term-header { display:flex; align-items:center; gap:1rem; padding:0.4rem 0.9rem; background:#161b22; border-bottom:1px solid #222; user-select:none; }
   .term-toggle { background:none; border:none; color:#8b949e; font-size:0.85rem; font-weight:600; cursor:pointer; padding:0; }
