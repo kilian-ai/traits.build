@@ -24,6 +24,7 @@ OUT_BASE="$ROOT/traits/www/static/components"
 #                        ComponentLoader can discover it
 COMPONENTS=(
   "traits/sys/checksum-component sys-checksum sys_checksum_component.wasm traits/sys/checksum"
+  "traits/sys/echo-component     sys-echo     sys_echo_component.wasm     traits/sys/echo"
 )
 
 mkdir -p "$OUT_BASE"

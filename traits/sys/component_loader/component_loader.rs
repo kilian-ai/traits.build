@@ -443,10 +443,35 @@ fn val_to_json(v: Val) -> Value {
 
 /// Decode the gen-wit `result<T, string>` return value.
 /// On Err we surface `{"error": msg, ...}` so the kernel can see it.
+///
+/// If the declared return type is structured (Map/List/Any) but the component
+/// returned a JSON-encoded string (a common WIT idiom because WIT lacks
+/// dynamic types), auto-decode that string back into JSON so callers see
+/// the same shape as the dylib path.
 fn result_val_to_json(v: Val, ret: &ReturnDef) -> Result<Value> {
-    let _ = ret; // currently unused — return type info already in component
+    let normalize = |raw: Value| -> Value {
+        if let Value::String(ref s) = raw {
+            let want_structured = matches!(
+                ret.return_type,
+                TraitType::Map(_, _)
+                    | TraitType::List(_)
+                    | TraitType::Any
+                    | TraitType::Optional(_)
+            );
+            if want_structured {
+                if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                    return parsed;
+                }
+            }
+        }
+        raw
+    };
+
     match v {
-        Val::Result(Ok(opt)) => Ok(opt.map(|p| val_to_json(*p)).unwrap_or(Value::Null)),
+        Val::Result(Ok(opt)) => {
+            let raw = opt.map(|p| val_to_json(*p)).unwrap_or(Value::Null);
+            Ok(normalize(raw))
+        }
         Val::Result(Err(opt)) => {
             let msg = opt.map(|p| val_to_json(*p)).unwrap_or(Value::Null);
             Ok(serde_json::json!({
@@ -455,7 +480,7 @@ fn result_val_to_json(v: Val, ret: &ReturnDef) -> Result<Value> {
             }))
         }
         // Some traits may declare a non-result return; pass through.
-        other => Ok(val_to_json(other)),
+        other => Ok(normalize(val_to_json(other))),
     }
 }
 
