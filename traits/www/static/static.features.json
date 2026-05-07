@@ -27,15 +27,11 @@
                 },
                 {
                     "args": [],
-                    "test": { "type": "contains", "value": "www.traits.build" }
-                },
-                {
-                    "args": [],
                     "test": { "type": "contains", "value": "www.docs" }
                 },
                 {
                     "args": [],
-                    "test": { "type": "contains", "value": "www.chat_logs" }
+                    "test": { "type": "contains", "value": "www.build" }
                 },
                 {
                     "args": [],

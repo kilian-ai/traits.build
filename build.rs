@@ -468,7 +468,6 @@ fn compute_build_version(manifest_dir: &Path, is_publish: bool) -> String {
         "traits/kernel/wasm/Cargo.toml",
         "traits/sys/checksum/Cargo.toml",
         "traits/sys/ps/Cargo.toml",
-        "traits/www/traits/build/Cargo.toml",
     ];
     for rel_path in &workspace_tomls {
         let cargo_path = manifest_dir.join(rel_path);

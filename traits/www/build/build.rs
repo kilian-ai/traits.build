@@ -1,0 +1,249 @@
+use serde_json::Value;
+
+/// www.build — IDE-style page with tree view, Monaco editor, and embedded terminal.
+pub fn build_page(_args: &[Value]) -> Value {
+    Value::String(HTML.to_string())
+}
+
+const HTML: &str = r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build — traits.build</title>
+<meta name="description" content="Browse, edit, and run traits in an IDE-style workspace">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; background:#0d1117; color:#c9d1d9; font-family: system-ui,-apple-system,sans-serif; overflow:hidden; }
+  a { color:#58a6ff; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+
+  .topnav { display:flex; align-items:center; gap:1.5rem; padding:0.6rem 1.25rem; background:#0d1117; border-bottom:1px solid #222; }
+  .topnav .brand { font-size:1.05rem; font-weight:600; color:#e0e0e0; }
+  .topnav .brand span { color:#f97316; }
+  .topnav .tabs { display:flex; gap:0.25rem; margin-left:1rem; }
+  .topnav .tab { padding:0.4rem 0.9rem; border-radius:6px; color:#999; font-size:0.9rem; }
+  .topnav .tab:hover { background:#161b22; color:#e0e0e0; text-decoration:none; }
+  .topnav .tab.active { background:#161b22; color:#f97316; }
+  .topnav .toolbar { margin-left:auto; display:flex; gap:0.5rem; }
+  .btn { padding:0.4rem 0.85rem; border-radius:6px; border:1px solid #30363d; background:#161b22; color:#e0e0e0; font:inherit; font-size:0.85rem; cursor:pointer; }
+  .btn:hover { border-color:#f97316; color:#f97316; }
+  .btn.primary { background:#f97316; border-color:#f97316; color:#0d1117; font-weight:600; }
+  .btn.primary:hover { background:#fb923c; color:#0d1117; }
+
+  .ide { display:grid; height:calc(100vh - 49px); grid-template-columns:280px 1fr; grid-template-rows:1fr 320px; grid-template-areas: "tree editor" "tree term"; }
+  .pane-tree { grid-area:tree; background:#0a0e14; border-right:1px solid #222; overflow:auto; }
+  .pane-editor { grid-area:editor; background:#1e1e1e; min-height:0; }
+  .pane-term { grid-area:term; background:#0d1117; border-top:1px solid #222; display:flex; flex-direction:column; min-height:0; }
+  .term-header { display:flex; align-items:center; gap:1rem; padding:0.4rem 0.9rem; background:#161b22; border-bottom:1px solid #222; user-select:none; }
+  .term-toggle { background:none; border:none; color:#8b949e; font-size:0.85rem; font-weight:600; cursor:pointer; padding:0; }
+  .term-status { font-size:0.7rem; color:#8b949e; margin-left:auto; }
+  .term-status.ready { color:#3fb950; } .term-status.loading { color:#d29922; } .term-status.error { color:#f85149; }
+  .term-body { flex:1; min-height:0; padding:4px; }
+  #xterm { width:100%; height:100%; }
+
+  .tree-search { padding:0.6rem; border-bottom:1px solid #222; }
+  .tree-search input { width:100%; padding:0.4rem 0.6rem; border-radius:5px; background:#161b22; border:1px solid #30363d; color:#e0e0e0; font:inherit; font-size:0.85rem; }
+  .tree-list { padding:0.4rem 0; font-size:0.85rem; }
+  .tree-group { padding:0.35rem 0.85rem; color:#666; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:600; }
+  .tree-item { padding:0.3rem 0.85rem 0.3rem 1.5rem; color:#b0b0b0; cursor:pointer; }
+  .tree-item:hover { background:#161b22; color:#e0e0e0; }
+  .tree-item.active { background:#161b22; color:#f97316; border-left:2px solid #f97316; padding-left:calc(1.5rem - 2px); }
+  .tree-item .desc { display:block; color:#666; font-size:0.72rem; margin-top:0.1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .editor-empty { display:flex; align-items:center; justify-content:center; height:100%; color:#8b949e; font-size:0.95rem; }
+</style>
+</head>
+<body>
+<header class="topnav">
+  <a class="brand" href="/traits">traits<span>.build</span></a>
+  <nav class="tabs">
+    <a class="tab" href="/traits">traits</a>
+    <a class="tab active" href="/build">build</a>
+    <a class="tab" href="/api">api</a>
+  </nav>
+  <div class="toolbar">
+    <button id="btnRun" class="btn primary" type="button" title="Call the active trait">▶ Run</button>
+    <button id="btnBuild" class="btn" type="button" title="Rebuild the binary">⟳ Build</button>
+    <button id="btnReload" class="btn" type="button" title="Reload trait list">↻ Reload</button>
+  </div>
+</header>
+<div class="ide">
+  <aside class="pane-tree">
+    <div class="tree-search"><input id="treeFilter" type="search" placeholder="filter traits…"></div>
+    <div id="treeList" class="tree-list">Loading…</div>
+  </aside>
+  <section class="pane-editor"><div id="editor" class="editor-empty">Select a trait from the tree to view its source</div></section>
+  <section class="pane-term">
+    <div class="term-header" id="termHeader">
+      <button id="termToggle" class="term-toggle">▼ Terminal</button>
+      <span class="term-status" id="termStatus"></span>
+    </div>
+    <div class="term-body"><div id="xterm"></div></div>
+  </section>
+</div>
+
+<script>
+// ── Trait list & tree ──────────────────────────────────────────────
+let TRAITS = [];
+let ACTIVE = null;
+let monacoEditor = null;
+let terminalInstance = null;
+
+async function fetchTraits() {
+  try {
+    const sdk = window._traitsSDK;
+    if (sdk && typeof sdk.call === 'function') {
+      return await sdk.call('sys.list', []);
+    }
+    const r = await fetch('/api/list');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (e) {
+    console.error('fetchTraits failed', e);
+    return [];
+  }
+}
+
+function renderTree(filter = '') {
+  const root = document.getElementById('treeList');
+  if (!TRAITS.length) { root.textContent = 'No traits found'; return; }
+  const f = filter.trim().toLowerCase();
+  const groups = new Map();
+  for (const t of TRAITS) {
+    if (f && !(t.path || '').toLowerCase().includes(f)) continue;
+    const ns = (t.path || '').split('.')[0] || '_';
+    if (!groups.has(ns)) groups.set(ns, []);
+    groups.get(ns).push(t);
+  }
+  const out = [];
+  for (const ns of [...groups.keys()].sort()) {
+    out.push(`<div class="tree-group">${ns}</div>`);
+    for (const t of groups.get(ns).sort((a,b) => (a.path||'').localeCompare(b.path||''))) {
+      const cls = t.path === ACTIVE ? 'tree-item active' : 'tree-item';
+      const desc = (t.description || '').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c]);
+      out.push(`<div class="${cls}" data-path="${t.path}"><div>${t.path}</div><span class="desc">${desc}</span></div>`);
+    }
+  }
+  root.innerHTML = out.join('') || '<div style="padding:1rem;color:#666">No matches</div>';
+  for (const el of root.querySelectorAll('.tree-item')) {
+    el.addEventListener('click', () => selectTrait(el.dataset.path));
+  }
+}
+
+document.getElementById('treeFilter').addEventListener('input', e => renderTree(e.target.value));
+
+// ── Source loading ─────────────────────────────────────────────────
+async function loadSource(path) {
+  // Try sys.registry info → returns trait file paths; then fetch via sys.shell or static file.
+  // Fallback: render the trait metadata as JSON.
+  try {
+    const sdk = window._traitsSDK;
+    if (sdk && typeof sdk.call === 'function') {
+      const meta = await sdk.call('sys.registry', ['info', path]);
+      if (meta && typeof meta === 'object') return JSON.stringify(meta, null, 2);
+    }
+  } catch (_) {}
+  return `// ${path}\n// (Source viewer is read-only metadata for now.)\n// Use the terminal below to run: call ${path} <args>\n`;
+}
+
+async function ensureMonaco() {
+  if (window.monaco) return window.monaco;
+  return new Promise((resolve, reject) => {
+    if (!document.querySelector('script[data-monaco-loader]')) {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js';
+      s.dataset.monacoLoader = '1';
+      s.onload = afterLoader;
+      s.onerror = () => reject(new Error('failed to load monaco loader'));
+      document.head.appendChild(s);
+    } else {
+      afterLoader();
+    }
+    function afterLoader() {
+      window.require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+      window.require(['vs/editor/editor.main'], () => resolve(window.monaco));
+    }
+  });
+}
+
+async function selectTrait(path) {
+  ACTIVE = path;
+  renderTree(document.getElementById('treeFilter').value);
+  const monaco = await ensureMonaco();
+  const src = await loadSource(path);
+  const host = document.getElementById('editor');
+  if (!monacoEditor) {
+    host.classList.remove('editor-empty');
+    host.textContent = '';
+    monacoEditor = monaco.editor.create(host, {
+      value: src,
+      language: 'json',
+      theme: 'vs-dark',
+      automaticLayout: true,
+      readOnly: true,
+      minimap: { enabled: false },
+      fontSize: 13,
+    });
+  } else {
+    monacoEditor.setValue(src);
+  }
+}
+
+// ── Terminal ───────────────────────────────────────────────────────
+async function ensureTerminal() {
+  if (terminalInstance) return terminalInstance;
+  let createTerminal = window.createTerminal;
+  if (!createTerminal) {
+    for (const p of ['/static/www/terminal/terminal.js', '/static/terminal-runtime.js']) {
+      try { const m = await import(p); createTerminal = m.createTerminal || (window.createTerminal); break; } catch (_) {}
+    }
+  }
+  if (!createTerminal) {
+    document.getElementById('termStatus').textContent = 'terminal unavailable';
+    document.getElementById('termStatus').className = 'term-status error';
+    return null;
+  }
+  terminalInstance = await createTerminal(document.getElementById('xterm'), {
+    header: document.getElementById('termHeader'),
+    container: document.querySelector('.term-body'),
+    toggleBtn: document.getElementById('termToggle'),
+    statusEl: document.getElementById('termStatus'),
+  });
+  return terminalInstance;
+}
+
+function pasteCommand(cmd) {
+  if (!terminalInstance || !terminalInstance.term) return;
+  try {
+    terminalInstance.term.focus();
+    if (typeof terminalInstance.term.paste === 'function') terminalInstance.term.paste(cmd + '\n');
+    else terminalInstance.term.write(cmd + '\r');
+  } catch (e) { console.error(e); }
+}
+
+document.getElementById('btnRun').addEventListener('click', async () => {
+  if (!ACTIVE) return;
+  await ensureTerminal();
+  pasteCommand(`call ${ACTIVE}`);
+});
+document.getElementById('btnBuild').addEventListener('click', async () => {
+  await ensureTerminal();
+  pasteCommand('reload');
+});
+document.getElementById('btnReload').addEventListener('click', async () => {
+  TRAITS = await fetchTraits();
+  renderTree(document.getElementById('treeFilter').value);
+});
+
+// ── Boot ───────────────────────────────────────────────────────────
+(async () => {
+  TRAITS = await fetchTraits();
+  renderTree();
+  // Defer terminal mount until first interaction OR after short idle.
+  setTimeout(() => { ensureTerminal().catch(console.error); }, 250);
+})();
+</script>
+</body>
+</html>"##;

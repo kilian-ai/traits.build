@@ -999,24 +999,22 @@ async fn serve_page(
         }
     }
 
-    // Rate limiting for /admin, /settings, and /llm-test paths
-    if url_path.starts_with("/admin") || url_path.starts_with("/settings") || url_path.starts_with("/llm-test") {
-        if let Err(resp) = check_rate_limit(&req, &rate, true) {
-            return resp;
-        }
-        
-        // Protect /admin, /settings, and /llm-test paths with HTTP Basic Auth
-        if let Err(resp) = check_basic_auth(&req) {
-            return resp;
-        }
-    }
-
     let trait_path = match state.dispatcher.resolve_keyed(url_path, "sys.serve") {
         Some(tp) => tp,
         None => return HttpResponse::NotFound()
             .content_type("text/html; charset=utf-8")
             .body("<h1>404</h1><p>No page trait bound for this path.</p>"),
     };
+
+    // Rate limiting + basic auth for /admin, /settings, and /llm-test paths
+    if url_path.starts_with("/admin") || url_path.starts_with("/settings") || url_path.starts_with("/llm-test") {
+        if let Err(resp) = check_rate_limit(&req, &rate, true) {
+            return resp;
+        }
+        if let Err(resp) = check_basic_auth(&req) {
+            return resp;
+        }
+    }
 
     match state.dispatcher.call(&trait_path, vec![], &CallConfig::default()).await {
         Ok(TraitValue::String(html)) => {

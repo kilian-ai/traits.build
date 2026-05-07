@@ -1,0 +1,18 @@
+/// www.build — Interactive trait IDE
+///
+/// A 3-pane layout:
+///   • left  — tree view of the trait registry (loaded from /api/list at runtime)
+///   • right — Monaco editor showing source for the selected trait
+///   • bottom — embedded WASM-powered xterm terminal
+///
+/// Top buttons let the user run, build, and reload the active trait — those
+/// commands are pasted into the terminal so the standard CLI handles them.
+package traits:www-build@0.1.0;
+
+interface build {
+    build-page: func(args: list<string>) -> string;
+}
+
+world www-build {
+    export build;
+}

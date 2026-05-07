@@ -94,7 +94,16 @@ fn build_html() -> String {
   a {{ color: #58a6ff; text-decoration: none; }}
   a:hover {{ text-decoration: underline; }}
 
-  .layout {{ display: flex; min-height: 100vh; }}
+  /* Top navbar */
+  .topnav {{ display:flex; align-items:center; gap:1.5rem; padding:0.75rem 1.5rem; background:#0d1117; border-bottom:1px solid #222; position:sticky; top:0; z-index:50; }}
+  .topnav .brand {{ font-size:1.05rem; font-weight:600; color:#e0e0e0; }}
+  .topnav .brand span {{ color:#f97316; }}
+  .topnav .tabs {{ display:flex; gap:0.25rem; margin-left:1rem; }}
+  .topnav .tab {{ padding:0.4rem 0.9rem; border-radius:6px; color:#999; font-size:0.9rem; }}
+  .topnav .tab:hover {{ background:#161b22; color:#e0e0e0; text-decoration:none; }}
+  .topnav .tab.active {{ background:#161b22; color:#f97316; }}
+
+  .layout {{ display: flex; min-height: calc(100vh - 49px); }}
 
   /* Sidebar */
   .sidebar {{ width: 260px; min-width: 260px; background: #111; border-right: 1px solid #222; padding: 1.5rem 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }}
@@ -127,15 +136,24 @@ fn build_html() -> String {
 
   /* Mobile */
   @media (max-width: 768px) {{
+    .topnav {{ padding:0.5rem 1rem; gap:0.75rem; }}
     .sidebar {{ display: none; }}
     .content {{ padding: 1.5rem; }}
   }}
 </style>
 </head>
 <body>
+<header class="topnav">
+  <a class="brand" href="/traits">traits<span>.build</span></a>
+  <nav class="tabs">
+    <a class="tab active" href="/traits">traits</a>
+    <a class="tab" href="/build">build</a>
+    <a class="tab" href="/api">api</a>
+  </nav>
+</header>
 <div class="layout">
   <nav class="sidebar">
-    <div class="sb-brand"><a href="/">traits.build <span>docs</span></a></div>
+    <div class="sb-brand"><a href="/traits">traits.build <span>docs</span></a></div>
     {sidebar}
   </nav>
   <main class="content">

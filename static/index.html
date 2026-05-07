@@ -109,13 +109,9 @@ a:hover{text-decoration:underline}
     </ul>
     <h2>Pages</h2>
     <ul>
-      <li><a href="https://www.traits.build/#/docs">Documentation</a></li>
-      <li><a href="https://www.traits.build/#/docs/api">API Reference</a></li>
-      <li><a href="https://www.traits.build/#/playground">Playground</a></li>
-      <li><a href="https://www.traits.build/#/apptron">Apptron</a></li>
-      <li><a href="https://www.traits.build/#/wanix">Wanix</a></li>
-      <li><a href="https://www.traits.build/#/testing">Testing</a></li>
-      <li><a href="https://www.traits.build/#/terminal">Terminal</a></li>
+      <li><a href="https://www.traits.build/#/traits">Traits</a></li>
+      <li><a href="https://www.traits.build/#/api">API Reference</a></li>
+      <li><a href="https://www.traits.build/#/build">Build</a></li>
     </ul>
     <p><a href="https://github.com/kilian-ai/traits.build">View source on GitHub</a></p>
   </div>
@@ -129,17 +125,10 @@ a:hover{text-decoration:underline}
 <nav id="shell-nav" style="display:none">
   <div class="logo" data-href="/"><span>traits</span>.build</div>
   <div class="links">
-    <a data-href="/" class="active">Home</a>
-    <a data-href="/docs">Docs</a>
-    <a data-href="/docs/api">API</a>
-    <a data-href="/canvas">Canvas</a>
-    <a data-href="/linux">Linux</a>
-    <a data-href="/terminal">Terminal</a>
-    <a data-href="/apptron">Apptron</a>
-    <a data-href="/apptron-ide">Apptron IDE</a>
-    <a data-href="/wanix">Wanix</a>
-    <a data-href="/testing">Testing</a>
-    <a data-href="/settings">Settings</a>
+    <a data-href="/traits" class="active">Traits</a>
+    <a data-href="/api">API</a>
+    <a data-href="/build">Build</a>
+    <a data-href="/admin">Admin</a>
   </div>
   <div class="status">
     <span class="dot loading" id="statusDot"></span>
@@ -165,25 +154,15 @@ a:hover{text-decoration:underline}
 
 // ── Route table (mostly mirrors serve.trait.toml bindings; /admin is SPA-specific) ──
 const ROUTES = {
-  '/':           'www.homepage',
-  '/about':      'www.traits.build',
-  '/docs':       'www.docs',
-  '/docs/api':   'www.docs.api',
-  '/chat-logs':  'www.chat_logs',
-  '/admin':      'www.admin.spa',
-  '/settings':   'www.admin.spa',
-  '/seo':        'www.seo',
-  '/playground': 'www.playground',
-  '/canvas':     'www.canvas',
-  '/linux':      'www.linux',
-  '/apptron':    'www.apptron',
-  '/apptron-ide':'www.apptron',
-  '/wanix':      'www.wanix',
-  '/terminal':   'www.apptron',
-  '/testing':    'www.testing',
-  '/wasm':       'www.wasm',
-  '/viewer':     'www.static',
-  '/shell':      'www.static',
+  '/':            'www.docs',
+  '/traits':      'www.docs',
+  '/api':  'www.docs.api',
+  '/build':       'www.build',
+  '/docs':        'www.docs',
+  '/docs/api':    'www.docs.api',
+  '/admin':       'www.admin.spa',
+  '/settings':    'www.admin.spa',
+  '/viewer':      'www.static',
 };
 
 function stripQuery(r) { const i = r.indexOf('?'); return i < 0 ? r : r.slice(0, i); }
@@ -191,26 +170,9 @@ function stripQuery(r) { const i = r.indexOf('?'); return i < 0 ? r : r.slice(0,
 const LOCAL_ROUTE_KEY = 'traits.shell.route';
 const STATIC_RUNTIME_CB = String(Date.now());
 const STATIC_RUNTIME_ROUTES = {
-  '/terminal': () => {
-    const base = isLocal ? './apptron/index.html' : '/static/apptron/index.html';
-    return `${base}?spa=1&mode=console&cb=${STATIC_RUNTIME_CB}`;
-  },
-  '/apptron': () => {
-    const base = isLocal ? './apptron/index.html' : '/static/apptron/index.html';
-    return `${base}?spa=1&cb=${STATIC_RUNTIME_CB}`;
-  },
-  '/apptron-ide': () => {
-    const base = isLocal ? './apptron-ide/index.html' : '/static/apptron-ide/index.html';
-    return `${base}?spa=1&cb=${STATIC_RUNTIME_CB}`;
-  },
   '/viewer': (query) => {
     const base = isLocal ? './viewer/index.html' : '/static/viewer/index.html';
     return `${base}${query || ''}`;
-  },
-  '/shell': (query) => {
-    const base = isLocal ? './v86/standalone-v86.html' : '/static/v86/standalone-v86.html';
-    const q = query && query.length ? query + '&' : '?';
-    return `${base}${q}autoboot=1&iso=alpine.iso&cb=${STATIC_RUNTIME_CB}`;
   },
 };
 
