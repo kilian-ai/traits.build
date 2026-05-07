@@ -1,7 +1,7 @@
 [trait]
 description = "Demo: call sys.checksum via WebAssembly Component Model from the JS console"
-version = "v260507.030330"
-checksum = "14022277a522807ab45d8dfd7274232a50ab2ec4fa0d7d24cee28dc23f7583f7"
+version = "v260507.035719"
+checksum = "4110275362caf7995c6004f39283f492cf5cf4ce6e96a27a8b09ebbd3df7d13a"
 author = "system"
 tags = ["www", "webpage", "wasm", "components", "demo"]
 provides = ["www/webpage"]

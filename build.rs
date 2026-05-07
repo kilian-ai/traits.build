@@ -200,9 +200,14 @@ fn main() {
     ct.push_str("    dispatch(trait_path, &json_args).map(|v| crate::types::TraitValue::from_json(&v))\n");
     ct.push_str("}\n\n");
 
-    // Unified dispatch: dylib first, then compiled
-    ct.push_str("/// Unified dispatch: tries dylib loader first, then compiled-in modules.\n");
+    // Unified dispatch: component first, then dylib, then compiled
+    ct.push_str("/// Unified dispatch: tries component loader first, then dylib loader, then compiled-in modules.\n");
     ct.push_str("pub fn dispatch(trait_path: &str, args: &[serde_json::Value]) -> Option<serde_json::Value> {\n");
+    ct.push_str("    if let Some(loader) = crate::component_loader::LOADER.get() {\n");
+    ct.push_str("        if let Some(result) = loader.dispatch(trait_path, args) {\n");
+    ct.push_str("            return Some(result);\n");
+    ct.push_str("        }\n");
+    ct.push_str("    }\n");
     ct.push_str("    if let Some(loader) = crate::dylib_loader::LOADER.get() {\n");
     ct.push_str("        if let Some(result) = loader.dispatch(trait_path, args) {\n");
     ct.push_str("            return Some(result);\n");

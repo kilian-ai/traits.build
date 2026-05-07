@@ -4,7 +4,7 @@ use config::Config;
 use registry::Registry;
 use dispatcher::{CallConfig, Dispatcher};
 use std::path::Path;
-use tracing::info;
+use tracing::{info, warn};
 
 // ────────────────── native VFS backend ──────────────────
 
@@ -314,6 +314,20 @@ pub fn bootstrap(config: &Config) -> Result<Dispatcher, Box<dyn std::error::Erro
     dylib_loader::set_global_loader(dylib_loader.clone());
     if dylib_count > 0 {
         info!("Loaded {} trait dylibs: {:?}", dylib_count, dylib_loader.list());
+    }
+
+    // Load WebAssembly Component Model components (Stage 4: parallel to dylibs).
+    // Components have priority over dylibs in dispatch (see compiled_traits.rs).
+    match component_loader::ComponentLoader::new(vec![traits_dir.to_path_buf()]) {
+        Ok(cl) => {
+            let cl = std::sync::Arc::new(cl);
+            let count = cl.load_all();
+            component_loader::set_global_loader(cl.clone());
+            if count > 0 {
+                info!("Loaded {} trait components: {:?}", count, cl.list());
+            }
+        }
+        Err(e) => warn!("Component loader init failed: {:#}", e),
     }
 
     let dispatcher = Dispatcher::new(registry, config.traits.timeout);

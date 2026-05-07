@@ -1,0 +1,21 @@
+[trait]
+description = "WebAssembly Component Model host loader for trait components"
+version = "v260507.040747"
+checksum = "848685b7fb345c32914c82d65abcd9dd697e54d35d1f08a47d41632f35231e52"
+author = "kilian-ai"
+tags = ["sys", "wasm", "component-model"]
+provides = ["sys/component_loader"]
+kernel_module = true
+
+[signature]
+params = []
+
+[signature.returns]
+type = "object"
+description = "Loaded component info: count, trait paths, search directories"
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "component_loader_info"
+kernel_module = true

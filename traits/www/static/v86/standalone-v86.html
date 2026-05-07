@@ -3054,7 +3054,11 @@
   const tunnelsLogEl       = $('tunnels-log');
 
   const TUNNEL_CMD_OVERRIDE_PREFIX = 'traits.tunnels.cmd.';
-  const TUNNEL_DEFAULT_CMD = 'sh <(curl -sS https://www.traits.build/local/tunnel-up.sh) 22 8080 22000 8384';
+  // NOTE: use `wget -qO- URL | sh -s ARGS` form rather than bash process
+  // substitution (`sh <(curl ...) ARGS`) because the v86 guest runs BusyBox
+  // /bin/sh (hush), which does not support `<(...)`. The `-s` flag tells sh
+  // to read the script from stdin and pass remaining argv to it.
+  const TUNNEL_DEFAULT_CMD = 'wget -qO- https://www.traits.build/local/tunnel-up.sh | sh -s 22 8080 22000 8384';
   const TUNNEL_RELAY_ENDPOINTS = [
     'https://traits-build-tunnel.fly.dev',
     'https://tunnel.traits.build',
@@ -3079,18 +3083,20 @@
   }
 
   function tnGetCmdOverride(code) {
-    if (!code) return null;
-    try { return localStorage.getItem(TUNNEL_CMD_OVERRIDE_PREFIX + code); } catch (_) { return null; }
+    const key = code || '__default__';
+    try { return localStorage.getItem(TUNNEL_CMD_OVERRIDE_PREFIX + key); } catch (_) { return null; }
   }
   function tnSetCmdOverride(code, cmd) {
-    if (!code) return;
+    const key = code || '__default__';
     try {
-      if (cmd && cmd.trim()) localStorage.setItem(TUNNEL_CMD_OVERRIDE_PREFIX + code, cmd);
-      else localStorage.removeItem(TUNNEL_CMD_OVERRIDE_PREFIX + code);
+      if (cmd && cmd.trim()) localStorage.setItem(TUNNEL_CMD_OVERRIDE_PREFIX + key, cmd);
+      else localStorage.removeItem(TUNNEL_CMD_OVERRIDE_PREFIX + key);
     } catch (_) {}
   }
   function tnEffectiveCmd(code) {
-    return tnGetCmdOverride(code) || TUNNEL_DEFAULT_CMD;
+    // Honor per-code override first, then default-cmd override
+    // (stored under sentinel `__default__`), then the hard-coded default.
+    return tnGetCmdOverride(code) || tnGetCmdOverride(null) || TUNNEL_DEFAULT_CMD;
   }
 
   async function tnFetchRelayStatus(code) {
@@ -3210,7 +3216,7 @@
       relay.textContent = 'relay: (no code)';
     }
 
-    const cmdShown = t.code ? tnEffectiveCmd(t.code) : (t.cmd || TUNNEL_DEFAULT_CMD);
+    const cmdShown = t.code ? tnEffectiveCmd(t.code) : (t.cmd || tnEffectiveCmd(null));
     const cmdEl = document.createElement('div');
     cmdEl.className = 'tn-cmd';
     cmdEl.textContent = '$ ' + cmdShown;
@@ -3256,7 +3262,7 @@
       empty.className = 'tn-row tn-empty';
       empty.innerHTML =
         'no tunnels detected. start one with the default command below or click <b>restart</b> after editing.<br>' +
-        '<div class="tn-cmd" style="margin-top:6px">$ ' + TUNNEL_DEFAULT_CMD + '</div>';
+        '<div class="tn-cmd" style="margin-top:6px">$ ' + tnEffectiveCmd(null) + '</div>';
       const actions = document.createElement('div');
       actions.className = 'tn-actions';
       const startBtn = document.createElement('button');
@@ -3292,7 +3298,7 @@
 
   async function tnRestartTunnel(t) {
     const code = t.code || (t.id !== 'default' ? t.id : null);
-    const cmd = code ? tnEffectiveCmd(code) : TUNNEL_DEFAULT_CMD;
+    const cmd = tnEffectiveCmd(code);
     tnLog('$ restart ' + (code || '(default)'), 'cmd');
     tnLog(cmd, 'out');
     // Stop first so respawn loops are gone, then start fresh.
@@ -3309,19 +3315,17 @@
 
   function tnEditCmd(t) {
     const code = t.code || (t.id && t.id !== 'default' ? t.id : null);
-    const current = code ? tnEffectiveCmd(code) : TUNNEL_DEFAULT_CMD;
+    const current = tnEffectiveCmd(code);
     const next = window.prompt(
       'Edit start command for ' + (code ? 'code ' + code : 'default tunnel') +
       '.\n\nLeave empty to clear override and revert to default.',
       current
     );
     if (next === null) return; // cancelled
+    tnSetCmdOverride(code, next);
     if (!code) {
-      // No code yet — store as default override under sentinel key.
-      tnSetCmdOverride('__default__', next);
-      tnLog('default cmd updated', 'ok');
+      tnLog('default cmd ' + (next.trim() ? 'updated' : 'reset'), 'ok');
     } else {
-      tnSetCmdOverride(code, next);
       tnLog('override saved for ' + code + (next.trim() ? '' : ' (cleared)'), 'ok');
     }
     tnRefresh();

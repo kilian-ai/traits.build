@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260507.30330"
+version = "0.260507.40747"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -41,7 +41,7 @@ name = "traits"
 path = "src/main.rs"
 
 [dependencies]
-kernel-logic = { path = "traits/kernel/logic", version = "0.260507.30330" }
+kernel-logic = { path = "traits/kernel/logic", version = "0.260507.40747" }
 actix-web = "4"
 actix-rt = "2"
 actix-ws = "0.3"
@@ -78,6 +78,11 @@ k256 = { version = "0.13", features = ["schnorr", "arithmetic"] }
 bech32 = "0.11"
 hex = "0.4"
 getrandom = { version = "0.2", features = ["js"] }
+# WebAssembly Component Model host runtime (Stage 4)
+wasmtime = { version = "26", features = ["component-model"] }
+wasmtime-wasi = "26"
+walkdir = "2"
+anyhow = "1"
 
 [build-dependencies]
 sha2 = "0.10"
