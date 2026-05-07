@@ -207,6 +207,52 @@ build_zig() {
     register zig zig/hello-zig.component.wasm
 }
 
+# ── Scheme (TinyScheme via wasi-sdk) ───────────────────────────────────────
+build_scheme() {
+    if ! have wit-bindgen; then
+        note_skip scheme "install with: cargo install wit-bindgen-cli"
+        return
+    fi
+    local wasi_clang=""
+    for p in /opt/wasi-sdk/bin/clang /usr/local/wasi-sdk/bin/clang "$HOME/.wasi-sdk/bin/clang"; do
+        if [[ -x "$p" ]]; then wasi_clang="$p"; break; fi
+    done
+    if [[ -z "$wasi_clang" ]]; then
+        note_skip scheme "install wasi-sdk: brew install wasi-sdk"
+        return
+    fi
+    if ! have wasm-tools; then
+        note_skip scheme "install with: cargo install wasm-tools"
+        return
+    fi
+    if ! have xxd; then
+        note_skip scheme "xxd not installed"
+        return
+    fi
+    pushd scheme >/dev/null
+    wit-bindgen c --world hello-world --out-dir . ./wit >/dev/null 2>&1 \
+        || { popd >/dev/null; note_fail scheme "wit-bindgen c failed"; return; }
+    # Embed init.scm and hello.scm as NUL-terminated C arrays.
+    (cat init.scm; printf '\0') | xxd -i -n init_scm > init_scm.h
+    (cat hello.scm; printf '\0') | xxd -i -n hello_scm > hello_scm.h
+    "$wasi_clang" -mexec-model=reactor -O2 -I. \
+        -DSTANDALONE=0 -DUSE_DL=0 -DUSE_INTERFACE=1 -DUSE_MATH=0 \
+        -Wno-implicit-function-declaration -Wno-incompatible-pointer-types \
+        bridge.c scheme.c hello_world.c hello_world_component_type.o \
+        -o hello-scheme.module.wasm 2>/tmp/scheme-build.log \
+        || { popd >/dev/null; note_fail scheme "clang compile failed (see /tmp/scheme-build.log)"; return; }
+    local adapter="$HOME/.wasi-sdk/wasi_snapshot_preview1.reactor.wasm"
+    if [[ ! -f "$adapter" ]]; then
+        popd >/dev/null
+        note_fail scheme "missing adapter: download wasi_snapshot_preview1.reactor.wasm into ~/.wasi-sdk/"
+        return
+    fi
+    wasm-tools component new hello-scheme.module.wasm --adapt "wasi_snapshot_preview1=$adapter" -o hello-scheme.component.wasm >/dev/null 2>&1 \
+        || { popd >/dev/null; note_fail scheme "wasm-tools component new failed"; return; }
+    popd >/dev/null
+    register scheme scheme/hello-scheme.component.wasm
+}
+
 register() {
     local lang="$1"
     local wasm="$2"
@@ -225,6 +271,7 @@ build_go
 build_c
 build_cpp
 build_zig
+build_scheme
 
 echo ""
 echo "── Results ────────────────────────────────────────"
