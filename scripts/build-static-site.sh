@@ -39,6 +39,10 @@ cp "$OUT/traits/index.html" "$OUT/404.html"
 cp "$OUT/traits.json"  "$OUT/build/traits.json"
 cp "$OUT/openapi.json" "$OUT/api/openapi.json"
 
+# In-browser WASM kernel + terminal so the static /build IDE is fully live.
+[[ -f static/wasm-runtime.js ]]     && cp static/wasm-runtime.js     "$OUT/wasm-runtime.js"
+[[ -f static/terminal-runtime.js ]] && cp static/terminal-runtime.js "$OUT/terminal-runtime.js"
+
 # Domain + sitemap.
 [[ -f CNAME ]]       && cp CNAME       "$OUT/CNAME"
 [[ -f sitemap.xml ]] && cp sitemap.xml "$OUT/sitemap.xml"

@@ -87,6 +87,43 @@ const HTML: &str = r##"<!DOCTYPE html>
 </div>
 
 <script>
+// ── In-browser WASM kernel boot (static deploy) ────────────────────
+// In live (helper) mode `window._traitsSDK` is already provided by the
+// host page; on the GitHub Pages deploy we load /wasm-runtime.js,
+// initialize TraitsWasm from its embedded base64 module, and expose a
+// minimal SDK shim so `hasKernel()` returns true.
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[data-src="${src}"]`)) return resolve();
+    const s = document.createElement('script');
+    s.src = src; s.dataset.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('load failed: ' + src));
+    document.head.appendChild(s);
+  });
+}
+async function bootKernel() {
+  if (window._traitsSDK && typeof window._traitsSDK.call === 'function') return;
+  try {
+    await loadScriptOnce('/wasm-runtime.js');
+    const mod = window.TraitsWasm;
+    if (!mod) throw new Error('TraitsWasm runtime missing');
+    const b64 = mod.WASM_BASE64;
+    if (!b64) throw new Error('WASM_BASE64 missing');
+    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    mod.initSync({ module: bin });
+    JSON.parse(mod.init());
+    window._traitsSDK = {
+      call: async (path, args) => {
+        const raw = mod.call(path, JSON.stringify(args || []));
+        try { return JSON.parse(raw); } catch (_) { return raw; }
+      },
+    };
+  } catch (e) {
+    console.warn('WASM kernel boot failed:', e);
+  }
+}
+
 // ── Trait list & tree ──────────────────────────────────────────────
 let TRAITS = [];
 let ACTIVE = null;
@@ -242,8 +279,15 @@ async function ensureTerminal() {
   if (terminalInstance) return terminalInstance;
   let createTerminal = window.createTerminal;
   if (!createTerminal) {
-    for (const p of ['/static/www/terminal/terminal.js', '/static/terminal-runtime.js']) {
-      try { const m = await import(p); createTerminal = m.createTerminal || (window.createTerminal); break; } catch (_) {}
+    // Try classic <script> first (works for IIFE bundles like /terminal-runtime.js),
+    // then ES-module dynamic import for source-tree builds.
+    for (const p of ['/terminal-runtime.js', '/static/terminal-runtime.js']) {
+      try { await loadScriptOnce(p); if (window.createTerminal) { createTerminal = window.createTerminal; break; } } catch (_) {}
+    }
+    if (!createTerminal) {
+      for (const p of ['/static/www/terminal/terminal.js']) {
+        try { const m = await import(p); createTerminal = m.createTerminal || (window.createTerminal); if (createTerminal) break; } catch (_) {}
+      }
     }
   }
   if (!createTerminal) {
@@ -292,6 +336,7 @@ document.getElementById('btnReload').addEventListener('click', async () => {
 
 // ── Boot ───────────────────────────────────────────────────────────
 (async () => {
+  await bootKernel();
   TRAITS = await fetchTraits();
   renderTree();
   if (hasKernel()) {
