@@ -58,10 +58,18 @@ const HTML: &str = r##"<!DOCTYPE html>
   </nav>
 </header>
 <div id="loading">Loading API documentation…</div>
-<div id="redoc" data-trait="sys.openapi" data-handler="initRedoc"></div>
+<div id="redoc"></div>
 <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
 <script>
-TC.on('initRedoc', function(el, spec) {
+async function loadSpec() {
+  for (const url of ['./openapi.json', '/openapi.json']) {
+    try { const r = await fetch(url); if (r.ok) return await r.json(); } catch (_) {}
+  }
+  return null;
+}
+(async function() {
+  const el = document.getElementById('redoc');
+  const spec = await loadSpec();
   document.getElementById('loading').className = 'hidden';
   if (!spec || !spec.openapi) {
     el.innerHTML = '<div style="padding:2rem;color:#f85149">Failed to load OpenAPI spec.</div>';
@@ -93,11 +101,7 @@ TC.on('initRedoc', function(el, spec) {
     hideDownloadButton: false,
     sortPropsAlphabetically: true
   }, el);
-});
-document.getElementById('redoc').addEventListener('trait:error', function() {
-  document.getElementById('loading').className = 'hidden';
-  this.innerHTML = '<div style="padding:2rem;color:#f85149">Failed to load OpenAPI spec.</div>';
-});
+})();
 </script>
 </body>
 </html>"##;

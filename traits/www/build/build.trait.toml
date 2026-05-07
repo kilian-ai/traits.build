@@ -1,7 +1,7 @@
 [trait]
 description = "Trait IDE — tree view, monaco editor, and embedded terminal for working with traits"
-version = "v260507.164345"
-checksum = "d20a21e31478904741e353ee2119ff83237111f1813f766fd08dae9ee67581a7"
+version = "v260507.173526"
+checksum = "17625198a49992963a8368b42f25e778c63eea8a2dbe92de9bd3e4da4a29c50c"
 author = "system"
 tags = ["www", "build", "ide"]
 provides = ["www/webpage"]

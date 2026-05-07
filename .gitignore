@@ -51,3 +51,4 @@ examples/hello/go/go.sum
 # rust example
 examples/hello/rust/Cargo.lock
 examples/hello/rust/target/
+dist/

@@ -97,13 +97,23 @@ async function fetchTraits() {
     if (sdk && typeof sdk.call === 'function') {
       return await sdk.call('sys.list', []);
     }
-    const r = await fetch('/api/list');
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return await r.json();
+    // Static deploy: prerendered JSON shipped alongside the page.
+    for (const url of ['./traits.json', '/traits.json', '/api/list']) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) return await r.json();
+      } catch (_) {}
+    }
+    return [];
   } catch (e) {
     console.error('fetchTraits failed', e);
     return [];
   }
+}
+
+function hasKernel() {
+  const sdk = window._traitsSDK;
+  return !!(sdk && typeof sdk.call === 'function');
 }
 
 function renderTree(filter = '') {
@@ -225,13 +235,20 @@ function pasteCommand(cmd) {
 
 document.getElementById('btnRun').addEventListener('click', async () => {
   if (!ACTIVE) return;
+  if (!hasKernel()) { showStaticNotice(`Run requires the local binary. Try: traits call ${ACTIVE}`); return; }
   await ensureTerminal();
   pasteCommand(`call ${ACTIVE}`);
 });
 document.getElementById('btnBuild').addEventListener('click', async () => {
+  if (!hasKernel()) { showStaticNotice('Build requires the local binary. Run: bash build.sh'); return; }
   await ensureTerminal();
   pasteCommand('reload');
 });
+
+function showStaticNotice(msg) {
+  const s = document.getElementById('termStatus');
+  if (s) { s.textContent = msg; s.className = 'term-status error'; }
+}
 document.getElementById('btnReload').addEventListener('click', async () => {
   TRAITS = await fetchTraits();
   renderTree(document.getElementById('treeFilter').value);
@@ -241,8 +258,11 @@ document.getElementById('btnReload').addEventListener('click', async () => {
 (async () => {
   TRAITS = await fetchTraits();
   renderTree();
-  // Defer terminal mount until first interaction OR after short idle.
-  setTimeout(() => { ensureTerminal().catch(console.error); }, 250);
+  if (hasKernel()) {
+    setTimeout(() => { ensureTerminal().catch(console.error); }, 250);
+  } else {
+    showStaticNotice('Read-only mode — install the binary to run traits locally.');
+  }
 })();
 </script>
 </body>

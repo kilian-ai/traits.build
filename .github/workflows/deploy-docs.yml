@@ -4,10 +4,16 @@ on:
   push:
     branches: [main]
     paths:
-      - 'traits/www/static/**'
-      - 'traits/www/local/**'
-      - 'traits/www/sdk/**'
+      - 'src/**'
+      - 'traits/**'
+      - 'docs/**'
+      - 'sitemap.xml'
+      - 'robots.txt'
       - 'CNAME'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+      - 'scripts/build-static-site.sh'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 
@@ -20,42 +26,35 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Assemble site
-        run: |
-          mkdir -p _site/local _site/static
-          # SPA files (standalone build is the primary entry point for Pages)
-          cp traits/www/static/index.standalone.html _site/index.html
-          cp traits/www/static/index.standalone.html _site/standalone.html
-          cp traits/www/static/wasm-runtime.js _site/wasm-runtime.js
-          cp traits/www/static/sdk-runtime.js _site/sdk-runtime.js
-          cp traits/www/static/terminal-runtime.js _site/terminal-runtime.js
-          # Publish the full static subtree so iframe-backed pages like /static/apptron
-          # and /static/wanix can load their nested runtime assets on GitHub Pages.
-          cp -R traits/www/static/. _site/static/
-          # SDK
-          if [ -d traits/www/sdk ]; then
-            mkdir -p _site/sdk
-            cp traits/www/sdk/*.js _site/sdk/ 2>/dev/null || true
-          fi
-          # Install scripts
-          cp traits/www/local/helper/helper.sh _site/local/helper.sh
-          cp traits/www/local/helper/helper.sh _site/local/traits.sh
-          cp traits/www/local/install/install.sh _site/local/install.sh
-          # Custom domain
-          cp CNAME _site/CNAME
-          # 404 fallback to SPA
-          cp _site/index.html _site/404.html
+      - name: Install jq
+        run: sudo apt-get update -y && sudo apt-get install -y jq
 
-      - name: Upload artifact
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --bin traits
+
+      - name: Render static site
+        run: bash scripts/build-static-site.sh
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: dist
 
   deploy:
     environment:
