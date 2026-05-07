@@ -1,0 +1,24 @@
+# gen-trait — register an external Component Model component as a trait.
+#
+# Reads a `.component.wasm` produced by any toolchain (Rust, Go, JS, Python,
+# C/C++, …), decodes its WIT exports, and materialises a matching trait
+# directory under `traits/<ns>/<name>/` so the kernel's ComponentLoader can
+# discover and dispatch it like any native trait.
+[package]
+name = "gen-trait"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "gen-trait"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+wit-component = "0.244"
+wit-parser = "0.244"
+clap = { version = "4", features = ["derive"] }
+
+# Generated/external tool — keep out of the parent workspace.
+[workspace]

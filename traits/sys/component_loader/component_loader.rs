@@ -210,18 +210,39 @@ impl ComponentLoader {
         // Compile the component.
         let component = Component::from_file(&self.engine, wasm_path)?;
 
-        // Convention (mirrors gen-component): the WIT package namespace is
-        // the trait's full prefix joined with dashes (so `www.local.helper`
-        // becomes package `traits:www-local-helper` with interface `helper`).
-        let last = parts.last().unwrap();
-        let kebab = last.replace('_', "-");
-        let pkg_ns = if parts.len() > 1 {
-            parts[..parts.len() - 1].join("-")
-        } else {
-            "traits".to_string()
+        // Discover the actual exports from the component itself rather than
+        // inferring names from filesystem layout. This lets foreign-language
+        // components (Go, JS, Python, C++, …) use any WIT package namespace
+        // — e.g. `mycorp:greet` — and still drop in as a trait.
+        //
+        // Rules: pick the first exported component-instance (the WIT
+        // interface) and the first function inside it. This matches the
+        // gen-component / gen-trait convention of one-interface-one-function.
+        let (interface_name, func_name) = {
+            use wasmtime::component::types::ComponentItem;
+            let ty = component.component_type();
+            let mut found: Option<(String, String)> = None;
+            for (iname, item) in ty.exports(&self.engine) {
+                if let ComponentItem::ComponentInstance(inst) = item {
+                    for (fname, sub) in inst.exports(&self.engine) {
+                        if matches!(sub, ComponentItem::ComponentFunc(_)) {
+                            found = Some((iname.to_string(), fname.to_string()));
+                            break;
+                        }
+                    }
+                    if found.is_some() {
+                        break;
+                    }
+                }
+            }
+            found.ok_or_else(|| {
+                anyhow!(
+                    "component {} exports no interface with a function — \
+                     does it target the gen-component WIT contract?",
+                    wasm_path.display()
+                )
+            })?
         };
-        let interface_name = format!("traits:{}-{}/{}@0.1.0", pkg_ns, kebab, kebab);
-        let func_name = kebab.clone();
 
         let loaded = LoadedComponent {
             component,
