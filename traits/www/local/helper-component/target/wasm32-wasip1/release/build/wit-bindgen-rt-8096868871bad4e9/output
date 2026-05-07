@@ -1,2 +1,0 @@
-cargo:rustc-link-lib=wit_bindgen_cabi_realloc0_39_0
-cargo:rustc-link-search=native=/Users/kilian/.ai/traits/Polygrait/A. traits.build/traits/www/local/helper-component/target/wasm32-wasip1/release/build/wit-bindgen-rt-8096868871bad4e9/out

@@ -30,3 +30,5 @@ source = "dylib"
 entry = "checksum"
 wasm = true
 wasm_entry = "checksum_dispatch"
+[component]
+auto = true

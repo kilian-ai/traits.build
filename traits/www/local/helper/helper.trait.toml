@@ -17,3 +17,5 @@ description = "Shell script content (text/plain)"
 language = "rust"
 source = "builtin"
 entry = "helper"
+[component]
+auto = true

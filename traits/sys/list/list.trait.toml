@@ -27,3 +27,5 @@ language = "rust"
 source = "builtin"
 entry = "list"
 wasm = true
+[component]
+auto = true

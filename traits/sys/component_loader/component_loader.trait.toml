@@ -1,7 +1,7 @@
 [trait]
 description = "WebAssembly Component Model host loader for trait components"
-version = "v260507.134454"
-checksum = "1eefd5087474f3e440ee3ff918ed152b7f1efba1765b247663703b8d25b87c0c"
+version = "v260507.141902"
+checksum = "92a03e35c77319bfe82ae5ddd7c1344fbefa9f83a50ae83d84c8de1def81dc9d"
 author = "kilian-ai"
 tags = ["sys", "wasm", "component-model"]
 provides = ["sys/component_loader"]

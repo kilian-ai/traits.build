@@ -96,7 +96,13 @@ impl ComponentLoader {
             }
 
             fn pack_result(value: Value, slot: &mut Val) {
-                let json_out = serde_json::to_string(&value).unwrap_or_else(|_| "null".into());
+                // If the native trait returns a plain string, forward it
+                // verbatim — JSON-encoding it here would surface as a
+                // doubly-quoted blob to callers whose return type is `string`.
+                let json_out = match &value {
+                    Value::String(s) => s.clone(),
+                    _ => serde_json::to_string(&value).unwrap_or_else(|_| "null".into()),
+                };
                 *slot = Val::Result(Ok(Some(Box::new(Val::String(json_out)))));
             }
 
@@ -204,11 +210,16 @@ impl ComponentLoader {
         // Compile the component.
         let component = Component::from_file(&self.engine, wasm_path)?;
 
-        // Convention: interface name = "traits:<ns>-<name>/<name>",
-        //             function  name = "<name>"  (sanitized to kebab).
+        // Convention (mirrors gen-component): the WIT package namespace is
+        // the trait's full prefix joined with dashes (so `www.local.helper`
+        // becomes package `traits:www-local-helper` with interface `helper`).
         let last = parts.last().unwrap();
         let kebab = last.replace('_', "-");
-        let pkg_ns = parts[0];
+        let pkg_ns = if parts.len() > 1 {
+            parts[..parts.len() - 1].join("-")
+        } else {
+            "traits".to_string()
+        };
         let interface_name = format!("traits:{}-{}/{}@0.1.0", pkg_ns, kebab, kebab);
         let func_name = kebab.clone();
 

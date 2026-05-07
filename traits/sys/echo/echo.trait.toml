@@ -19,3 +19,5 @@ language = "rust"
 source = "builtin"
 entry = "echo"
 wasm = true
+[component]
+auto = true
