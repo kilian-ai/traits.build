@@ -74,6 +74,7 @@ const HTML: &str = r##"<!DOCTYPE html>
 <div class="ide">
   <aside class="pane-tree">
     <div class="tree-search"><input id="treeFilter" type="search" placeholder="filter traits…"></div>
+    <label class="tree-wasm-only" style="display:flex;align-items:center;gap:.4rem;padding:.25rem .5rem;font-size:.8rem;color:#888;cursor:pointer"><input id="treeWasmOnly" type="checkbox"> WASM-callable only</label>
     <div id="treeList" class="tree-list">Loading…</div>
   </aside>
   <section class="pane-editor"><div id="editor" class="editor-empty">Select a trait from the tree to view its source</div></section>
@@ -160,6 +161,7 @@ async function bootKernel() {
       backgroundCall,
       initWorkerPool: async () => {},
       attachWasm: () => {},
+      callable: _callable,
       status: { wasm: true, callable: _callable.size },
     };
   } catch (e) {
@@ -204,9 +206,12 @@ function renderTree(filter = '') {
   const root = document.getElementById('treeList');
   if (!TRAITS.length) { root.textContent = 'No traits found'; return; }
   const f = filter.trim().toLowerCase();
+  const wasmOnly = document.getElementById('treeWasmOnly')?.checked;
+  const callable = window._traitsSDK?.callable;
   const groups = new Map();
   for (const t of TRAITS) {
     if (f && !(t.path || '').toLowerCase().includes(f)) continue;
+    if (wasmOnly && callable && !callable.has(t.path)) continue;
     const ns = (t.path || '').split('.')[0] || '_';
     if (!groups.has(ns)) groups.set(ns, []);
     groups.get(ns).push(t);
@@ -227,6 +232,7 @@ function renderTree(filter = '') {
 }
 
 document.getElementById('treeFilter').addEventListener('input', e => renderTree(e.target.value));
+document.getElementById('treeWasmOnly').addEventListener('change', () => renderTree(document.getElementById('treeFilter').value));
 
 // ── Source loading ─────────────────────────────────────────────────
 async function loadSource(path) {
