@@ -55,6 +55,13 @@ const HTML: &str = r##"<!DOCTYPE html>
   .tree-item .desc { display:block; color:#666; font-size:0.72rem; margin-top:0.1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   .editor-empty { display:flex; align-items:center; justify-content:center; height:100%; color:#8b949e; font-size:0.95rem; }
+  /* Picture-in-Picture (PIP) panel styles */
+  .pip-panel { position:fixed; right:20px; bottom:20px; width:420px; height:300px; background:#0b0f14; border:1px solid #222; box-shadow:0 8px 30px rgba(0,0,0,0.6); z-index:99999; resize:both; overflow:auto; display:flex; flex-direction:column; border-radius:8px; }
+  .pip-header { display:flex; align-items:center; gap:0.5rem; padding:0.35rem 0.6rem; background:linear-gradient(180deg,#0f1720,#0b1116); border-bottom:1px solid #1f2933; cursor:grab; user-select:none; }
+  .pip-title { flex:1; color:#cbd5e1; font-size:0.85rem; }
+  .pip-actions button { background:none;border:none;color:#9aa4b2;padding:0 0.35rem;cursor:pointer;font-size:0.9rem }
+  .pip-iframe { flex:1; border:0; width:100%; height:100%; border-bottom-left-radius:8px; border-bottom-right-radius:8px; }
+  .pip-fullscreen { position:fixed !important; left:0 !important; top:0 !important; right:0 !important; bottom:0 !important; width:100% !important; height:100% !important; border-radius:0 !important; }
 </style>
 </head>
 <body>
@@ -131,6 +138,18 @@ async function bootKernel() {
     // SDK-shape call: returns { ok, result?, error? } as terminal.js expects.
     const sdkCall = async (path, args /*, opts */) => {
       try {
+        // Client-side helper: open PIP UI for www.* traits
+        if (path === 'sys.pip') {
+          try {
+            const target = Array.isArray(args) ? args[0] : (args && (args.path || args.target) || args);
+            if (!target) return { ok: false, error: 'missing target path' };
+            // open pip asynchronously on the main loop
+            setTimeout(() => { try { openPipFor(String(target)); } catch (_) {} }, 0);
+            return { ok: true, result: null };
+          } catch (e) {
+            return { ok: false, error: String(e?.message || e) };
+          }
+        }
         if (!_callable.has(path)) {
           return { ok: false, error: `Trait "${path}" is not available in browser-only mode (requires the local binary or a connected helper).` };
         }
@@ -168,6 +187,76 @@ async function bootKernel() {
     console.warn('WASM kernel boot failed:', e);
   }
 }
+
+// PIP helpers — lightweight Picture-in-Picture panel for `www.*` traits
+const _pipState = { panels: new Map(), z: 100000 };
+function toTraitURL(path) {
+  const p = String(path || '').trim();
+  const parts = p.split('.').map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  // Map `www.spa` -> `/traits/www/spa`
+  return '/traits/' + parts.join('/');
+}
+function openPipFor(path) {
+  const key = String(path || '');
+  try {
+    if (_pipState.panels.has(key)) {
+      const existing = _pipState.panels.get(key);
+      existing.style.display = 'flex';
+      existing.style.zIndex = String(++_pipState.z);
+      return existing;
+    }
+    const url = toTraitURL(key) || '';
+    const panel = document.createElement('div');
+    panel.className = 'pip-panel';
+    panel.style.right = '20px'; panel.style.bottom = '20px'; panel.style.left = 'auto'; panel.style.top = 'auto';
+    panel.style.zIndex = String(++_pipState.z);
+    panel.dataset.path = key;
+
+    const hdr = document.createElement('div'); hdr.className = 'pip-header';
+    const title = document.createElement('div'); title.className = 'pip-title'; title.textContent = key;
+    const actions = document.createElement('div'); actions.className = 'pip-actions';
+    const btnFull = document.createElement('button'); btnFull.textContent = '\u26F6'; btnFull.title = 'Toggle fullscreen';
+    const btnClose = document.createElement('button'); btnClose.textContent = '\u2715'; btnClose.title = 'Close';
+    actions.appendChild(btnFull); actions.appendChild(btnClose);
+    hdr.appendChild(title); hdr.appendChild(actions);
+    panel.appendChild(hdr);
+
+    const iframe = document.createElement('iframe'); iframe.className = 'pip-iframe'; iframe.src = url; iframe.loading = 'lazy';
+    panel.appendChild(iframe);
+    document.body.appendChild(panel);
+
+    // Dragging
+    let dragging = false, lastX = 0, lastY = 0;
+    hdr.addEventListener('pointerdown', (ev) => {
+      dragging = true; hdr.setPointerCapture(ev.pointerId);
+      const rect = panel.getBoundingClientRect();
+      panel.style.left = rect.left + 'px'; panel.style.top = rect.top + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto';
+      lastX = ev.clientX; lastY = ev.clientY; hdr.style.cursor = 'grabbing';
+    });
+    const onMove = (ev) => { if (!dragging) return; const dx = ev.clientX - lastX; const dy = ev.clientY - lastY; const rect = panel.getBoundingClientRect(); panel.style.left = (rect.left + dx) + 'px'; panel.style.top = (rect.top + dy) + 'px'; lastX = ev.clientX; lastY = ev.clientY; };
+    const onUp = () => { if (!dragging) return; dragging = false; hdr.style.cursor = 'grab'; };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+
+    // Actions
+    btnClose.addEventListener('click', () => { try { panel.remove(); _pipState.panels.delete(key); } catch(_) {} });
+    let isFull = false; const restore = {};
+    btnFull.addEventListener('click', () => {
+      if (!isFull) {
+        restore.left = panel.style.left; restore.top = panel.style.top; restore.width = panel.style.width; restore.height = panel.style.height;
+        panel.classList.add('pip-fullscreen'); panel.style.left = '0'; panel.style.top = '0'; panel.style.right = '0'; panel.style.bottom = '0'; panel.style.width = '100%'; panel.style.height = '100%';
+        isFull = true;
+      } else {
+        panel.classList.remove('pip-fullscreen'); panel.style.left = restore.left || ''; panel.style.top = restore.top || ''; panel.style.width = restore.width || ''; panel.style.height = restore.height || ''; panel.style.right = 'auto'; panel.style.bottom = 'auto'; isFull = false;
+      }
+    });
+
+    _pipState.panels.set(key, panel);
+    return panel;
+  } catch (e) { console.error('openPipFor failed', e); return null; }
+}
+function closePipFor(path) { const key = String(path||''); const el = _pipState.panels.get(key); if (el) { el.remove(); _pipState.panels.delete(key); } }
 
 // ── Trait list & tree ──────────────────────────────────────────────
 let TRAITS = [];
@@ -389,6 +478,19 @@ document.getElementById('btnReload').addEventListener('click', async () => {
 (async () => {
   await bootKernel();
   TRAITS = await fetchTraits();
+  // Ensure a client-side helper trait `sys.pip` exists so it's discoverable
+  try {
+    if (!TRAITS.some(t => t && t.path === 'sys.pip')) {
+      TRAITS.push({
+        path: 'sys.pip',
+        description: 'Open a Picture-in-Picture panel for a www.* trait. Usage: traits call sys.pip www.spa',
+        language: 'system',
+        params: [{ name: 'target', type: 'String' }],
+        returns: 'Any',
+        version: 'v260509'
+      });
+    }
+  } catch (_) {}
   renderTree();
   if (hasKernel()) {
     setTimeout(() => { ensureTerminal().catch(console.error); }, 250);
