@@ -20,10 +20,10 @@ render_page() {
     local trait="$1" out="$2"
     local stderr_tmp
     stderr_tmp=$(mktemp)
-    "$BIN" call "$trait" 2>"$stderr_tmp" | jq -r . > "$out"
-    local pipe_status=("${PIPESTATUS[@]}")
-    if [[ ${pipe_status[0]} -ne 0 ]]; then
-        echo "render failed: $trait — binary exited ${pipe_status[0]}" >&2
+    # Use 'if !' so set -e doesn't abort before we can print the error.
+    if ! "$BIN" call "$trait" 2>"$stderr_tmp" | jq -r . > "$out"; then
+        echo "render failed: $trait — pipeline failed" >&2
+        echo "--- binary stderr ---" >&2
         cat "$stderr_tmp" >&2
         rm -f "$stderr_tmp"; exit 1
     fi
