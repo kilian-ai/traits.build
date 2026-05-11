@@ -386,7 +386,12 @@ function uploadToPvfs() {
             fr.readAsDataURL(file);
           });
         }
-        pvfs[file.name] = content;
+        // VFS may be in structured format {"files":{…},"dirs":[…]}.
+        // Adding a bare top-level key is ignored by LayeredVfs::load
+        // (it takes the structured path and returns early).
+        // Always write into pvfs.files so the key lands in the right place.
+        if (!pvfs.files || typeof pvfs.files !== 'object') pvfs.files = {};
+        pvfs.files[file.name] = content;
         count++;
         console.log('[pvfs-upload] wrote', file.name, content.length, 'chars');
       } catch(e) { console.error('[pvfs-upload] failed for', file.name, e); }
