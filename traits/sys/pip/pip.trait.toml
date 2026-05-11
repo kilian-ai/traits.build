@@ -1,0 +1,17 @@
+[trait]
+description = "Open a Picture-in-Picture (PIP) panel in connected browser SPAs"
+version = "v260511"
+checksum = "2ef62a6be5aa8f8d7b95696084ef09b2a683b78e1ae37ea2091cddf43cec2bed"
+author = "system"
+tags = ["www", "ui", "pip"]
+provides = ["sys/pip"]
+
+[signature]
+params = [
+  { name = "path", type = "string", description = "Trait path to open in PIP (e.g., www.spa)", optional = false }
+]
+
+[implementation]
+language = "rust"
+source = "builtin"
+entry = "pip"

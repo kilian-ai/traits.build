@@ -47,6 +47,7 @@ use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 use dashmap::DashMap;
+use std::sync::OnceLock;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -171,6 +172,9 @@ struct RelayState {
     sessions: DashMap<String, Arc<RelaySession>>,
 }
 
+// Active MCP WebSocket sessions (for server -> browser notifications)
+static MCP_SESSIONS: OnceLock<DashMap<String, tokio::sync::mpsc::Sender<String>>> = OnceLock::new();
+
 struct RelaySession {
     request_tx: mpsc::Sender<RelayRequest>,
     request_rx: tokio::sync::Mutex<mpsc::Receiver<RelayRequest>>,
@@ -239,6 +243,51 @@ fn normalize_relay_url(raw: &str) -> Option<String> {
     }
 
     Some(trimmed.to_string())
+}
+
+/// Broadcast a JSON-RPC notification to all connected MCP WebSocket clients.
+/// Returns the number of sessions the notification was delivered to (or attempted).
+pub fn broadcast_mcp_notification(method: &str, params: serde_json::Value) -> usize {
+    let map_opt = MCP_SESSIONS.get();
+    if map_opt.is_none() { return 0; }
+    let map = map_opt.unwrap();
+
+    let notif = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+    });
+    let notif_str = match serde_json::to_string(&notif) {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+
+    let mut removed = vec![];
+    let mut sent = 0usize;
+
+    for entry in map.iter() {
+        let key = entry.key().clone();
+        let tx = entry.value().clone();
+        match tx.try_send(notif_str.clone()) {
+            Ok(_) => { sent += 1; }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                // Schedule an async send if buffer is full
+                let txc = tx.clone();
+                let s = notif_str.clone();
+                tokio::spawn(async move { let _ = txc.send(s).await; });
+                sent += 1;
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                removed.push(key);
+            }
+        }
+    }
+
+    for k in removed {
+        map.remove(&k);
+    }
+
+    sent
 }
 
 fn ensure_repl_tty() -> bool {
@@ -1422,30 +1471,57 @@ fn spawn_relay_cleanup(relay: Arc<RelayState>) {
 /// Each message is processed by the shared mcp::handle_message() handler.
 async fn mcp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<HttpResponse> {
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
+    // Create a per-connection outgoing queue so we can both reply to the
+    // client's requests and also accept server->browser broadcasts.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
+    let session_id = uuid::Uuid::new_v4().to_string();
+
+    // Register this session so other server code can broadcast notifications.
+    if MCP_SESSIONS.get().is_none() {
+        let _ = MCP_SESSIONS.set(DashMap::new());
+    }
+    if let Some(map) = MCP_SESSIONS.get() {
+        map.insert(session_id.clone(), tx.clone());
+    }
 
     actix_rt::spawn(async move {
-        while let Some(Ok(msg)) = msg_stream.recv().await {
-            match msg {
-                actix_ws::Message::Text(text) => {
-                    let text_str = text.to_string();
-                    // Spawn blocking because MCP dispatch calls compiled traits synchronously
-                    let result = tokio::task::spawn_blocking(move || {
-                        crate::dispatcher::compiled::mcp::handle_message(&text_str)
-                    }).await;
-
-                    if let Ok(Some(response)) = result {
-                        let json_bytes = serde_json::to_vec(&response).unwrap_or_default();
-                        let _ = session.text(
-                            String::from_utf8(json_bytes).unwrap_or_default()
-                        ).await;
+        loop {
+            tokio::select! {
+                msg_opt = msg_stream.recv() => {
+                    match msg_opt {
+                        Some(Ok(msg)) => {
+                            match msg {
+                                actix_ws::Message::Text(text) => {
+                                    let text_str = text.to_string();
+                                    let tx_clone = tx.clone();
+                                    let handler = tokio::task::spawn_blocking(move || {
+                                        crate::dispatcher::compiled::mcp::handle_message(&text_str)
+                                    }).await;
+                                    if let Ok(Some(response)) = handler {
+                                        let json_bytes = serde_json::to_vec(&response).unwrap_or_default();
+                                        let _ = tx_clone.send(String::from_utf8(json_bytes).unwrap_or_default()).await;
+                                    }
+                                }
+                                actix_ws::Message::Ping(bytes) => { let _ = session.pong(&bytes).await; }
+                                actix_ws::Message::Close(_) => break,
+                                _ => {}
+                            }
+                        }
+                        Some(Err(_)) | None => break,
                     }
                 }
-                actix_ws::Message::Ping(bytes) => {
-                    let _ = session.pong(&bytes).await;
+                out = rx.recv() => {
+                    match out {
+                        Some(text) => { let _ = session.text(text).await; }
+                        None => break,
+                    }
                 }
-                actix_ws::Message::Close(_) => break,
-                _ => {}
             }
+        }
+
+        // Cleanup registration on disconnect
+        if let Some(map) = MCP_SESSIONS.get() {
+            map.remove(&session_id);
         }
     });
 

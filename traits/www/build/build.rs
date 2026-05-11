@@ -82,6 +82,10 @@ const HTML: &str = r##"<!DOCTYPE html>
   <aside class="pane-tree">
     <div class="tree-search"><input id="treeFilter" type="search" placeholder="filter traits…"></div>
     <label class="tree-wasm-only" style="display:flex;align-items:center;gap:.4rem;padding:.25rem .5rem;font-size:.8rem;color:#888;cursor:pointer"><input id="treeWasmOnly" type="checkbox"> WASM-callable only</label>
+    <div style="padding:.25rem .5rem;display:flex;gap:.4rem;align-items:center">
+      <button id="btnUploadVfs" class="btn" style="font-size:.78rem;padding:.15rem .5rem;" title="Upload files into the persistent VFS (PVFS)">⬆ Upload to VFS</button>
+      <span id="uploadStatus" style="font-size:.75rem;color:#888;"></span>
+    </div>
     <div id="treeList" class="tree-list">Loading…</div>
   </aside>
   <section class="pane-editor"><div id="editor" class="editor-empty">Select a trait from the tree to view its source</div></section>
@@ -258,6 +262,33 @@ function openPipFor(path) {
 }
 function closePipFor(path) { const key = String(path||''); const el = _pipState.panels.get(key); if (el) { el.remove(); _pipState.panels.delete(key); } }
 
+// Connect to server MCP WebSocket for server->browser notifications (reconnects)
+function connectMcpNotifications() {
+  try {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/mcp`;
+    let ws = null;
+    function start() {
+      try {
+        ws = new WebSocket(url);
+      } catch (e) { setTimeout(start, 2000); return; }
+      ws.addEventListener('open', () => { console.info('mcp socket open'); });
+      ws.addEventListener('message', (e) => {
+        let data = e.data;
+        try {
+          const obj = (typeof data === 'string') ? JSON.parse(data) : JSON.parse(new TextDecoder().decode(data));
+          if (obj && obj.method === 'pip.open' && obj.params && obj.params.path) {
+            try { openPipFor(String(obj.params.path)); } catch(_) {}
+          }
+        } catch (err) { /* ignore */ }
+      });
+      ws.addEventListener('close', () => { setTimeout(start, 2000); });
+      ws.addEventListener('error', () => { try { ws.close(); } catch(_) {} });
+    }
+    start();
+  } catch (e) { console.warn('connectMcpNotifications failed', e); }
+}
+
 // ── Trait list & tree ──────────────────────────────────────────────
 let TRAITS = [];
 let ACTIVE = null;
@@ -322,6 +353,52 @@ function renderTree(filter = '') {
 
 document.getElementById('treeFilter').addEventListener('input', e => renderTree(e.target.value));
 document.getElementById('treeWasmOnly').addEventListener('change', () => renderTree(document.getElementById('treeFilter').value));
+
+// ── PVFS file upload ───────────────────────────────────────────────
+function uploadToPvfs() {
+  const input = Object.assign(document.createElement('input'), { type: 'file', multiple: true });
+  input.onchange = async () => {
+    const status = document.getElementById('uploadStatus');
+    const files = Array.from(input.files);
+    if (!files.length) return;
+    let pvfs = {};
+    try { pvfs = JSON.parse(localStorage.getItem('traits.pvfs') || '{}'); } catch(_) {}
+    let count = 0;
+    for (const file of files) {
+      try {
+        let content;
+        // Heuristic: treat common text types as UTF-8, everything else as base64
+        if (/^(text\/|application\/(json|xml|javascript|x-sh|wasm-text)|image\/svg)/.test(file.type) ||
+            /\.(txt|md|rs|js|ts|json|toml|yaml|yml|html|css|sh|py|go|c|cpp|h|wit|wat)$/i.test(file.name)) {
+          content = await file.text();
+        } else {
+          content = await new Promise(r => {
+            const fr = new FileReader();
+            fr.onload = () => r(fr.result.split(',')[1]);
+            fr.readAsDataURL(file);
+          });
+        }
+        pvfs[file.name] = content;
+        count++;
+        console.log('[pvfs-upload] wrote', file.name, content.length, 'chars');
+      } catch(e) { console.error('[pvfs-upload] failed for', file.name, e); }
+    }
+    try { localStorage.setItem('traits.pvfs', JSON.stringify(pvfs)); } catch(e) {
+      if (status) status.textContent = 'localStorage full!';
+      return;
+    }
+    // Push updated PVFS to all running WASM workers
+    if (window._traitsSDK?.syncPvfsToWorkers) {
+      window._traitsSDK.syncPvfsToWorkers(JSON.stringify(pvfs));
+    }
+    if (status) {
+      status.textContent = `✓ ${count} file${count !== 1 ? 's' : ''} uploaded`;
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    }
+  };
+  input.click();
+}
+document.getElementById('btnUploadVfs').addEventListener('click', uploadToPvfs);
 
 // ── Source loading ─────────────────────────────────────────────────
 async function loadSource(path) {
@@ -477,6 +554,7 @@ document.getElementById('btnReload').addEventListener('click', async () => {
 // ── Boot ───────────────────────────────────────────────────────────
 (async () => {
   await bootKernel();
+  try { connectMcpNotifications(); } catch (_) {}
   TRAITS = await fetchTraits();
   // Ensure a client-side helper trait `sys.pip` exists so it's discoverable
   try {
