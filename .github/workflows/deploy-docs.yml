@@ -48,6 +48,13 @@ jobs:
       - name: Build release binary
         run: cargo build --release --bin traits
 
+      - name: Smoke-test binary
+        run: |
+          echo "--- ldd ---"
+          ldd ./target/release/traits || true
+          echo "--- traits list ---"
+          ./target/release/traits list 2>&1 | head -10 || echo "traits list exit: $?"
+
       - name: Render static site
         run: bash scripts/build-static-site.sh
 

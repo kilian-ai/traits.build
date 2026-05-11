@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Render the traits.build site into ./dist/ as a fully static bundle for GitHub Pages.
 # Requires a built ./target/release/traits binary.
-set -euo pipefail
+set -euxo pipefail
 cd "$(dirname "$0")/.."
 
 BIN="${TRAITS_BIN:-./target/release/traits}"
@@ -18,8 +18,17 @@ mkdir -p "$OUT/traits" "$OUT/api" "$OUT/build"
 # Pages return a JSON-encoded HTML string; strip the outer quoting with jq -r.
 render_page() {
     local trait="$1" out="$2"
-    "$BIN" call "$trait" 2>/dev/null | jq -r . > "$out"
-    if [[ ! -s "$out" ]]; then echo "render failed: $trait" >&2; exit 1; fi
+    local stderr_tmp
+    stderr_tmp=$(mktemp)
+    "$BIN" call "$trait" 2>"$stderr_tmp" | jq -r . > "$out"
+    local pipe_status=("${PIPESTATUS[@]}")
+    if [[ ${pipe_status[0]} -ne 0 ]]; then
+        echo "render failed: $trait — binary exited ${pipe_status[0]}" >&2
+        cat "$stderr_tmp" >&2
+        rm -f "$stderr_tmp"; exit 1
+    fi
+    rm -f "$stderr_tmp"
+    if [[ ! -s "$out" ]]; then echo "render failed: $trait — empty output" >&2; exit 1; fi
 }
 
 render_page www.docs       "$OUT/traits/index.html"
