@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Render the traits.build site into ./dist/ as a fully static bundle for GitHub Pages.
 # Requires a built ./target/release/traits binary.
-set -euxo pipefail
+set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BIN="${TRAITS_BIN:-./target/release/traits}"

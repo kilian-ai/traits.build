@@ -10,6 +10,7 @@ provides = ["sys/pip"]
 params = [
   { name = "path", type = "string", description = "Trait path to open in PIP (e.g., www.spa)", optional = false }
 ]
+returns = { type = "object", description = "Result with ok and sent fields" }
 
 [implementation]
 language = "rust"
