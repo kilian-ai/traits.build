@@ -173,6 +173,10 @@ async function bootKernel() {
         if (cmd === 'cli_format_rest_result' && mod.cli_format_rest_result) {
           return { ok: true, result: mod.cli_format_rest_result(payload.path, payload.args_json, payload.result_json) };
         }
+        if (cmd === 'pvfs_load' && payload.json) {
+          try { mod.pvfs_load(payload.json); } catch (_) {}
+          return { ok: true };
+        }
         if (cmd === 'call' && payload.path) return sdkCall(payload.path, payload.args);
         return { ok: false, error: 'unsupported background cmd: ' + cmd };
       } catch (e) {
@@ -186,6 +190,10 @@ async function bootKernel() {
       attachWasm: () => {},
       callable: _callable,
       status: { wasm: true, callable: _callable.size },
+      syncPvfsToWorkers(json) {
+        if (!json) return;
+        try { mod.pvfs_load(json); } catch (_) {}
+      },
     };
   } catch (e) {
     console.warn('WASM kernel boot failed:', e);
