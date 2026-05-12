@@ -3876,6 +3876,66 @@ export class Traits {
             reader.releaseLock();
         }
     }
+
+    /**
+     * Proxy-based namespace surface. The last property segment becomes the
+     * first positional argument (action). Examples:
+     *
+     *   await sdk.ns.sys.vfs.list()                   → sdk.call('sys.vfs', ['list'])
+     *   await sdk.ns.sys.vfs.write('foo.txt', 'hi')   → sdk.call('sys.vfs', ['write', 'foo.txt', 'hi'])
+     *   await sdk.ns.sys.checksum.hash('hello')        → sdk.call('sys.checksum', ['hash', 'hello'])
+     *   await sdk.ns.llm.prompt.openai.complete('hi')  → sdk.call('llm.prompt.openai', ['complete', 'hi'])
+     *
+     * Destructuring works for quick console access:
+     *   const { sys, www } = window._traitsSDK.ns;
+     *   await sys.vfs.list()
+     *
+     * Or install namespace shortcuts onto window (or another target):
+     *   sdk.installNs()
+     *   await sys.vfs.list()   // directly in console
+     */
+    get ns() {
+        if (!this._ns) {
+            const sdk = this;
+            const _proxy = (segs) => new Proxy(/** @type {any} */(() => {}), {
+                get(_, key) {
+                    if (typeof key === 'symbol' || key === 'then' || key === 'catch' || key === 'finally') return undefined;
+                    return _proxy([...segs, String(key)]);
+                },
+                apply(_, __, args) {
+                    if (segs.length < 2) {
+                        return Promise.reject(new Error(
+                            `traits.ns: need at least ns.trait.action — got "${segs.join('.')}" (e.g. sys.vfs.list())`
+                        ));
+                    }
+                    const action = segs[segs.length - 1];
+                    const traitPath = segs.slice(0, -1).join('.');
+                    return sdk.call(traitPath, [action, ...args]);
+                }
+            });
+            this._ns = _proxy([]);
+        }
+        return this._ns;
+    }
+
+    /**
+     * Install trait namespace shortcuts onto a target object (default: window).
+     * Skips any key that already exists on the target.
+     * @param {Object} [target] - Target object (default: window)
+     * @param {string[]} [namespaces] - Namespace names to install (default: sys, www, llm, hello, browser, skills, social)
+     */
+    installNs(target, namespaces) {
+        const t = target || (typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : {}));
+        const ns = namespaces || ['sys', 'www', 'llm', 'hello', 'browser', 'skills', 'social'];
+        for (const key of ns) {
+            if (key in t) continue;
+            Object.defineProperty(t, key, {
+                get: () => this.ns[key],
+                configurable: true,
+                enumerable: false,
+            });
+        }
+    }
 }
 
 // ────────────────── MCP Server (browser-only, WASM-powered) ──────────────────
