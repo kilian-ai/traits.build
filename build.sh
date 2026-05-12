@@ -56,6 +56,20 @@ SIZE=$(du -h "$BIN" | cut -f1)
 echo ""
 echo "Built: $BIN ($SIZE)"
 
+# ── i686 Linux static binary (optional — requires cargo-zigbuild) ──
+if command -v cargo-zigbuild &>/dev/null || cargo zigbuild --version &>/dev/null 2>&1; then
+    echo "Building i686 Linux static binary..."
+    if cargo zigbuild --release --bin traits --target i686-unknown-linux-musl 2>&1; then
+        I686_BIN="target/i686-unknown-linux-musl/release/traits"
+        I686_SIZE=$(du -h "$I686_BIN" | cut -f1)
+        echo "Built: $I686_BIN ($I686_SIZE)"
+    else
+        echo "Warning: i686 build failed (skipping)"
+    fi
+else
+    echo "Skipping i686 Linux build — cargo-zigbuild not found (install with: cargo install cargo-zigbuild)"
+fi
+
 if [[ -f "$WASM_PKG_DIR/traits_wasm_bg.wasm" && -f "$WASM_PKG_DIR/traits_wasm.js" ]]; then
     echo "Generating static WASM runtime..."
     python3 - "$WASM_PKG_DIR/traits_wasm.js" "$WASM_PKG_DIR/traits_wasm_bg.wasm" "$WASM_RUNTIME_JS" <<'PY'
