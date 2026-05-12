@@ -8576,6 +8576,7 @@ async function boot() {
 
   sdk = new Traits({ wasm: false, server: isLocal ? '' : undefined });
   window._traitsSDK = sdk;
+  sdk.installNs();
 
   // Apply persisted background backend binding before runtime init.
   try {
