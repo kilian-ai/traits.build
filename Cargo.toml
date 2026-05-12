@@ -1,6 +1,6 @@
 [package]
 name = "traits"
-version = "0.260512.0"
+version = "0.260512.35811"
 edition = "2021"
 description = "Trait plugin system — AI-ready composable function objects"
 authors = ["kilian"]
@@ -42,7 +42,7 @@ name = "traits"
 path = "src/main.rs"
 
 [dependencies]
-kernel-logic = { path = "traits/kernel/logic", version = "0.260512.0" }
+kernel-logic = { path = "traits/kernel/logic", version = "0.260512.35811" }
 actix-web = "4"
 actix-rt = "2"
 actix-ws = "0.3"
@@ -62,7 +62,7 @@ actix-cors = "0.7"
 libloading = "0.8"
 crossterm = "0.28"
 shell-words = "1"
-tungstenite = { version = "0.21", features = ["native-tls"] }
+tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
 base64 = "0.22"
 tokio-stream = "0.1"
 futures = "0.3"
@@ -79,11 +79,13 @@ k256 = { version = "0.13", features = ["schnorr", "arithmetic"] }
 bech32 = "0.11"
 hex = "0.4"
 getrandom = { version = "0.2", features = ["js"] }
-# WebAssembly Component Model host runtime (Stage 4)
-wasmtime = { version = "26", features = ["component-model"] }
-wasmtime-wasi = "26"
 walkdir = "2"
 anyhow = "1"
+
+# WebAssembly Component Model host runtime — not supported on i686
+[target.'cfg(not(target_arch = "x86"))'.dependencies]
+wasmtime = { version = "26", features = ["component-model"] }
+wasmtime-wasi = "26"
 
 [build-dependencies]
 sha2 = "0.10"
