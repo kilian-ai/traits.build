@@ -13,39 +13,6 @@
 //! That is: one interface, one function, named after the trait's last segment,
 //! returning `result<T, string>`.
 
-// ── Stub for architectures not supported by wasmtime (e.g. i686) ─────────────
-#[cfg(target_arch = "x86")]
-mod stub {
-    use serde_json::Value;
-    use std::path::PathBuf;
-    use std::sync::{Arc, OnceLock};
-
-    pub struct ComponentLoader;
-
-    impl ComponentLoader {
-        pub fn new(_search_dirs: Vec<PathBuf>) -> anyhow::Result<Self> {
-            Ok(ComponentLoader)
-        }
-        pub fn load_all(&self) -> usize { 0 }
-        pub fn list(&self) -> Vec<String> { vec![] }
-        pub fn search_dirs(&self) -> &[PathBuf] { &[] }
-        pub fn dispatch(&self, _path: &str, _args: &[Value]) -> Option<Value> { None }
-    }
-
-    pub static LOADER: OnceLock<Arc<ComponentLoader>> = OnceLock::new();
-    pub fn set_global_loader(loader: Arc<ComponentLoader>) { let _ = LOADER.set(loader); }
-
-    pub fn component_loader_info(_args: &[Value]) -> Value {
-        serde_json::json!({"loaded_count": 0, "loaded_traits": [], "status": "not supported on this architecture"})
-    }
-}
-#[cfg(target_arch = "x86")]
-pub use stub::*;
-
-// ── Full implementation for supported architectures ───────────────────────────
-#[cfg(not(target_arch = "x86"))]
-mod full {
-
 use anyhow::{anyhow, Result};
 use kernel_logic::registry::{parse_type, TraitToml};
 use kernel_logic::types::{ParamDef, ReturnDef, TraitSignature, TraitType};
@@ -657,7 +624,3 @@ pub fn component_loader_info(_args: &[Value]) -> Value {
         }),
     }
 }
-
-} // end mod full
-#[cfg(not(target_arch = "x86"))]
-pub use full::*;

@@ -390,7 +390,7 @@ fn realtime_session(
 
     // ── Set read timeout for non-blocking interleave ──
     match ws.get_ref() {
-        MaybeTlsStream::Rustls(tls) => {
+        MaybeTlsStream::NativeTls(tls) => {
             tls.get_ref()
                 .set_read_timeout(Some(Duration::from_millis(20)))
                 .ok();

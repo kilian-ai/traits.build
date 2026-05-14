@@ -6,14 +6,12 @@ WORKDIR /build
 # 1. Copy dependency manifests first (cached layer — only rebuilds when deps change)
 COPY Cargo.toml Cargo.lock ./
 COPY traits/kernel/plugin_api/Cargo.toml traits/kernel/plugin_api/Cargo.toml
-COPY traits/www/traits/build/Cargo.toml traits/www/traits/build/Cargo.toml
 
 # 2. Create stub source files so cargo can resolve the workspace and cache deps
 #    Note: real `src` is a symlink → `traits/kernel/main`, but we create a real dir here
 #    for dep caching. Step 4 removes it before COPY to avoid BuildKit symlink conflict.
 RUN mkdir -p src && echo 'fn main() {}' > src/main.rs \
-    && mkdir -p traits/kernel/plugin_api/src && echo '' > traits/kernel/plugin_api/src/lib.rs \
-    && mkdir -p traits/www/traits/build/src && echo 'pub fn dummy() {}' > traits/www/traits/build/src/lib.rs
+    && mkdir -p traits/kernel/plugin_api/src && echo '' > traits/kernel/plugin_api/src/lib.rs
 
 # 3. Build dependencies only (this layer is cached until Cargo.toml/lock changes)
 RUN cargo build --release 2>/dev/null || true
