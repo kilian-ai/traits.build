@@ -1,0 +1,48 @@
+[trait]
+name    = "generate"
+version = "0.1.0"
+description = """
+Generates a procedural GTA V Menyoo Spooner map from a natural-language prompt.
+
+Returns Menyoo Object Spooner XML ready to load in-game.
+"""
+
+[[input]]
+name        = "prompt"
+type        = "string"
+description = "Natural-language description of the map to generate"
+required    = true
+example     = "Create a straight highway over the ocean with increasingly large gaps and ramps"
+
+[[input]]
+name        = "seed"
+type        = "number"
+description = "PRNG seed for deterministic output. Omit for random."
+required    = false
+example     = 42
+
+[[input]]
+name        = "format"
+type        = "string"
+description = "Output format: 'xml' (Menyoo), 'json' (scene graph), or 'both'"
+required    = false
+default     = "xml"
+
+[[output]]
+name        = "xml"
+type        = "string"
+description = "Menyoo Spooner XML (present when format is 'xml' or 'both')"
+
+[[output]]
+name        = "json"
+type        = "string"
+description = "JSON scene description (present when format is 'json' or 'both')"
+
+[[output]]
+name        = "stats"
+type        = "object"
+description = "Generation statistics (objectCount, groups, ramps, vehicles, etc.)"
+
+[runner]
+type    = "shell"
+command = "npx tsx $TRAIT_ROOT/tools/gta-builder/src/cli.ts generate --format ${format:-xml} --seed ${seed:-} \"$prompt\""

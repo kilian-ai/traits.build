@@ -1,0 +1,41 @@
+[trait]
+name    = "validate"
+version = "0.1.0"
+description = """
+Validates a GTA V scene description JSON file against the rules:
+  - All prop model names are in the verified asset database
+  - Quaternion rotations are normalised
+  - No objects below sea level
+  - Object count within streaming-safe limits (~500)
+  - Jump physics are feasible
+
+Returns a diagnostics report with errors and warnings.
+"""
+
+[[input]]
+name        = "scene_json"
+type        = "string"
+description = "Path to a .scene.json file, or raw JSON of a SceneDescription"
+required    = true
+
+[[output]]
+name        = "valid"
+type        = "boolean"
+description = "true if no errors found"
+
+[[output]]
+name        = "diagnostics"
+type        = "string"
+description = "Formatted diagnostics report"
+
+[[output]]
+name        = "errorCount"
+type        = "number"
+
+[[output]]
+name        = "warningCount"
+type        = "number"
+
+[runner]
+type    = "shell"
+command = "npx tsx $TRAIT_ROOT/tools/gta-builder/src/cli.ts validate \"$scene_json\""

@@ -1,0 +1,1438 @@
+{
+  "metadata": {
+    "title": "Stunt Track — medium / straight",
+    "description": "Procedural stunt track with 7 jump sections, initial gap 25m → 55m max gap, ocean biome.",
+    "seed": 1001,
+    "generatorType": "stunt-track",
+    "generatedAt": "2026-05-15T04:24:54.219Z",
+    "generatorVersion": "0.1.0",
+    "prompt": "Create a straight highway over the ocean with increasingly large gaps and ramps"
+  },
+  "params": {
+    "seed": 1001,
+    "biome": "ocean",
+    "layout": "straight",
+    "difficulty": "medium",
+    "density": "medium",
+    "length": 400,
+    "startPosition": {
+      "x": -3100,
+      "y": -800,
+      "z": 50
+    },
+    "heading": 0,
+    "features": {
+      "ramps": true,
+      "pits": true,
+      "barriers": false,
+      "vehicles": false,
+      "lights": false,
+      "checkpoints": false,
+      "loops": false,
+      "boostPads": false
+    },
+    "progression": {
+      "gapGrowth": 0.5,
+      "heightGrowth": 0.3,
+      "recoveryZones": true,
+      "speedBuildup": true
+    },
+    "style": {
+      "arcade": false,
+      "symmetric": false,
+      "neon": false,
+      "military": false,
+      "chaos": 0.15
+    }
+  },
+  "objects": [
+    {
+      "id": "obj_0002",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -800,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0003",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -770,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0004",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -740,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0005",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -728,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0007",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -716,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0008",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -704,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0009",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -3100,
+        "y": -692,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0010",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -655,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0011",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -643,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0013",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -631,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0014",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -619,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0015",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -3100,
+        "y": -607,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0016",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -567.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0017",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -555.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0018",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -543.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0020",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -513.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0019"
+    },
+    {
+      "id": "obj_0021",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -501.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0019"
+    },
+    {
+      "id": "obj_0022",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -3100,
+        "y": -489.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0019"
+    },
+    {
+      "id": "obj_0023",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -447.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0019"
+    },
+    {
+      "id": "obj_0024",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -435.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0019"
+    },
+    {
+      "id": "obj_0026",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -423.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0025"
+    },
+    {
+      "id": "obj_0027",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -411.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0025"
+    },
+    {
+      "id": "obj_0028",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -3100,
+        "y": -399.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0025"
+    },
+    {
+      "id": "obj_0029",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -355,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0025"
+    },
+    {
+      "id": "obj_0030",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -343,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0025"
+    },
+    {
+      "id": "obj_0031",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -331,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0025"
+    },
+    {
+      "id": "obj_0033",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -301,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0032"
+    },
+    {
+      "id": "obj_0034",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -289,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0032"
+    },
+    {
+      "id": "obj_0035",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -3100,
+        "y": -277,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0032"
+    },
+    {
+      "id": "obj_0036",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -230,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0032"
+    },
+    {
+      "id": "obj_0037",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -218,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0032"
+    },
+    {
+      "id": "obj_0039",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -206,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0038"
+    },
+    {
+      "id": "obj_0040",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -194,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0038"
+    },
+    {
+      "id": "obj_0041",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -3100,
+        "y": -182,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0038"
+    },
+    {
+      "id": "obj_0042",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -132.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0038"
+    },
+    {
+      "id": "obj_0043",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -120.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0038"
+    },
+    {
+      "id": "obj_0044",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -108.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0038"
+    },
+    {
+      "id": "obj_0046",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -78.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0045"
+    },
+    {
+      "id": "obj_0047",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -66.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0045"
+    },
+    {
+      "id": "obj_0048",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -3100,
+        "y": -54.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0045"
+    },
+    {
+      "id": "obj_0049",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": -2.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0045"
+    },
+    {
+      "id": "obj_0050",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": 9.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0045"
+    },
+    {
+      "id": "obj_0052",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": 21.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0051"
+    },
+    {
+      "id": "obj_0053",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -3100,
+        "y": 51.5,
+        "z": 50
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0051"
+    }
+  ],
+  "groups": [
+    {
+      "id": "grp_0001",
+      "name": "Start Approach",
+      "objectIds": [
+        "obj_0002",
+        "obj_0003",
+        "obj_0004",
+        "obj_0005"
+      ],
+      "tags": [
+        "approach",
+        "start"
+      ]
+    },
+    {
+      "id": "grp_0006",
+      "name": "Jump Section 1 (gap: 25m)",
+      "objectIds": [
+        "obj_0007",
+        "obj_0008",
+        "obj_0009",
+        "obj_0010",
+        "obj_0011"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-25"
+      ]
+    },
+    {
+      "id": "grp_0012",
+      "name": "Jump Section 2 (gap: 28m)",
+      "objectIds": [
+        "obj_0013",
+        "obj_0014",
+        "obj_0015",
+        "obj_0016",
+        "obj_0017",
+        "obj_0018"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-28"
+      ]
+    },
+    {
+      "id": "grp_0019",
+      "name": "Jump Section 3 (gap: 30m)",
+      "objectIds": [
+        "obj_0020",
+        "obj_0021",
+        "obj_0022",
+        "obj_0023",
+        "obj_0024"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-30"
+      ]
+    },
+    {
+      "id": "grp_0025",
+      "name": "Jump Section 4 (gap: 33m)",
+      "objectIds": [
+        "obj_0026",
+        "obj_0027",
+        "obj_0028",
+        "obj_0029",
+        "obj_0030",
+        "obj_0031"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-33"
+      ]
+    },
+    {
+      "id": "grp_0032",
+      "name": "Jump Section 5 (gap: 35m)",
+      "objectIds": [
+        "obj_0033",
+        "obj_0034",
+        "obj_0035",
+        "obj_0036",
+        "obj_0037"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-35"
+      ]
+    },
+    {
+      "id": "grp_0038",
+      "name": "Jump Section 6 (gap: 38m)",
+      "objectIds": [
+        "obj_0039",
+        "obj_0040",
+        "obj_0041",
+        "obj_0042",
+        "obj_0043",
+        "obj_0044"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-38"
+      ]
+    },
+    {
+      "id": "grp_0045",
+      "name": "Jump Section 7 (gap: 40m)",
+      "objectIds": [
+        "obj_0046",
+        "obj_0047",
+        "obj_0048",
+        "obj_0049",
+        "obj_0050"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-40"
+      ]
+    },
+    {
+      "id": "grp_0051",
+      "name": "Finish",
+      "objectIds": [
+        "obj_0052",
+        "obj_0053"
+      ],
+      "tags": [
+        "finish"
+      ]
+    }
+  ]
+}

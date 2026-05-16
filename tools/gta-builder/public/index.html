@@ -1,0 +1,1957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GTA Builder — Challenge Manager</title>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"}}
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d0d0f;
+    --surface:  #141418;
+    --border:   #252530;
+    --accent:   #f5c518;
+    --accent2:  #e07b00;
+    --text:     #e8e8ee;
+    --muted:    #888;
+    --red:      #e04040;
+    --green:    #40c060;
+    --orange:   #e08030;
+    --radius:   6px;
+    --sidebar:  300px;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+
+  /* ── Layout ── */
+  #app { display: flex; height: 100vh; overflow: hidden; }
+
+  #sidebar {
+    width: var(--sidebar);
+    min-width: var(--sidebar);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Sidebar header ── */
+  #sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .logo {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  .logo span { color: var(--muted); font-weight: 400; }
+
+  #btn-new {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: var(--radius);
+    padding: 8px 14px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: center;
+    letter-spacing: 0.03em;
+    transition: background 0.15s;
+  }
+  #btn-new:hover { background: #ffd740; }
+
+  /* ── Challenge list ── */
+  #challenge-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+
+  .challenge-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 0.1s;
+  }
+  .challenge-item:hover { background: rgba(255,255,255,0.04); }
+  .challenge-item.active {
+    background: rgba(245,197,24,0.08);
+    border-left-color: var(--accent);
+  }
+
+  .ci-title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ci-meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; gap: 8px; }
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-easy    { background: #1a4020; color: var(--green); }
+  .badge-medium  { background: #3a2a00; color: var(--accent); }
+  .badge-hard    { background: #3a1800; color: var(--orange); }
+  .badge-extreme { background: #3a0a0a; color: var(--red); }
+  .badge-ok      { background: #0f3020; color: var(--green); }
+  .badge-warn    { background: #3a2800; color: var(--orange); }
+  .badge-error   { background: #3a0a0a; color: var(--red); }
+
+  /* ── Topbar ── */
+  #topbar {
+    height: 52px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  #topbar h1 { font-size: 15px; font-weight: 700; flex: 1; }
+  #topbar .pill { font-size: 11px; color: var(--muted); background: var(--border); padding: 3px 10px; border-radius: 20px; }
+
+  /* ── Content ── */
+  #content { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* ── Empty state ── */
+  #empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--muted);
+  }
+  #empty .big { font-size: 48px; }
+  #empty p { font-size: 13px; }
+
+  /* ── Detail panel ── */
+  #detail { display: none; }
+  #detail.show { display: block; }
+
+  .detail-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .detail-prompt {
+    font-size: 12px;
+    color: var(--muted);
+    font-style: italic;
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .stat-card .label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .stat-card .value { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .stat-card .unit  { font-size: 11px; color: var(--muted); margin-left: 2px; }
+
+  /* ── Action bar ── */
+  .action-bar { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .btn:hover { background: rgba(255,255,255,0.06); border-color: #444; }
+  .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); }
+  .btn-primary:hover { background: #ffd740; border-color: #ffd740; }
+  .btn-danger  { color: var(--red); border-color: #3a1010; }
+  .btn-danger:hover  { background: #2a0808; border-color: var(--red); }
+
+  /* ── XML preview ── */
+  #xml-preview-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: none;
+  }
+  #xml-preview-wrap.show { display: block; }
+  #xml-preview-header {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #xml-preview {
+    padding: 16px;
+    font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #a8c8a8;
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre;
+  }
+
+  /* ── Modal ── */
+  #modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  #modal-backdrop.show { display: flex; }
+
+  #modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 520px;
+    max-width: 95vw;
+    padding: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+
+  #modal h2 { font-size: 17px; font-weight: 700; margin-bottom: 18px; }
+
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+
+  .field textarea, .field input, .field select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 13px;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color 0.1s;
+    font-family: inherit;
+  }
+  .field textarea { resize: vertical; min-height: 90px; }
+  .field textarea:focus, .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field select option { background: var(--surface); }
+
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field { flex: 1; }
+
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+  /* ── Settings modal ── */
+  #settings-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 480px;
+    max-width: 95vw;
+    padding: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  #settings-modal h2 { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  .settings-section { margin-top: 20px; }
+  .settings-section h3 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .setting-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .setting-row label {
+    flex: 1;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .setting-row .hint {
+    font-size: 10px;
+    color: var(--muted);
+    display: block;
+    margin-top: 2px;
+  }
+  .setting-row input[type=range] {
+    flex: 1.4;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .setting-val {
+    width: 38px;
+    text-align: right;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  #btn-settings {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  #btn-settings:hover { color: var(--text); border-color: #444; }
+  #spinner {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  #spinner.show { display: flex; }
+  .spin {
+    width: 16px; height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    font-size: 13px;
+    z-index: 200;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast.ok   { border-color: var(--green); color: var(--green); }
+  #toast.err  { border-color: var(--red);   color: var(--red);   }
+
+  /* ── Scrollbars ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+  /* ── Based-on badge ── */
+  .based-on {
+    font-size: 11px;
+    color: var(--muted);
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-top: 4px;
+  }
+  .based-on a { color: var(--accent); text-decoration: none; }
+  .based-on a:hover { text-decoration: underline; }
+
+  /* ── 3D Viewer Modal ── */
+  #viewer3d-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.87);
+    z-index: 200;
+    align-items: stretch;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+  }
+  #viewer3d-modal {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 1200px;
+    height: 100%;
+    background: #080810;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  #viewer3d-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #v3d-title { font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  #v3d-legend {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    flex: 1;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .v3d-leg  { display: flex; align-items: center; gap: 4px; }
+  .v3d-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  #v3d-close {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 3px 10px;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 13px;
+  }
+  #v3d-close:hover { border-color: var(--red); color: var(--red); }
+  #v3d-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  #v3d-canvas {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+  }
+  #v3d-hint {
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    padding: 6px;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── Video Modal ── */
+  #video-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  #video-backdrop.show { display: flex; }
+  #video-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 800px;
+    max-width: 95vw;
+    height: 85vh;
+    padding: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+  }
+  #video-modal h2 { font-size: 17px; font-weight: 700; }
+  #video-upload-section {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  #video-upload-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #video-player {
+    width: 100%;
+    max-height: 300px;
+    background: #000;
+    border-radius: var(--radius);
+    display: none;
+  }
+  #video-player.show { display: block; }
+  #video-analyze-section {
+    display: flex;
+    gap: 10px;
+  }
+  #btn-analyze {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: var(--radius);
+    padding: 8px 16px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #btn-analyze:hover { background: #ffd740; }
+  #btn-analyze:disabled { opacity: 0.5; cursor: not-allowed; }
+  #btn-commentary {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 8px 16px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #btn-commentary:hover { background: rgba(255, 215, 0, 0.1); }
+  #btn-commentary:disabled { opacity: 0.4; cursor: not-allowed; }
+  #video-analysis-results {
+    overflow-y: auto;
+    max-height: 200px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    font-size: 11px;
+    font-family: 'Fira Code', monospace;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  #video-analysis-results.empty { color: var(--muted); }
+  .analysis-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  .analysis-item:last-child { border-bottom: none; }
+  .analysis-time {
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .analysis-desc {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 10px;
+  }
+  #video-modal-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+  #btn-video-close {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #btn-video-close:hover { border-color: var(--red); color: var(--red); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <div class="logo">GTA Builder <span>/ Challenges</span></div>
+      <button id="btn-new">+ New Challenge</button>
+      <button id="btn-settings">⚙ Settings</button>
+    </div>
+    <div id="challenge-list"></div>
+  </aside>
+
+  <!-- Main -->
+  <div id="main">
+    <div id="topbar">
+      <h1 id="topbar-title">Select a challenge</h1>
+      <div id="topbar-count" class="pill">0 challenges</div>
+      <button class="btn" id="btn-export-all" title="Download all challenges as ZIP" style="font-size:12px;padding:5px 12px">⬇ Download All</button>
+    </div>
+    <div id="content">
+      <div id="empty">
+        <div class="big">🏎</div>
+        <p>No challenge selected.</p>
+        <p>Click <strong>+ New Challenge</strong> to generate one.</p>
+      </div>
+      <div id="detail">
+        <div class="detail-title" id="d-title"></div>
+        <div id="d-based-on" class="based-on" style="display:none">
+          ⤵ Modified from: <span id="d-based-on-link"></span>
+        </div>
+        <div class="detail-prompt" id="d-prompt"></div>
+
+        <div class="stat-grid" id="d-stats"></div>
+
+        <div class="action-bar">
+          <button class="btn btn-primary" id="btn-download">⬇ Download XML</button>
+          <button class="btn" id="btn-3d">⬡ 3D View</button>
+          <button class="btn" id="btn-video">📹 Video</button>
+          <button class="btn" id="btn-modify">✎ Modify</button>
+          <button class="btn" id="btn-preview">{ } Preview XML</button>
+          <button class="btn btn-danger" id="btn-delete">✕ Delete</button>
+        </div>
+
+        <div id="xml-preview-wrap">
+          <div id="xml-preview-header">
+            <span>Menyoo Spooner XML</span>
+            <button class="btn" style="padding:3px 10px;font-size:11px" id="btn-copy">Copy</button>
+          </div>
+          <div id="xml-preview"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Video Modal -->
+<div id="video-backdrop">
+  <div id="video-modal">
+    <h2>📹 Video Analysis</h2>
+    
+    <div id="video-upload-section">
+      <input type="file" id="video-upload-input" accept="video/*" placeholder="Select or drag a video..." />
+      <button class="btn" id="btn-upload" style="flex-shrink:0">Upload</button>
+    </div>
+
+    <video id="video-player" controls></video>
+
+    <div id="commentary-bar" style="display:none;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--muted)">
+      <span id="commentary-bar-text">🎙 Commentary audio loaded — plays synced with the video</span>
+      <label style="margin-left:auto;display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="audio-enabled" checked />
+        <span>Enable</span>
+      </label>
+    </div>
+
+    <div id="video-analyze-section">
+      <button id="btn-analyze" disabled>▶ Analyze + Commentate</button>
+      <button id="btn-commentary" disabled>↺ Re-generate Commentary</button>
+      <div id="video-spinner" style="display:none;align-items:center;gap:10px;color:var(--muted);font-size:13px"><div class="spin"></div> <span id="video-spinner-text">Analyzing...</span></div>
+    </div>
+
+    <div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Analysis Results:</div>
+      <div id="video-analysis-results" class="empty">No analysis yet. Upload a video and click analyze.</div>
+    </div>
+
+    <div id="video-modal-footer">
+      <button id="btn-video-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Commentary Modal -->
+<div id="commentary-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:110;align-items:center;justify-content:center">
+  <div id="commentary-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;width:720px;max-width:95vw;height:80vh;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.6);display:flex;flex-direction:column;gap:16px">
+    <h2 style="font-size:17px;font-weight:700">🎙 Live Commentary</h2>
+    <div id="commentary-text" style="flex:1;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;line-height:1.7;color:var(--fg);white-space:pre-wrap"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" id="btn-commentary-copy">Copy</button>
+      <button id="btn-commentary-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- 3D Viewer Modal -->
+<div id="viewer3d-backdrop">
+  <div id="viewer3d-modal">
+    <div id="viewer3d-header">
+      <span id="v3d-title">3D Track Preview</span>
+      <div id="v3d-legend"></div>
+      <button id="v3d-close" title="Close">✕</button>
+    </div>
+    <div id="v3d-wrap"><canvas id="v3d-canvas"></canvas></div>
+    <div id="v3d-hint">drag to rotate &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; right-drag to pan</div>
+  </div>
+</div>
+
+<!-- Modify Modal -->
+<div id="modify-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center">
+  <div id="modify-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;width:520px;max-width:95vw;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.6)">
+    <h2 style="font-size:17px;font-weight:700;margin-bottom:18px">✎ Modify Track</h2>
+    <div class="field">
+      <label>Original Prompt</label>
+      <div id="m-original" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:9px 12px;font-size:12px;color:var(--muted);font-style:italic;line-height:1.5"></div>
+    </div>
+    <div class="field">
+      <label>Modification</label>
+      <textarea id="m-prompt" placeholder="e.g. make gaps bigger, change to desert, add loops, harder difficulty..."></textarea>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Difficulty</label>
+        <select id="m-difficulty">
+          <option value="">Keep original</option>
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+          <option value="extreme">Extreme</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Seed (optional)</label>
+        <input id="m-seed" type="number" placeholder="Random" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <div id="modify-spinner" class="" style="display:none;align-items:center;gap:10px;color:var(--muted);font-size:13px"><div class="spin"></div> Generating...</div>
+      <button class="btn" id="m-cancel">Cancel</button>
+      <button class="btn btn-primary" id="m-submit">Apply Modification</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center">
+  <div id="settings-modal">
+    <h2>Track Settings</h2>
+    <p style="font-size:12px;color:var(--muted);margin-top:4px">Applied to every new generation. Saved automatically.</p>
+
+    <div class="settings-section">
+      <h3>Racing Grid</h3>
+      <div class="setting-row">
+        <label>Vehicles<span class="hint">Cars on the starting grid</span></label>
+        <input type="range" id="s-vehicle-count" min="2" max="20" step="2" />
+        <span class="setting-val" id="s-vehicle-count-val"></span>
+      </div>
+      <div class="setting-row">
+        <label>Row Spacing<span class="hint">Gap between grid rows</span></label>
+        <input type="range" id="s-row-spacing" min="4" max="14" step="1" />
+        <span class="setting-val" id="s-row-spacing-val"></span>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Track Layout</h3>
+      <div class="setting-row">
+        <label>Approach Length<span class="hint">Runway before first jump</span></label>
+        <input type="range" id="s-approach" min="40" max="160" step="10" />
+        <span class="setting-val" id="s-approach-val"></span>
+      </div>
+      <div class="setting-row">
+        <label>Finish Runway<span class="hint">Platform after finish gate</span></label>
+        <input type="range" id="s-finish" min="20" max="80" step="10" />
+        <span class="setting-val" id="s-finish-val"></span>
+      </div>
+    </div>
+
+    <div class="modal-actions" style="margin-top:24px">
+      <button class="btn" id="s-reset">Reset Defaults</button>
+      <button class="btn btn-primary" id="s-close">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generate Modal -->
+<div id="modal-backdrop">
+  <div id="modal">
+    <h2>Generate New Challenge</h2>
+    <div class="field">
+      <label>Prompt</label>
+      <textarea id="f-prompt" placeholder="Create a straight highway over the ocean with increasingly large gaps and ramps..."></textarea>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Difficulty</label>
+        <select id="f-difficulty">
+          <option value="">Auto-detect</option>
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+          <option value="extreme">Extreme</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Seed (optional)</label>
+        <input id="f-seed" type="number" placeholder="Random" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <div id="spinner"><div class="spin"></div> Generating...</div>
+      <button class="btn" id="btn-cancel">Cancel</button>
+      <button class="btn btn-primary" id="btn-generate">Generate</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let challenges = [];
+let activeId   = null;
+let xmlCache   = {};  // id → xml string
+const SETTINGS_KEY = 'gta-builder-settings';
+const SETTINGS_DEFAULTS = {
+  vehicleCount:      10,
+  rowSpacing:         7,
+  approachLength:    80,
+  finishRunwayLength: 40,
+};
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return raw ? { ...SETTINGS_DEFAULTS, ...JSON.parse(raw) } : { ...SETTINGS_DEFAULTS };
+  } catch { return { ...SETTINGS_DEFAULTS }; }
+}
+
+function saveSettings(s) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+
+function currentSettings() {
+  return {
+    vehicleCount:       parseInt(document.getElementById('s-vehicle-count').value, 10),
+    rowSpacing:         parseInt(document.getElementById('s-row-spacing').value, 10),
+    approachLength:     parseInt(document.getElementById('s-approach').value, 10),
+    finishRunwayLength: parseInt(document.getElementById('s-finish').value, 10),
+  };
+}
+
+function applySettingsToSliders(s) {
+  document.getElementById('s-vehicle-count').value = s.vehicleCount;
+  document.getElementById('s-vehicle-count-val').textContent = s.vehicleCount;
+  document.getElementById('s-row-spacing').value = s.rowSpacing;
+  document.getElementById('s-row-spacing-val').textContent = s.rowSpacing + 'm';
+  document.getElementById('s-approach').value = s.approachLength;
+  document.getElementById('s-approach-val').textContent = s.approachLength + 'm';
+  document.getElementById('s-finish').value = s.finishRunwayLength;
+  document.getElementById('s-finish-val').textContent = s.finishRunwayLength + 'm';
+}
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const $list     = document.getElementById('challenge-list');
+const $empty    = document.getElementById('empty');
+const $detail   = document.getElementById('detail');
+const $title    = document.getElementById('topbar-title');
+const $count    = document.getElementById('topbar-count');
+const $dTitle   = document.getElementById('d-title');
+const $dPrompt  = document.getElementById('d-prompt');
+const $dStats   = document.getElementById('d-stats');
+const $preview  = document.getElementById('xml-preview');
+const $previewW = document.getElementById('xml-preview-wrap');
+const $modal    = document.getElementById('modal-backdrop');
+const $spinner  = document.getElementById('spinner');
+const $toast    = document.getElementById('toast');
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+function toast(msg, type = 'ok') {
+  $toast.textContent = msg;
+  $toast.className = `show ${type}`;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => $toast.className = '', 3000);
+}
+
+// ─── API helpers ─────────────────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.statusText); }
+  return r.json();
+}
+
+// ─── Render sidebar list ──────────────────────────────────────────────────────
+function diffBadge(d) {
+  return `<span class="badge badge-${d}">${d}</span>`;
+}
+function validBadge(c) {
+  if (c.errorCount > 0)   return `<span class="badge badge-error">${c.errorCount} err</span>`;
+  if (c.warningCount > 0) return `<span class="badge badge-warn">${c.warningCount} warn</span>`;
+  return `<span class="badge badge-ok">valid</span>`;
+}
+
+function renderList() {
+  $count.textContent = `${challenges.length} challenge${challenges.length !== 1 ? 's' : ''}`;
+  $list.innerHTML = challenges.map(c => `
+    <div class="challenge-item${c.id === activeId ? ' active' : ''}" data-id="${c.id}">
+      <div class="ci-title">${esc(c.title)}</div>
+      <div class="ci-meta">
+        ${diffBadge(c.difficulty)}
+        ${validBadge(c)}
+        <span>${c.objectCount} obj</span>
+        <span>${new Date(c.generatedAt).toLocaleDateString()}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── Render detail ────────────────────────────────────────────────────────────
+function renderDetail(c) {
+  $dTitle.textContent  = c.title;
+  $dPrompt.textContent = `"${c.prompt}"`;
+
+  // Show "based on" lineage if this was a modification
+  const $basedOn     = document.getElementById('d-based-on');
+  const $basedOnLink = document.getElementById('d-based-on-link');
+  if (c.basedOn) {
+    const parent = challenges.find(x => x.id === c.basedOn);
+    $basedOnLink.textContent = parent ? parent.title : c.basedOn.slice(0, 20) + '…';
+    $basedOnLink.onclick = parent ? () => selectChallenge(parent.id) : null;
+    $basedOn.style.display = 'flex';
+  } else {
+    $basedOn.style.display = 'none';
+  }
+  const stats = [
+    { label: 'Objects',    value: c.objectCount },
+    { label: 'Groups',     value: c.groups },
+    { label: 'Sections',   value: c.sections },
+    { label: 'Ramps',      value: c.ramps },
+    { label: 'Vehicles',   value: c.vehicles },
+    { label: 'Seed',       value: c.seed },
+  ];
+
+  $dStats.innerHTML = stats.map(s =>
+    `<div class="stat-card"><div class="label">${s.label}</div><div class="value">${s.value}</div></div>`
+  ).join('') + `
+    <div class="stat-card">
+      <div class="label">Difficulty</div>
+      <div style="margin-top:6px">${diffBadge(c.difficulty)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Biome</div>
+      <div class="value" style="font-size:14px;margin-top:4px">${c.biome}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Validation</div>
+      <div style="margin-top:6px">${validBadge(c)}</div>
+    </div>
+  `;
+
+  $previewW.classList.remove('show');
+  $preview.textContent = '';
+
+  $empty.style.display  = 'none';
+  $detail.classList.add('show');
+  $title.textContent = c.title;
+}
+
+// ─── Select challenge ─────────────────────────────────────────────────────────
+function selectChallenge(id) {
+  activeId = id;
+  const c = challenges.find(x => x.id === id);
+  if (!c) return;
+  renderList();
+  renderDetail(c);
+}
+
+// ─── Load from server ─────────────────────────────────────────────────────────
+async function loadChallenges() {
+  challenges = await api('/api/challenges');
+  renderList();
+  if (challenges.length === 0) {
+    $empty.style.display  = '';
+    $detail.classList.remove('show');
+    $title.textContent = 'No challenges yet';
+  }
+}
+
+// ─── Generate ─────────────────────────────────────────────────────────────────
+async function generate() {
+  const prompt     = document.getElementById('f-prompt').value.trim();
+  const difficulty = document.getElementById('f-difficulty').value;
+  const seedVal    = document.getElementById('f-seed').value;
+  const seed       = seedVal ? parseInt(seedVal, 10) : undefined;
+
+  if (!prompt) { toast('Enter a prompt first', 'err'); return; }
+
+  const s = currentSettings();
+  const options = {
+    grid: { vehicleCount: s.vehicleCount, rowSpacing: s.rowSpacing },
+    approachLength:     s.approachLength,
+    finishRunwayLength: s.finishRunwayLength,
+  };
+
+  $spinner.classList.add('show');
+  document.getElementById('btn-generate').disabled = true;
+
+  try {
+    const { record } = await api('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, difficulty: difficulty || undefined, seed, options }),
+    });
+
+    challenges.unshift(record);
+    closeModal();
+    renderList();
+    selectChallenge(record.id);
+    toast(`Generated "${record.title}" — ${record.objectCount} objects`, 'ok');
+  } catch (e) {
+    toast(`Error: ${e.message}`, 'err');
+  } finally {
+    $spinner.classList.remove('show');
+    document.getElementById('btn-generate').disabled = false;
+  }
+}
+
+// ─── Download ─────────────────────────────────────────────────────────────────
+function downloadXml(id) {
+  const a = document.createElement('a');
+  a.href = `/api/challenges/${id}/xml`;
+  a.download = '';
+  a.click();
+}
+
+// ─── Preview XML ─────────────────────────────────────────────────────────────
+async function togglePreview(id) {
+  if ($previewW.classList.contains('show')) {
+    $previewW.classList.remove('show');
+    return;
+  }
+  if (!xmlCache[id]) {
+    const { xml } = await api(`/api/challenges/${id}/xml/text`);
+    xmlCache[id] = xml;
+  }
+  $preview.textContent = xmlCache[id].slice(0, 12000) + (xmlCache[id].length > 12000 ? '\n... (truncated)' : '');
+  $previewW.classList.add('show');
+}
+
+// ─── Delete ───────────────────────────────────────────────────────────────────
+async function deleteChallenge(id) {
+  const c = challenges.find(x => x.id === id);
+  if (!confirm(`Delete "${c?.title}"?`)) return;
+  await api(`/api/challenges/${id}`, { method: 'DELETE' });
+  challenges = challenges.filter(x => x.id !== id);
+  activeId = null;
+  $detail.classList.remove('show');
+  $empty.style.display  = '';
+  $title.textContent = 'Select a challenge';
+  renderList();
+  toast('Challenge deleted');
+}
+
+// ─── Modify ───────────────────────────────────────────────────────────────────
+function openModify(id) {
+  const c = challenges.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('m-original').textContent = '"' + c.prompt + '"';
+  document.getElementById('m-prompt').value = '';
+  document.getElementById('m-difficulty').value = '';
+  document.getElementById('m-seed').value = '';
+  document.getElementById('modify-backdrop').style.display = 'flex';
+  setTimeout(() => document.getElementById('m-prompt').focus(), 50);
+}
+function closeModify() {
+  document.getElementById('modify-backdrop').style.display = 'none';
+}
+
+async function submitModify() {
+  const modificationPrompt = document.getElementById('m-prompt').value.trim();
+  const difficulty         = document.getElementById('m-difficulty').value;
+  const seedVal            = document.getElementById('m-seed').value;
+  const seed               = seedVal ? parseInt(seedVal, 10) : undefined;
+
+  if (!modificationPrompt) { toast('Enter a modification prompt', 'err'); return; }
+
+  const s = currentSettings();
+  const options = {
+    grid: { vehicleCount: s.vehicleCount, rowSpacing: s.rowSpacing },
+    approachLength:     s.approachLength,
+    finishRunwayLength: s.finishRunwayLength,
+  };
+
+  const $spin = document.getElementById('modify-spinner');
+  const $btn  = document.getElementById('m-submit');
+  $spin.style.display = 'flex'; $btn.disabled = true;
+
+  try {
+    const { record } = await api(`/api/challenges/${activeId}/modify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modificationPrompt, difficulty: difficulty || undefined, seed, options }),
+    });
+    challenges.unshift(record);
+    closeModify();
+    renderList();
+    selectChallenge(record.id);
+    toast(`Modified track — "${record.title}"`, 'ok');
+  } catch (e) {
+    toast(`Error: ${e.message}`, 'err');
+  } finally {
+    $spin.style.display = 'none'; $btn.disabled = false;
+  }
+}
+
+document.getElementById('btn-3d').onclick = () => {
+  if (!activeId) return;
+  window.dispatchEvent(new CustomEvent('gta:open3d', { detail: { id: activeId } }));
+};
+document.getElementById('btn-modify').onclick = () => activeId && openModify(activeId);
+document.getElementById('m-cancel').onclick   = closeModify;
+document.getElementById('m-submit').onclick   = submitModify;
+document.getElementById('m-prompt').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitModify();
+});
+document.getElementById('modify-backdrop').addEventListener('click', e => {
+  if (e.target === document.getElementById('modify-backdrop')) closeModify();
+});
+
+// ─── Settings modal ───────────────────────────────────────────────────────────
+const $settingsBackdrop = document.getElementById('settings-backdrop');
+
+function openSettings() {
+  applySettingsToSliders(loadSettings());
+  $settingsBackdrop.style.display = 'flex';
+}
+function closeSettings() {
+  saveSettings(currentSettings());
+  $settingsBackdrop.style.display = 'none';
+  toast('Settings saved', 'ok');
+}
+
+// Live-update value labels on slider input
+['s-vehicle-count','s-row-spacing','s-approach','s-finish'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    const val = document.getElementById(id).value;
+    const suffix = id === 's-vehicle-count' ? '' : 'm';
+    document.getElementById(id + '-val').textContent = val + suffix;
+  });
+});
+
+document.getElementById('btn-settings').onclick = openSettings;
+document.getElementById('s-close').onclick      = closeSettings;
+document.getElementById('s-reset').onclick      = () => { applySettingsToSliders(SETTINGS_DEFAULTS); toast('Reset to defaults'); };
+$settingsBackdrop.addEventListener('click', e => { if (e.target === $settingsBackdrop) closeSettings(); });
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+function openModal() {
+  document.getElementById('f-prompt').value = '';
+  document.getElementById('f-difficulty').value = '';
+  document.getElementById('f-seed').value = '';
+  $modal.classList.add('show');
+  setTimeout(() => document.getElementById('f-prompt').focus(), 50);
+}
+function closeModal() { $modal.classList.remove('show'); }
+
+// ─── Escape HTML ─────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── Event listeners ─────────────────────────────────────────────────────────
+document.getElementById('btn-new').onclick    = openModal;
+document.getElementById('btn-cancel').onclick = closeModal;
+document.getElementById('btn-generate').onclick = generate;
+document.getElementById('f-prompt').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) generate();
+});
+
+$modal.addEventListener('click', e => { if (e.target === $modal) closeModal(); });
+
+$list.addEventListener('click', e => {
+  const item = e.target.closest('.challenge-item');
+  if (item) selectChallenge(item.dataset.id);
+});
+
+document.getElementById('btn-download').onclick   = () => activeId && downloadXml(activeId);
+document.getElementById('btn-preview').onclick    = () => activeId && togglePreview(activeId);
+document.getElementById('btn-delete').onclick     = () => activeId && deleteChallenge(activeId);
+
+// ─── Video Modal ──────────────────────────────────────────────────────────────
+const $videoBackdrop = document.getElementById('video-backdrop');
+const $videoPlayer = document.getElementById('video-player');
+const $videoUploadInput = document.getElementById('video-upload-input');
+const $videoResults = document.getElementById('video-analysis-results');
+const $commentaryBar     = document.getElementById('commentary-bar');
+const $commentaryBarText = document.getElementById('commentary-bar-text');
+const $audioEnabled      = document.getElementById('audio-enabled');
+let _hasVideo = false;
+
+// ── Per-segment commentary audio (synced to video timestamps) ────────────────
+// ── Commentary audio: "finish-then-skip" playback ────────────────────────────
+// Each segment plays to completion. When it ends, we skip any segments whose
+// timestamps have already passed and wait for the next future one. This gives
+// a natural gap between clips with zero overlap.
+let _segments = [];      // [{ time, text, hasAudio, audio }]
+let _activeSegIdx = -1;  // currently playing index, or -1
+let _nextCursor  = 0;    // first candidate index (never go backwards)
+
+function clearCommentaryAudio() {
+  for (const s of _segments) {
+    if (s.audio) {
+      s.audio.onended = null;
+      s.audio.pause();
+      s.audio.removeAttribute('src');
+      try { s.audio.load(); } catch (_) {}
+    }
+  }
+  _segments = [];
+  _activeSegIdx = -1;
+  _nextCursor   = 0;
+  $commentaryBar.style.display = 'none';
+  $videoPlayer.muted = false;
+}
+
+function loadCommentaryAudio(id, segments) {
+  clearCommentaryAudio();
+  if (!Array.isArray(segments) || segments.length === 0) return;
+  const withAudio = segments.filter(s => s.hasAudio);
+  if (withAudio.length === 0) return;
+
+  _segments = segments.map((s, i) => {
+    if (!s.hasAudio) return { ...s, audio: null };
+    const a = new Audio();
+    a.preload = 'none';
+    a.src = `/api/challenges/${id}/video/audio/${i}?t=${Date.now()}`;
+    return { ...s, audio: a };
+  });
+
+  $commentaryBarText.textContent = `🎙 ${withAudio.length} commentary clips synced`;
+  $commentaryBar.style.display = 'flex';
+  $videoPlayer.muted = true;
+}
+
+function _pauseActive() {
+  if (_activeSegIdx >= 0 && _segments[_activeSegIdx]?.audio) {
+    _segments[_activeSegIdx].audio.pause();
+  }
+  _activeSegIdx = -1;
+}
+
+// Play segment at idx from the beginning, register onended to chain next.
+function _playSegment(idx) {
+  if (idx < 0 || idx >= _segments.length) return;
+  const seg = _segments[idx];
+  if (!seg.audio) return;
+
+  _pauseActive();
+  _activeSegIdx = idx;
+  _nextCursor   = idx + 1;
+
+  seg.audio.currentTime = 0;
+  seg.audio.playbackRate = $videoPlayer.playbackRate || 1;
+
+  // When this clip ends: advance cursor past stale segments, let timeupdate
+  // fire the next one when the video reaches its timestamp.
+  seg.audio.onended = () => {
+    _activeSegIdx = -1;
+    const now = $videoPlayer.currentTime;
+    // Advance cursor past segments that have already been passed in time
+    while (_nextCursor < _segments.length && _segments[_nextCursor].time < now - 0.1) {
+      _nextCursor++;
+    }
+  };
+
+  seg.audio.play().catch(() => {});
+  $commentaryBarText.textContent = seg.text;
+}
+
+// Reset cursor to the first segment at or after video position t.
+function _resetCursorToTime(t) {
+  _nextCursor = _segments.length; // default: nothing left
+  for (let i = 0; i < _segments.length; i++) {
+    if (_segments[i].time >= t) { _nextCursor = i; break; }
+  }
+}
+
+// Check if the next pending segment's timestamp has arrived; if so, play it.
+function _checkNext() {
+  if (_activeSegIdx >= 0) return; // still playing — don't interrupt
+  if (_nextCursor >= _segments.length) return;
+  const t = $videoPlayer.currentTime;
+  const seg = _segments[_nextCursor];
+  if (seg.time <= t) {
+    if (seg.audio) _playSegment(_nextCursor);
+    else { _nextCursor++; _checkNext(); } // skip audio-less segments
+  } else if (seg.audio && seg.audio.readyState === 0 && seg.time - t < 3) {
+    seg.audio.load(); // preload 3 s ahead
+  }
+}
+
+$videoPlayer.addEventListener('play', () => {
+  if (_segments.length === 0 || !$audioEnabled.checked) return;
+  if (_activeSegIdx >= 0) {
+    _segments[_activeSegIdx].audio?.play().catch(() => {});
+  } else {
+    _checkNext();
+  }
+});
+$videoPlayer.addEventListener('pause', () => { _pauseActive(); });
+$videoPlayer.addEventListener('timeupdate', () => {
+  if (_segments.length === 0 || !$audioEnabled.checked) return;
+  if ($videoPlayer.paused || _activeSegIdx >= 0) return;
+  _checkNext();
+});
+$videoPlayer.addEventListener('seeking', () => { _pauseActive(); });
+$videoPlayer.addEventListener('seeked', () => {
+  _resetCursorToTime($videoPlayer.currentTime);
+  if (!$videoPlayer.paused && $audioEnabled.checked) _checkNext();
+});
+$videoPlayer.addEventListener('ratechange', () => {
+  if (_activeSegIdx >= 0 && _segments[_activeSegIdx]?.audio) {
+    _segments[_activeSegIdx].audio.playbackRate = $videoPlayer.playbackRate || 1;
+  }
+});
+$audioEnabled.addEventListener('change', () => {
+  if (_segments.length === 0) return;
+  if ($audioEnabled.checked) {
+    $videoPlayer.muted = true;
+    _resetCursorToTime($videoPlayer.currentTime);
+    if (!$videoPlayer.paused) _checkNext();
+  } else {
+    _pauseActive();
+    $videoPlayer.muted = false;
+  }
+});
+
+async function openVideoModal(id) {
+  if (!id) return;
+  _hasVideo = false;
+  clearCommentaryAudio();
+  $videoPlayer.src = '';
+  $videoPlayer.classList.remove('show');
+  $videoUploadInput.value = '';
+  $videoResults.className = 'empty';
+  $videoResults.innerHTML = 'No analysis yet. Upload a video and click analyze.';
+  document.getElementById('btn-analyze').disabled = true;
+  document.getElementById('btn-commentary').disabled = true;
+  $videoBackdrop.classList.add('show');
+
+  // Restore persisted state (video + analysis + commentary + audio) from server
+  try {
+    const resp = await fetch(`/api/challenges/${id}/video/state`);
+    if (resp.ok) {
+      const state = await resp.json();
+      if (state.hasVideo) {
+        _hasVideo = true;
+        $videoPlayer.src = `/api/challenges/${id}/video?t=${Date.now()}`;
+        $videoPlayer.classList.add('show');
+        document.getElementById('btn-analyze').disabled = false;
+      }
+      if (Array.isArray(state.consolidated) && state.consolidated.length) {
+        displayAnalysisResults(state.consolidated);
+        document.getElementById('btn-commentary').disabled = false;
+      }
+      _cachedCommentary = state.commentary || null;
+      if (Array.isArray(state.segments) && state.segments.length) {
+        loadCommentaryAudio(id, state.segments);
+      }
+    }
+  } catch (e) {
+    console.warn('Could not restore video state', e);
+  }
+}
+
+function closeVideoModal() {
+  $videoBackdrop.classList.remove('show');
+  $videoPlayer.pause();
+  pauseAllSegments();
+}
+
+document.getElementById('btn-video').onclick = () => activeId && openVideoModal(activeId);
+document.getElementById('btn-video-close').onclick = closeVideoModal;
+document.getElementById('btn-upload').onclick = uploadVideo;
+
+$videoUploadInput.addEventListener('change', uploadVideo);
+
+async function uploadVideo() {
+  const file = $videoUploadInput.files[0];
+  if (!file) { toast('Select a video file', 'err'); return; }
+  if (!activeId) { toast('No challenge selected', 'err'); return; }
+
+  // Local preview immediately
+  const localUrl = URL.createObjectURL(file);
+  $videoPlayer.src = localUrl;
+  $videoPlayer.classList.add('show');
+  document.getElementById('btn-analyze').disabled = false;
+
+  // Persist to server in the background
+  toast('Uploading video…', 'ok');
+  try {
+    const fd = new FormData();
+    fd.append('video', file);
+    const resp = await fetch(`/api/challenges/${activeId}/video`, { method: 'POST', body: fd });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || resp.statusText);
+    }
+    _hasVideo = true;
+    toast('Video saved', 'ok');
+  } catch (e) {
+    toast(`Upload failed: ${e.message}`, 'err');
+  }
+}
+
+let _cachedCommentary = null;
+
+async function analyzeVideo() {
+  if (!activeId) { toast('No challenge selected', 'err'); return; }
+  if (!$videoPlayer.src) { toast('Load a video first', 'err'); return; }
+
+  const $spin = document.getElementById('video-spinner');
+  const $spinTxt = document.getElementById('video-spinner-text');
+  const $btn = document.getElementById('btn-analyze');
+  const $btnComm = document.getElementById('btn-commentary');
+  $spin.style.display = 'flex';
+  $btn.disabled = true;
+  $btnComm.disabled = true;
+  $videoResults.className = 'empty';
+  $videoResults.innerHTML = 'Extracting frames…';
+  
+  try {
+    // ── Phase 1: Extract & analyze frames ───────────────────────────────────
+    const frames = await extractFrames($videoPlayer, 5);
+    const BATCH = 10;
+    const allSegments = [];
+    const total = frames.length;
+    
+    for (let start = 0; start < total; start += BATCH) {
+      const batch = frames.slice(start, start + BATCH);
+      const batchNum = Math.floor(start / BATCH) + 1;
+      const totalBatches = Math.ceil(total / BATCH);
+      $spinTxt.textContent = `Analyzing… batch ${batchNum}/${totalBatches}`;
+      $videoResults.innerHTML = `Analyzing batch ${batchNum}/${totalBatches} (frames ${start + 1}–${Math.min(start + BATCH, total)} of ${total})…`;
+      
+      const resp = await fetch(`/api/challenges/${activeId}/video/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frames: batch }),
+      });
+      
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || resp.statusText);
+      }
+      
+      const { consolidated } = await resp.json();
+      allSegments.push(...consolidated);
+    }
+    
+    displayAnalysisResults(allSegments);
+    toast(`Analysis done (${allSegments.length} frames) — generating commentary…`, 'ok');
+
+    // ── Phase 2: Commentary + TTS (auto-triggered) ───────────────────────────
+    $spinTxt.textContent = 'Generating commentary…';
+    await _runCommentaryGeneration();
+
+  } catch (e) {
+    toast(`Failed: ${e.message}`, 'err');
+    $videoResults.className = 'empty';
+    $videoResults.innerHTML = `Error: ${esc(e.message)}`;
+  } finally {
+    $spin.style.display = 'none';
+    $btn.disabled = !$videoPlayer.src;
+    $btnComm.disabled = false;
+  }
+}
+
+// ─── Commentary generation ───────────────────────────────────────────────────
+
+const $commentaryBackdrop = document.getElementById('commentary-backdrop');
+const $commentaryText     = document.getElementById('commentary-text');
+
+function openCommentaryModal(text) {
+  $commentaryText.textContent = text;
+  $commentaryBackdrop.style.display = 'flex';
+}
+function closeCommentaryModal() {
+  $commentaryBackdrop.style.display = 'none';
+}
+
+document.getElementById('btn-commentary-close').onclick = closeCommentaryModal;
+document.getElementById('btn-commentary-copy').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($commentaryText.textContent || '');
+    toast('Commentary copied', 'ok');
+  } catch (e) {
+    toast('Copy failed', 'err');
+  }
+};
+
+document.getElementById('btn-commentary').onclick = async () => {
+  if (!activeId) return;
+  const $spin = document.getElementById('video-spinner');
+  const $spinTxt = document.getElementById('video-spinner-text');
+  const $btn = document.getElementById('btn-commentary');
+  $spin.style.display = 'flex';
+  $spinTxt.textContent = 'Re-generating commentary…';
+  $btn.disabled = true;
+  try {
+    await _runCommentaryGeneration();
+  } finally {
+    $spin.style.display = 'none';
+    $btn.disabled = false;
+  }
+};
+
+async function generateCommentary() {
+  // Kept for backwards compat — delegates to the shared helper
+  return _runCommentaryGeneration();
+}
+
+async function _runCommentaryGeneration() {
+  const $spinTxt = document.getElementById('video-spinner-text');
+  try {
+    $spinTxt && ($spinTxt.textContent = 'Generating commentary…');
+    const resp = await fetch(`/api/challenges/${activeId}/video/commentary`, { method: 'POST' });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || resp.statusText);
+    }
+    $spinTxt && ($spinTxt.textContent = 'Generating voice…');
+    const { commentary, segments } = await resp.json();
+    _cachedCommentary = commentary;
+    openCommentaryModal(commentary);
+    const audioCount = Array.isArray(segments) ? segments.filter(s => s.hasAudio).length : 0;
+    if (audioCount > 0) {
+      loadCommentaryAudio(activeId, segments);
+      toast(`Commentary ready — ${audioCount} synced clips, press play`, 'ok');
+    } else {
+      toast('Commentary text ready (audio unavailable)', 'ok');
+    }
+  } catch (e) {
+    toast(`Commentary failed: ${e.message}`, 'err');
+    if (_cachedCommentary) openCommentaryModal(_cachedCommentary);
+    throw e; // re-throw so analyzeVideo can catch it too
+  }
+}
+
+async function generateCommentaryStandalone() {
+  // Legacy — kept in case called from elsewhere
+  const $spin = document.getElementById('video-spinner');
+  const $spinTxt = document.getElementById('video-spinner-text');
+  $spin.style.display = 'flex';
+  $spinTxt.textContent = 'Generating commentary + voice…';
+  try { await _runCommentaryGeneration(); }
+  finally { $spin.style.display = 'none'; }
+}
+
+// Extract a frame at every `intervalSecs` seconds from a <video> element.
+// Returns an array of { time, dataUrl } objects.
+function extractFrames(video, intervalSecs) {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const duration = video.duration;
+    
+    if (!isFinite(duration) || duration <= 0) {
+      return reject(new Error('Video duration unknown — wait for it to fully load'));
+    }
+    
+    // Scale down: max 480px wide for smaller payloads (high enough for vision model)
+    const scale = Math.min(1, 480 / video.videoWidth);
+    canvas.width  = Math.round(video.videoWidth  * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    
+    const times = [];
+    for (let t = 0; t < duration; t += intervalSecs) {
+      times.push(Math.min(t, duration - 0.1));
+    }
+    
+    const frames = [];
+    let i = 0;
+    
+    function seekNext() {
+      if (i >= times.length) return resolve(frames);
+      video.currentTime = times[i];
+    }
+    
+    video.onseeked = () => {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Use low JPEG quality (0.4) to minimize payload
+      frames.push({ time: times[i], dataUrl: canvas.toDataURL('image/jpeg', 0.4) });
+      i++;
+      seekNext();
+    };
+    
+    video.onerror = (e) => reject(new Error('Video error during frame extraction'));
+    
+    // Start seeking
+    seekNext();
+  });
+}
+
+function displayAnalysisResults(consolidated) {
+  if (!consolidated || consolidated.length === 0) {
+    $videoResults.className = 'empty';
+    $videoResults.innerHTML = 'No events detected.';
+    return;
+  }
+  
+  $videoResults.className = '';
+  $videoResults.innerHTML = consolidated.map(item => `
+    <div class="analysis-item" data-ts="${item.timestamp}" style="cursor:pointer" title="Click to seek">
+      <div class="analysis-time">${esc(item.timestamp)}</div>
+      <div class="analysis-desc">${esc(item.description)}</div>
+    </div>
+  `).join('');
+  
+  // Click to seek video
+  $videoResults.querySelectorAll('.analysis-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const ts = el.dataset.ts;
+      if (!ts) return;
+      const [m, s] = ts.split(':').map(Number);
+      const secs = (m || 0) * 60 + (s || 0);
+      $videoPlayer.currentTime = secs;
+      $videoPlayer.play().catch(() => {});
+    });
+  });
+}
+
+document.getElementById('btn-analyze').onclick = analyzeVideo;
+$videoBackdrop.addEventListener('click', e => {
+  if (e.target === $videoBackdrop) closeVideoModal();
+});
+document.getElementById('btn-export-all').onclick = () => {
+  if (challenges.length === 0) { toast('No challenges to export', 'err'); return; }
+  const a = document.createElement('a');
+  a.href = '/api/challenges/export';
+  a.download = 'gta-challenges.zip';
+  a.click();
+  toast(`Downloading ${challenges.length} challenge${challenges.length !== 1 ? 's' : ''} as ZIP`, 'ok');
+};
+document.getElementById('btn-copy').onclick     = () => {
+  if (xmlCache[activeId]) {
+    navigator.clipboard.writeText(xmlCache[activeId]);
+    toast('Copied to clipboard');
+  }
+};
+
+// ─── Init ─────────────────────────────────────────────────────────────────────────
+applySettingsToSliders(loadSettings());
+loadChallenges();
+</script>
+
+<!-- ═══ 3D Track Viewer (Three.js module) ═══════════════════════════════════ -->
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Model footprints (width × thickness × depth, in metres) ─────────────────
+const MODEL = {
+  prop_mp_short_pladge_01: { w:8,   h:0.45, d:8  },
+  prop_mp_long_pladge_01:  { w:8,   h:0.45, d:16 },
+  prop_racing_ramp_02:     { w:8,   h:3,    d:10, ramp:true  },
+  prop_start_gate_01:      { w:14,  h:7,    d:1.5,gate:true  },
+  prop_worklight_02c:      { w:0.4, h:3.5,  d:0.4,light:true },
+};
+const DEFAULT_DIM = { w:2, h:1.2, d:4.5 };
+
+// ── Coordinate transform: GTA (X=E,Y=N,Z=up) → Three.js (X=R,Y=up,Z=toward) ─
+// position: (x, y, z) → (x, z, -y)
+// quaternion: conjugate by -90° around X
+const _xm = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2);
+const _xp = _xm.clone().invert();
+function p3(p, c) { return new THREE.Vector3(p.x - c.x, p.z - c.z, -(p.y - c.y)); }
+function q3(r)    { return _xm.clone().multiply(new THREE.Quaternion(r.x, r.y, r.z, r.w)).multiply(_xp); }
+
+// ── Group color palette ───────────────────────────────────────────────────────
+const PALETTE = [0xFFD700,0x3B9EFF,0xFF8C00,0xFF6600,0xFF4400,0xFF2200,0xFF0044,0xDD0088,0xAA00CC];
+function groupColor(i, n) {
+  if (i === 0)     return 0xFFD700; // grid  → gold
+  if (i === n - 1) return 0x22EE88; // finish → green
+  return PALETTE[Math.min(i, PALETTE.length - 1)];
+}
+function objColor(obj, gIdx, total) {
+  const t = obj.tags || [];
+  if (obj.type === 'vehicle')                               return 0xFFD700;
+  if (t.some(x => x === 'worklight' || x === 'light'))     return 0xFFFF55;
+  if (t.includes('gate') || t.includes('arch'))            return gIdx === total - 1 ? 0xFF2299 : 0x00FF88;
+  if (t.includes('ramp'))                                   return 0xFF8800;
+  return groupColor(gIdx, total);
+}
+
+// ── Wedge geometry (ramp triangular prism) ───────────────────────────────────
+function wedgeGeo(w, h, d) {
+  // entry at z=0 (low), exit at z=-d (high) — track runs in -Z in Three.js
+  const v = new Float32Array([
+    -w/2,0,0,  w/2,0,0,     // 0,1 entry bottom
+    -w/2,0,-d, w/2,0,-d,    // 2,3 exit bottom
+    -w/2,h,-d, w/2,h,-d,    // 4,5 exit top
+  ]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(v, 3));
+  geo.setIndex([0,2,1, 1,2,3, 2,4,3, 3,4,5, 0,4,2, 1,3,5, 0,1,5, 0,5,4]);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// ── Arch gate ────────────────────────────────────────────────────────────────
+function buildGate(w, h, d, color) {
+  const mat = new THREE.MeshStandardMaterial({ color, roughness:0.25, metalness:0.8, emissive:color, emissiveIntensity:0.35 });
+  const pH = h * 0.84, pW = 0.9, bH = h * 0.16;
+  const g = new THREE.Group();
+  const pg = new THREE.BoxGeometry(pW, pH, d);
+  const bg = new THREE.BoxGeometry(w, bH, d);
+  const pL = new THREE.Mesh(pg, mat); pL.position.set(-w/2+pW/2, pH/2, 0); g.add(pL);
+  const pR = new THREE.Mesh(pg, mat); pR.position.set( w/2-pW/2, pH/2, 0); g.add(pR);
+  const bm = new THREE.Mesh(bg, mat); bm.position.set(0, pH+bH/2, 0); g.add(bm);
+  return g;
+}
+
+// ── Car silhouette ────────────────────────────────────────────────────────────
+function buildCar(color) {
+  const mat = new THREE.MeshStandardMaterial({ color, roughness:0.4, metalness:0.6, emissive:color, emissiveIntensity:0.2 });
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.9, 4.5), mat);
+  body.position.y = 0.45;
+  const cab  = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.8, 2.2), mat);
+  cab.position.set(0, 1.25, -0.15);
+  g.add(body, cab);
+  return g;
+}
+
+// ── Build Three.js scene from GTA scene data ──────────────────────────────────
+function buildScene(threeScene, data) {
+  const objs   = data.objects || [];
+  const groups = data.groups  || [];
+  const total  = groups.length;
+  const gMap   = new Map(groups.map((g, i) => [g.id, i]));
+
+  // Centroid for re-centering
+  const cx = objs.reduce((s, o) => s + o.position.x, 0) / (objs.length || 1);
+  const cy = objs.reduce((s, o) => s + o.position.y, 0) / (objs.length || 1);
+  const cz = objs.reduce((s, o) => s + o.position.z, 0) / (objs.length || 1);
+  const C  = { x:cx, y:cy, z:cz };
+
+  for (const obj of objs) {
+    const dim   = MODEL[obj.model] || DEFAULT_DIM;
+    const gIdx  = gMap.get(obj.groupId) ?? 0;
+    const color = objColor(obj, gIdx, total);
+    const pos   = p3(obj.position, C);
+    const quat  = q3(obj.rotation);
+    let mesh;
+
+    if (dim.gate) {
+      mesh = buildGate(dim.w, dim.h, dim.d, color);
+      mesh.quaternion.copy(quat);
+    } else if (obj.type === 'vehicle') {
+      mesh = buildCar(color);
+      mesh.quaternion.copy(quat);
+    } else if (dim.light) {
+      const mat = new THREE.MeshStandardMaterial({ color:0xFFFF55, emissive:0xFFFF55, emissiveIntensity:2, roughness:1 });
+      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.15, 3.2, 0.15), mat);
+      pole.position.y = 1.6;
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), mat);
+      bulb.position.y = 3.4;
+      mesh = new THREE.Group(); mesh.add(pole, bulb);
+    } else if (dim.ramp) {
+      const mat = new THREE.MeshStandardMaterial({ color, roughness:0.5, metalness:0.25, side:THREE.DoubleSide });
+      mesh = new THREE.Mesh(wedgeGeo(dim.w, dim.h, dim.d), mat);
+      // Don't apply gta quaternion — the wedge is self-orienting along -Z
+    } else {
+      // Platform
+      const mat = new THREE.MeshStandardMaterial({ color, roughness:0.6, metalness:0.2 });
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h, dim.d), mat);
+      mesh.position.y = dim.h / 2; // sits on surface
+    }
+
+    mesh.position.add(pos);
+    threeScene.add(mesh);
+  }
+
+  // Direction arrow (track heading north = -Z in Three.js)
+  // Show as a bright yellow arrow from start position
+  const startGroup = groups.find(g => g.tags?.includes('approach') || g.tags?.includes('start'));
+  if (startGroup) {
+    const arrow = new THREE.ArrowHelper(
+      new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 4, 0), 20, 0xFFFF00, 4, 3,
+    );
+    threeScene.add(arrow);
+  }
+
+  // Ground grid
+  const grid = new THREE.GridHelper(1000, 100, 0x1e1e3a, 0x14142a);
+  grid.position.y = -0.05;
+  threeScene.add(grid);
+}
+
+// ── Renderer state ────────────────────────────────────────────────────────────
+let _renderer = null, _raf = null, _ro = null;
+function destroyViewer() {
+  if (_raf) { cancelAnimationFrame(_raf); _raf = null; }
+  if (_ro)  { _ro.disconnect(); _ro = null; }
+  if (_renderer) { _renderer.dispose(); _renderer = null; }
+}
+
+function launchViewer(canvas, data) {
+  destroyViewer();
+
+  const wrap = canvas.parentElement;   // #v3d-wrap — flex:1 container, measured for real px
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  _renderer = renderer;
+
+  const scene  = new THREE.Scene();
+  scene.background = new THREE.Color(0x060610);
+  // No fog — full visibility needed for previewing long tracks
+
+  const W = wrap.clientWidth  || 800;
+  const H = wrap.clientHeight || 500;
+  renderer.setSize(W, H);          // updateStyle=true: Three.js sets canvas inline w/h
+  const camera = new THREE.PerspectiveCamera(55, W / H, 0.5, 2000);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping    = true;
+  controls.dampingFactor    = 0.07;
+  controls.minDistance      = 8;
+  controls.maxDistance      = 2000;
+  controls.maxPolarAngle    = Math.PI * 0.88;
+
+  // Lighting
+  scene.add(new THREE.AmbientLight(0x22336a, 3));
+  const sun = new THREE.DirectionalLight(0xffeedd, 4);
+  sun.position.set(80, 120, 60);
+  scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0x1a2a5a, 0x0a0a18, 2));
+
+  buildScene(scene, data);
+
+  // Auto-frame camera — must update world matrices before computing bbox
+  scene.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  scene.traverse(o => { if (o.isMesh) box.expandByObject(o); });
+  const center = new THREE.Vector3(), sz = new THREE.Vector3();
+  box.getCenter(center); box.getSize(sz);
+  const span = Math.max(sz.x, sz.y, sz.z, 50);
+
+  // For elongated tracks: "chase cam" from behind start looking down the track
+  // For compact scenes: classic diagonal elevated view
+  const elongZ = sz.z > sz.x * 4;  // track predominantly along Z
+  const elongX = sz.x > sz.z * 4;  // track predominantly along X
+  const crossDim = elongZ ? Math.max(sz.x, sz.y, 10) : (elongX ? Math.max(sz.z, sz.y, 10) : span);
+  const behindDist = crossDim * 10; // stand 10× cross-section behind the start
+
+  if (elongZ) {
+    camera.position.set(
+      center.x + behindDist * 0.15,
+      center.y + behindDist * 0.5,
+      box.max.z + behindDist,
+    );
+  } else if (elongX) {
+    camera.position.set(
+      box.max.x + behindDist,
+      center.y + behindDist * 0.5,
+      center.z + behindDist * 0.15,
+    );
+  } else {
+    // Compact scene: diagonal overhead view
+    camera.position.set(
+      center.x + span * 0.5,
+      center.y + span * 0.5,
+      center.z + span * 0.6,
+    );
+  }
+  camera.near = 0.5;
+  camera.far  = span * 10;
+  camera.updateProjectionMatrix();
+  controls.target.copy(center);
+  camera.lookAt(center);
+  controls.update();
+
+  // Responsive — observe the wrapper, not the canvas
+  _ro = new ResizeObserver(() => {
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    if (!w || !h) return;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
+  _ro.observe(wrap);
+
+  // Loop
+  function tick() {
+    _raf = requestAnimationFrame(tick);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  tick();
+}
+
+// ── Build colour legend ───────────────────────────────────────────────────────
+function buildLegend(data) {
+  const objs   = data.objects || [];
+  const groups = data.groups  || [];
+  const total  = groups.length;
+  const gMap   = new Map(groups.map((g, i) => [g.id, i]));
+  const seen   = new Map();
+  for (const obj of objs) {
+    const t = obj.tags || [];
+    const key = obj.type === 'vehicle' ? 'Vehicle'
+      : t.includes('ramp')  ? 'Ramp'
+      : t.includes('gate')  ? (gMap.get(obj.groupId) === total - 1 ? 'Finish Gate' : 'Start Gate')
+      : t.includes('light') || t.includes('worklight') ? 'Work Light'
+      : 'Platform';
+    if (!seen.has(key)) seen.set(key, objColor(obj, gMap.get(obj.groupId) ?? 0, total));
+  }
+  const legend = document.getElementById('v3d-legend');
+  legend.innerHTML = '';
+  for (const [label, col] of seen) {
+    const hex = '#' + col.toString(16).padStart(6, '0');
+    legend.insertAdjacentHTML('beforeend',
+      `<span class="v3d-leg"><span class="v3d-dot" style="background:${hex}"></span>${label}</span>`);
+  }
+}
+
+// ── Event wiring ──────────────────────────────────────────────────────────────
+const backdrop = document.getElementById('viewer3d-backdrop');
+const canvas   = document.getElementById('v3d-canvas');
+
+window.addEventListener('gta:open3d', async (e) => {
+  const id = e.detail.id;
+  backdrop.style.display = 'flex';
+  document.getElementById('v3d-title').textContent = 'Loading…';
+  document.getElementById('v3d-legend').innerHTML  = '';
+
+  try {
+    const data = await fetch(`/api/challenges/${id}/scene`).then(r => {
+      if (!r.ok) throw new Error(r.statusText);
+      return r.json();
+    });
+    document.getElementById('v3d-title').textContent = data.metadata?.title ?? '3D Preview';
+    buildLegend(data);
+    // Give the layout a frame to settle so canvas has real pixel dimensions
+    requestAnimationFrame(() => launchViewer(canvas, data));
+  } catch (err) {
+    document.getElementById('v3d-title').textContent = `Error: ${err.message}`;
+  }
+});
+
+document.getElementById('v3d-close').addEventListener('click', () => {
+  backdrop.style.display = 'none';
+  destroyViewer();
+});
+backdrop.addEventListener('click', e => {
+  if (e.target === backdrop) { backdrop.style.display = 'none'; destroyViewer(); }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,6229 @@
+{
+  "metadata": {
+    "title": "Stunt Track — medium / straight",
+    "description": "Procedural stunt track with 7 jump sections, initial gap 25m → 55m max gap, forest biome.",
+    "seed": 2002,
+    "generatorType": "stunt-track",
+    "generatedAt": "2026-05-15T16:35:44.187Z",
+    "generatorVersion": "0.1.0",
+    "prompt": "Medium forest rally with barriers and neon lights"
+  },
+  "params": {
+    "seed": 2002,
+    "biome": "forest",
+    "layout": "straight",
+    "difficulty": "medium",
+    "density": "medium",
+    "length": 400,
+    "startPosition": {
+      "x": -1200,
+      "y": 4000,
+      "z": 60
+    },
+    "heading": 0,
+    "features": {
+      "ramps": false,
+      "pits": false,
+      "barriers": true,
+      "vehicles": false,
+      "lights": true,
+      "checkpoints": false,
+      "loops": false,
+      "boostPads": false
+    },
+    "progression": {
+      "gapGrowth": 0.5,
+      "heightGrowth": 0.3,
+      "recoveryZones": true,
+      "speedBuildup": true
+    },
+    "style": {
+      "arcade": false,
+      "symmetric": false,
+      "neon": true,
+      "military": false,
+      "chaos": 0.15
+    }
+  },
+  "objects": [
+    {
+      "id": "obj_0002",
+      "type": "vehicle",
+      "model": "dominator",
+      "position": {
+        "x": -1202.5,
+        "y": 3993,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-1"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0003",
+      "type": "vehicle",
+      "model": "elegy2",
+      "position": {
+        "x": -1197.5,
+        "y": 3993,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-1"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0004",
+      "type": "vehicle",
+      "model": "jester",
+      "position": {
+        "x": -1202.5,
+        "y": 3986,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-2"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0005",
+      "type": "vehicle",
+      "model": "zentorno",
+      "position": {
+        "x": -1197.5,
+        "y": 3986,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-2"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0006",
+      "type": "vehicle",
+      "model": "adder",
+      "position": {
+        "x": -1202.5,
+        "y": 3979,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-3"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0007",
+      "type": "vehicle",
+      "model": "banshee",
+      "position": {
+        "x": -1197.5,
+        "y": 3979,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-3"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0008",
+      "type": "vehicle",
+      "model": "emerus",
+      "position": {
+        "x": -1202.5,
+        "y": 3972,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-4"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0009",
+      "type": "vehicle",
+      "model": "vagner",
+      "position": {
+        "x": -1197.5,
+        "y": 3972,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-4"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0010",
+      "type": "vehicle",
+      "model": "buccaneer",
+      "position": {
+        "x": -1202.5,
+        "y": 3965,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-5"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0011",
+      "type": "vehicle",
+      "model": "tampa",
+      "position": {
+        "x": -1197.5,
+        "y": 3965,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "vehicle",
+        "vehicle",
+        "grid",
+        "racer",
+        "row-5"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0013",
+      "type": "prop",
+      "model": "prop_start_gate_01",
+      "position": {
+        "x": -1200,
+        "y": 4000,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "start",
+        "gate",
+        "checkpoint",
+        "finish",
+        "arch"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0014",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4001,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0015",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4031,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0016",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4061,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0017",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4073,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0012"
+    },
+    {
+      "id": "obj_0019",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4085,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0020",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4097,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0021",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4085,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0022",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4085,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0023",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4087,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0024",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4087,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0025",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4089,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0026",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4089,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0027",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4091,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0028",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4091,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0029",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4093,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0030",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4093,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0031",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4095,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0032",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4095,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0033",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4097,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0034",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4097,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0035",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4099,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0036",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4099,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0037",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4101,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0038",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4101,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0039",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4103,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0040",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4103,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0041",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -1200,
+        "y": 4109,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0042",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4146,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0043",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4158,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0018"
+    },
+    {
+      "id": "obj_0045",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4170,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0046",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4182,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0047",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4170,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0048",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4170,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0049",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4172,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0050",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4172,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0051",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4174,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0052",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4174,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0053",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4176,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0054",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4176,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0055",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4178,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0056",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4178,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0057",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4180,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0058",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4180,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0059",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4182,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0060",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4182,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0061",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4184,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0062",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4184,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0063",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4186,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0064",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4186,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0065",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4188,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0066",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4188,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0067",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -1200,
+        "y": 4194,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0068",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4233.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0069",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4245.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0070",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4257.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0044"
+    },
+    {
+      "id": "obj_0072",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4287.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0073",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4299.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0074",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4287.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0075",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4287.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0076",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4289.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0077",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4289.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0078",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4291.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0079",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4291.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0080",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4293.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0081",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4293.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0082",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4295.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0083",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4295.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0084",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4297.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0085",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4297.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0086",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4299.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0087",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4299.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0088",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4301.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0089",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4301.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0090",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4303.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0091",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4303.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0092",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4305.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0093",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4305.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0094",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -1200,
+        "y": 4311.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0095",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4353.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0096",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4365.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0071"
+    },
+    {
+      "id": "obj_0098",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4377.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0099",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4389.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0100",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4377.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0101",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4377.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0102",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4379.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0103",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4379.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0104",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4381.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0105",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4381.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0106",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4383.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0107",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4383.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0108",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4385.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0109",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4385.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0110",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4387.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0111",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4387.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0112",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4389.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0113",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4389.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0114",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4391.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0115",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4391.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0116",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4393.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0117",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4393.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0118",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4395.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0119",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4395.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0120",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -1200,
+        "y": 4401.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0121",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4446,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0122",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4458,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0123",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4470,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0097"
+    },
+    {
+      "id": "obj_0125",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4500,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0126",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4512,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0127",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4500,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0128",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4500,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0129",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4502,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0130",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4502,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0131",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4504,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0132",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4504,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0133",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4506,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0134",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4506,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0135",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4508,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0136",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4508,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0137",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4510,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0138",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4510,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0139",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4512,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0140",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4512,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0141",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4514,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0142",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4514,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0143",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4516,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0144",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4516,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0145",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4518,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0146",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4518,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0147",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -1200,
+        "y": 4524,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0148",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4571,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0149",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4583,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0124"
+    },
+    {
+      "id": "obj_0151",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4595,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0152",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4607,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0153",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4595,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0154",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4595,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0155",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4597,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0156",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4597,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0157",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4599,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0158",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4599,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0159",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4601,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0160",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4601,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0161",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4603,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0162",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4603,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0163",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4605,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0164",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4605,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0165",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4607,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0166",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4607,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0167",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4609,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0168",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4609,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0169",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4611,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0170",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4611,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0171",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4613,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0172",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4613,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0173",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -1200,
+        "y": 4619,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0174",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4668.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0175",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4680.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0176",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4692.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0150"
+    },
+    {
+      "id": "obj_0178",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4722.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0179",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4734.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0180",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4722.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0181",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4722.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0182",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4724.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0183",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4724.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0184",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4726.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0185",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4726.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0186",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4728.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0187",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4728.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0188",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4730.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0189",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4730.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0190",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4732.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0191",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4732.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0192",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4734.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0193",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4734.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0194",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4736.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0195",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4736.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0196",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4738.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0197",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4738.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0198",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1204,
+        "y": 4740.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0199",
+      "type": "prop",
+      "model": "prop_mp_barrier_02b",
+      "position": {
+        "x": -1196,
+        "y": 4740.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "barrier",
+        "road",
+        "concrete",
+        "jersey"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0200",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": -1200,
+        "y": 4746.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "flip",
+        "large",
+        "stunt",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0201",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4798.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0202",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4810.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0177"
+    },
+    {
+      "id": "obj_0204",
+      "type": "prop",
+      "model": "prop_start_gate_01",
+      "position": {
+        "x": -1200,
+        "y": 4822.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "finish",
+        "gate",
+        "checkpoint",
+        "start",
+        "arch"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0205",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4823.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0206",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": -1200,
+        "y": 4853.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "platform",
+        "road",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0207",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1204,
+        "y": 4822.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0208",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1196,
+        "y": 4822.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0209",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1204,
+        "y": 4830.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0210",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1196,
+        "y": 4830.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0211",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1204,
+        "y": 4838.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0212",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1196,
+        "y": 4838.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0213",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1204,
+        "y": 4846.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0214",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1196,
+        "y": 4846.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0215",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1204,
+        "y": 4854.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0216",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1196,
+        "y": 4854.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0217",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1204,
+        "y": 4862.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    },
+    {
+      "id": "obj_0218",
+      "type": "prop",
+      "model": "prop_worklight_02c",
+      "position": {
+        "x": -1196,
+        "y": 4862.5,
+        "z": 60
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "light",
+        "finish",
+        "worklight",
+        "construction",
+        "atmospheric"
+      ],
+      "groupId": "grp_0203"
+    }
+  ],
+  "groups": [
+    {
+      "id": "grp_0001",
+      "name": "Racing Grid",
+      "objectIds": [
+        "obj_0002",
+        "obj_0003",
+        "obj_0004",
+        "obj_0005",
+        "obj_0006",
+        "obj_0007",
+        "obj_0008",
+        "obj_0009",
+        "obj_0010",
+        "obj_0011"
+      ],
+      "tags": [
+        "grid",
+        "vehicles",
+        "start"
+      ]
+    },
+    {
+      "id": "grp_0012",
+      "name": "Start Approach",
+      "objectIds": [
+        "obj_0013",
+        "obj_0014",
+        "obj_0015",
+        "obj_0016",
+        "obj_0017"
+      ],
+      "tags": [
+        "approach",
+        "start"
+      ]
+    },
+    {
+      "id": "grp_0018",
+      "name": "Jump Section 1 (gap: 25m)",
+      "objectIds": [
+        "obj_0019",
+        "obj_0020",
+        "obj_0021",
+        "obj_0022",
+        "obj_0023",
+        "obj_0024",
+        "obj_0025",
+        "obj_0026",
+        "obj_0027",
+        "obj_0028",
+        "obj_0029",
+        "obj_0030",
+        "obj_0031",
+        "obj_0032",
+        "obj_0033",
+        "obj_0034",
+        "obj_0035",
+        "obj_0036",
+        "obj_0037",
+        "obj_0038",
+        "obj_0039",
+        "obj_0040",
+        "obj_0041",
+        "obj_0042",
+        "obj_0043"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-25"
+      ]
+    },
+    {
+      "id": "grp_0044",
+      "name": "Jump Section 2 (gap: 28m)",
+      "objectIds": [
+        "obj_0045",
+        "obj_0046",
+        "obj_0047",
+        "obj_0048",
+        "obj_0049",
+        "obj_0050",
+        "obj_0051",
+        "obj_0052",
+        "obj_0053",
+        "obj_0054",
+        "obj_0055",
+        "obj_0056",
+        "obj_0057",
+        "obj_0058",
+        "obj_0059",
+        "obj_0060",
+        "obj_0061",
+        "obj_0062",
+        "obj_0063",
+        "obj_0064",
+        "obj_0065",
+        "obj_0066",
+        "obj_0067",
+        "obj_0068",
+        "obj_0069",
+        "obj_0070"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-28"
+      ]
+    },
+    {
+      "id": "grp_0071",
+      "name": "Jump Section 3 (gap: 30m)",
+      "objectIds": [
+        "obj_0072",
+        "obj_0073",
+        "obj_0074",
+        "obj_0075",
+        "obj_0076",
+        "obj_0077",
+        "obj_0078",
+        "obj_0079",
+        "obj_0080",
+        "obj_0081",
+        "obj_0082",
+        "obj_0083",
+        "obj_0084",
+        "obj_0085",
+        "obj_0086",
+        "obj_0087",
+        "obj_0088",
+        "obj_0089",
+        "obj_0090",
+        "obj_0091",
+        "obj_0092",
+        "obj_0093",
+        "obj_0094",
+        "obj_0095",
+        "obj_0096"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-30"
+      ]
+    },
+    {
+      "id": "grp_0097",
+      "name": "Jump Section 4 (gap: 33m)",
+      "objectIds": [
+        "obj_0098",
+        "obj_0099",
+        "obj_0100",
+        "obj_0101",
+        "obj_0102",
+        "obj_0103",
+        "obj_0104",
+        "obj_0105",
+        "obj_0106",
+        "obj_0107",
+        "obj_0108",
+        "obj_0109",
+        "obj_0110",
+        "obj_0111",
+        "obj_0112",
+        "obj_0113",
+        "obj_0114",
+        "obj_0115",
+        "obj_0116",
+        "obj_0117",
+        "obj_0118",
+        "obj_0119",
+        "obj_0120",
+        "obj_0121",
+        "obj_0122",
+        "obj_0123"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-33"
+      ]
+    },
+    {
+      "id": "grp_0124",
+      "name": "Jump Section 5 (gap: 35m)",
+      "objectIds": [
+        "obj_0125",
+        "obj_0126",
+        "obj_0127",
+        "obj_0128",
+        "obj_0129",
+        "obj_0130",
+        "obj_0131",
+        "obj_0132",
+        "obj_0133",
+        "obj_0134",
+        "obj_0135",
+        "obj_0136",
+        "obj_0137",
+        "obj_0138",
+        "obj_0139",
+        "obj_0140",
+        "obj_0141",
+        "obj_0142",
+        "obj_0143",
+        "obj_0144",
+        "obj_0145",
+        "obj_0146",
+        "obj_0147",
+        "obj_0148",
+        "obj_0149"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-35"
+      ]
+    },
+    {
+      "id": "grp_0150",
+      "name": "Jump Section 6 (gap: 38m)",
+      "objectIds": [
+        "obj_0151",
+        "obj_0152",
+        "obj_0153",
+        "obj_0154",
+        "obj_0155",
+        "obj_0156",
+        "obj_0157",
+        "obj_0158",
+        "obj_0159",
+        "obj_0160",
+        "obj_0161",
+        "obj_0162",
+        "obj_0163",
+        "obj_0164",
+        "obj_0165",
+        "obj_0166",
+        "obj_0167",
+        "obj_0168",
+        "obj_0169",
+        "obj_0170",
+        "obj_0171",
+        "obj_0172",
+        "obj_0173",
+        "obj_0174",
+        "obj_0175",
+        "obj_0176"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-38"
+      ]
+    },
+    {
+      "id": "grp_0177",
+      "name": "Jump Section 7 (gap: 40m)",
+      "objectIds": [
+        "obj_0178",
+        "obj_0179",
+        "obj_0180",
+        "obj_0181",
+        "obj_0182",
+        "obj_0183",
+        "obj_0184",
+        "obj_0185",
+        "obj_0186",
+        "obj_0187",
+        "obj_0188",
+        "obj_0189",
+        "obj_0190",
+        "obj_0191",
+        "obj_0192",
+        "obj_0193",
+        "obj_0194",
+        "obj_0195",
+        "obj_0196",
+        "obj_0197",
+        "obj_0198",
+        "obj_0199",
+        "obj_0200",
+        "obj_0201",
+        "obj_0202"
+      ],
+      "tags": [
+        "section",
+        "jump",
+        "gap-40"
+      ]
+    },
+    {
+      "id": "grp_0203",
+      "name": "Finish",
+      "objectIds": [
+        "obj_0204",
+        "obj_0205",
+        "obj_0206",
+        "obj_0207",
+        "obj_0208",
+        "obj_0209",
+        "obj_0210",
+        "obj_0211",
+        "obj_0212",
+        "obj_0213",
+        "obj_0214",
+        "obj_0215",
+        "obj_0216",
+        "obj_0217",
+        "obj_0218"
+      ],
+      "tags": [
+        "finish"
+      ]
+    }
+  ]
+}

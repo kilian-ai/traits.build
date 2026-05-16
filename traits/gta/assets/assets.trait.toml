@@ -1,0 +1,35 @@
+[trait]
+name    = "assets"
+version = "0.1.0"
+description = """
+Browse the verified GTA V prop and vehicle asset database.
+
+Returns prop/vehicle records with model names, dimensions, categories, and tags.
+"""
+
+[[input]]
+name        = "category"
+type        = "string"
+description = "Filter by prop category: ramp | platform | loop | tube | barrier | cone | light | fence | sign | gate"
+required    = false
+
+[[input]]
+name        = "tag"
+type        = "string"
+description = "Filter props by tag (e.g. 'jump', 'stunt', 'road', 'checkpoint')"
+required    = false
+
+[[input]]
+name        = "vehicle_class"
+type        = "string"
+description = "Filter vehicles by class: Super | Sports | Muscle | SUV | Off-road | Trucks | Military | Motorcycles"
+required    = false
+
+[[output]]
+name        = "results"
+type        = "array"
+description = "Matching asset definitions"
+
+[runner]
+type    = "shell"
+command = "npx tsx $TRAIT_ROOT/tools/gta-builder/src/cli.ts assets --category \"${category:-}\""
