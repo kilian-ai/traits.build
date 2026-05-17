@@ -1,0 +1,16 @@
+Drop Kenney Car Kit GLB files here.
+
+Run scripts/download-kenney-assets.sh to populate this folder automatically.
+
+Expected files (subset):
+  race.glb
+  race-future.glb
+  hatchback-sports.glb
+  sedan-sports.glb
+  sedan.glb
+  suv.glb
+  suv-luxury.glb
+  police.glb
+  taxi.glb
+  van.glb
+  ... (49 total from kenney.nl/assets/car-kit, CC0)

@@ -456,6 +456,39 @@
     flex-shrink: 0;
     border-top: 1px solid var(--border);
   }
+  #v3d-hud {
+    display: none;
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    border: 1px solid rgba(255,215,0,0.45);
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 12px;
+    color: #fff;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 5;
+    gap: 14px;
+    align-items: center;
+  }
+  #v3d-hud-speed { font-weight: 700; color: #FFD700; font-size: 15px; min-width: 6ch; text-align: right; }
+  #v3d-hud-car   { color: #aaa; font-size: 11px; }
+  #v3d-hud-keys  { color: #555; font-size: 10px; border-left: 1px solid #333; padding-left: 12px; }
+  #v3d-drive-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 3px 10px;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 12px;
+  }
+  #v3d-drive-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #v3d-drive-btn.active { border-color: #FFD700; color: #FFD700; background: rgba(255,215,0,0.08); }
 
   /* ── Video Modal ── */
   #video-backdrop {
@@ -692,10 +725,18 @@
     <div id="viewer3d-header">
       <span id="v3d-title">3D Track Preview</span>
       <div id="v3d-legend"></div>
+      <button id="v3d-drive-btn" title="Toggle drive mode (F)">🚗 Drive</button>
       <button id="v3d-close" title="Close">✕</button>
     </div>
-    <div id="v3d-wrap"><canvas id="v3d-canvas"></canvas></div>
-    <div id="v3d-hint">drag to rotate &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; right-drag to pan</div>
+    <div id="v3d-wrap">
+      <canvas id="v3d-canvas"></canvas>
+      <div id="v3d-hud">
+        <span id="v3d-hud-car">Car 1/1</span>
+        <span id="v3d-hud-speed">0 km/h</span>
+        <span id="v3d-hud-keys">WASD · Tab: next · F: exit</span>
+      </div>
+    </div>
+    <div id="v3d-hint">drag to rotate &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; right-drag to pan &nbsp;·&nbsp; F = drive mode</div>
   </div>
 </div>
 
@@ -1659,18 +1700,34 @@ const KC = '/assets/kenney/cars/';    // Car Kit base URL
 
 // Model registry: key → URL
 const KDEFS = {
-  road:     KR + 'roadStraight.glb',
-  roadLong: KR + 'roadStraightLong.glb',
-  ramp:     KR + 'roadRamp.glb',
-  rampLong: KR + 'roadRampLong.glb',
-  arch:     KR + 'overheadRound.glb',
-  light:    KR + 'lightPostLarge.glb',
-  barrier:  KR + 'barrierWhite.glb',
-  start:    KR + 'roadStart.glb',
-  carRace:  KC + 'race.glb',
-  carHatch: KC + 'hatchback-sports.glb',
-  carSedan: KC + 'sedan-sports.glb',
-  carSuv:   KC + 'suv.glb',
+  road:        KR + 'roadStraight.glb',
+  roadLong:    KR + 'roadStraightLong.glb',
+  ramp:        KR + 'roadRamp.glb',
+  rampLong:    KR + 'roadRampLong.glb',
+  arch:        KR + 'overheadRound.glb',
+  archLights:  KR + 'overheadLights.glb',
+  light:       KR + 'lightPostLarge.glb',
+  lightMod:    KR + 'lightPostModern.glb',
+  barrier:     KR + 'barrierWhite.glb',
+  barrierRed:  KR + 'barrierRed.glb',
+  barrierWall: KR + 'barrierWall.glb',
+  rail:        KR + 'rail.glb',
+  start:       KR + 'roadStart.glb',
+  flag:        KR + 'flagCheckers.glb',
+  flagSmall:   KR + 'flagCheckersSmall.glb',
+  pylon:       KR + 'pylon.glb',
+  grandStand:  KR + 'grandStand.glb',
+  tree:        KR + 'treeLarge.glb',
+  treeSmall:   KR + 'treeSmall.glb',
+  billboard:   KR + 'billboard.glb',
+  cone:        KC + 'cone.glb',
+  carRace:     KC + 'race.glb',
+  carFuture:   KC + 'race-future.glb',
+  carHatch:    KC + 'hatchback-sports.glb',
+  carSedan:    KC + 'sedan-sports.glb',
+  carSuv:      KC + 'suv.glb',
+  carPolice:   KC + 'police.glb',
+  carTaxi:     KC + 'taxi.glb',
 };
 
 // Cache: key → { scene, size, boxMin, boxCenter } | null (null = 404/failed)
@@ -1718,7 +1775,7 @@ function kPlace(key, targetW, pos, quat) {
 }
 
 // Map a GTA scene object to the appropriate Kenney model key
-const VCARS = ['carRace', 'carHatch', 'carSedan', 'carSuv'];
+const VCARS = ['carRace', 'carFuture', 'carHatch', 'carSedan', 'carSuv', 'carPolice', 'carTaxi'];
 function kKey(obj) {
   const t = obj.tags || [];
   if (obj.type === 'vehicle') {
@@ -1728,10 +1785,101 @@ function kKey(obj) {
   if (t.includes('ramp')) return t.includes('long') ? 'rampLong' : 'ramp';
   if (t.includes('gate') || t.includes('arch')) return 'arch';
   if (t.includes('light') || t.includes('worklight')) return 'light';
-  if (t.includes('barrier') || t.includes('rail')) return 'barrier';
+  if (t.includes('barrier')) return t.includes('wall') ? 'barrierWall' : 'barrier';
+  if (t.includes('rail')) return 'rail';
   const m = obj.model || '';
   if (m.includes('long') || m.includes('pladge_01')) return 'roadLong';
   return 'road';
+}
+
+// ─── Drive mode (module-level state, reset per launchViewer call) ────────────
+let _driveMode = false;
+let _cars      = [];   // [{ group:THREE.Group, vel:Number, id:String }]
+let _selCar    = -1;
+let _driveControls = null;
+const KEYS = {};
+let _onKD = null, _onKU = null;
+
+const MAX_SPEED  = 40;   // m/s ≈ 144 km/h
+const ACCEL      = 16;   // m/s²
+const BRAKE_DEC  = 28;
+const STEER_RATE = 2.2;  // rad/s at full speed
+const CAR_FRIC   = 0.97; // per-frame friction (scaled to dt at 60 fps)
+
+function enterDrive() {
+  if (!_cars.length) return;
+  if (_selCar < 0) _selCar = 0;
+  _driveMode = true;
+  if (_driveControls) _driveControls.enabled = false;
+  const btn  = document.getElementById('v3d-drive-btn');
+  const hud  = document.getElementById('v3d-hud');
+  const hint = document.getElementById('v3d-hint');
+  if (btn)  { btn.classList.add('active'); btn.textContent = '🚗 Driving'; }
+  if (hud)  hud.style.display = 'flex';
+  if (hint) hint.textContent  = 'WASD / ↑↓←→ = drive  ·  Tab = next car  ·  F or Esc = exit';
+  updateHUD();
+}
+
+function exitDrive() {
+  _driveMode = false;
+  if (_driveControls) _driveControls.enabled = true;
+  const btn  = document.getElementById('v3d-drive-btn');
+  const hud  = document.getElementById('v3d-hud');
+  const hint = document.getElementById('v3d-hint');
+  if (btn)  { btn.classList.remove('active'); btn.textContent = '🚗 Drive'; }
+  if (hud)  hud.style.display = 'none';
+  if (hint) hint.textContent  = 'drag to rotate · scroll to zoom · right-drag to pan  ·  F = drive mode';
+}
+
+function cycleCar() {
+  if (!_cars.length) return;
+  _selCar = (_selCar + 1) % _cars.length;
+  updateHUD();
+}
+
+function updateHUD() {
+  if (_selCar < 0 || !_cars[_selCar]) return;
+  const car   = _cars[_selCar];
+  const kmh   = Math.round(Math.abs(car.vel || 0) * 3.6);
+  const dir   = (car.vel || 0) < -0.1 ? ' ↩' : '';
+  const carEl   = document.getElementById('v3d-hud-car');
+  const speedEl = document.getElementById('v3d-hud-speed');
+  if (carEl)   carEl.textContent   = `Car ${_selCar + 1} / ${_cars.length}`;
+  if (speedEl) speedEl.textContent = `${kmh} km/h${dir}`;
+}
+
+function tickDrive(dt, camera) {
+  if (!_driveMode || _selCar < 0 || !_cars[_selCar]) return;
+  const car = _cars[_selCar];
+  const g   = car.group;
+  const fwd    = (KEYS['KeyW'] || KEYS['ArrowUp'])    ? 1 : 0;
+  const back   = (KEYS['KeyS'] || KEYS['ArrowDown'])  ? 1 : 0;
+  const steerL = (KEYS['KeyA'] || KEYS['ArrowLeft'])  ? 1 : 0;
+  const steerR = (KEYS['KeyD'] || KEYS['ArrowRight']) ? 1 : 0;
+
+  car.vel  = car.vel || 0;
+  car.vel += fwd  * ACCEL    * dt;
+  car.vel -= back * BRAKE_DEC * dt;
+  car.vel *= Math.pow(CAR_FRIC, dt * 60);
+  car.vel  = Math.max(-MAX_SPEED * 0.35, Math.min(MAX_SPEED, car.vel));
+  if (Math.abs(car.vel) < 0.05 && !fwd && !back) car.vel = 0;
+
+  // Steering proportional to speed
+  const sf    = Math.min(1, Math.abs(car.vel) / 8);
+  const steer = (steerL - steerR) * STEER_RATE * sf * dt;
+  if (car.vel < 0) g.rotateY(-steer); else g.rotateY(steer);
+
+  const fwdDir = new THREE.Vector3(0, 0, -1).applyQuaternion(g.quaternion);
+  g.position.addScaledVector(fwdDir, car.vel * dt);
+  if (g.position.y < 0) g.position.y = 0;
+
+  // Chase camera — lerp behind + above car
+  const behind    = fwdDir.clone().multiplyScalar(-14).add(new THREE.Vector3(0, 6, 0));
+  const camTarget = g.position.clone().add(behind);
+  camera.position.lerp(camTarget, Math.min(1, dt * 5));
+  const lookPt = g.position.clone().addScaledVector(fwdDir, 10).add(new THREE.Vector3(0, 1.5, 0));
+  camera.lookAt(lookPt);
+  updateHUD();
 }
 
 // ── Model footprints (width × thickness × depth, in metres) ─────────────────
@@ -1809,7 +1957,7 @@ function buildCar(color) {
 }
 
 // ── Build Three.js scene from GTA scene data ──────────────────────────────────
-function buildScene(threeScene, data) {
+function buildScene(threeScene, data, carList = []) {
   const objs   = data.objects || [];
   const groups = data.groups  || [];
   const total  = groups.length;
@@ -1830,15 +1978,23 @@ function buildScene(threeScene, data) {
 
     // Try Kenney GLB first; fall back to procedural geometry if not downloaded
     const km = kPlace(kKey(obj), dim.w, pos, quat);
+
+    // Vehicles: always collect in carList for drive mode
+    if (obj.type === 'vehicle') {
+      const carGroup = km || (() => {
+        const m = buildCar(color); m.position.copy(pos); m.quaternion.copy(quat); return m;
+      })();
+      threeScene.add(carGroup);
+      carList.push({ group: carGroup, vel: 0, id: obj.id });
+      continue;
+    }
+
     if (km) { threeScene.add(km); continue; }
 
     let mesh;
 
     if (dim.gate) {
       mesh = buildGate(dim.w, dim.h, dim.d, color);
-      mesh.quaternion.copy(quat);
-    } else if (obj.type === 'vehicle') {
-      mesh = buildCar(color);
       mesh.quaternion.copy(quat);
     } else if (dim.light) {
       const mat = new THREE.MeshStandardMaterial({ color:0xFFFF55, emissive:0xFFFF55, emissiveIntensity:2, roughness:1 });
@@ -1860,6 +2016,67 @@ function buildScene(threeScene, data) {
 
     mesh.position.add(pos);
     threeScene.add(mesh);
+  }
+
+  // ── Decorative scatter ─────────────────────────────────────────────
+  // Pylons along road tile edges (every 4th tile, ≤ 80 total)
+  const roadTiles = objs.filter(o =>
+    o.type !== 'vehicle' && !(MODEL[o.model]?.gate) &&
+    !(MODEL[o.model]?.ramp) && !(MODEL[o.model]?.light));
+  let pylonN = 0;
+  for (let i = 2; i < roadTiles.length && pylonN < 80; i += 4) {
+    const ro    = roadTiles[i];
+    const dim2  = MODEL[ro.model] || DEFAULT_DIM;
+    const rpos  = p3(ro.position, C);
+    const rquat = q3(ro.rotation);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(rquat);
+    for (const side of [-1, 1]) {
+      const ppos = rpos.clone().addScaledVector(right, side * (dim2.w / 2 + 1.3));
+      const pm   = kPlace('pylon', 0.5, ppos, new THREE.Quaternion());
+      if (pm) { threeScene.add(pm); pylonN++; }
+    }
+  }
+  // Cones on the inside of turns (every 6th tile, alternate sides)
+  for (let i = 0; i < roadTiles.length && pylonN < 120; i += 6) {
+    const ro    = roadTiles[i];
+    const dim2  = MODEL[ro.model] || DEFAULT_DIM;
+    const rpos  = p3(ro.position, C);
+    const rquat = q3(ro.rotation);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(rquat);
+    const side  = i % 12 === 0 ? 1 : -1;
+    const cpos  = rpos.clone().addScaledVector(right, side * (dim2.w / 2 - 1.0));
+    const cm    = kPlace('cone', 0.35, cpos, new THREE.Quaternion());
+    if (cm) { threeScene.add(cm); pylonN++; }
+  }
+  // Checkered flags at the finish gate
+  const lastGrp = groups[groups.length - 1];
+  if (lastGrp) {
+    const gates = objs.filter(o => o.groupId === lastGrp.id && (o.tags || []).includes('gate'));
+    for (const go of gates.slice(0, 1)) {
+      const gpos  = p3(go.position, C);
+      const gquat = q3(go.rotation);
+      const gdim  = MODEL[go.model] || DEFAULT_DIM;
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(gquat);
+      for (const side of [-1, 1]) {
+        const fpos = gpos.clone().addScaledVector(right, side * (gdim.w / 2 + 1.5));
+        const fm   = kPlace('flag', 1.2, fpos, gquat.clone());
+        if (fm) threeScene.add(fm);
+      }
+    }
+  }
+  // Trees along the sides of the track
+  if (KCACHE.get('tree') && objs.length) {
+    const xs = objs.map(o => o.position.x - C.x);
+    const zs = objs.map(o => -(o.position.y - C.y));
+    const hx = (Math.max(...xs) - Math.min(...xs)) / 2 + 18;
+    const hzT = (Math.max(...zs) - Math.min(...zs)) / 2 + 18;
+    for (let t = -hzT; t <= hzT; t += 22) {
+      for (const sx of [-1, 1]) {
+        const tp = new THREE.Vector3(sx * hx, 0, t);
+        const tm = kPlace('tree', 6, tp, new THREE.Quaternion());
+        if (tm) threeScene.add(tm);
+      }
+    }
   }
 
   // Direction arrow (track heading north = -Z in Three.js)
@@ -1920,7 +2137,11 @@ function launchViewer(canvas, data) {
   scene.add(sun);
   scene.add(new THREE.HemisphereLight(0x1a2a5a, 0x0a0a18, 2));
 
-  buildScene(scene, data);
+  // Drive mode wiring
+  _cars = []; _selCar = -1; _driveMode = false;
+  _driveControls = controls;
+
+  buildScene(scene, data, _cars);
 
   // Auto-frame camera — must update world matrices before computing bbox
   scene.updateMatrixWorld(true);
@@ -1974,10 +2195,31 @@ function launchViewer(canvas, data) {
   });
   _ro.observe(wrap);
 
+  // Set up keyboard handlers
+  _onKD = e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    KEYS[e.code] = true;
+    if (e.code === 'KeyF') { _driveMode ? exitDrive() : enterDrive(); }
+    if (e.code === 'Escape' && _driveMode) exitDrive();
+    if (e.code === 'Tab'    && _driveMode) { e.preventDefault(); cycleCar(); }
+  };
+  _onKU = e => { KEYS[e.code] = false; };
+  window.addEventListener('keydown', _onKD);
+  window.addEventListener('keyup',   _onKU);
+
+  document.getElementById('v3d-drive-btn').onclick = () =>
+    _driveMode ? exitDrive() : enterDrive();
+
   // Loop
+  const clock = new THREE.Clock();
   function tick() {
     _raf = requestAnimationFrame(tick);
-    controls.update();
+    const dt = Math.min(clock.getDelta(), 0.1);
+    if (_driveMode) {
+      tickDrive(dt, camera);
+    } else {
+      controls.update();
+    }
     renderer.render(scene, camera);
   }
   tick();
@@ -2012,7 +2254,12 @@ function buildLegend(data) {
 const backdrop = document.getElementById('viewer3d-backdrop');
 const canvas   = document.getElementById('v3d-canvas');
 
-const K_PRELOAD = ['road', 'roadLong', 'ramp', 'arch', 'light', 'carRace', 'carHatch', 'carSedan', 'carSuv'];
+const K_PRELOAD = [
+  'road', 'roadLong', 'ramp', 'rampLong', 'arch',
+  'light', 'barrier', 'rail', 'pylon', 'cone',
+  'flag', 'tree', 'treeSmall',
+  'carRace', 'carFuture', 'carHatch', 'carSedan', 'carSuv', 'carPolice', 'carTaxi',
+];
 
 window.addEventListener('gta:open3d', async (e) => {
   const id = e.detail.id;
