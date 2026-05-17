@@ -1794,17 +1794,28 @@ function kKey(obj) {
 
 // ─── Drive mode (module-level state, reset per launchViewer call) ────────────
 let _driveMode = false;
-let _cars      = [];   // [{ group:THREE.Group, vel:Number, id:String }]
+let _cars      = [];   // [{ group, vel, id, vy, onGround, yaw, pitch, roll, pitchVel, rollVel, autoMode, maxSpeed, accel, brake, groundY }]
 let _selCar    = -1;
 let _driveControls = null;
+let _finishPos  = null;   // THREE.Vector3 of finish gate (auto-drive target)
+let _ramps      = [];     // [{ pos, d, launchFactor }]
 const KEYS = {};
 let _onKD = null, _onKU = null;
 
-const MAX_SPEED  = 40;   // m/s ≈ 144 km/h
-const ACCEL      = 16;   // m/s²
-const BRAKE_DEC  = 28;
-const STEER_RATE = 2.2;  // rad/s at full speed
-const CAR_FRIC   = 0.97; // per-frame friction (scaled to dt at 60 fps)
+// Physics constants
+const GRAVITY    = 22;    // m/s² — punchier than real for arcade feel
+const STEER_RATE = 2.4;   // rad/s
+const CAR_FRIC   = 0.955; // per-frame friction (scaled by dt*60)
+// Per-car speed profiles (m/s top speed)
+const CAR_SPEEDS = {
+  carRace: 80, carFuture: 96, carHatch: 56,
+  carSedan: 50, carSuv: 44, carPolice: 72, carTaxi: 38,
+};
+const _DEF_ACCEL = 28, _DEF_BRAKE = 44;
+function _carProfile(kkey) {
+  const ms = CAR_SPEEDS[kkey] || 55;
+  return { maxSpeed: ms, accel: _DEF_ACCEL * ms / 55, brake: _DEF_BRAKE * ms / 55 };
+}
 
 function enterDrive() {
   if (!_cars.length) return;
@@ -1816,7 +1827,7 @@ function enterDrive() {
   const hint = document.getElementById('v3d-hint');
   if (btn)  { btn.classList.add('active'); btn.textContent = '🚗 Driving'; }
   if (hud)  hud.style.display = 'flex';
-  if (hint) hint.textContent  = 'WASD / ↑↓←→ = drive  ·  Tab = next car  ·  F or Esc = exit';
+  if (hint) hint.textContent  = 'WS/↑↓ = throttle  ·  ←→ = steer  ·  A = auto-drive  ·  Tab = next car  ·  F = exit';
   updateHUD();
 }
 
@@ -1839,12 +1850,14 @@ function cycleCar() {
 
 function updateHUD() {
   if (_selCar < 0 || !_cars[_selCar]) return;
-  const car   = _cars[_selCar];
-  const kmh   = Math.round(Math.abs(car.vel || 0) * 3.6);
-  const dir   = (car.vel || 0) < -0.1 ? ' ↩' : '';
+  const car    = _cars[_selCar];
+  const kmh    = Math.round(Math.abs(car.vel || 0) * 3.6);
+  const dir    = (car.vel || 0) < -0.1 ? ' ↩' : '';
+  const auto   = car.autoMode ? ' 🤖' : '';
+  const topKmh = Math.round((car.maxSpeed || 55) * 3.6);
   const carEl   = document.getElementById('v3d-hud-car');
   const speedEl = document.getElementById('v3d-hud-speed');
-  if (carEl)   carEl.textContent   = `Car ${_selCar + 1} / ${_cars.length}`;
+  if (carEl)   carEl.textContent   = `Car ${_selCar + 1} / ${_cars.length}  ·  top ${topKmh} km/h${auto}`;
   if (speedEl) speedEl.textContent = `${kmh} km/h${dir}`;
 }
 
@@ -1852,32 +1865,98 @@ function tickDrive(dt, camera) {
   if (!_driveMode || _selCar < 0 || !_cars[_selCar]) return;
   const car = _cars[_selCar];
   const g   = car.group;
-  const fwd    = (KEYS['KeyW'] || KEYS['ArrowUp'])    ? 1 : 0;
-  const back   = (KEYS['KeyS'] || KEYS['ArrowDown'])  ? 1 : 0;
-  const steerL = (KEYS['KeyA'] || KEYS['ArrowLeft'])  ? 1 : 0;
-  const steerR = (KEYS['KeyD'] || KEYS['ArrowRight']) ? 1 : 0;
 
-  car.vel  = car.vel || 0;
-  car.vel += fwd  * ACCEL    * dt;
-  car.vel -= back * BRAKE_DEC * dt;
+  // ─── Input (A key = auto toggle handled in keydown; steer left = ArrowLeft only) ─
+  const keyFwd  = (KEYS['KeyW'] || KEYS['ArrowUp'])    ? 1 : 0;
+  const keyBack = (KEYS['KeyS'] || KEYS['ArrowDown'])  ? 1 : 0;
+  const keyL    = KEYS['ArrowLeft']                    ? 1 : 0;
+  const keyR    = (KEYS['KeyD'] || KEYS['ArrowRight']) ? 1 : 0;
+
+  // ─── Throttle / brake (reduced authority in air) ──────────────────────────
+  const gc = car.onGround ? 1.0 : 0.08;
+  if (!car.autoMode) {
+    car.vel += keyFwd  * car.accel * dt * gc;
+    car.vel -= keyBack * car.brake * dt * gc;
+  }
   car.vel *= Math.pow(CAR_FRIC, dt * 60);
-  car.vel  = Math.max(-MAX_SPEED * 0.35, Math.min(MAX_SPEED, car.vel));
-  if (Math.abs(car.vel) < 0.05 && !fwd && !back) car.vel = 0;
+  car.vel  = Math.max(-car.maxSpeed * 0.3, Math.min(car.maxSpeed, car.vel));
+  if (Math.abs(car.vel) < 0.04 && !keyFwd && !keyBack && !car.autoMode) car.vel = 0;
 
-  // Steering proportional to speed
-  const sf    = Math.min(1, Math.abs(car.vel) / 8);
-  const steer = (steerL - steerR) * STEER_RATE * sf * dt;
-  if (car.vel < 0) g.rotateY(-steer); else g.rotateY(steer);
+  // ─── Manual steering (ground only, ArrowLeft / D+ArrowRight) ──────────────
+  if (!car.autoMode && car.onGround && Math.abs(car.vel) > 0.1) {
+    const sf    = Math.min(1, Math.abs(car.vel) / 8);
+    const delta = (keyL - keyR) * STEER_RATE * sf * dt;
+    car.yaw    += car.vel < 0 ? -delta : delta;
+  }
 
-  const fwdDir = new THREE.Vector3(0, 0, -1).applyQuaternion(g.quaternion);
-  g.position.addScaledVector(fwdDir, car.vel * dt);
-  if (g.position.y < 0) g.position.y = 0;
+  // ─── Auto-pilot: accelerate + steer toward finish ─────────────────────────
+  if (car.autoMode) {
+    if (car.vel < car.maxSpeed * 0.85) car.vel += car.accel * dt;
+    if (_finishPos && car.onGround) {
+      const toT = new THREE.Vector3().subVectors(_finishPos, g.position);
+      toT.y = 0;
+      if (toT.length() > 2) {
+        toT.normalize();
+        const fw  = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
+        const crs = fw.z * toT.x - fw.x * toT.z; // signed Y of (fw × toT)
+        const sf  = Math.min(1, Math.abs(car.vel) / 8);
+        car.yaw  += Math.sign(crs) * Math.min(1, Math.abs(crs) * 2.5) * STEER_RATE * sf * dt;
+      }
+    }
+  }
 
-  // Chase camera — lerp behind + above car
-  const behind    = fwdDir.clone().multiplyScalar(-14).add(new THREE.Vector3(0, 6, 0));
-  const camTarget = g.position.clone().add(behind);
-  camera.position.lerp(camTarget, Math.min(1, dt * 5));
-  const lookPt = g.position.clone().addScaledVector(fwdDir, 10).add(new THREE.Vector3(0, 1.5, 0));
+  // ─── Ramp proximity launch ────────────────────────────────────────────────
+  if (car.onGround && car.vel > 3) {
+    const fw = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
+    for (const ramp of _ramps) {
+      const toR = new THREE.Vector3().subVectors(ramp.pos, g.position);
+      toR.y = 0;
+      if (toR.length() < ramp.d * 0.55 + 3 && fw.dot(toR.clone().normalize()) > 0.4) {
+        car.vy       =  Math.abs(car.vel) * ramp.launchFactor * 1.15;
+        car.onGround = false;
+        car.pitchVel =  car.vy * 0.12;
+        car.rollVel  = (Math.random() - 0.5) * 1.5;
+        break;
+      }
+    }
+  }
+
+  // ─── Vertical physics (gravity + tumble in air) ───────────────────────────
+  const gndY = car.groundY ?? 0;
+  if (!car.onGround) {
+    car.vy       -= GRAVITY * dt;
+    g.position.y += car.vy * dt;
+    car.pitch    += car.pitchVel * dt;
+    car.roll     += car.rollVel  * dt;
+    car.pitchVel *= Math.pow(0.994, dt * 60);
+    car.rollVel  *= Math.pow(0.994, dt * 60);
+    if (g.position.y <= gndY) {
+      g.position.y = gndY;
+      car.vy = 0; car.onGround = true;
+    }
+  }
+
+  // ─── Self-righting on ground ──────────────────────────────────────────────
+  if (car.onGround) {
+    g.position.y   = gndY;
+    car.pitch += (0 - car.pitch) * dt * 3.5;
+    car.roll  += (0 - car.roll ) * dt * 3.5;
+    if (Math.abs(car.pitch) < 0.003) car.pitch = 0;
+    if (Math.abs(car.roll)  < 0.003) car.roll  = 0;
+  }
+
+  // ─── Horizontal forward movement ─────────────────────────────────────────
+  const fw = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
+  g.position.addScaledVector(fw, car.vel * dt);
+
+  // ─── Full orientation: yaw + pitch + roll (YXZ intrinsic) ────────────────
+  g.quaternion.setFromEuler(new THREE.Euler(car.pitch, car.yaw, car.roll, 'YXZ'));
+
+  // ─── Chase camera: close behind car, follows yaw direction ───────────────
+  const behind   = fw.clone().multiplyScalar(-9).add(new THREE.Vector3(0, 3.5, 0));
+  const camTgt   = g.position.clone().add(behind);
+  camera.position.lerp(camTgt, Math.min(1, dt * 7));
+  const lookPt   = g.position.clone().addScaledVector(fw, 8).add(new THREE.Vector3(0, 1.0, 0));
   camera.lookAt(lookPt);
   updateHUD();
 }
@@ -1979,13 +2058,34 @@ function buildScene(threeScene, data, carList = []) {
     // Try Kenney GLB first; fall back to procedural geometry if not downloaded
     const km = kPlace(kKey(obj), dim.w, pos, quat);
 
+    // Collect physics data: ramps launch cars, last gate = finish target
+    if (dim.ramp) {
+      const rfw = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      _ramps.push({
+        pos: pos.clone().addScaledVector(rfw, -dim.d * 0.3),
+        d: dim.d,
+        launchFactor: Math.sin(Math.atan2(dim.h, dim.d)),
+      });
+    }
+    if (dim.gate && gIdx === total - 1) {
+      _finishPos = pos.clone();
+    }
+
     // Vehicles: always collect in carList for drive mode
     if (obj.type === 'vehicle') {
       const carGroup = km || (() => {
         const m = buildCar(color); m.position.copy(pos); m.quaternion.copy(quat); return m;
       })();
       threeScene.add(carGroup);
-      carList.push({ group: carGroup, vel: 0, id: obj.id });
+      const _prof     = _carProfile(kKey(obj));
+      const _initYaw  = new THREE.Euler().setFromQuaternion(carGroup.quaternion, 'YXZ').y;
+      carList.push({
+        group: carGroup, vel: 0, id: obj.id,
+        vy: 0, onGround: true, yaw: _initYaw, pitch: 0, roll: 0,
+        pitchVel: 0, rollVel: 0, autoMode: false,
+        groundY: carGroup.position.y,
+        ..._prof,
+      });
       continue;
     }
 
@@ -2101,6 +2201,12 @@ function destroyViewer() {
   if (_raf) { cancelAnimationFrame(_raf); _raf = null; }
   if (_ro)  { _ro.disconnect(); _ro = null; }
   if (_renderer) { _renderer.dispose(); _renderer = null; }
+  if (_onKD) { window.removeEventListener('keydown', _onKD); _onKD = null; }
+  if (_onKU) { window.removeEventListener('keyup',   _onKU); _onKU = null; }
+  for (const k in KEYS) delete KEYS[k];
+  if (_driveMode) exitDrive();
+  _cars = []; _selCar = -1; _driveControls = null;
+  _ramps = []; _finishPos = null;
 }
 
 function launchViewer(canvas, data) {
@@ -2140,6 +2246,7 @@ function launchViewer(canvas, data) {
   // Drive mode wiring
   _cars = []; _selCar = -1; _driveMode = false;
   _driveControls = controls;
+  _ramps = []; _finishPos = null;
 
   buildScene(scene, data, _cars);
 
@@ -2202,6 +2309,9 @@ function launchViewer(canvas, data) {
     if (e.code === 'KeyF') { _driveMode ? exitDrive() : enterDrive(); }
     if (e.code === 'Escape' && _driveMode) exitDrive();
     if (e.code === 'Tab'    && _driveMode) { e.preventDefault(); cycleCar(); }
+    if (e.code === 'KeyA'   && _driveMode && !e.repeat) {
+      if (_cars[_selCar]) { _cars[_selCar].autoMode = !_cars[_selCar].autoMode; updateHUD(); }
+    }
   };
   _onKU = e => { KEYS[e.code] = false; };
   window.addEventListener('keydown', _onKD);
