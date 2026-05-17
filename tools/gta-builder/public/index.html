@@ -1766,7 +1766,10 @@ function kPlace(key, targetW, pos, quat) {
   outer.quaternion.copy(quat);
   const s = targetW / Math.max(e.size.x, e.size.z, 0.01);
   const inner = new THREE.Group();
-  inner.scale.setScalar(s);
+  const _isCar  = key.startsWith('car');
+  const _isRoad = key === 'road' || key === 'roadLong';
+  inner.scale.set(s, s, s * (_isRoad ? 1.07 : 1.0)); // slight z-stretch closes inter-tile gaps
+  if (_isCar) inner.rotation.y = Math.PI;              // flip car so nose faces -Z (physics forward)
   // Centre X/Z and lift so model base sits at y=0
   inner.position.set(-e.boxCenter.x * s, -e.boxMin.y * s, -e.boxCenter.z * s);
   inner.add(e.scene.clone(true));
@@ -1799,8 +1802,13 @@ let _selCar    = -1;
 let _driveControls = null;
 let _finishPos  = null;   // THREE.Vector3 of finish gate (auto-drive target)
 let _ramps      = [];     // [{ pos, d, launchFactor }]
+let _shredders  = [];     // spinning blade meshes (animated every tick)
 const KEYS = {};
 let _onKD = null, _onKU = null;
+// Audio
+let _audioCtx = null, _engineOsc = null, _engineOsc2 = null, _engineGain = null, _engineFilter = null;
+// Fragments from destroyed cars
+let _fragments = [];
 
 // Physics constants
 const GRAVITY    = 22;    // m/s² — punchier than real for arcade feel
@@ -1817,10 +1825,96 @@ function _carProfile(kkey) {
   return { maxSpeed: ms, accel: _DEF_ACCEL * ms / 55, brake: _DEF_BRAKE * ms / 55 };
 }
 
+// ─── Audio ─────────────────────────────────────────────────────────────────────
+function _initAudio() {
+  if (_audioCtx) return;
+  try {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Two detuned square oscillators → resonant lowpass → compressor → gain
+    _engineOsc  = _audioCtx.createOscillator();
+    _engineOsc.type = 'square';  _engineOsc.detune.value  = -12; _engineOsc.frequency.value  = 28;
+    _engineOsc2 = _audioCtx.createOscillator();
+    _engineOsc2.type = 'square'; _engineOsc2.detune.value = +12; _engineOsc2.frequency.value = 28;
+    const g2 = _audioCtx.createGain(); g2.gain.value = 0.55;
+    _engineFilter = _audioCtx.createBiquadFilter();
+    _engineFilter.type = 'lowpass'; _engineFilter.frequency.value = 250; _engineFilter.Q.value = 6;
+    const comp = _audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -16; comp.knee.value = 8; comp.ratio.value = 6;
+    comp.attack.value = 0.004; comp.release.value = 0.14;
+    _engineGain = _audioCtx.createGain(); _engineGain.gain.value = 0;
+    _engineOsc.connect(_engineFilter);
+    _engineOsc2.connect(g2); g2.connect(_engineFilter);
+    _engineFilter.connect(comp); comp.connect(_engineGain); _engineGain.connect(_audioCtx.destination);
+    _engineOsc.start(); _engineOsc2.start();
+  } catch (e) { _audioCtx = null; }
+}
+function _updateEngineAudio(vel, maxSpeed) {
+  if (!_audioCtx || _audioCtx.state === 'suspended') return;
+  const t     = _audioCtx.currentTime;
+  const ratio = Math.abs(vel) / Math.max(maxSpeed, 1);
+  const onGas = (KEYS['KeyW'] || KEYS['ArrowUp']) ? 1 : 0;
+  const freq  = 28 + ratio * 142 + onGas * 20;
+  _engineOsc.frequency.setTargetAtTime(freq, t, 0.035);
+  if (_engineOsc2) _engineOsc2.frequency.setTargetAtTime(freq, t, 0.035);
+  _engineFilter.frequency.setTargetAtTime(240 + ratio * 2200, t, 0.055);
+  _engineFilter.Q.setTargetAtTime(7 - ratio * 3, t, 0.1);
+  _engineGain.gain.setTargetAtTime(Math.abs(vel) > 0.5 ? 0.07 + ratio * 0.11 : 0.025, t, 0.07);
+}
+function _playCollisionAudio(impact) {
+  if (!_audioCtx) return;
+  try {
+    const sr = _audioCtx.sampleRate;
+    const buf = _audioCtx.createBuffer(1, Math.ceil(sr * 0.38), sr);
+    const d   = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      const noise = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.04));
+      const thud  = Math.sin(2 * Math.PI * 40 * i / sr) * Math.exp(-i / (sr * 0.07)) * 0.55;
+      d[i] = noise + thud;
+    }
+    const src = _audioCtx.createBufferSource();
+    const g = _audioCtx.createGain(); g.gain.value = Math.min(0.85, impact / 15);
+    src.buffer = buf; src.connect(g); g.connect(_audioCtx.destination); src.start();
+  } catch (e) {}
+}
+function _muteEngine() {
+  if (_engineGain && _audioCtx) _engineGain.gain.setTargetAtTime(0, _audioCtx.currentTime, 0.15);
+}
+function _shredCar(car) {
+  if (car.destroyed) return;
+  car.destroyed = true;
+  const scn = car.group.parent;
+  if (scn) scn.remove(car.group);
+  const pos  = car.group.position.clone();
+  const cols = [0xFF3300, 0xFF8800, 0xCC4400, 0xFF6600, 0xFFAA00, 0x884400];
+  for (let i = 0; i < 14; i++) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: cols[i % cols.length], metalness: 0.7, roughness: 0.3, transparent: true, opacity: 1,
+    });
+    const w = Math.random()*1.1+0.3, h = Math.random()*0.5+0.2, dd = Math.random()*1.6+0.4;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), mat);
+    mesh.position.copy(pos).add(new THREE.Vector3((Math.random()-0.5)*3, Math.random()*2, (Math.random()-0.5)*3));
+    mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    if (scn) scn.add(mesh);
+    _fragments.push({
+      mesh, scn,
+      vel: new THREE.Vector3(
+        (Math.random()-0.5)*24 + Math.cos(-car.yaw)*car.vel,
+        Math.random()*18 + 5,
+        (Math.random()-0.5)*24 + Math.sin(-car.yaw)*car.vel,
+      ),
+      avel: new THREE.Vector3((Math.random()-0.5)*13,(Math.random()-0.5)*13,(Math.random()-0.5)*13),
+      life: 2.8,
+    });
+  }
+  _playCollisionAudio(38);
+}
+
 function enterDrive() {
   if (!_cars.length) return;
   if (_selCar < 0) _selCar = 0;
   _driveMode = true;
+  _initAudio();
+  if (_audioCtx?.state === 'suspended') _audioCtx.resume();
   if (_driveControls) _driveControls.enabled = false;
   const btn  = document.getElementById('v3d-drive-btn');
   const hud  = document.getElementById('v3d-hud');
@@ -1833,6 +1927,7 @@ function enterDrive() {
 
 function exitDrive() {
   _driveMode = false;
+  _muteEngine();
   if (_driveControls) _driveControls.enabled = true;
   const btn  = document.getElementById('v3d-drive-btn');
   const hud  = document.getElementById('v3d-hud');
@@ -1864,6 +1959,7 @@ function updateHUD() {
 function tickDrive(dt, camera) {
   if (!_driveMode || _selCar < 0 || !_cars[_selCar]) return;
   const car = _cars[_selCar];
+  if (car.destroyed) return;
   const g   = car.group;
 
   // ─── Input (A key = auto toggle handled in keydown; steer left = ArrowLeft only) ─
@@ -1906,17 +2002,46 @@ function tickDrive(dt, camera) {
   }
 
   // ─── Ramp proximity launch ────────────────────────────────────────────────
-  if (car.onGround && car.vel > 3) {
-    const fw = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
+  // Ramp surface tracking: car pitches up as it climbs and launches at exit
+  car.onRamp = false;
+  if (car.onGround) {
     for (const ramp of _ramps) {
-      const toR = new THREE.Vector3().subVectors(ramp.pos, g.position);
-      toR.y = 0;
-      if (toR.length() < ramp.d * 0.55 + 3 && fw.dot(toR.clone().normalize()) > 0.4) {
-        car.vy       =  Math.abs(car.vel) * ramp.launchFactor * 1.15;
-        car.onGround = false;
-        car.pitchVel =  car.vy * 0.12;
-        car.rollVel  = (Math.random() - 0.5) * 1.5;
-        break;
+      const toEntry = new THREE.Vector3().subVectors(g.position, ramp.entryPos);
+      toEntry.y = 0;
+      const t = toEntry.dot(ramp.fwd) / ramp.d;
+      if (t >= -0.15 && t <= 1.08) {
+        const along       = ramp.fwd.clone().multiplyScalar(t * ramp.d);
+        const lateralDist = toEntry.clone().sub(along).setY(0).length();
+        if (lateralDist < ramp.w * 0.54) {
+          car.onRamp   = true;
+          const tc     = Math.max(0, Math.min(1, t));
+          g.position.y = ramp.baseY + tc * ramp.h;
+          car.groundY  = g.position.y;
+          car.pitch   += (ramp.angle - car.pitch) * Math.min(1, dt * 14);
+          if (t >= 1.0 && car.vel > 2) {
+            car.vy       =  car.vel * Math.sin(ramp.angle) * 1.1;
+            car.vel     *= Math.cos(ramp.angle);
+            car.onGround = false;
+            car.onRamp   = false;
+            car.pitchVel =  Math.abs(car.vel) * 0.09;
+            car.rollVel  = (Math.random() - 0.5) * 1.4;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // Shredder collision: touching spinning blade destroys car
+  if (!car.destroyed && car.onGround) {
+    for (const shr of _shredders) {
+      const shrR = shr.userData.radius || 3.2;
+      const dxz  = Math.hypot(g.position.x - shr.position.x, g.position.z - shr.position.z);
+      if (dxz < shrR + 1.4) {
+        _shredCar(car);
+        const ni = _cars.findIndex((c, i) => i !== _selCar && !c.destroyed);
+        if (ni >= 0) { _selCar = ni; updateHUD(); } else exitDrive();
+        return;
       }
     }
   }
@@ -1932,12 +2057,14 @@ function tickDrive(dt, camera) {
     car.rollVel  *= Math.pow(0.994, dt * 60);
     if (g.position.y <= gndY) {
       g.position.y = gndY;
+      const _impact = Math.abs(car.vy);
+      if (_impact > 5) _playCollisionAudio(_impact);
       car.vy = 0; car.onGround = true;
     }
   }
 
-  // ─── Self-righting on ground ──────────────────────────────────────────────
-  if (car.onGround) {
+  // ─── Self-righting on flat ground only (not on ramp slope) ────────────────
+  if (car.onGround && !car.onRamp) {
     g.position.y   = gndY;
     car.pitch += (0 - car.pitch) * dt * 3.5;
     car.roll  += (0 - car.roll ) * dt * 3.5;
@@ -1958,6 +2085,7 @@ function tickDrive(dt, camera) {
   camera.position.lerp(camTgt, Math.min(1, dt * 7));
   const lookPt   = g.position.clone().addScaledVector(fw, 8).add(new THREE.Vector3(0, 1.0, 0));
   camera.lookAt(lookPt);
+  _updateEngineAudio(car.vel, car.maxSpeed);
   updateHUD();
 }
 
@@ -2035,6 +2163,23 @@ function buildCar(color) {
   return g;
 }
 
+// ── Spinning shredder blade (placed at ramp gaps) ────────────────────────────
+function buildShredder(radius = 3.2) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xFF1400, metalness: 0.95, roughness: 0.05,
+    emissive: 0x880000, emissiveIntensity: 0.6,
+  });
+  const g = new THREE.Group();
+  for (let i = 0; i < 4; i++) {      // 4 crossed blades
+    const b = new THREE.Mesh(new THREE.BoxGeometry(radius * 2, 0.2, radius * 0.22), mat);
+    b.rotation.y = i * Math.PI / 4;
+    g.add(b);
+  }
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.38, 10), mat)); // hub
+  g.userData.radius = radius;
+  return g;
+}
+
 // ── Build Three.js scene from GTA scene data ──────────────────────────────────
 function buildScene(threeScene, data, carList = []) {
   const objs   = data.objects || [];
@@ -2060,12 +2205,21 @@ function buildScene(threeScene, data, carList = []) {
 
     // Collect physics data: ramps launch cars, last gate = finish target
     if (dim.ramp) {
-      const rfw = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const rfw  = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const rfwH = rfw.clone(); rfwH.y = 0; rfwH.normalize(); // horizontal only
       _ramps.push({
-        pos: pos.clone().addScaledVector(rfw, -dim.d * 0.3),
-        d: dim.d,
-        launchFactor: Math.sin(Math.atan2(dim.h, dim.d)),
+        entryPos: pos.clone().addScaledVector(rfwH, -dim.d * 0.5),
+        fwd: rfwH, d: dim.d, h: dim.h, w: dim.w,
+        angle: Math.atan2(dim.h, dim.d),
+        baseY: pos.y,
       });
+      // Spinning shredder blade in the gap before the ramp entry
+      const shrPos = pos.clone().addScaledVector(rfwH, -dim.d * 0.62);
+      shrPos.y = 0.4;
+      const shr = buildShredder(dim.w * 0.42);
+      shr.position.copy(shrPos);
+      threeScene.add(shr);
+      _shredders.push(shr);
     }
     if (dim.gate && gIdx === total - 1) {
       _finishPos = pos.clone();
@@ -2108,9 +2262,9 @@ function buildScene(threeScene, data, carList = []) {
       mesh = new THREE.Mesh(wedgeGeo(dim.w, dim.h, dim.d), mat);
       // Don't apply gta quaternion — the wedge is self-orienting along -Z
     } else {
-      // Platform
+      // Platform — extend depth slightly to close gaps between consecutive tiles
       const mat = new THREE.MeshStandardMaterial({ color, roughness:0.6, metalness:0.2 });
-      mesh = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h, dim.d), mat);
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h, dim.d + 0.5), mat);
       mesh.position.y = dim.h / 2; // sits on surface
     }
 
@@ -2206,7 +2360,10 @@ function destroyViewer() {
   for (const k in KEYS) delete KEYS[k];
   if (_driveMode) exitDrive();
   _cars = []; _selCar = -1; _driveControls = null;
-  _ramps = []; _finishPos = null;
+  _ramps = []; _finishPos = null; _shredders = [];
+  for (const f of _fragments) if (f.scn && f.mesh) f.scn.remove(f.mesh);
+  _fragments = [];
+  if (_audioCtx) { _audioCtx.close().catch(() => {}); _audioCtx = null; _engineOsc = null; _engineOsc2 = null; _engineGain = null; _engineFilter = null; }
 }
 
 function launchViewer(canvas, data) {
@@ -2246,7 +2403,7 @@ function launchViewer(canvas, data) {
   // Drive mode wiring
   _cars = []; _selCar = -1; _driveMode = false;
   _driveControls = controls;
-  _ramps = []; _finishPos = null;
+  _ramps = []; _finishPos = null; _shredders = []; _fragments = [];
 
   buildScene(scene, data, _cars);
 
@@ -2329,6 +2486,24 @@ function launchViewer(canvas, data) {
       tickDrive(dt, camera);
     } else {
       controls.update();
+    }
+    for (const shr of _shredders) shr.rotation.y += dt * 3.8;
+    // Animate car fragments
+    for (let i = _fragments.length - 1; i >= 0; i--) {
+      const f = _fragments[i];
+      f.life -= dt;
+      if (f.life <= 0) {
+        if (f.scn && f.mesh) f.scn.remove(f.mesh);
+        _fragments.splice(i, 1);
+      } else {
+        f.vel.y -= GRAVITY * dt;
+        f.mesh.position.addScaledVector(f.vel, dt);
+        f.mesh.rotation.x += f.avel.x * dt;
+        f.mesh.rotation.y += f.avel.y * dt;
+        f.mesh.rotation.z += f.avel.z * dt;
+        if (f.mesh.position.y < 0) { f.mesh.position.y = 0; f.vel.y *= -0.2; f.vel.x *= 0.7; f.vel.z *= 0.7; }
+        if (f.life < 0.6 && f.mesh.material) f.mesh.material.opacity = f.life / 0.6;
+      }
     }
     renderer.render(scene, camera);
   }

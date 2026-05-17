@@ -1,0 +1,17 @@
+Drop Kenney Racing Kit GLB files here.
+
+Run scripts/download-kenney-assets.sh to populate this folder automatically.
+
+Expected files (subset):
+  roadStraight.glb
+  roadStraightLong.glb
+  roadRamp.glb
+  roadRampLong.glb
+  overheadRound.glb
+  lightPostLarge.glb
+  barrierWhite.glb
+  roadStart.glb
+  ramp.glb
+  pylon.glb
+  flagCheckers.glb
+  ... (110 total from kenney.nl/assets/racing-kit, CC0)
