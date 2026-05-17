@@ -16,6 +16,11 @@ scripts/check-example-field.py
 scripts/verify-examples.py
 scripts/verify-openapi-examples.py
 .DS_Store
+# Kenney 3D model assets (CC0, regenerated via tools/gta-builder/scripts/download-kenney-assets.sh)
+tools/gta-builder/public/assets/kenney/racing/*.glb
+tools/gta-builder/public/assets/kenney/cars/*.glb
+# gta-builder video uploads
+tools/gta-builder/output/videos/
 # v86 upstream clone (regenerated locally; see third_party/v86/UPSTREAM.md)
 /third_party/v86/*
 !/third_party/v86/UPSTREAM.md

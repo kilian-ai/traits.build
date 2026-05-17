@@ -1651,6 +1651,88 @@ loadChallenges();
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ─── Kenney asset loader ─────────────────────────────────────────────────────
+const KR = '/assets/kenney/racing/';  // Racing Kit base URL
+const KC = '/assets/kenney/cars/';    // Car Kit base URL
+
+// Model registry: key → URL
+const KDEFS = {
+  road:     KR + 'roadStraight.glb',
+  roadLong: KR + 'roadStraightLong.glb',
+  ramp:     KR + 'roadRamp.glb',
+  rampLong: KR + 'roadRampLong.glb',
+  arch:     KR + 'overheadRound.glb',
+  light:    KR + 'lightPostLarge.glb',
+  barrier:  KR + 'barrierWhite.glb',
+  start:    KR + 'roadStart.glb',
+  carRace:  KC + 'race.glb',
+  carHatch: KC + 'hatchback-sports.glb',
+  carSedan: KC + 'sedan-sports.glb',
+  carSuv:   KC + 'suv.glb',
+};
+
+// Cache: key → { scene, size, boxMin, boxCenter } | null (null = 404/failed)
+const KCACHE = new Map();
+const _gltfLoader = new GLTFLoader();
+
+function kLoad(key) {
+  if (KCACHE.has(key)) return Promise.resolve(KCACHE.get(key));
+  const url = KDEFS[key];
+  if (!url) { KCACHE.set(key, null); return Promise.resolve(null); }
+  return new Promise(resolve => {
+    _gltfLoader.load(url, gltf => {
+      const sc = gltf.scene;
+      const box = new THREE.Box3().setFromObject(sc);
+      const size = new THREE.Vector3(); box.getSize(size);
+      const entry = { scene: sc, size, boxMin: box.min.clone(), boxCenter: new THREE.Vector3() };
+      box.getCenter(entry.boxCenter);
+      KCACHE.set(key, entry);
+      resolve(entry);
+    }, undefined, () => { KCACHE.set(key, null); resolve(null); });
+  });
+}
+
+async function kPreload(keys, onProgress) {
+  let n = 0;
+  await Promise.allSettled(keys.map(async k => { await kLoad(k); onProgress?.(++n, keys.length); }));
+}
+
+// Place a Kenney model at GTA position/rotation, scaled to targetW metres wide.
+// Returns a THREE.Group or null if model not loaded.
+function kPlace(key, targetW, pos, quat) {
+  const e = KCACHE.get(key);
+  if (!e) return null;
+  const outer = new THREE.Group();
+  outer.position.copy(pos);
+  outer.quaternion.copy(quat);
+  const s = targetW / Math.max(e.size.x, e.size.z, 0.01);
+  const inner = new THREE.Group();
+  inner.scale.setScalar(s);
+  // Centre X/Z and lift so model base sits at y=0
+  inner.position.set(-e.boxCenter.x * s, -e.boxMin.y * s, -e.boxCenter.z * s);
+  inner.add(e.scene.clone(true));
+  outer.add(inner);
+  return outer;
+}
+
+// Map a GTA scene object to the appropriate Kenney model key
+const VCARS = ['carRace', 'carHatch', 'carSedan', 'carSuv'];
+function kKey(obj) {
+  const t = obj.tags || [];
+  if (obj.type === 'vehicle') {
+    let h = 0; for (const c of (obj.id || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return VCARS[h % VCARS.length];
+  }
+  if (t.includes('ramp')) return t.includes('long') ? 'rampLong' : 'ramp';
+  if (t.includes('gate') || t.includes('arch')) return 'arch';
+  if (t.includes('light') || t.includes('worklight')) return 'light';
+  if (t.includes('barrier') || t.includes('rail')) return 'barrier';
+  const m = obj.model || '';
+  if (m.includes('long') || m.includes('pladge_01')) return 'roadLong';
+  return 'road';
+}
 
 // ── Model footprints (width × thickness × depth, in metres) ─────────────────
 const MODEL = {
@@ -1745,6 +1827,11 @@ function buildScene(threeScene, data) {
     const color = objColor(obj, gIdx, total);
     const pos   = p3(obj.position, C);
     const quat  = q3(obj.rotation);
+
+    // Try Kenney GLB first; fall back to procedural geometry if not downloaded
+    const km = kPlace(kKey(obj), dim.w, pos, quat);
+    if (km) { threeScene.add(km); continue; }
+
     let mesh;
 
     if (dim.gate) {
@@ -1925,6 +2012,8 @@ function buildLegend(data) {
 const backdrop = document.getElementById('viewer3d-backdrop');
 const canvas   = document.getElementById('v3d-canvas');
 
+const K_PRELOAD = ['road', 'roadLong', 'ramp', 'arch', 'light', 'carRace', 'carHatch', 'carSedan', 'carSuv'];
+
 window.addEventListener('gta:open3d', async (e) => {
   const id = e.detail.id;
   backdrop.style.display = 'flex';
@@ -1936,7 +2025,21 @@ window.addEventListener('gta:open3d', async (e) => {
       if (!r.ok) throw new Error(r.statusText);
       return r.json();
     });
-    document.getElementById('v3d-title').textContent = data.metadata?.title ?? '3D Preview';
+
+    const titleEl = document.getElementById('v3d-title');
+    titleEl.textContent = 'Loading 3D models…';
+
+    // Preload Kenney models in parallel; gracefully skips if assets not downloaded
+    await kPreload(K_PRELOAD, (n, total) => {
+      titleEl.textContent = `Loading models ${n}/${total}…`;
+    });
+
+    const kCount = [...KCACHE.values()].filter(Boolean).length;
+    const label  = data.metadata?.title ?? '3D Preview';
+    titleEl.textContent = kCount > 0
+      ? `${label} · ${kCount} Kenney models`
+      : `${label} · procedural (run scripts/download-kenney-assets.sh for 3D models)`;
+
     buildLegend(data);
     // Give the layout a frame to settle so canvas has real pixel dimensions
     requestAnimationFrame(() => launchViewer(canvas, data));
