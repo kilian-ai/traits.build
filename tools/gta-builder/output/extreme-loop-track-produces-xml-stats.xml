@@ -10,6 +10,11 @@
 -->
 <SpoonerPlacements>
   <SpawnPlayer>false</SpawnPlayer>
+  <ReferenceCoords>
+    <X>400.000000</X>
+    <Y>-800.000000</Y>
+    <Z>65.000000</Z>
+  </ReferenceCoords>
   <IPLs />
   <Entities>
     <!-- Group: Start Approach (4 objects) -->

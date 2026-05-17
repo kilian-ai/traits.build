@@ -147,6 +147,12 @@ export function exportMenyooXML(
 
   lines.push('<SpoonerPlacements>');
   lines.push('  <SpawnPlayer>false</SpawnPlayer>');
+  const sp = scene.params.startPosition;
+  lines.push('  <ReferenceCoords>');
+  lines.push(tagf('X', sp.x, 2));
+  lines.push(tagf('Y', sp.y, 2));
+  lines.push(tagf('Z', sp.z, 2));
+  lines.push('  </ReferenceCoords>');
   lines.push('  <IPLs />');
   lines.push('  <Entities>');
 
@@ -183,6 +189,41 @@ export function exportMenyooXML(
   lines.push('</SpoonerPlacements>');
 
   return lines.join('\n') + '\n';
+}
+
+// ─── Patch: inject ReferenceCoords into existing XML if missing ───────────────
+
+/**
+ * Given a Menyoo SpoonerPlacements XML string, ensures a <ReferenceCoords>
+ * block is present immediately after <SpawnPlayer>.
+ *
+ * Heuristic for coords when none exist:
+ *   Take the X/Y/Z from the first <Position> block in the file
+ *   (i.e. the first entity's world position, which is always the track start).
+ *
+ * Returns the (possibly modified) XML string, unchanged if already patched.
+ */
+export function injectReferenceCoords(xml: string): string {
+  // Already has it — nothing to do
+  if (/<ReferenceCoords>/i.test(xml)) return xml;
+
+  // Extract coords from the first <Position> block
+  const posMatch = xml.match(
+    /<Position>\s*<X>([-\d.]+)<\/X>\s*<Y>([-\d.]+)<\/Y>\s*<Z>([-\d.]+)<\/Z>\s*<\/Position>/i,
+  );
+  if (!posMatch) return xml; // can't determine coords — leave unchanged
+
+  const [, x, y, z] = posMatch;
+  const block = [
+    '  <ReferenceCoords>',
+    `    <X>${x}</X>`,
+    `    <Y>${y}</Y>`,
+    `    <Z>${z}</Z>`,
+    '  </ReferenceCoords>',
+  ].join('\n');
+
+  // Insert after <SpawnPlayer>...</SpawnPlayer>
+  return xml.replace(/(<SpawnPlayer>[^<]*<\/SpawnPlayer>)/, `$1\n${block}`);
 }
 
 // ─── Convenience: Scene → JSON ────────────────────────────────────────────────

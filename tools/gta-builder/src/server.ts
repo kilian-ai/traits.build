@@ -9,7 +9,7 @@
  */
 
 import express from 'express';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, readdirSync } from 'fs';
 import { resolve, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { zipSync, strToU8 } from 'fflate';
@@ -18,7 +18,7 @@ import OpenAI from 'openai';
 
 import { interpretPrompt } from './generators/prompt.js';
 import { generateStuntTrack, type TrackOptions } from './generators/stunt-track.js';
-import { exportMenyooXML, exportSceneJSON, getExportStats } from './export/menyoo.js';
+import { exportMenyooXML, exportSceneJSON, getExportStats, injectReferenceCoords } from './export/menyoo.js';
 import { validateScene } from './validate/index.js';
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
@@ -32,6 +32,19 @@ const INDEX_FILE = resolve(OUTPUT_DIR, '_index.json');
 
 mkdirSync(OUTPUT_DIR, { recursive: true });
 mkdirSync(VIDEOS_DIR, { recursive: true });
+
+// ─── Startup: patch existing XMLs missing ReferenceCoords ────────────────────
+{
+  let patched = 0;
+  for (const f of readdirSync(OUTPUT_DIR)) {
+    if (!f.endsWith('.xml')) continue;
+    const p        = resolve(OUTPUT_DIR, f);
+    const original = readFileSync(p, 'utf8');
+    const updated  = injectReferenceCoords(original);
+    if (updated !== original) { writeFileSync(p, updated, 'utf8'); patched++; }
+  }
+  if (patched > 0) console.log(`[gta-builder] patched ReferenceCoords into ${patched} existing XML file(s)`);
+}
 
 // Multer for video uploads
 const upload = multer({
@@ -266,7 +279,7 @@ app.get('/api/challenges/export', (_req, res) => {
   // Build a flat map of filename → Uint8Array for fflate
   const files: Record<string, Uint8Array> = {};
   for (const record of available) {
-    const xml = readFileSync(resolve(OUTPUT_DIR, record.xmlFile), 'utf8');
+    const xml = injectReferenceCoords(readFileSync(resolve(OUTPUT_DIR, record.xmlFile), 'utf8'));
     // Organise by difficulty folder inside the ZIP
     files[`${record.difficulty}/${record.xmlFile}`] = strToU8(xml);
   }

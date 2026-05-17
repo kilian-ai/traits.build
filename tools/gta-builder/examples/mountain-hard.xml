@@ -10,6 +10,11 @@
 -->
 <SpoonerPlacements>
   <SpawnPlayer>false</SpawnPlayer>
+  <ReferenceCoords>
+    <X>-102.500000</X>
+    <Y>4993.000000</Y>
+    <Z>500.000000</Z>
+  </ReferenceCoords>
   <IPLs />
   <Entities>
     <!-- Group: Racing Grid (10 objects) -->
