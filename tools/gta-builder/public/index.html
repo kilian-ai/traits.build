@@ -1809,6 +1809,10 @@ let _onKD = null, _onKU = null;
 let _audioCtx = null, _engineOsc = null, _engineOsc2 = null, _engineGain = null, _engineFilter = null;
 // Fragments from destroyed cars
 let _fragments = [];
+// Raycast ground detection
+let _gRay = null;
+let _groundObjects = [];
+let _groundCollected = false;
 
 // Physics constants
 const GRAVITY    = 22;    // m/s² — punchier than real for arcade feel
@@ -2002,37 +2006,34 @@ function tickDrive(dt, camera) {
   }
 
   // ─── Ramp proximity launch ────────────────────────────────────────────────
-  // Ramp surface tracking: car pitches up as it climbs and launches at exit
-  car.onRamp = false;
-  if (car.onGround) {
-    for (const ramp of _ramps) {
-      const toEntry = new THREE.Vector3().subVectors(g.position, ramp.entryPos);
-      toEntry.y = 0;
-      const t = toEntry.dot(ramp.fwd) / ramp.d;
-      if (t >= -0.15 && t <= 1.08) {
-        const along       = ramp.fwd.clone().multiplyScalar(t * ramp.d);
-        const lateralDist = toEntry.clone().sub(along).setY(0).length();
-        if (lateralDist < ramp.w * 0.54) {
-          car.onRamp   = true;
-          const tc     = Math.max(0, Math.min(1, t));
-          g.position.y = ramp.baseY + tc * ramp.h;
-          car.groundY  = g.position.y;
-          car.pitch   += (ramp.angle - car.pitch) * Math.min(1, dt * 14);
-          if (t >= 1.0 && car.vel > 2) {
-            car.vy       =  car.vel * Math.sin(ramp.angle) * 1.1;
-            car.vel     *= Math.cos(ramp.angle);
-            car.onGround = false;
-            car.onRamp   = false;
-            car.pitchVel =  Math.abs(car.vel) * 0.09;
-            car.rollVel  = (Math.random() - 0.5) * 1.4;
-          }
-          break;
-        }
-      }
-    }
+  // First drive-frame: collect all static ground meshes for raycasting
+  if (!_groundCollected && g.parent) {
+    const _excl = new Set();
+    _cars.forEach(c => c.group.traverse(m => { if (m.isMesh) _excl.add(m); }));
+    _shredders.forEach(s => s.traverse(m => { if (m.isMesh) _excl.add(m); }));
+    _groundObjects = [];
+    g.parent.traverse(m => { if (m.isMesh && !_excl.has(m)) _groundObjects.push(m); });
+    _groundCollected = true;
   }
 
-  // Shredder collision: touching spinning blade destroys car
+  // Raycast downward: find ground height + surface normal under the car
+  if (!_gRay) _gRay = new THREE.Raycaster();
+  _gRay.far = Math.max(15, g.position.y + 10);
+  _gRay.set(new THREE.Vector3(g.position.x, g.position.y + 3, g.position.z),
+            new THREE.Vector3(0, -1, 0));
+  const _hits    = _gRay.intersectObjects(_groundObjects, false);
+  let   gndY     = 0;
+  let   gndNrm   = new THREE.Vector3(0, 1, 0);
+  if (_hits.length) {
+    gndY = _hits[0].point.y;
+    if (_hits[0].face)
+      gndNrm = _hits[0].face.normal.clone()
+        .transformDirection(_hits[0].object.matrixWorld).normalize();
+  }
+  const fwdH      = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
+  const slopePitch = Math.atan2(-gndNrm.dot(fwdH), gndNrm.y);
+
+  // Shredder collision
   if (!car.destroyed && car.onGround) {
     for (const shr of _shredders) {
       const shrR = shr.userData.radius || 3.2;
@@ -2047,8 +2048,28 @@ function tickDrive(dt, camera) {
   }
 
   // ─── Vertical physics (gravity + tumble in air) ───────────────────────────
-  const gndY = car.groundY ?? 0;
-  if (!car.onGround) {
+  // Vertical + slope physics
+  if (car.onGround) {
+    if (g.position.y > gndY + 0.35) {
+      // Ran off ledge or ramp exit: go airborne
+      car.onGround = false;
+      if ((car.lastSlope ?? 0) > 0.07 && car.vel > 2) {
+        car.vy       =  car.vel * Math.sin(car.lastSlope) * 1.05;
+        car.vel     *=  Math.cos(car.lastSlope);
+        car.pitchVel =  Math.abs(car.vel) * 0.08;
+        car.rollVel  = (Math.random() - 0.5) * 1.4;
+      } else {
+        car.vy = 0;
+      }
+    } else {
+      g.position.y  = gndY;
+      car.groundY   = gndY;
+      car.lastSlope = slopePitch;
+      car.pitch    += (slopePitch - car.pitch) * Math.min(1, dt * 12);
+      car.roll     += (0 - car.roll) * dt * 3.5;
+      if (Math.abs(car.roll) < 0.003) car.roll = 0;
+    }
+  } else {
     car.vy       -= GRAVITY * dt;
     g.position.y += car.vy * dt;
     car.pitch    += car.pitchVel * dt;
@@ -2057,19 +2078,12 @@ function tickDrive(dt, camera) {
     car.rollVel  *= Math.pow(0.994, dt * 60);
     if (g.position.y <= gndY) {
       g.position.y = gndY;
-      const _impact = Math.abs(car.vy);
-      if (_impact > 5) _playCollisionAudio(_impact);
+      car.groundY  = gndY;
+      const impact = Math.abs(car.vy);
+      if (impact > 5) _playCollisionAudio(impact);
       car.vy = 0; car.onGround = true;
+      car.pitchVel *= 0.1; car.rollVel *= 0.1;
     }
-  }
-
-  // ─── Self-righting on flat ground only (not on ramp slope) ────────────────
-  if (car.onGround && !car.onRamp) {
-    g.position.y   = gndY;
-    car.pitch += (0 - car.pitch) * dt * 3.5;
-    car.roll  += (0 - car.roll ) * dt * 3.5;
-    if (Math.abs(car.pitch) < 0.003) car.pitch = 0;
-    if (Math.abs(car.roll)  < 0.003) car.roll  = 0;
   }
 
   // ─── Horizontal forward movement ─────────────────────────────────────────
@@ -2363,6 +2377,7 @@ function destroyViewer() {
   _ramps = []; _finishPos = null; _shredders = [];
   for (const f of _fragments) if (f.scn && f.mesh) f.scn.remove(f.mesh);
   _fragments = [];
+  _groundObjects = []; _groundCollected = false;
   if (_audioCtx) { _audioCtx.close().catch(() => {}); _audioCtx = null; _engineOsc = null; _engineOsc2 = null; _engineGain = null; _engineFilter = null; }
 }
 
@@ -2404,6 +2419,7 @@ function launchViewer(canvas, data) {
   _cars = []; _selCar = -1; _driveMode = false;
   _driveControls = controls;
   _ramps = []; _finishPos = null; _shredders = []; _fragments = [];
+  _groundObjects = []; _groundCollected = false;
 
   buildScene(scene, data, _cars);
 
