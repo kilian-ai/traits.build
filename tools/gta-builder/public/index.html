@@ -2580,6 +2580,7 @@ let _recorder   = null;
 let _recChunks  = [];
 let _isRecording = false;
 let _recDestNode = null;  // MediaStreamAudioDestinationNode for audio mix
+let _viewerId   = null;   // id of challenge currently open in viewer
 
 function startRecording() {
   if (_isRecording || !_renderer) return;
@@ -2622,7 +2623,7 @@ async function _onRecordingStop() {
   _recorder = null;
   if (!chunks.length) return;
   const blob = new Blob(chunks, { type: chunks[0].type || 'video/webm' });
-  const id   = activeId;
+  const id   = _viewerId;
   if (!id) { toast('No challenge selected — recording discarded', 'err'); return; }
   try {
     const fd = new FormData();
@@ -2652,6 +2653,7 @@ function destroyViewer() {
   _groundObjects = []; _groundCollected = false;
   if (_audioCtx) { _audioCtx.close().catch(() => {}); _audioCtx = null; _engineOsc = null; _engineOsc2 = null; _engineGain = null; _engineFilter = null; }
   if (_isRecording) stopRecording();
+  _viewerId = null;
 }
 
 function launchViewer(canvas, data) {
@@ -2856,6 +2858,7 @@ const K_PRELOAD = [
 
 window.addEventListener('gta:open3d', async (e) => {
   const id = e.detail.id;
+  _viewerId = id;
   backdrop.style.display = 'flex';
   document.getElementById('v3d-title').textContent = 'Loading…';
   document.getElementById('v3d-legend').innerHTML  = '';
