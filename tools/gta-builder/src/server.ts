@@ -50,13 +50,6 @@ mkdirSync(VIDEOS_DIR, { recursive: true });
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('video/') || file.mimetype === 'application/octet-stream') {
-      cb(null, true);
-    } else {
-      cb(new Error('Only video files are allowed'));
-    }
-  },
 });
 
 // OpenAI client (lazy — only instantiated when OPENAI_API_KEY is set)
