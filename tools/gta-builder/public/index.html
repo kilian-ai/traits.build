@@ -2107,17 +2107,26 @@ function tickDrive(dt, camera) {
   const fwdH      = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
   const slopePitch = Math.atan2(-gndNrm.dot(fwdH), gndNrm.y);
 
-  // Shredder collision — fling car away, no destruction
-  if (!car.destroyed && car.onGround) {
+  // Shredder collision — fires whether car is on ground or flying through blades
+  if (!car.destroyed) {
     for (const shr of _shredders) {
-      const shrR = shr.userData.radius || 3.2;
-      const dxz  = Math.hypot(g.position.x - shr.position.x, g.position.z - shr.position.z);
-      if (dxz < shrR + 1.4) {
-        car.vy       = 16 + Math.abs(car.vel) * 0.6;   // upward launch
-        car.vel      = -(Math.abs(car.vel) * 0.5 + 8); // bounce backward
+      const sDiscR   = shr.userData.discR   ?? 2.8;
+      const sAxleY   = shr.userData.axleY   ?? (sDiscR * 0.6);
+      const sGap     = shr.userData.gapHalf ?? 1.8;
+      const sZHalf   = shr.userData.radius  ?? 4.0;
+      const toothR   = sDiscR * 1.28;          // disc + tooth tip reach
+      const hitXHalf = sGap + toothR;          // X reach from shredder centre
+      const hitYTop  = shr.position.y + sAxleY + toothR; // top of blade sweep
+      const hitYBot  = shr.position.y - 0.1;  // at/below ground
+      const dx = Math.abs(g.position.x - shr.position.x);
+      const dz = Math.abs(g.position.z - shr.position.z);
+      const cy = g.position.y;
+      if (dx < hitXHalf && dz < sZHalf && cy > hitYBot && cy < hitYTop) {
+        car.vy       = 16 + Math.abs(car.vel) * 0.6;
+        car.vel      = -(Math.abs(car.vel) * 0.5 + 8);
         car.onGround = false;
         car.autoMode = false;
-        car.yaw     += (Math.random() - 0.5) * 0.9;    // slight spin-off yaw
+        car.yaw     += (Math.random() - 0.5) * 0.9;
         _playCollisionAudio(38);
         break;
       }
@@ -2325,9 +2334,12 @@ function buildShredder(_roadWidth = 20, scale = 1) {
     axles.push({ spinGroup, spinDir: ai === 0 ? 1 : -1 });
   }
 
-  // Z half-extent as XZ collision radius
-  g.userData.radius = (nDiscs - 1) * discStep / 2 + 1.0;
-  g.userData.axles  = axles;
+  // Collision geometry stored for drive-mode hit test
+  g.userData.radius  = (nDiscs - 1) * discStep / 2 + 1.0; // Z half-extent
+  g.userData.discR   = discR;    // disc radius (grows with scale)
+  g.userData.axleY   = axleY;    // shaft height above group origin
+  g.userData.gapHalf = gapHalf;  // X offset of each shaft from centre
+  g.userData.axles   = axles;
   return g;
 }
 
