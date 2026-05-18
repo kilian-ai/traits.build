@@ -448,6 +448,8 @@
     width: 100% !important;
     height: 100% !important;
   }
+  #v3d-rec-badge { color:#ff3b30; font-size:12px; font-weight:700; letter-spacing:.05em; animation: recblink 1s step-start infinite; }
+  @keyframes recblink { 50% { opacity:0; } }
   #v3d-hint {
     text-align: center;
     font-size: 11px;
@@ -725,6 +727,8 @@
     <div id="viewer3d-header">
       <span id="v3d-title">3D Track Preview</span>
       <div id="v3d-legend"></div>
+      <span id="v3d-rec-badge" title="Recording…" style="display:none">⏺ REC</span>
+      <span id="v3d-rec-badge" title="Recording…" style="display:none">⏺ REC</span>
       <button id="v3d-drive-btn" title="Toggle drive mode (F)">🚗 Drive</button>
       <button id="v3d-close" title="Close">✕</button>
     </div>
@@ -736,7 +740,7 @@
         <span id="v3d-hud-keys">WASD · Tab: next · F: exit</span>
       </div>
     </div>
-    <div id="v3d-hint">drag to rotate &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; right-drag to pan &nbsp;·&nbsp; F = drive mode</div>
+    <div id="v3d-hint">drag to rotate &nbsp;·&nbsp; scroll to zoom &nbsp;·&nbsp; right-drag to pan &nbsp;·&nbsp; F = drive mode &nbsp;·&nbsp; R = record</div>
   </div>
 </div>
 
@@ -2571,6 +2575,66 @@ function buildScene(threeScene, data, carList = []) {
   threeScene.add(grid);
 }
 
+// ── Canvas recorder (R key toggle) ──────────────────────────────────────────
+let _recorder   = null;
+let _recChunks  = [];
+let _isRecording = false;
+let _recDestNode = null;  // MediaStreamAudioDestinationNode for audio mix
+
+function startRecording() {
+  if (_isRecording || !_renderer) return;
+  const canvas = _renderer.domElement;
+  // Canvas stream at 30 fps
+  const stream = canvas.captureStream(30);
+  // Mix engine audio into recording if AudioContext is running
+  if (_audioCtx && _engineGain) {
+    try {
+      _recDestNode = _audioCtx.createMediaStreamDestination();
+      _engineGain.connect(_recDestNode);
+      _recDestNode.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    } catch (_) { _recDestNode = null; }
+  }
+  _recChunks = [];
+  // Prefer vp9/opus; fall back to vp8 or browser default
+  const mime = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']
+    .find(m => MediaRecorder.isTypeSupported(m)) || '';
+  _recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+  _recorder.ondataavailable = e => { if (e.data.size > 0) _recChunks.push(e.data); };
+  _recorder.onstop = _onRecordingStop;
+  _recorder.start(200);
+  _isRecording = true;
+  document.getElementById('v3d-rec-badge').style.display = '';
+}
+
+function stopRecording() {
+  if (!_isRecording || !_recorder) return;
+  _recorder.stop();
+  _isRecording = false;
+  document.getElementById('v3d-rec-badge').style.display = 'none';
+  if (_recDestNode && _engineGain) {
+    try { _engineGain.disconnect(_recDestNode); } catch (_) {}
+    _recDestNode = null;
+  }
+}
+
+async function _onRecordingStop() {
+  const chunks = _recChunks.splice(0);
+  _recorder = null;
+  if (!chunks.length) return;
+  const blob = new Blob(chunks, { type: chunks[0].type || 'video/webm' });
+  const id   = activeId;
+  if (!id) { toast('No challenge selected — recording discarded', 'err'); return; }
+  try {
+    const fd = new FormData();
+    fd.append('video', blob, 'recording.webm');
+    const resp = await fetch(`/api/challenges/${id}/video`, { method: 'POST', body: fd });
+    if (!resp.ok) throw new Error(await resp.text());
+    toast(`⏺ Recording saved to “${id}”`, 'ok');
+  } catch (e) {
+    toast('Failed to save recording: ' + e.message, 'err');
+  }
+}
+
 // ── Renderer state ────────────────────────────────────────────────────────────
 let _renderer = null, _raf = null, _ro = null;
 function destroyViewer() {
@@ -2587,6 +2651,7 @@ function destroyViewer() {
   _fragments = [];
   _groundObjects = []; _groundCollected = false;
   if (_audioCtx) { _audioCtx.close().catch(() => {}); _audioCtx = null; _engineOsc = null; _engineOsc2 = null; _engineGain = null; _engineFilter = null; }
+  if (_isRecording) stopRecording();
 }
 
 function launchViewer(canvas, data) {
@@ -2689,6 +2754,7 @@ function launchViewer(canvas, data) {
     KEYS[e.code] = true;
     if (e.code === 'KeyF') { _driveMode ? exitDrive() : enterDrive(); }
     if (e.code === 'KeyP') { if (_driveMode) exitDrive(); togglePres(); }
+    if (e.code === 'KeyR' && !e.repeat) { _isRecording ? stopRecording() : startRecording(); }
     if (e.code === 'Escape' && (_driveMode || _presMode)) { exitDrive(); if (_presMode) togglePres(); }
     if (e.code === 'Tab'    && _driveMode) { e.preventDefault(); cycleCar(); }
     if (e.code === 'KeyA'   && _driveMode && !e.repeat) {
