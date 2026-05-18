@@ -1414,7 +1414,7 @@ async function openVideoModal(id) {
 function closeVideoModal() {
   $videoBackdrop.classList.remove('show');
   $videoPlayer.pause();
-  pauseAllSegments();
+  _pauseActive();
 }
 
 document.getElementById('btn-video').onclick = () => activeId && openVideoModal(activeId);
@@ -1446,6 +1446,8 @@ async function uploadVideo() {
     }
     _hasVideo = true;
     toast('Video saved', 'ok');
+    // Switch to server URL so the player uses the persisted file
+    $videoPlayer.src = `/api/challenges/${activeId}/video?t=${Date.now()}`;
   } catch (e) {
     toast(`Upload failed: ${e.message}`, 'err');
   }
@@ -2632,7 +2634,10 @@ async function _onRecordingStop() {
     fd.append('video', blob, 'recording.webm');
     const resp = await fetch(`/api/challenges/${id}/video`, { method: 'POST', body: fd });
     if (!resp.ok) throw new Error(await resp.text());
-    toast(`⏺ Recording saved to “${id}”`, 'ok');
+    toast(`⏺ Recording saved — opening video player…`, 'ok');
+    // Auto-open the video modal so the user sees their recording immediately
+    if (typeof window.openVideoModal === 'function') window.openVideoModal(id);
+    if (typeof window.openVideoModal === 'function') window.openVideoModal(id);
   } catch (e) {
     toast('Failed to save recording: ' + e.message, 'err');
   }
