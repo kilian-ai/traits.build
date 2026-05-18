@@ -2526,6 +2526,27 @@ function buildScene(threeScene, data, carList = []) {
     threeScene.add(arrow);
   }
 
+  // ── Default drive car: spawned when scene has no vehicles ─────────────────
+  if (!carList.length) {
+    const sp    = data.params?.startPosition;
+    // Place 15 units past the start in GTA +Y = Three.js -Z
+    const spGTA = sp
+      ? { x: sp.x, y: sp.y + 15, z: sp.z + 0.5 }
+      : { x: C.x,  y: C.y - 200, z: C.z + 0.5 };
+    const spPos = p3(spGTA, C);
+    spPos.y = 0.5;          // just above road surface
+    const defCar = buildCar(0x2277EE);
+    defCar.position.copy(spPos);
+    threeScene.add(defCar);
+    carList.push({
+      group: defCar, vel: 0, id: 'default-car',
+      vy: 0, onGround: true, yaw: 0, pitch: 0, roll: 0,
+      pitchVel: 0, rollVel: 0, autoMode: false,
+      groundY: spPos.y, wpIdx: 0,
+      ..._carProfile(''),
+    });
+  }
+
   // Ground grid
   const grid = new THREE.GridHelper(1000, 100, 0x1e1e3a, 0x14142a);
   grid.position.y = -0.05;
