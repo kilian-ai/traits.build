@@ -1468,6 +1468,19 @@ async function analyzeVideo() {
   $btnComm.disabled = true;
   $videoResults.className = 'empty';
   $videoResults.innerHTML = 'Extracting frames…';
+
+  // WebM from MediaRecorder has no duration tag — pre-resolve it so extractFrames works.
+  if (!isFinite($videoPlayer.duration) || $videoPlayer.duration <= 0) {
+    $spinTxt.textContent = 'Reading video length…';
+    $videoResults.innerHTML = 'Reading video length (seeking to end)…';
+    await new Promise((res, rej) => {
+      const onS = () => { $videoPlayer.removeEventListener('seeked', onS); res(); };
+      $videoPlayer.addEventListener('seeked', onS);
+      $videoPlayer.currentTime = 1e9;
+    });
+    $spinTxt.textContent = 'Extracting frames…';
+    $videoResults.innerHTML = 'Extracting frames…';
+  }
   
   try {
     // ── Phase 1: Extract & analyze frames ───────────────────────────────────
@@ -1603,42 +1616,62 @@ function extractFrames(video, intervalSecs) {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
+
+    function runExtraction(duration) {
+      // Scale down: max 480px wide for smaller payloads (high enough for vision model)
+      const scale = Math.min(1, 480 / video.videoWidth);
+      canvas.width  = Math.round(video.videoWidth  * scale) || 480;
+      canvas.height = Math.round(video.videoHeight * scale) || 270;
+
+      const times = [];
+      for (let t = 0; t < duration; t += intervalSecs) {
+        times.push(Math.min(t, duration - 0.1));
+      }
+      if (times.length === 0) return resolve([]);
+
+      const frames = [];
+      let i = 0;
+
+      video.onseeked = () => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Use low JPEG quality (0.4) to minimise payload
+        frames.push({ time: times[i], dataUrl: canvas.toDataURL('image/jpeg', 0.4) });
+        i++;
+        if (i >= times.length) resolve(frames);
+        else video.currentTime = times[i];
+      };
+
+      video.onerror = () => reject(new Error('Video error during frame extraction'));
+      video.currentTime = times[0];
+    }
+
     const duration = video.duration;
-    
-    if (!isFinite(duration) || duration <= 0) {
-      return reject(new Error('Video duration unknown — wait for it to fully load'));
+    if (isFinite(duration) && duration > 0) {
+      runExtraction(duration);
+    } else {
+      // WebM files recorded via MediaRecorder don't carry duration metadata, so
+      // video.duration is Infinity.  If a prior seek-to-end already ran (e.g. from
+      // analyzeVideo), seekable.end() holds the real duration.  Otherwise seek now.
+      const fromSeekable = video.seekable.length > 0
+        ? video.seekable.end(video.seekable.length - 1)
+        : NaN;
+      if (isFinite(fromSeekable) && fromSeekable > 0) {
+        runExtraction(fromSeekable);
+      } else {
+        const onDurSeek = () => {
+          video.removeEventListener('seeked', onDurSeek);
+          const realDur = video.seekable.length > 0
+            ? video.seekable.end(video.seekable.length - 1)
+            : NaN;
+          if (!isFinite(realDur) || realDur <= 0) {
+            return reject(new Error('Cannot determine video duration — try re-uploading'));
+          }
+          runExtraction(realDur);
+        };
+        video.addEventListener('seeked', onDurSeek);
+        video.currentTime = 1e9; // clamps to EOF, populates seekable range
+      }
     }
-    
-    // Scale down: max 480px wide for smaller payloads (high enough for vision model)
-    const scale = Math.min(1, 480 / video.videoWidth);
-    canvas.width  = Math.round(video.videoWidth  * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    
-    const times = [];
-    for (let t = 0; t < duration; t += intervalSecs) {
-      times.push(Math.min(t, duration - 0.1));
-    }
-    
-    const frames = [];
-    let i = 0;
-    
-    function seekNext() {
-      if (i >= times.length) return resolve(frames);
-      video.currentTime = times[i];
-    }
-    
-    video.onseeked = () => {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      // Use low JPEG quality (0.4) to minimize payload
-      frames.push({ time: times[i], dataUrl: canvas.toDataURL('image/jpeg', 0.4) });
-      i++;
-      seekNext();
-    };
-    
-    video.onerror = (e) => reject(new Error('Video error during frame extraction'));
-    
-    // Start seeking
-    seekNext();
   });
 }
 
