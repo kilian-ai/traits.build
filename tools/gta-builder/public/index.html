@@ -2385,7 +2385,7 @@ function buildScene(threeScene, data, carList = []) {
       });
       _shredderIdx++;
       // Spinning shredder blade in the landing gap — far enough past the ramp exit
-      const shrPos = pos.clone().addScaledVector(rfwH, dim.d * 1.5);
+      const shrPos = pos.clone().addScaledVector(rfwH, dim.d * 2.5);
       shrPos.y = 0.4;
       const shr = buildShredder(dim.w, shrScale);
       shr.position.copy(shrPos);
