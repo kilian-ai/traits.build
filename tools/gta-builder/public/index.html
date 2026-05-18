@@ -2354,19 +2354,25 @@ function buildScene(threeScene, data, carList = []) {
     // Try Kenney GLB first; fall back to procedural geometry if not downloaded
     const km = kPlace(kKey(obj), dim.w, pos, quat);
 
+    // rampScale > 1 for later jumps — used below for both physics and mesh
+    let rampScale = 1;
+
     // Collect physics data: ramps launch cars, last gate = finish target
     if (dim.ramp) {
       const rfw  = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
       const rfwH = rfw.clone(); rfwH.y = 0; rfwH.normalize(); // horizontal only
+      // Shredder and ramp grow together: same progressive scale
+      const shrScale = 1 + _shredderIdx * 0.25;  // 1.0 → 2.5 for shredders 0-6
+      rampScale = shrScale;
+      const scaledH = dim.h * rampScale;
       _ramps.push({
         entryPos: pos.clone().addScaledVector(rfwH, -dim.d * 0.5),
-        fwd: rfwH, d: dim.d, h: dim.h, w: dim.w,
-        angle: Math.atan2(dim.h, dim.d),
+        fwd: rfwH, d: dim.d, h: scaledH, w: dim.w,
+        angle: Math.atan2(scaledH, dim.d),
         baseY: pos.y,
       });
-      // Spinning shredder blade in the landing gap — far enough past the ramp exit
-      const shrScale = 1 + _shredderIdx * 0.25;  // 1.0 → 2.5 for shredders 0-6
       _shredderIdx++;
+      // Spinning shredder blade in the landing gap — far enough past the ramp exit
       const shrPos = pos.clone().addScaledVector(rfwH, dim.d * 1.5);
       shrPos.y = 0.4;
       const shr = buildShredder(dim.w, shrScale);
@@ -2396,7 +2402,7 @@ function buildScene(threeScene, data, carList = []) {
       continue;
     }
 
-    if (km) { threeScene.add(km); continue; }
+    if (km) { if (rampScale !== 1) km.scale.y *= rampScale; threeScene.add(km); continue; }
 
     let mesh;
 
@@ -2412,7 +2418,7 @@ function buildScene(threeScene, data, carList = []) {
       mesh = new THREE.Group(); mesh.add(pole, bulb);
     } else if (dim.ramp) {
       const mat = new THREE.MeshStandardMaterial({ color, roughness:0.5, metalness:0.25, side:THREE.DoubleSide });
-      mesh = new THREE.Mesh(wedgeGeo(dim.w, dim.h, dim.d), mat);
+      mesh = new THREE.Mesh(wedgeGeo(dim.w, dim.h * rampScale, dim.d), mat);
       // Don't apply gta quaternion — the wedge is self-orienting along -Z
     } else {
       // Platform — extend depth slightly to close gaps between consecutive tiles
