@@ -2580,6 +2580,7 @@ let _recorder   = null;
 let _recChunks  = [];
 let _isRecording = false;
 let _recDestNode = null;  // MediaStreamAudioDestinationNode for audio mix
+let _recMime    = 'video/webm'; // mime type captured at recording start
 let _viewerId   = null;   // id of challenge currently open in viewer
 
 function startRecording() {
@@ -2598,8 +2599,9 @@ function startRecording() {
   _recChunks = [];
   // Prefer vp9/opus; fall back to vp8 or browser default
   const mime = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']
-    .find(m => MediaRecorder.isTypeSupported(m)) || '';
-  _recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+    .find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+  _recMime = mime;
+  _recorder = new MediaRecorder(stream, { mimeType: mime });
   _recorder.ondataavailable = e => { if (e.data.size > 0) _recChunks.push(e.data); };
   _recorder.onstop = _onRecordingStop;
   _recorder.start(200);
@@ -2622,7 +2624,7 @@ async function _onRecordingStop() {
   const chunks = _recChunks.splice(0);
   _recorder = null;
   if (!chunks.length) return;
-  const blob = new Blob(chunks, { type: chunks[0].type || 'video/webm' });
+  const blob = new Blob(chunks, { type: _recMime });
   const id   = _viewerId;
   if (!id) { toast('No challenge selected — recording discarded', 'err'); return; }
   try {
