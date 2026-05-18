@@ -9,7 +9,7 @@
  */
 
 import express from 'express';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, readdirSync, openSync, readSync, closeSync } from 'fs';
 import { resolve, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { zipSync, strToU8 } from 'fflate';
@@ -345,6 +345,31 @@ app.delete('/api/challenges/:id', (req, res) => {
   saveIndex(records);
   res.json({ ok: true });
 });
+// ─── Video helpers ──────────────────────────────────────────────────────────
+
+/** Detect content-type from first 4 bytes (EBML magic = WebM/MKV). */
+function detectVideoType(buf: Buffer): 'video/webm' | 'video/mp4' {
+  if (buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3)
+    return 'video/webm';
+  return 'video/mp4';
+}
+
+/** Find the stored video file for a challenge (checks .webm then .mp4). */
+function findVideoFile(dir: string): { path: string; type: 'video/webm' | 'video/mp4' } | null {
+  const webm = resolve(dir, 'video.webm');
+  const mp4  = resolve(dir, 'video.mp4');
+  if (existsSync(webm)) return { path: webm, type: 'video/webm' };
+  if (existsSync(mp4))  {
+    // Legacy file: detect actual type by magic bytes
+    const hdr = Buffer.alloc(4);
+    const fd2 = openSync(mp4, 'r');
+    readSync(fd2, hdr, 0, 4, 0);
+    closeSync(fd2);
+    return { path: mp4, type: detectVideoType(hdr) };
+  }
+  return null;
+}
+
 // ─── API: Video Upload ───────────────────────────────────────────────────────
 
 app.post('/api/challenges/:id/video', upload.single('video'), (req, res) => {
@@ -358,10 +383,18 @@ app.post('/api/challenges/:id/video', upload.single('video'), (req, res) => {
     const challengeVideoDir = resolve(VIDEOS_DIR, req.params.id);
     mkdirSync(challengeVideoDir, { recursive: true });
 
-    const videoPath = resolve(challengeVideoDir, 'video.mp4');
-    writeFileSync(videoPath, req.file.buffer);
+    // Detect actual format so the file gets the right extension & is served correctly
+    const isWebm = req.file.mimetype.startsWith('video/webm') ||
+      detectVideoType(req.file.buffer) === 'video/webm';
+    const filename  = isWebm ? 'video.webm' : 'video.mp4';
+    const videoPath = resolve(challengeVideoDir, filename);
 
-    res.json({ ok: true, filename: 'video.mp4' });
+    // Remove old file with opposite extension if it exists
+    const oldPath = resolve(challengeVideoDir, isWebm ? 'video.mp4' : 'video.webm');
+    if (existsSync(oldPath)) { try { unlinkSync(oldPath); } catch { /* ignore */ } }
+
+    writeFileSync(videoPath, req.file.buffer);
+    res.json({ ok: true, filename });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: String(err) });
@@ -371,17 +404,17 @@ app.post('/api/challenges/:id/video', upload.single('video'), (req, res) => {
 // ─── API: Get Video Asset (stream) ───────────────────────────────────────────
 
 app.get('/api/challenges/:id/video', (req, res) => {
-  const videoPath = resolve(VIDEOS_DIR, req.params.id, 'video.mp4');
-  if (!existsSync(videoPath)) { res.status(404).json({ error: 'No video' }); return; }
-  res.setHeader('Content-Type', 'video/mp4');
-  res.sendFile(videoPath);
+  const found = findVideoFile(resolve(VIDEOS_DIR, req.params.id));
+  if (!found) { res.status(404).json({ error: 'No video' }); return; }
+  res.setHeader('Content-Type', found.type);
+  res.sendFile(found.path);
 });
 
 // ─── API: Get persisted Video state (analysis + commentary + hasVideo) ───────
 
 app.get('/api/challenges/:id/video/state', (req, res) => {
   const dir = resolve(VIDEOS_DIR, req.params.id);
-  const videoPath        = resolve(dir, 'video.mp4');
+  const videoFound       = findVideoFile(dir);
   const analysisPath     = resolve(dir, 'analysis.json');
   const commentaryPath   = resolve(dir, 'commentary.txt');
   const segmentsPath     = resolve(dir, 'commentary.json');
@@ -393,7 +426,7 @@ app.get('/api/challenges/:id/video/state', (req, res) => {
     segments: { time: number; timestamp: string; text: string; hasAudio: boolean }[] | null;
   } = { hasVideo: false, consolidated: null, commentary: null, segments: null };
 
-  if (existsSync(videoPath)) state.hasVideo = true;
+  if (videoFound) state.hasVideo = true;
   if (existsSync(analysisPath)) {
     try { state.consolidated = JSON.parse(readFileSync(analysisPath, 'utf8')); } catch { /* ignore */ }
   }
