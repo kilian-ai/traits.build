@@ -1800,9 +1800,13 @@ let _driveMode = false;
 let _cars      = [];   // [{ group, vel, id, vy, onGround, yaw, pitch, roll, pitchVel, rollVel, autoMode, maxSpeed, accel, brake, groundY }]
 let _selCar    = -1;
 let _driveControls = null;
+let _presMode = false;   // P = presentation orbit
+let _presCar  = 0;
+let _presAngle = 0;
 let _finishPos  = null;   // THREE.Vector3 of finish gate (auto-drive target)
 let _ramps      = [];     // [{ pos, d, launchFactor }]
 let _shredders  = [];     // spinning blade meshes (animated every tick)
+let _shredderIdx = 0;    // incremented per ramp; drives progressive shredder scale
 const KEYS = {};
 let _onKD = null, _onKU = null;
 // Audio
@@ -1813,6 +1817,8 @@ let _fragments = [];
 let _gRay = null;
 let _groundObjects = [];
 let _groundCollected = false;
+// Autopilot waypoints (ordered from start to finish)
+let _autoWaypoints = [];
 
 // Physics constants
 const GRAVITY    = 22;    // m/s² — punchier than real for arcade feel
@@ -1888,26 +1894,36 @@ function _shredCar(car) {
   car.destroyed = true;
   const scn = car.group.parent;
   if (scn) scn.remove(car.group);
-  const pos  = car.group.position.clone();
-  const cols = [0xFF3300, 0xFF8800, 0xCC4400, 0xFF6600, 0xFFAA00, 0x884400];
-  for (let i = 0; i < 14; i++) {
+  const pos = car.group.position.clone();
+  // Metal shards: silver/dark-metal with a few crimson chunks
+  const cols = [0xAAAAAA, 0x888888, 0x555555, 0x333333, 0xDDDDDD, 0xBB1100, 0x881100, 0x999999];
+  const perpX = Math.sin(-car.yaw + Math.PI / 2);
+  const perpZ = Math.cos(-car.yaw + Math.PI / 2);
+  for (let i = 0; i < 28; i++) {
     const mat = new THREE.MeshStandardMaterial({
-      color: cols[i % cols.length], metalness: 0.7, roughness: 0.3, transparent: true, opacity: 1,
+      color: cols[i % cols.length], metalness: 0.85, roughness: 0.25, transparent: true, opacity: 1,
     });
-    const w = Math.random()*1.1+0.3, h = Math.random()*0.5+0.2, dd = Math.random()*1.6+0.4;
+    // Flat thin shards — not round blobs
+    const w  = Math.random() * 1.1 + 0.12;
+    const h  = Math.random() * 0.12 + 0.04;
+    const dd = Math.random() * 1.4 + 0.15;
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), mat);
-    mesh.position.copy(pos).add(new THREE.Vector3((Math.random()-0.5)*3, Math.random()*2, (Math.random()-0.5)*3));
+    mesh.position.copy(pos).add(
+      new THREE.Vector3((Math.random()-0.5)*2, Math.random()*1.0+0.1, (Math.random()-0.5)*2));
     mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
     if (scn) scn.add(mesh);
+    // Spray mostly sideways (perpendicular) like grinder output
+    const side = (Math.random() - 0.5) * 2;
     _fragments.push({
       mesh, scn,
       vel: new THREE.Vector3(
-        (Math.random()-0.5)*24 + Math.cos(-car.yaw)*car.vel,
-        Math.random()*18 + 5,
-        (Math.random()-0.5)*24 + Math.sin(-car.yaw)*car.vel,
+        perpX * side * 18 + (Math.random()-0.5) * 5,
+        Math.random() * 8 + 1,
+        perpZ * side * 18 + (Math.random()-0.5) * 5,
       ),
-      avel: new THREE.Vector3((Math.random()-0.5)*13,(Math.random()-0.5)*13,(Math.random()-0.5)*13),
-      life: 2.8,
+      avel: new THREE.Vector3(
+        (Math.random()-0.5)*22, (Math.random()-0.5)*22, (Math.random()-0.5)*22),
+      life: 2.0,
     });
   }
   _playCollisionAudio(38);
@@ -1938,7 +1954,7 @@ function exitDrive() {
   const hint = document.getElementById('v3d-hint');
   if (btn)  { btn.classList.remove('active'); btn.textContent = '🚗 Drive'; }
   if (hud)  hud.style.display = 'none';
-  if (hint) hint.textContent  = 'drag to rotate · scroll to zoom · right-drag to pan  ·  F = drive mode';
+  if (hint) hint.textContent  = 'drag to rotate · scroll to zoom · right-drag to pan  ·  F = drive mode  ·  P = presentation';
 }
 
 function cycleCar() {
@@ -1948,6 +1964,13 @@ function cycleCar() {
 }
 
 function updateHUD() {
+  if (_presMode) {
+    const carEl   = document.getElementById('v3d-hud-car');
+    const speedEl = document.getElementById('v3d-hud-speed');
+    if (carEl)   carEl.textContent   = `Car ${_presCar + 1} / ${_cars.length}  ·  presentation`;
+    if (speedEl) speedEl.textContent = `P: exit`;
+    return;
+  }
   if (_selCar < 0 || !_cars[_selCar]) return;
   const car    = _cars[_selCar];
   const kmh    = Math.round(Math.abs(car.vel || 0) * 3.6);
@@ -1958,6 +1981,48 @@ function updateHUD() {
   const speedEl = document.getElementById('v3d-hud-speed');
   if (carEl)   carEl.textContent   = `Car ${_selCar + 1} / ${_cars.length}  ·  top ${topKmh} km/h${auto}`;
   if (speedEl) speedEl.textContent = `${kmh} km/h${dir}`;
+}
+
+// Presentation-mode orbit: slow camera pan around each car in turn
+const PRES_SPD = 0.28;  // rad/s — ~22 s per full orbit
+const PRES_RAD = 13;    // orbit radius (units)
+const PRES_H   = 5.5;   // camera height above car centre
+function tickPres(dt, camera) {
+  if (!_cars.length) { _presMode = false; return; }
+  if (_presCar >= _cars.length) _presCar = 0;
+  const g      = _cars[_presCar].group;
+  const target = g.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+  _presAngle  += PRES_SPD * dt;
+  const _nextCar = Math.floor(_presAngle / (Math.PI * 0.5)) % _cars.length;
+  if (_nextCar !== _presCar) {
+    _presCar = _nextCar;
+    updateHUD();
+  }
+  const dest = new THREE.Vector3(
+    target.x + Math.sin(_presAngle) * PRES_RAD,
+    target.y + PRES_H,
+    target.z + Math.cos(_presAngle) * PRES_RAD,
+  );
+  camera.position.lerp(dest, Math.min(1, dt * 2.5));
+  camera.lookAt(target);
+}
+function togglePres() {
+  _presMode = !_presMode;
+  const hud  = document.getElementById('v3d-hud');
+  const hint = document.getElementById('v3d-hint');
+  if (_presMode) {
+    if (_driveMode) exitDrive();
+    _presCar   = 0;
+    _presAngle = 0;
+    if (_driveControls) _driveControls.enabled = false;
+    if (hud)  hud.style.display = 'flex';
+    if (hint) hint.textContent  = 'Presentation mode  ·  P = exit';
+    updateHUD();
+  } else {
+    if (_driveControls) _driveControls.enabled = true;
+    if (hud)  hud.style.display = 'none';
+    if (hint) hint.textContent  = 'drag to rotate · scroll to zoom · right-drag to pan  ·  F = drive mode  ·  P = presentation';
+  }
 }
 
 function tickDrive(dt, camera) {
@@ -1978,7 +2043,7 @@ function tickDrive(dt, camera) {
     car.vel += keyFwd  * car.accel * dt * gc;
     car.vel -= keyBack * car.brake * dt * gc;
   }
-  car.vel *= Math.pow(CAR_FRIC, dt * 60);
+  if (!keyFwd && !car.autoMode) car.vel *= Math.pow(CAR_FRIC, dt * 60);
   car.vel  = Math.max(-car.maxSpeed * 0.3, Math.min(car.maxSpeed, car.vel));
   if (Math.abs(car.vel) < 0.04 && !keyFwd && !keyBack && !car.autoMode) car.vel = 0;
 
@@ -1992,15 +2057,24 @@ function tickDrive(dt, camera) {
   // ─── Auto-pilot: accelerate + steer toward finish ─────────────────────────
   if (car.autoMode) {
     if (car.vel < car.maxSpeed * 0.85) car.vel += car.accel * dt;
-    if (_finishPos && car.onGround) {
-      const toT = new THREE.Vector3().subVectors(_finishPos, g.position);
-      toT.y = 0;
-      if (toT.length() > 2) {
-        toT.normalize();
-        const fw  = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
-        const crs = fw.z * toT.x - fw.x * toT.z; // signed Y of (fw × toT)
-        const sf  = Math.min(1, Math.abs(car.vel) / 8);
-        car.yaw  += Math.sign(crs) * Math.min(1, Math.abs(crs) * 2.5) * STEER_RATE * sf * dt;
+    if (car.onGround && _autoWaypoints.length) {
+      // Advance past waypoint when within reach radius
+      const _wp = _autoWaypoints[car.wpIdx];
+      if (_wp) {
+        const _dxz = Math.hypot(g.position.x - _wp.x, g.position.z - _wp.z);
+        if (_dxz < 5) car.wpIdx = (car.wpIdx + 1) % _autoWaypoints.length;
+      }
+      const _tgt = _autoWaypoints[car.wpIdx] || _finishPos;
+      if (_tgt) {
+        const toT = new THREE.Vector3().subVectors(_tgt, g.position);
+        toT.y = 0;
+        if (toT.length() > 1.5) {
+          toT.normalize();
+          const fw  = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
+          const crs = fw.z * toT.x - fw.x * toT.z;
+          const sf  = Math.min(1, Math.abs(car.vel) / 6);
+          car.yaw  += Math.sign(crs) * Math.min(1, Math.abs(crs) * 4) * STEER_RATE * sf * dt;
+        }
       }
     }
   }
@@ -2033,16 +2107,19 @@ function tickDrive(dt, camera) {
   const fwdH      = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
   const slopePitch = Math.atan2(-gndNrm.dot(fwdH), gndNrm.y);
 
-  // Shredder collision
+  // Shredder collision — fling car away, no destruction
   if (!car.destroyed && car.onGround) {
     for (const shr of _shredders) {
       const shrR = shr.userData.radius || 3.2;
       const dxz  = Math.hypot(g.position.x - shr.position.x, g.position.z - shr.position.z);
       if (dxz < shrR + 1.4) {
-        _shredCar(car);
-        const ni = _cars.findIndex((c, i) => i !== _selCar && !c.destroyed);
-        if (ni >= 0) { _selCar = ni; updateHUD(); } else exitDrive();
-        return;
+        car.vy       = 16 + Math.abs(car.vel) * 0.6;   // upward launch
+        car.vel      = -(Math.abs(car.vel) * 0.5 + 8); // bounce backward
+        car.onGround = false;
+        car.autoMode = false;
+        car.yaw     += (Math.random() - 0.5) * 0.9;    // slight spin-off yaw
+        _playCollisionAudio(38);
+        break;
       }
     }
   }
@@ -2105,11 +2182,13 @@ function tickDrive(dt, camera) {
 
 // ── Model footprints (width × thickness × depth, in metres) ─────────────────
 const MODEL = {
-  prop_mp_short_pladge_01: { w:8,   h:0.45, d:8  },
-  prop_mp_long_pladge_01:  { w:8,   h:0.45, d:16 },
-  prop_racing_ramp_02:     { w:8,   h:3,    d:10, ramp:true  },
-  prop_start_gate_01:      { w:14,  h:7,    d:1.5,gate:true  },
-  prop_worklight_02c:      { w:0.4, h:3.5,  d:0.4,light:true },
+  prop_mp_short_pladge_01:  { w:8,   h:0.45, d:12 },
+  prop_mp_long_pladge_01:   { w:8,   h:0.45, d:30 },
+  prop_racing_ramp_02:      { w:20,  h:3,    d:10, ramp:true  },
+  prop_ramp_adj_flip_mb:    { w:20,  h:4,    d:12, ramp:true  },
+  prop_ramp_adj_flip_mb3:   { w:20,  h:5.5,  d:14, ramp:true  },
+  prop_start_gate_01:       { w:14,  h:7,    d:1.5,gate:true  },
+  prop_worklight_02c:       { w:0.4, h:3.5,  d:0.4,light:true },
 };
 const DEFAULT_DIM = { w:2, h:1.2, d:4.5 };
 
@@ -2177,20 +2256,78 @@ function buildCar(color) {
   return g;
 }
 
-// ── Spinning shredder blade (placed at ramp gaps) ────────────────────────────
-function buildShredder(radius = 3.2) {
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0xFF1400, metalness: 0.95, roughness: 0.05,
-    emissive: 0x880000, emissiveIntensity: 0.6,
+// ── Industrial shredder: two parallel Z-axis shafts with spinning disc blades ─────
+// Shafts run along the road (Z). Discs rotate around the shaft (Z axis).
+// Gap between the two shafts — car must jump OVER; if it falls short it lands
+// in the gap and gets flung by the spinning disc teeth.
+function buildShredder(_roadWidth = 20, scale = 1) {
+  const discMat = new THREE.MeshStandardMaterial({
+    color: 0xBB1800, metalness: 0.92, roughness: 0.10,
+    emissive: 0x550000, emissiveIntensity: 0.45,
   });
+  const axleMat = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.96, roughness: 0.04 });
   const g = new THREE.Group();
-  for (let i = 0; i < 4; i++) {      // 4 crossed blades
-    const b = new THREE.Mesh(new THREE.BoxGeometry(radius * 2, 0.2, radius * 0.22), mat);
-    b.rotation.y = i * Math.PI / 4;
-    g.add(b);
+
+  const nDiscs    = Math.min(12, 7 + Math.round((scale - 1) * 3));  // 7 → 12 as scale 1→2.5
+  const discR     = 2.8 * scale;   // disc radius grows with scale
+  const discThick = 0.26 * scale;
+  const discStep  = 1.40;          // Z spacing between discs on same shaft (constant)
+  const nTeeth    = 10;
+  const toothL    = discR * 0.28;
+  const toothW    = (2 * Math.PI * discR / nTeeth) * 0.52;
+  const gapHalf   = 1.8 * Math.sqrt(scale);  // shafts spread apart on bigger shredders
+  const axleY     = discR * 0.6;   // shaft height above shredder group origin
+  const axleLen   = (nDiscs - 1) * discStep + discThick + 1.0;
+  const axles     = [];
+
+  for (let ai = 0; ai < 2; ai++) {
+    // axleGroup: translated to shaft position, does NOT rotate
+    const axleGroup = new THREE.Group();
+    axleGroup.position.set((ai === 0 ? -1 : 1) * gapHalf, axleY, 0);
+
+    // spinGroup: what we increment .rotation.z each tick
+    const spinGroup = new THREE.Group();
+
+    // tiltGroup: static 90° X-tilt so that local Y → world Z
+    // → CylinderGeometry (Y-axis) naturally lies along world Z
+    // → disc faces are in world XY (vertical)
+    // → disc positions along local Y = positions along world Z ✓
+    const tiltGroup = new THREE.Group();
+    tiltGroup.rotation.x = Math.PI / 2;
+
+    // Shaft (CylinderGeometry Y-axis in tiltGroup local = world Z)
+    tiltGroup.add(new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.13, axleLen, 10), axleMat));
+
+    // Discs stacked along tiltGroup local Y (= world Z)
+    for (let di = 0; di < nDiscs; di++) {
+      const phaseOff = di % 2 === 0 ? 0 : Math.PI / nTeeth;
+      const disc = new THREE.Group();
+      disc.add(new THREE.Mesh(
+        new THREE.CylinderGeometry(discR, discR, discThick, 28), discMat));
+      for (let ti = 0; ti < nTeeth; ti++) {
+        const a = (ti / nTeeth) * Math.PI * 2 + phaseOff;
+        const tooth = new THREE.Mesh(
+          new THREE.BoxGeometry(toothW, discThick * 1.1, toothL), discMat);
+        tooth.position.set(
+          Math.sin(a) * (discR + toothL / 2), 0,
+          Math.cos(a) * (discR + toothL / 2));
+        tooth.rotation.y = -a;
+        disc.add(tooth);
+      }
+      disc.position.y = (di - (nDiscs - 1) / 2) * discStep;  // local Y = world Z
+      tiltGroup.add(disc);
+    }
+
+    spinGroup.add(tiltGroup);
+    axleGroup.add(spinGroup);
+    g.add(axleGroup);
+    axles.push({ spinGroup, spinDir: ai === 0 ? 1 : -1 });
   }
-  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.38, 10), mat)); // hub
-  g.userData.radius = radius;
+
+  // Z half-extent as XZ collision radius
+  g.userData.radius = (nDiscs - 1) * discStep / 2 + 1.0;
+  g.userData.axles  = axles;
   return g;
 }
 
@@ -2227,10 +2364,12 @@ function buildScene(threeScene, data, carList = []) {
         angle: Math.atan2(dim.h, dim.d),
         baseY: pos.y,
       });
-      // Spinning shredder blade in the gap before the ramp entry
-      const shrPos = pos.clone().addScaledVector(rfwH, -dim.d * 0.62);
+      // Spinning shredder blade in the landing gap — far enough past the ramp exit
+      const shrScale = 1 + _shredderIdx * 0.25;  // 1.0 → 2.5 for shredders 0-6
+      _shredderIdx++;
+      const shrPos = pos.clone().addScaledVector(rfwH, dim.d * 1.5);
       shrPos.y = 0.4;
-      const shr = buildShredder(dim.w * 0.42);
+      const shr = buildShredder(dim.w, shrScale);
       shr.position.copy(shrPos);
       threeScene.add(shr);
       _shredders.push(shr);
@@ -2251,7 +2390,7 @@ function buildScene(threeScene, data, carList = []) {
         group: carGroup, vel: 0, id: obj.id,
         vy: 0, onGround: true, yaw: _initYaw, pitch: 0, roll: 0,
         pitchVel: 0, rollVel: 0, autoMode: false,
-        groundY: carGroup.position.y,
+        groundY: carGroup.position.y, wpIdx: 0,
         ..._prof,
       });
       continue;
@@ -2284,6 +2423,36 @@ function buildScene(threeScene, data, carList = []) {
 
     mesh.position.add(pos);
     threeScene.add(mesh);
+  }
+
+  // ── Autopilot waypoints: one per group (centroid), in scene/track order ────
+  _autoWaypoints = [];
+  for (const _grp of groups) {
+    // Only road-surface objects: skip vehicles, lights, gates
+    const _gObjs = objs.filter(o =>
+      o.groupId === _grp.id &&
+      o.type !== 'vehicle' &&
+      !(MODEL[o.model]?.light) &&
+      !(MODEL[o.model]?.gate)
+    );
+    if (!_gObjs.length) continue;
+    // If group contains a ramp, add entry + apex waypoints for it
+    const _rampO = _gObjs.find(o => (MODEL[o.model] || DEFAULT_DIM).ramp);
+    if (_rampO) {
+      const _rp = p3(_rampO.position, C);
+      const _rq = q3(_rampO.rotation);
+      const _rf = new THREE.Vector3(0, 0, -1).applyQuaternion(_rq);
+      _rf.y = 0; _rf.normalize();
+      const _rd = (MODEL[_rampO.model] || DEFAULT_DIM).d;
+      _autoWaypoints.push(_rp.clone().addScaledVector(_rf, -_rd * 0.45));
+      _autoWaypoints.push(_rp.clone().addScaledVector(_rf,  _rd * 0.55));
+    } else {
+      // Centroid of all platform objects in this group
+      const _ax = _gObjs.reduce((s, o) => s + o.position.x, 0) / _gObjs.length;
+      const _ay = _gObjs.reduce((s, o) => s + o.position.y, 0) / _gObjs.length;
+      const _az = _gObjs.reduce((s, o) => s + o.position.z, 0) / _gObjs.length;
+      _autoWaypoints.push(p3({ x: _ax, y: _ay, z: _az }, C));
+    }
   }
 
   // ── Decorative scatter ─────────────────────────────────────────────
@@ -2374,7 +2543,7 @@ function destroyViewer() {
   for (const k in KEYS) delete KEYS[k];
   if (_driveMode) exitDrive();
   _cars = []; _selCar = -1; _driveControls = null;
-  _ramps = []; _finishPos = null; _shredders = [];
+  _ramps = []; _finishPos = null; _shredders = []; _shredderIdx = 0;
   for (const f of _fragments) if (f.scn && f.mesh) f.scn.remove(f.mesh);
   _fragments = [];
   _groundObjects = []; _groundCollected = false;
@@ -2418,8 +2587,8 @@ function launchViewer(canvas, data) {
   // Drive mode wiring
   _cars = []; _selCar = -1; _driveMode = false;
   _driveControls = controls;
-  _ramps = []; _finishPos = null; _shredders = []; _fragments = [];
-  _groundObjects = []; _groundCollected = false;
+  _ramps = []; _finishPos = null; _shredders = []; _fragments = []; _shredderIdx = 0;
+  _groundObjects = []; _groundCollected = false; _autoWaypoints = [];
 
   buildScene(scene, data, _cars);
 
@@ -2480,10 +2649,24 @@ function launchViewer(canvas, data) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
     KEYS[e.code] = true;
     if (e.code === 'KeyF') { _driveMode ? exitDrive() : enterDrive(); }
-    if (e.code === 'Escape' && _driveMode) exitDrive();
+    if (e.code === 'KeyP') { if (_driveMode) exitDrive(); togglePres(); }
+    if (e.code === 'Escape' && (_driveMode || _presMode)) { exitDrive(); if (_presMode) togglePres(); }
     if (e.code === 'Tab'    && _driveMode) { e.preventDefault(); cycleCar(); }
     if (e.code === 'KeyA'   && _driveMode && !e.repeat) {
-      if (_cars[_selCar]) { _cars[_selCar].autoMode = !_cars[_selCar].autoMode; updateHUD(); }
+      if (_cars[_selCar]) {
+        const _ac = _cars[_selCar];
+        _ac.autoMode = !_ac.autoMode;
+        if (_ac.autoMode && _autoWaypoints.length) {
+          let _bi = 0, _bd = Infinity;
+          const _gp = _ac.group.position;
+          for (let _wi = 0; _wi < _autoWaypoints.length; _wi++) {
+            const _wd2 = Math.hypot(_gp.x - _autoWaypoints[_wi].x, _gp.z - _autoWaypoints[_wi].z);
+            if (_wd2 < _bd) { _bd = _wd2; _bi = _wi; }
+          }
+          _ac.wpIdx = _bi;
+        }
+        updateHUD();
+      }
     }
   };
   _onKU = e => { KEYS[e.code] = false; };
@@ -2498,12 +2681,16 @@ function launchViewer(canvas, data) {
   function tick() {
     _raf = requestAnimationFrame(tick);
     const dt = Math.min(clock.getDelta(), 0.1);
-    if (_driveMode) {
+    if (_presMode) {
+      tickPres(dt, camera);
+    } else if (_driveMode) {
       tickDrive(dt, camera);
     } else {
       controls.update();
     }
-    for (const shr of _shredders) shr.rotation.y += dt * 3.8;
+    // Spinning shredder shafts
+    for (const shr of _shredders)
+      for (const a of (shr.userData.axles || [])) a.spinGroup.rotation.z += a.spinDir * dt * 3.5;
     // Animate car fragments
     for (let i = _fragments.length - 1; i >= 0; i--) {
       const f = _fragments[i];

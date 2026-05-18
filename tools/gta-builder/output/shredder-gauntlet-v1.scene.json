@@ -1,20 +1,20 @@
 {
   "metadata": {
-    "title": "Stunt Track — easy / straight",
-    "description": "Procedural stunt track with 6 jump sections, initial gap 15m → 30m max gap, desert biome.",
-    "seed": 1002,
+    "title": "Shredder Gauntlet — 7 Progressive Jumps",
+    "description": "7 hand-crafted jump sections with industrial shredders in each gap. Gaps grow from 30 m to 130 m; ramps escalate from racing to flip. Track length: 1510 m.",
+    "seed": 77777777,
     "generatorType": "stunt-track",
-    "generatedAt": "2026-05-15T16:35:44.059Z",
-    "generatorVersion": "0.1.0",
-    "prompt": "Easy desert beginner course with recovery zones"
+    "generatedAt": "2026-05-18T03:30:36.415Z",
+    "generatorVersion": "0.2.0",
+    "prompt": "Handcrafted 7-jump shredder gauntlet, progressive difficulty"
   },
   "params": {
-    "seed": 1002,
-    "biome": "desert",
+    "seed": 77777777,
+    "biome": "urban",
     "layout": "straight",
-    "difficulty": "easy",
+    "difficulty": "extreme",
     "density": "medium",
-    "length": 400,
+    "length": 1510,
     "startPosition": {
       "x": 2200,
       "y": 3500,
@@ -22,19 +22,19 @@
     },
     "heading": 0,
     "features": {
-      "ramps": false,
+      "ramps": true,
       "pits": false,
       "barriers": false,
       "vehicles": false,
       "lights": false,
-      "checkpoints": false,
+      "checkpoints": true,
       "loops": false,
       "boostPads": false
     },
     "progression": {
-      "gapGrowth": 0.3,
-      "heightGrowth": 0.18,
-      "recoveryZones": true,
+      "gapGrowth": 1,
+      "heightGrowth": 1,
+      "recoveryZones": false,
       "speedBuildup": true
     },
     "style": {
@@ -42,302 +42,12 @@
       "symmetric": false,
       "neon": false,
       "military": false,
-      "chaos": 0.15
+      "chaos": 0
     }
   },
   "objects": [
     {
-      "id": "obj_0002",
-      "type": "vehicle",
-      "model": "comet2",
-      "position": {
-        "x": 2197.5,
-        "y": 3493,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-1"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0003",
-      "type": "vehicle",
-      "model": "vagner",
-      "position": {
-        "x": 2202.5,
-        "y": 3493,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-1"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0004",
-      "type": "vehicle",
-      "model": "elegy2",
-      "position": {
-        "x": 2197.5,
-        "y": 3486,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-2"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0005",
-      "type": "vehicle",
-      "model": "t20",
-      "position": {
-        "x": 2202.5,
-        "y": 3486,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-2"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0006",
-      "type": "vehicle",
-      "model": "adder",
-      "position": {
-        "x": 2197.5,
-        "y": 3479,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-3"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0007",
-      "type": "vehicle",
-      "model": "carbonizzare",
-      "position": {
-        "x": 2202.5,
-        "y": 3479,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-3"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0008",
-      "type": "vehicle",
-      "model": "jester",
-      "position": {
-        "x": 2197.5,
-        "y": 3472,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-4"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0009",
-      "type": "vehicle",
-      "model": "banshee",
-      "position": {
-        "x": 2202.5,
-        "y": 3472,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-4"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0010",
-      "type": "vehicle",
-      "model": "buccaneer",
-      "position": {
-        "x": 2197.5,
-        "y": 3465,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-5"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0011",
-      "type": "vehicle",
-      "model": "tampa",
-      "position": {
-        "x": 2202.5,
-        "y": 3465,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "vehicle",
-        "vehicle",
-        "grid",
-        "racer",
-        "row-5"
-      ],
-      "groupId": "grp_0001"
-    },
-    {
-      "id": "obj_0013",
+      "id": "obj_0001",
       "type": "prop",
       "model": "prop_start_gate_01",
       "position": {
@@ -363,10 +73,10 @@
         "finish",
         "arch"
       ],
-      "groupId": "grp_0012"
+      "groupId": "grp_0001"
     },
     {
-      "id": "obj_0014",
+      "id": "obj_0002",
       "type": "prop",
       "model": "prop_mp_long_pladge_01",
       "position": {
@@ -386,15 +96,15 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "long",
-        "approach"
+        "approach",
+        "platform",
+        "long"
       ],
-      "groupId": "grp_0012"
+      "groupId": "grp_0001"
     },
     {
-      "id": "obj_0015",
+      "id": "obj_0003",
       "type": "prop",
       "model": "prop_mp_long_pladge_01",
       "position": {
@@ -414,17 +124,17 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "long",
-        "approach"
+        "approach",
+        "platform",
+        "long"
       ],
-      "groupId": "grp_0012"
+      "groupId": "grp_0001"
     },
     {
-      "id": "obj_0016",
+      "id": "obj_0004",
       "type": "prop",
-      "model": "prop_mp_short_pladge_01",
+      "model": "prop_mp_long_pladge_01",
       "position": {
         "x": 2200,
         "y": 3561,
@@ -442,20 +152,20 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "long"
       ],
-      "groupId": "grp_0012"
+      "groupId": "grp_0001"
     },
     {
-      "id": "obj_0017",
+      "id": "obj_0005",
       "type": "prop",
-      "model": "prop_mp_short_pladge_01",
+      "model": "prop_mp_long_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3573,
+        "y": 3591,
         "z": 33
       },
       "rotation": {
@@ -470,12 +180,383 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "approach",
+        "platform",
+        "long"
+      ],
+      "groupId": "grp_0001"
+    },
+    {
+      "id": "obj_0006",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3621,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0007",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3633,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0008",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3645,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0009",
+      "type": "prop",
+      "model": "prop_racing_ramp_02",
+      "position": {
+        "x": 2200,
+        "y": 3657,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "stunt",
+        "racing",
+        "medium"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0010",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3698,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0012"
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0011",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3710,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0012",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3722,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0013",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3734,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0014",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3746,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0015",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3758,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0016",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3770,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0017",
+      "type": "prop",
+      "model": "prop_racing_ramp_02",
+      "position": {
+        "x": 2200,
+        "y": 3782,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "stunt",
+        "racing",
+        "medium"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0018",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 3835,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0003"
     },
     {
       "id": "obj_0019",
@@ -483,7 +564,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3585,
+        "y": 3847,
         "z": 33
       },
       "rotation": {
@@ -498,12 +579,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0018"
+      "groupId": "grp_0003"
     },
     {
       "id": "obj_0020",
@@ -511,7 +593,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3597,
+        "y": 3859,
         "z": 33
       },
       "rotation": {
@@ -526,20 +608,21 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0018"
+      "groupId": "grp_0003"
     },
     {
       "id": "obj_0021",
       "type": "prop",
-      "model": "prop_racing_ramp_02",
+      "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3609,
+        "y": 3871,
         "z": 33
       },
       "rotation": {
@@ -554,12 +637,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "ramp",
-        "jump",
-        "racing",
-        "medium"
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
       ],
-      "groupId": "grp_0018"
+      "groupId": "grp_0003"
     },
     {
       "id": "obj_0022",
@@ -567,7 +651,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3634,
+        "y": 3883,
         "z": 33
       },
       "rotation": {
@@ -582,12 +666,12 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0018"
+      "groupId": "grp_0004"
     },
     {
       "id": "obj_0023",
@@ -595,7 +679,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3646,
+        "y": 3895,
         "z": 33
       },
       "rotation": {
@@ -610,20 +694,20 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0018"
+      "groupId": "grp_0004"
     },
     {
-      "id": "obj_0025",
+      "id": "obj_0024",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3658,
+        "y": 3907,
         "z": 33
       },
       "rotation": {
@@ -638,12 +722,42 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0024"
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0025",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb",
+      "position": {
+        "x": 2200,
+        "y": 3919,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "stunt",
+        "flip",
+        "large",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0004"
     },
     {
       "id": "obj_0026",
@@ -651,7 +765,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3670,
+        "y": 3986,
         "z": 33
       },
       "rotation": {
@@ -666,20 +780,21 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0024"
+      "groupId": "grp_0004"
     },
     {
       "id": "obj_0027",
       "type": "prop",
-      "model": "prop_racing_ramp_02",
+      "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3682,
+        "y": 3998,
         "z": 33
       },
       "rotation": {
@@ -694,12 +809,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "ramp",
-        "jump",
-        "racing",
-        "medium"
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
       ],
-      "groupId": "grp_0024"
+      "groupId": "grp_0004"
     },
     {
       "id": "obj_0028",
@@ -707,7 +823,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3707.9,
+        "y": 4010,
         "z": 33
       },
       "rotation": {
@@ -722,12 +838,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0024"
+      "groupId": "grp_0004"
     },
     {
       "id": "obj_0029",
@@ -735,7 +852,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3719.9,
+        "y": 4022,
         "z": 33
       },
       "rotation": {
@@ -750,20 +867,21 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0024"
+      "groupId": "grp_0004"
     },
     {
       "id": "obj_0030",
       "type": "prop",
-      "model": "prop_mp_long_pladge_01",
+      "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3731.9,
+        "y": 4034,
         "z": 33
       },
       "rotation": {
@@ -778,12 +896,40 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "long",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0024"
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0031",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4046,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0005"
     },
     {
       "id": "obj_0032",
@@ -791,7 +937,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3761.9,
+        "y": 4058,
         "z": 33
       },
       "rotation": {
@@ -806,12 +952,12 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0031"
+      "groupId": "grp_0005"
     },
     {
       "id": "obj_0033",
@@ -819,7 +965,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3773.9,
+        "y": 4070,
         "z": 33
       },
       "rotation": {
@@ -834,20 +980,20 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0031"
+      "groupId": "grp_0005"
     },
     {
       "id": "obj_0034",
       "type": "prop",
-      "model": "prop_racing_ramp_02",
+      "model": "prop_ramp_adj_flip_mb",
       "position": {
         "x": 2200,
-        "y": 3785.9,
+        "y": 4082,
         "z": 33
       },
       "rotation": {
@@ -864,10 +1010,12 @@
       "tags": [
         "ramp",
         "jump",
-        "racing",
-        "medium"
+        "stunt",
+        "flip",
+        "large",
+        "cunning-stunts"
       ],
-      "groupId": "grp_0031"
+      "groupId": "grp_0005"
     },
     {
       "id": "obj_0035",
@@ -875,7 +1023,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3812.7000000000003,
+        "y": 4164,
         "z": 33
       },
       "rotation": {
@@ -890,12 +1038,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0031"
+      "groupId": "grp_0005"
     },
     {
       "id": "obj_0036",
@@ -903,7 +1052,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3824.7000000000003,
+        "y": 4176,
         "z": 33
       },
       "rotation": {
@@ -918,12 +1067,42 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0031"
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0037",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4188,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0005"
     },
     {
       "id": "obj_0038",
@@ -931,7 +1110,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3836.7000000000003,
+        "y": 4200,
         "z": 33
       },
       "rotation": {
@@ -946,12 +1125,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0037"
+      "groupId": "grp_0005"
     },
     {
       "id": "obj_0039",
@@ -959,7 +1139,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3848.7000000000003,
+        "y": 4212,
         "z": 33
       },
       "rotation": {
@@ -974,20 +1154,20 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0037"
+      "groupId": "grp_0006"
     },
     {
       "id": "obj_0040",
       "type": "prop",
-      "model": "prop_racing_ramp_02",
+      "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3860.7000000000003,
+        "y": 4224,
         "z": 33
       },
       "rotation": {
@@ -1002,12 +1182,12 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "ramp",
-        "jump",
-        "racing",
-        "medium"
+        "road",
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0037"
+      "groupId": "grp_0006"
     },
     {
       "id": "obj_0041",
@@ -1015,7 +1195,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3888.4,
+        "y": 4236,
         "z": 33
       },
       "rotation": {
@@ -1030,12 +1210,12 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0037"
+      "groupId": "grp_0006"
     },
     {
       "id": "obj_0042",
@@ -1043,7 +1223,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3900.4,
+        "y": 4248,
         "z": 33
       },
       "rotation": {
@@ -1058,20 +1238,20 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0037"
+      "groupId": "grp_0006"
     },
     {
       "id": "obj_0043",
       "type": "prop",
-      "model": "prop_mp_long_pladge_01",
+      "model": "prop_ramp_adj_flip_mb3",
       "position": {
         "x": 2200,
-        "y": 3912.4,
+        "y": 4260,
         "z": 33
       },
       "rotation": {
@@ -1086,12 +1266,43 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
+        "ramp",
+        "jump",
+        "stunt",
+        "flip",
+        "steep",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0044",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4358,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
         "road",
-        "long",
+        "landing",
+        "platform",
+        "short",
         "approach"
       ],
-      "groupId": "grp_0037"
+      "groupId": "grp_0006"
     },
     {
       "id": "obj_0045",
@@ -1099,7 +1310,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3942.4,
+        "y": 4370,
         "z": 33
       },
       "rotation": {
@@ -1114,12 +1325,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0044"
+      "groupId": "grp_0006"
     },
     {
       "id": "obj_0046",
@@ -1127,7 +1339,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3954.4,
+        "y": 4382,
         "z": 33
       },
       "rotation": {
@@ -1142,20 +1354,21 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0044"
+      "groupId": "grp_0006"
     },
     {
       "id": "obj_0047",
       "type": "prop",
-      "model": "prop_racing_ramp_02",
+      "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3966.4,
+        "y": 4394,
         "z": 33
       },
       "rotation": {
@@ -1170,12 +1383,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "ramp",
-        "jump",
-        "racing",
-        "medium"
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
       ],
-      "groupId": "grp_0044"
+      "groupId": "grp_0006"
     },
     {
       "id": "obj_0048",
@@ -1183,7 +1397,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 3995,
+        "y": 4406,
         "z": 33
       },
       "rotation": {
@@ -1198,12 +1412,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0044"
+      "groupId": "grp_0006"
     },
     {
       "id": "obj_0049",
@@ -1211,7 +1426,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 4007,
+        "y": 4418,
         "z": 33
       },
       "rotation": {
@@ -1226,12 +1441,40 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0044"
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0050",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4430,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0007"
     },
     {
       "id": "obj_0051",
@@ -1239,7 +1482,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 4019,
+        "y": 4442,
         "z": 33
       },
       "rotation": {
@@ -1254,12 +1497,12 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0050"
+      "groupId": "grp_0007"
     },
     {
       "id": "obj_0052",
@@ -1267,7 +1510,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 4031,
+        "y": 4454,
         "z": 33
       },
       "rotation": {
@@ -1282,20 +1525,20 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "short",
-        "approach"
+        "approach",
+        "platform",
+        "short"
       ],
-      "groupId": "grp_0050"
+      "groupId": "grp_0007"
     },
     {
       "id": "obj_0053",
       "type": "prop",
-      "model": "prop_racing_ramp_02",
+      "model": "prop_ramp_adj_flip_mb3",
       "position": {
         "x": 2200,
-        "y": 4043,
+        "y": 4466,
         "z": 33
       },
       "rotation": {
@@ -1312,10 +1555,12 @@
       "tags": [
         "ramp",
         "jump",
-        "racing",
-        "medium"
+        "stunt",
+        "flip",
+        "steep",
+        "cunning-stunts"
       ],
-      "groupId": "grp_0050"
+      "groupId": "grp_0007"
     },
     {
       "id": "obj_0054",
@@ -1323,7 +1568,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 4072.5,
+        "y": 4584,
         "z": 33
       },
       "rotation": {
@@ -1338,12 +1583,13 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0050"
+      "groupId": "grp_0007"
     },
     {
       "id": "obj_0055",
@@ -1351,7 +1597,7 @@
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 4084.5,
+        "y": 4596,
         "z": 33
       },
       "rotation": {
@@ -1366,20 +1612,21 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
+        "landing",
+        "platform",
         "short",
         "approach"
       ],
-      "groupId": "grp_0050"
+      "groupId": "grp_0007"
     },
     {
       "id": "obj_0056",
       "type": "prop",
-      "model": "prop_mp_long_pladge_01",
+      "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
-        "y": 4096.5,
+        "y": 4608,
         "z": 33
       },
       "rotation": {
@@ -1394,20 +1641,507 @@
       "lodDistance": 100,
       "health": -1,
       "tags": [
-        "platform",
         "road",
-        "long",
+        "landing",
+        "platform",
+        "short",
         "approach"
       ],
-      "groupId": "grp_0050"
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0057",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4620,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0007"
     },
     {
       "id": "obj_0058",
       "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4632,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0059",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4644,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0060",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4656,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0061",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4668,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0062",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4680,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0063",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4692,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "approach",
+        "platform",
+        "short"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0064",
+      "type": "prop",
+      "model": "prop_ramp_adj_flip_mb3",
+      "position": {
+        "x": 2200,
+        "y": 4704,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "ramp",
+        "jump",
+        "stunt",
+        "flip",
+        "steep",
+        "cunning-stunts"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0065",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4847,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0066",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4859,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0067",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4871,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0068",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4883,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0069",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4895,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0070",
+      "type": "prop",
+      "model": "prop_mp_short_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4907,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "landing",
+        "platform",
+        "short",
+        "approach"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0071",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4919,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "platform",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0009"
+    },
+    {
+      "id": "obj_0072",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4949,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "platform",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0009"
+    },
+    {
+      "id": "obj_0073",
+      "type": "prop",
+      "model": "prop_mp_long_pladge_01",
+      "position": {
+        "x": 2200,
+        "y": 4979,
+        "z": 33
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": true,
+      "dynamic": false,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "road",
+        "platform",
+        "long",
+        "approach"
+      ],
+      "groupId": "grp_0009"
+    },
+    {
+      "id": "obj_0074",
+      "type": "prop",
       "model": "prop_start_gate_01",
       "position": {
         "x": 2200,
-        "y": 4126.5,
+        "y": 5009,
         "z": 33
       },
       "rotation": {
@@ -1428,572 +2162,63 @@
         "start",
         "arch"
       ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0059",
-      "type": "prop",
-      "model": "prop_mp_long_pladge_01",
-      "position": {
-        "x": 2200,
-        "y": 4127.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "platform",
-        "road",
-        "long",
-        "approach"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0060",
-      "type": "prop",
-      "model": "prop_mp_short_pladge_01",
-      "position": {
-        "x": 2200,
-        "y": 4157.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "platform",
-        "road",
-        "short",
-        "approach"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0061",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2195,
-        "y": 4126.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0062",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2205,
-        "y": 4126.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0063",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2195,
-        "y": 4134.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0064",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2205,
-        "y": 4134.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0065",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2195,
-        "y": 4142.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0066",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2205,
-        "y": 4142.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0067",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2195,
-        "y": 4150.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0068",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2205,
-        "y": 4150.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0069",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2195,
-        "y": 4158.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0070",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2205,
-        "y": 4158.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0071",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2195,
-        "y": 4166.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
-    },
-    {
-      "id": "obj_0072",
-      "type": "prop",
-      "model": "prop_worklight_02c",
-      "position": {
-        "x": 2205,
-        "y": 4166.5,
-        "z": 33
-      },
-      "rotation": {
-        "x": 0,
-        "y": 0,
-        "z": 0,
-        "w": 1
-      },
-      "frozen": true,
-      "dynamic": false,
-      "textureVariation": 0,
-      "lodDistance": 100,
-      "health": -1,
-      "tags": [
-        "light",
-        "finish",
-        "worklight",
-        "construction",
-        "atmospheric"
-      ],
-      "groupId": "grp_0057"
+      "groupId": "grp_0009"
     }
   ],
   "groups": [
     {
       "id": "grp_0001",
-      "name": "Racing Grid",
-      "objectIds": [
-        "obj_0002",
-        "obj_0003",
-        "obj_0004",
-        "obj_0005",
-        "obj_0006",
-        "obj_0007",
-        "obj_0008",
-        "obj_0009",
-        "obj_0010",
-        "obj_0011"
-      ],
-      "tags": [
-        "grid",
-        "vehicles",
-        "start"
-      ]
+      "name": "Start",
+      "objectIds": [],
+      "tags": []
     },
     {
-      "id": "grp_0012",
-      "name": "Start Approach",
-      "objectIds": [
-        "obj_0013",
-        "obj_0014",
-        "obj_0015",
-        "obj_0016",
-        "obj_0017"
-      ],
-      "tags": [
-        "approach",
-        "start"
-      ]
+      "id": "grp_0002",
+      "name": "Jump 1 — Warm-Up",
+      "objectIds": [],
+      "tags": []
     },
     {
-      "id": "grp_0018",
-      "name": "Jump Section 1 (gap: 15m)",
-      "objectIds": [
-        "obj_0019",
-        "obj_0020",
-        "obj_0021",
-        "obj_0022",
-        "obj_0023"
-      ],
-      "tags": [
-        "section",
-        "jump",
-        "gap-15"
-      ]
+      "id": "grp_0003",
+      "name": "Jump 2 — Getting Real",
+      "objectIds": [],
+      "tags": []
     },
     {
-      "id": "grp_0024",
-      "name": "Jump Section 2 (gap: 16m)",
-      "objectIds": [
-        "obj_0025",
-        "obj_0026",
-        "obj_0027",
-        "obj_0028",
-        "obj_0029",
-        "obj_0030"
-      ],
-      "tags": [
-        "section",
-        "jump",
-        "gap-16"
-      ]
+      "id": "grp_0004",
+      "name": "Jump 3 — Medium",
+      "objectIds": [],
+      "tags": []
     },
     {
-      "id": "grp_0031",
-      "name": "Jump Section 3 (gap: 17m)",
-      "objectIds": [
-        "obj_0032",
-        "obj_0033",
-        "obj_0034",
-        "obj_0035",
-        "obj_0036"
-      ],
-      "tags": [
-        "section",
-        "jump",
-        "gap-17"
-      ]
+      "id": "grp_0005",
+      "name": "Jump 4 — Hard",
+      "objectIds": [],
+      "tags": []
     },
     {
-      "id": "grp_0037",
-      "name": "Jump Section 4 (gap: 18m)",
-      "objectIds": [
-        "obj_0038",
-        "obj_0039",
-        "obj_0040",
-        "obj_0041",
-        "obj_0042",
-        "obj_0043"
-      ],
-      "tags": [
-        "section",
-        "jump",
-        "gap-18"
-      ]
+      "id": "grp_0006",
+      "name": "Jump 5 — Very Hard",
+      "objectIds": [],
+      "tags": []
     },
     {
-      "id": "grp_0044",
-      "name": "Jump Section 5 (gap: 19m)",
-      "objectIds": [
-        "obj_0045",
-        "obj_0046",
-        "obj_0047",
-        "obj_0048",
-        "obj_0049"
-      ],
-      "tags": [
-        "section",
-        "jump",
-        "gap-19"
-      ]
+      "id": "grp_0007",
+      "name": "Jump 6 — Extreme",
+      "objectIds": [],
+      "tags": []
     },
     {
-      "id": "grp_0050",
-      "name": "Jump Section 6 (gap: 20m)",
-      "objectIds": [
-        "obj_0051",
-        "obj_0052",
-        "obj_0053",
-        "obj_0054",
-        "obj_0055",
-        "obj_0056"
-      ],
-      "tags": [
-        "section",
-        "jump",
-        "gap-20"
-      ]
+      "id": "grp_0008",
+      "name": "Jump 7 — Legendary",
+      "objectIds": [],
+      "tags": []
     },
     {
-      "id": "grp_0057",
+      "id": "grp_0009",
       "name": "Finish",
-      "objectIds": [
-        "obj_0058",
-        "obj_0059",
-        "obj_0060",
-        "obj_0061",
-        "obj_0062",
-        "obj_0063",
-        "obj_0064",
-        "obj_0065",
-        "obj_0066",
-        "obj_0067",
-        "obj_0068",
-        "obj_0069",
-        "obj_0070",
-        "obj_0071",
-        "obj_0072"
-      ],
-      "tags": [
-        "finish"
-      ]
+      "objectIds": [],
+      "tags": []
     }
   ]
 }
