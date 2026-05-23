@@ -1,0 +1,3 @@
+# start gta builder http://localhost:3742
+cd "/Users/kilian/.ai/traits/Polygrait/A. traits.build/tools/gta-builder" && PORT=3742 npm run ui
+

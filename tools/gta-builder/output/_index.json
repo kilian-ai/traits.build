@@ -1,27 +1,27 @@
 [
   {
     "id": "shredder-gauntlet-v1",
-    "title": "Shredder Gauntlet \u2014 7 Progressive Jumps",
+    "title": "Shredder Gauntlet — 7 Progressive Jumps",
     "prompt": "Handcrafted 7-jump shredder gauntlet, progressive difficulty",
     "seed": 77777777,
     "difficulty": "extreme",
     "biome": "urban",
     "layout": "straight",
-    "objectCount": 74,
+    "objectCount": 179,
     "groups": 9,
     "ramps": 7,
     "vehicles": 0,
     "sections": 7,
-    "xmlFile": "",
+    "xmlFile": "shredder-gauntlet-v1.xml",
     "jsonFile": "shredder-gauntlet-v1.scene.json",
-    "generatedAt": "2026-05-18T03:30:36.415Z",
+    "generatedAt": "2026-05-22T16:25:59.292Z",
     "valid": true,
     "errorCount": 0,
     "warningCount": 0
   },
   {
     "id": "stunt-track-extreme-straight-1778863954969",
-    "title": "Stunt Track \u2014 extreme / straight",
+    "title": "Stunt Track — extreme / straight",
     "prompt": "Extreme airport runway chaos with massive gaps. make gaps bigger and add more loops",
     "seed": 3524831829,
     "difficulty": "extreme",
@@ -42,7 +42,7 @@
   },
   {
     "id": "stunt-track-extreme-straight-1778862944509",
-    "title": "Stunt Track \u2014 extreme / straight",
+    "title": "Stunt Track — extreme / straight",
     "prompt": "Extreme airport runway chaos with massive gaps",
     "seed": 4002,
     "difficulty": "extreme",
@@ -62,7 +62,7 @@
   },
   {
     "id": "stunt-track-extreme-straight-1778862944415",
-    "title": "Stunt Track \u2014 extreme / straight",
+    "title": "Stunt Track — extreme / straight",
     "prompt": "Extreme military base death course with loops and pits",
     "seed": 4001,
     "difficulty": "extreme",
@@ -82,7 +82,7 @@
   },
   {
     "id": "stunt-track-hard-straight-1778862944352",
-    "title": "Stunt Track \u2014 hard / straight",
+    "title": "Stunt Track — hard / straight",
     "prompt": "Hard industrial gauntlet with tight gaps and barricades",
     "seed": 3002,
     "difficulty": "hard",
@@ -102,7 +102,7 @@
   },
   {
     "id": "stunt-track-hard-straight-1778862944283",
-    "title": "Stunt Track \u2014 hard / straight",
+    "title": "Stunt Track — hard / straight",
     "prompt": "Hard mountain downhill race with big jumps",
     "seed": 3001,
     "difficulty": "hard",
@@ -122,7 +122,7 @@
   },
   {
     "id": "stunt-track-medium-straight-1778862944194",
-    "title": "Stunt Track \u2014 medium / straight",
+    "title": "Stunt Track — medium / straight",
     "prompt": "Medium forest rally with barriers and neon lights",
     "seed": 2002,
     "difficulty": "medium",
@@ -142,7 +142,7 @@
   },
   {
     "id": "stunt-track-medium-straight-1778862944121",
-    "title": "Stunt Track \u2014 medium / straight",
+    "title": "Stunt Track — medium / straight",
     "prompt": "Medium urban stunt track through the city with loops",
     "seed": 2001,
     "difficulty": "medium",
@@ -162,7 +162,7 @@
   },
   {
     "id": "stunt-track-easy-straight-1778862944060",
-    "title": "Stunt Track \u2014 easy / straight",
+    "title": "Stunt Track — easy / straight",
     "prompt": "Easy desert beginner course with recovery zones",
     "seed": 1002,
     "difficulty": "easy",
@@ -182,7 +182,7 @@
   },
   {
     "id": "stunt-track-easy-straight-1778862943956",
-    "title": "Stunt Track \u2014 easy / straight",
+    "title": "Stunt Track — easy / straight",
     "prompt": "Easy ocean highway with gentle ramps and wide platforms",
     "seed": 1001,
     "difficulty": "easy",
@@ -202,7 +202,7 @@
   },
   {
     "id": "stunt-track-extreme-straight-1778861340982",
-    "title": "Stunt Track \u2014 extreme / straight",
+    "title": "Stunt Track — extreme / straight",
     "prompt": "Extreme military base gauntlet with vehicle obstacles and barricades",
     "seed": 5555,
     "difficulty": "extreme",
@@ -222,7 +222,7 @@
   },
   {
     "id": "stunt-track-easy-straight-1778861340957",
-    "title": "Stunt Track \u2014 easy / straight",
+    "title": "Stunt Track — easy / straight",
     "prompt": "Easy forest beginner track with small ramps and recovery zones",
     "seed": 4444,
     "difficulty": "easy",
@@ -242,7 +242,7 @@
   },
   {
     "id": "stunt-track-medium-straight-1778861340931",
-    "title": "Stunt Track \u2014 medium / straight",
+    "title": "Stunt Track — medium / straight",
     "prompt": "Medium urban stunt course through the city with loops and neon lights",
     "seed": 3333,
     "difficulty": "medium",
@@ -262,7 +262,7 @@
   },
   {
     "id": "stunt-track-hard-straight-1778861340900",
-    "title": "Stunt Track \u2014 hard / straight",
+    "title": "Stunt Track — hard / straight",
     "prompt": "Hard mountain downhill race with big jumps and tight barriers",
     "seed": 2222,
     "difficulty": "hard",
@@ -282,7 +282,7 @@
   },
   {
     "id": "stunt-track-easy-straight-1778861331597",
-    "title": "Stunt Track \u2014 easy / straight",
+    "title": "Stunt Track — easy / straight",
     "prompt": "Easy beginner ramp track through the desert with wide platforms and checkpoints",
     "seed": 1111,
     "difficulty": "easy",
@@ -302,7 +302,7 @@
   },
   {
     "id": "stunt-track-extreme-straight-1778860710818",
-    "title": "Stunt Track \u2014 extreme / straight",
+    "title": "Stunt Track — extreme / straight",
     "prompt": "Extreme loop course over the ocean with vehicle obstacles",
     "seed": 2155865238,
     "difficulty": "extreme",

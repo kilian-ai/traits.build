@@ -4,7 +4,7 @@
     "description": "7 hand-crafted jump sections with industrial shredders in each gap. Gaps grow from 30 m to 130 m; ramps escalate from racing to flip. Track length: 1510 m.",
     "seed": 77777777,
     "generatorType": "stunt-track",
-    "generatedAt": "2026-05-18T03:30:36.415Z",
+    "generatedAt": "2026-05-22T16:25:59.292Z",
     "generatorVersion": "0.2.0",
     "prompt": "Handcrafted 7-jump shredder gauntlet, progressive difficulty"
   },
@@ -303,6 +303,411 @@
     {
       "id": "obj_0010",
       "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 3672.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0011",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 3672.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0012",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 3672.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0013",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 3672.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0014",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 3672.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0015",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 3677,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0016",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 3677,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0017",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 3677,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0018",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 3677,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0019",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 3677,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0020",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 3681.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0021",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 3681.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0022",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 3681.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0023",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 3681.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0024",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 3681.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0002"
+    },
+    {
+      "id": "obj_0025",
+      "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
         "x": 2200,
@@ -330,7 +735,7 @@
       "groupId": "grp_0002"
     },
     {
-      "id": "obj_0011",
+      "id": "obj_0026",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -359,7 +764,7 @@
       "groupId": "grp_0002"
     },
     {
-      "id": "obj_0012",
+      "id": "obj_0027",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -388,7 +793,7 @@
       "groupId": "grp_0002"
     },
     {
-      "id": "obj_0013",
+      "id": "obj_0028",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -417,7 +822,7 @@
       "groupId": "grp_0002"
     },
     {
-      "id": "obj_0014",
+      "id": "obj_0029",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -445,7 +850,7 @@
       "groupId": "grp_0003"
     },
     {
-      "id": "obj_0015",
+      "id": "obj_0030",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -473,7 +878,7 @@
       "groupId": "grp_0003"
     },
     {
-      "id": "obj_0016",
+      "id": "obj_0031",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -501,7 +906,7 @@
       "groupId": "grp_0003"
     },
     {
-      "id": "obj_0017",
+      "id": "obj_0032",
       "type": "prop",
       "model": "prop_racing_ramp_02",
       "position": {
@@ -530,7 +935,412 @@
       "groupId": "grp_0003"
     },
     {
-      "id": "obj_0018",
+      "id": "obj_0033",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 3803,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0034",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 3803,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0035",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 3803,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0036",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 3803,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0037",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 3803,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0038",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 3808,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0039",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 3808,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0040",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 3808,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0041",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 3808,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0042",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 3808,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0043",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 3813,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0044",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 3813,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0045",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 3813,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0046",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 3813,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0047",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 3813,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0003"
+    },
+    {
+      "id": "obj_0048",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -559,7 +1369,7 @@
       "groupId": "grp_0003"
     },
     {
-      "id": "obj_0019",
+      "id": "obj_0049",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -588,7 +1398,7 @@
       "groupId": "grp_0003"
     },
     {
-      "id": "obj_0020",
+      "id": "obj_0050",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -617,7 +1427,7 @@
       "groupId": "grp_0003"
     },
     {
-      "id": "obj_0021",
+      "id": "obj_0051",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -646,7 +1456,7 @@
       "groupId": "grp_0003"
     },
     {
-      "id": "obj_0022",
+      "id": "obj_0052",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -674,7 +1484,7 @@
       "groupId": "grp_0004"
     },
     {
-      "id": "obj_0023",
+      "id": "obj_0053",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -702,7 +1512,7 @@
       "groupId": "grp_0004"
     },
     {
-      "id": "obj_0024",
+      "id": "obj_0054",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -730,7 +1540,7 @@
       "groupId": "grp_0004"
     },
     {
-      "id": "obj_0025",
+      "id": "obj_0055",
       "type": "prop",
       "model": "prop_ramp_adj_flip_mb",
       "position": {
@@ -760,7 +1570,412 @@
       "groupId": "grp_0004"
     },
     {
-      "id": "obj_0026",
+      "id": "obj_0056",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 3947.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0057",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 3947.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0058",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 3947.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0059",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 3947.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0060",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 3947.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0061",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 3952.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0062",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 3952.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0063",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 3952.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0064",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 3952.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0065",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 3952.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0066",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 3957.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0067",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 3957.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0068",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 3957.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0069",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 3957.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0070",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 3957.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0004"
+    },
+    {
+      "id": "obj_0071",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -789,7 +2004,7 @@
       "groupId": "grp_0004"
     },
     {
-      "id": "obj_0027",
+      "id": "obj_0072",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -818,7 +2033,7 @@
       "groupId": "grp_0004"
     },
     {
-      "id": "obj_0028",
+      "id": "obj_0073",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -847,7 +2062,7 @@
       "groupId": "grp_0004"
     },
     {
-      "id": "obj_0029",
+      "id": "obj_0074",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -876,7 +2091,7 @@
       "groupId": "grp_0004"
     },
     {
-      "id": "obj_0030",
+      "id": "obj_0075",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -904,7 +2119,7 @@
       "groupId": "grp_0005"
     },
     {
-      "id": "obj_0031",
+      "id": "obj_0076",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -932,7 +2147,7 @@
       "groupId": "grp_0005"
     },
     {
-      "id": "obj_0032",
+      "id": "obj_0077",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -960,7 +2175,7 @@
       "groupId": "grp_0005"
     },
     {
-      "id": "obj_0033",
+      "id": "obj_0078",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -988,7 +2203,7 @@
       "groupId": "grp_0005"
     },
     {
-      "id": "obj_0034",
+      "id": "obj_0079",
       "type": "prop",
       "model": "prop_ramp_adj_flip_mb",
       "position": {
@@ -1018,7 +2233,412 @@
       "groupId": "grp_0005"
     },
     {
-      "id": "obj_0035",
+      "id": "obj_0080",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4118,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0081",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4118,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0082",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4118,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0083",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4118,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0084",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4118,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0085",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4123,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0086",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4123,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0087",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4123,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0088",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4123,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0089",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4123,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0090",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4128,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0091",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4128,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0092",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4128,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0093",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4128,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0094",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4128,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0005"
+    },
+    {
+      "id": "obj_0095",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1047,7 +2667,7 @@
       "groupId": "grp_0005"
     },
     {
-      "id": "obj_0036",
+      "id": "obj_0096",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1076,7 +2696,7 @@
       "groupId": "grp_0005"
     },
     {
-      "id": "obj_0037",
+      "id": "obj_0097",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1105,7 +2725,7 @@
       "groupId": "grp_0005"
     },
     {
-      "id": "obj_0038",
+      "id": "obj_0098",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1134,7 +2754,7 @@
       "groupId": "grp_0005"
     },
     {
-      "id": "obj_0039",
+      "id": "obj_0099",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1162,7 +2782,7 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0040",
+      "id": "obj_0100",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1190,7 +2810,7 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0041",
+      "id": "obj_0101",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1218,7 +2838,7 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0042",
+      "id": "obj_0102",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1246,7 +2866,7 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0043",
+      "id": "obj_0103",
       "type": "prop",
       "model": "prop_ramp_adj_flip_mb3",
       "position": {
@@ -1276,7 +2896,412 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0044",
+      "id": "obj_0104",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4304.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0105",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4304.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0106",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4304.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0107",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4304.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0108",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4304.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0109",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4309.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0110",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4309.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0111",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4309.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0112",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4309.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0113",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4309.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0114",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4314.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0115",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4314.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0116",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4314.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0117",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4314.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0118",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4314.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0006"
+    },
+    {
+      "id": "obj_0119",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1305,7 +3330,7 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0045",
+      "id": "obj_0120",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1334,7 +3359,7 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0046",
+      "id": "obj_0121",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1363,7 +3388,7 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0047",
+      "id": "obj_0122",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1392,7 +3417,7 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0048",
+      "id": "obj_0123",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1421,7 +3446,7 @@
       "groupId": "grp_0006"
     },
     {
-      "id": "obj_0049",
+      "id": "obj_0124",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1449,7 +3474,7 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0050",
+      "id": "obj_0125",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1477,7 +3502,7 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0051",
+      "id": "obj_0126",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1505,7 +3530,7 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0052",
+      "id": "obj_0127",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1533,7 +3558,7 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0053",
+      "id": "obj_0128",
       "type": "prop",
       "model": "prop_ramp_adj_flip_mb3",
       "position": {
@@ -1563,7 +3588,412 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0054",
+      "id": "obj_0129",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4520.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0130",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4520.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0131",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4520.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0132",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4520.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0133",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4520.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0134",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4525.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0135",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4525.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0136",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4525.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0137",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4525.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0138",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4525.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0139",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4530.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0140",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4530.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0141",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4530.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0142",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4530.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0143",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4530.5,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0007"
+    },
+    {
+      "id": "obj_0144",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1592,7 +4022,7 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0055",
+      "id": "obj_0145",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1621,7 +4051,7 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0056",
+      "id": "obj_0146",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1650,7 +4080,7 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0057",
+      "id": "obj_0147",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1679,7 +4109,7 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0058",
+      "id": "obj_0148",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1708,7 +4138,7 @@
       "groupId": "grp_0007"
     },
     {
-      "id": "obj_0059",
+      "id": "obj_0149",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1736,7 +4166,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0060",
+      "id": "obj_0150",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1764,7 +4194,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0061",
+      "id": "obj_0151",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1792,7 +4222,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0062",
+      "id": "obj_0152",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1820,7 +4250,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0063",
+      "id": "obj_0153",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1848,7 +4278,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0064",
+      "id": "obj_0154",
       "type": "prop",
       "model": "prop_ramp_adj_flip_mb3",
       "position": {
@@ -1878,7 +4308,412 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0065",
+      "id": "obj_0155",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4771,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0156",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4771,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0157",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4771,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0158",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4771,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0159",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4771,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0160",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4776,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0161",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4776,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0162",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4776,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0163",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4776,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0164",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4776,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0165",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2196,
+        "y": 4781,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0166",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2198,
+        "y": 4781,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0167",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2200,
+        "y": 4781,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0168",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2202,
+        "y": 4781,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0169",
+      "type": "prop",
+      "model": "prop_barrel_01a",
+      "position": {
+        "x": 2204,
+        "y": 4781,
+        "z": 33.6
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "frozen": false,
+      "dynamic": true,
+      "textureVariation": 0,
+      "lodDistance": 100,
+      "health": -1,
+      "tags": [
+        "hazard",
+        "explosive",
+        "shredder"
+      ],
+      "groupId": "grp_0008"
+    },
+    {
+      "id": "obj_0170",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1907,7 +4742,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0066",
+      "id": "obj_0171",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1936,7 +4771,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0067",
+      "id": "obj_0172",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1965,7 +4800,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0068",
+      "id": "obj_0173",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -1994,7 +4829,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0069",
+      "id": "obj_0174",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -2023,7 +4858,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0070",
+      "id": "obj_0175",
       "type": "prop",
       "model": "prop_mp_short_pladge_01",
       "position": {
@@ -2052,7 +4887,7 @@
       "groupId": "grp_0008"
     },
     {
-      "id": "obj_0071",
+      "id": "obj_0176",
       "type": "prop",
       "model": "prop_mp_long_pladge_01",
       "position": {
@@ -2080,7 +4915,7 @@
       "groupId": "grp_0009"
     },
     {
-      "id": "obj_0072",
+      "id": "obj_0177",
       "type": "prop",
       "model": "prop_mp_long_pladge_01",
       "position": {
@@ -2108,7 +4943,7 @@
       "groupId": "grp_0009"
     },
     {
-      "id": "obj_0073",
+      "id": "obj_0178",
       "type": "prop",
       "model": "prop_mp_long_pladge_01",
       "position": {
@@ -2136,7 +4971,7 @@
       "groupId": "grp_0009"
     },
     {
-      "id": "obj_0074",
+      "id": "obj_0179",
       "type": "prop",
       "model": "prop_start_gate_01",
       "position": {

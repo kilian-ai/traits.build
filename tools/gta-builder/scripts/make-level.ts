@@ -6,15 +6,15 @@
  *
  * What it does:
  *  1. Builds a scene.json with 7 ramp+gap+landing sections
- *  2. Clears all existing .scene.json and .xml output files
- *  3. Writes the new scene.json and updates _index.json
+ *  2. Writes the new scene.json/xml files
+ *  3. Merges this challenge into _index.json while preserving existing challenges
  *
  * Track runs heading=0 (North/+Y) from GTA position (2200, 3500, 33).
  * Progressive gaps: 30 → 42 → 55 → 70 → 85 → 105 → 130 m
  * Progressive ramps: ramp_02 x2, ramp_adj_flip_mb x2, ramp_adj_flip_mb3 x3
  */
 
-import { writeFileSync, readdirSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +22,7 @@ import { resetCounter, makePropObject, placeAtCursor, advanceCursor } from '../s
 import type { TrackCursor } from '../src/engine/placement.js';
 import type { SceneObject, SceneGroup } from '../src/schema/scene.js';
 import { PROPS_BY_NAME } from '../src/assets/props.js';
+import { exportMenyooXML } from '../src/export/menyoo.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(__dirname, '../output');
@@ -108,6 +109,29 @@ for (const j of JUMPS) {
   //        = (ramp_center + rampLen/2 + gap + 6) - (ramp_center + rampLen)
   //        = gap + 6 - rampLen/2
   const skip = j.gap + 6 - rampLen / 2;
+
+  // ── Shredder hazard: explosive barrel clusters in the gap ────────────────
+  // Ramp tip is at: cur.position.y - rampLen/2  (cursor advanced to ramp_center + rampLen)
+  // Gap spans from ramp tip to landing back edge, centred on gapCenterY.
+  const gapStartY  = cur.position.y - rampLen / 2;
+  const gapCenterY = gapStartY + j.gap / 2;
+  const barrelZ    = START_Z + 0.6; // ground level + half barrel height
+  // 3 rows along Y: tight cluster so a clipping car definitely hits them
+  const rowSpacing = Math.min(j.gap * 0.15, 5); // tighten for small gaps
+  const rowOffsets = [-rowSpacing, 0, rowSpacing];
+  const xOffsets   = [-4, -2, 0, 2, 4]; // 5 barrels across the 10 m track width
+  for (const dy of rowOffsets) {
+    for (const dx of xOffsets) {
+      objects.push(makePropObject('prop_barrel_01a', {
+        position: { x: START_X + dx, y: gapCenterY + dy, z: barrelZ },
+        frozen:   false,
+        dynamic:  true,
+        tags:     ['hazard', 'explosive', 'shredder'],
+        groupId:  gid,
+      }));
+    }
+  }
+
   cur = advanceCursor(cur, skip);
 
   // Landing pads
@@ -164,48 +188,43 @@ const scene = {
   groups,
 };
 
-// ── Clear Old Output ──────────────────────────────────────────────────────────
-const existing = readdirSync(OUT);
-let deleted = 0;
-for (const f of existing) {
-  if (f.endsWith('.scene.json') || f.endsWith('.xml')) {
-    unlinkSync(join(OUT, f));
-    deleted++;
-  }
-}
-if (deleted) console.log(`  Deleted ${deleted} old output file(s).`);
-
 // ── Write Scene + Index ───────────────────────────────────────────────────────
 const sceneFile = `${ID}.scene.json`;
+const xmlFile   = `${ID}.xml`;
 writeFileSync(join(OUT, sceneFile), JSON.stringify(scene, null, 2));
+writeFileSync(join(OUT, xmlFile),   exportMenyooXML(scene as never));
 
 const rampCount = JUMPS.length;
-const index = [
-  {
-    id:          ID,
-    title:       scene.metadata.title,
-    prompt:      scene.metadata.prompt,
-    seed:        scene.metadata.seed,
-    difficulty:  'extreme',
-    biome:       'urban',
-    layout:      'straight',
-    objectCount: objects.length,
-    groups:      groups.length,
-    ramps:       rampCount,
-    vehicles:    0,
-    sections:    rampCount,
-    xmlFile:     '',
-    jsonFile:    sceneFile,
-    generatedAt: NOW,
-    valid:       true,
-    errorCount:  0,
-    warningCount: 0,
-  },
-];
-writeFileSync(join(OUT, '_index.json'), JSON.stringify(index, null, 2));
+const record = {
+  id:          ID,
+  title:       scene.metadata.title,
+  prompt:      scene.metadata.prompt,
+  seed:        scene.metadata.seed,
+  difficulty:  'extreme',
+  biome:       'urban',
+  layout:      'straight',
+  objectCount: objects.length,
+  groups:      groups.length,
+  ramps:       rampCount,
+  vehicles:    0,
+  sections:    rampCount,
+  xmlFile,
+  jsonFile:    sceneFile,
+  generatedAt: NOW,
+  valid:       true,
+  errorCount:  0,
+  warningCount: 0,
+};
+const indexFile = join(OUT, '_index.json');
+const existingIndex = existsSync(indexFile)
+  ? JSON.parse(readFileSync(indexFile, 'utf8')) as Array<{ id?: string }>
+  : [];
+const index = [record, ...existingIndex.filter((entry) => entry.id !== ID)];
+writeFileSync(indexFile, JSON.stringify(index, null, 2));
 
 console.log(`✓ Shredder Gauntlet generated`);
-console.log(`  Objects : ${objects.length}`);
+console.log(`  Objects : ${objects.length} (incl. ${JUMPS.length * 15} shredder barrels)`);
 console.log(`  Groups  : ${groups.length}`);
 console.log(`  Length  : ${trackLength} m (y ${3500} → ${cur.position.y})`);
 console.log(`  Written : output/${sceneFile}`);
+console.log(`  Written : output/${xmlFile}`);

@@ -1817,7 +1817,20 @@ function kPlace(key, targetW, pos, quat) {
 }
 
 // Map a GTA scene object to the appropriate Kenney model key
-const VCARS = ['carRace', 'carFuture', 'carHatch', 'carSedan', 'carSuv', 'carPolice', 'carTaxi'];
+// F1 team liveries
+const F1_LIVERIES = [
+  0xE8002D,  // Ferrari red
+  0x00D2BE,  // Mercedes teal
+  0x3671C6,  // Red Bull blue
+  0xFF8000,  // McLaren orange
+  0x006F62,  // Aston Martin green
+  0x0090FF,  // Alpine blue
+  0xFFF500,  // Renault yellow
+  0xC0C0C0,  // Haas silver
+  0x005AFF,  // Williams blue
+  0x9B0000,  // Alfa Romeo burgundy
+];
+const VCARS = ['carRace', 'carFuture'];  // F1-only Kenney models
 function kKey(obj) {
   const t = obj.tags || [];
   if (obj.type === 'vehicle') {
@@ -1927,6 +1940,138 @@ function _playCollisionAudio(impact) {
 }
 function _muteEngine() {
   if (_engineGain && _audioCtx) _engineGain.gain.setTargetAtTime(0, _audioCtx.currentTime, 0.15);
+}
+function _playExplosionAudio() {
+  if (!_audioCtx) return;
+  try {
+    const sr = _audioCtx.sampleRate;
+    const dur = 1.4;
+    const buf = _audioCtx.createBuffer(1, Math.ceil(sr * dur), sr);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+      const t = i / sr;
+      const boom   = Math.sin(2*Math.PI*22*t + Math.sin(2*Math.PI*9*t)*5) * Math.exp(-t*3.2) * 1.3;
+      const crack  = (Math.random()*2-1) * Math.exp(-t*9) * 1.0;
+      const rumble = (Math.random()*2-1) * Math.exp(-t*1.6) * 0.45;
+      d[i] = Math.max(-1, Math.min(1, boom + crack + rumble));
+    }
+    const src = _audioCtx.createBufferSource();
+    const g = _audioCtx.createGain(); g.gain.value = 1.0;
+    src.buffer = buf; src.connect(g); g.connect(_audioCtx.destination); src.start();
+  } catch (e) {}
+}
+function _explodeCar(car) {
+  if ((car.explodeCd ?? 0) > 0) return;
+  car.explodeCd      = 2.5;
+  car.shrSinking     = false;
+  car.shrBounceCd    = 0;
+  car.shrCenterTimer = 0;
+  car.vel      = 0;
+  car.vy       = 5.5;
+  car.onGround = false;
+  car.autoMode = false;
+  const _fwd = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
+  car.group.position.addScaledVector(_fwd, -7);
+  car.group.position.y = Math.max(car.group.position.y, 0.5);
+  const scn = car.group.parent;
+  if (!scn) return;
+  const pos = car.group.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+  _playExplosionAudio();
+
+  // ── Shockwave flash: large sphere that expands and vanishes instantly ──
+  const flashMat = new THREE.MeshStandardMaterial({
+    color: 0xFFFFCC, emissive: 0xFFFFCC, emissiveIntensity: 5.0, transparent: true, opacity: 0.85,
+  });
+  const flashMesh = new THREE.Mesh(new THREE.SphereGeometry(1.0, 8, 8), flashMat);
+  flashMesh.position.copy(pos);
+  scn.add(flashMesh);
+  _fragments.push({ mesh: flashMesh, scn, life: 0.20, vel: new THREE.Vector3(0,0,0),
+    avel: new THREE.Vector3(0,0,0), gravity: 0, scaleVel: 32, maxOpacity: 0.85, fadeStart: 0.18 });
+
+  // ── Fireball core: large hot spheres bursting outward ──────────────────
+  const _fcols = [0xFF8800,0xFF5500,0xFFCC00,0xFF2200,0xFF9900,0xFFFF44,0xFF3300,0xFFAA00];
+  for (let _i = 0; _i < 16; _i++) {
+    const _c = _fcols[_i % _fcols.length];
+    const _m = new THREE.MeshStandardMaterial({
+      color: _c, emissive: _c, emissiveIntensity: 3.0, transparent: true, opacity: 1,
+    });
+    const _r = Math.random() * 1.1 + 0.4;
+    const _mesh = new THREE.Mesh(new THREE.SphereGeometry(_r, 7, 7), _m);
+    const _a = Math.random() * Math.PI * 2;
+    const _off = Math.random() * 2.0;
+    _mesh.position.set(pos.x+Math.cos(_a)*_off, pos.y+Math.random()*2.0, pos.z+Math.sin(_a)*_off);
+    scn.add(_mesh);
+    const _spd = Math.random() * 12 + 5;
+    _fragments.push({ mesh: _mesh, scn, life: 0.8 + Math.random()*0.7,
+      vel: new THREE.Vector3(Math.cos(_a)*_spd, Math.random()*9+3, Math.sin(_a)*_spd),
+      avel: new THREE.Vector3((Math.random()-0.5)*3,(Math.random()-0.5)*3,(Math.random()-0.5)*3),
+      gravity: 12 });
+  }
+
+  // ── Flame tongues: tall thin shards that shoot upward and twist ────────
+  const _flameCols = [0xFF4400,0xFF6600,0xFF8800,0xFFAA00,0xFF2200,0xFF9900,0xFFCC44];
+  for (let _i = 0; _i < 22; _i++) {
+    const _c = _flameCols[_i % _flameCols.length];
+    const _m = new THREE.MeshStandardMaterial({
+      color: _c, emissive: _c, emissiveIntensity: 3.5, transparent: true, opacity: 1,
+      side: THREE.DoubleSide,
+    });
+    const _w = Math.random() * 0.28 + 0.07;
+    const _h = Math.random() * 3.0 + 1.2;
+    const _mesh = new THREE.Mesh(new THREE.BoxGeometry(_w, _h, _w), _m);
+    const _a = Math.random() * Math.PI * 2;
+    const _off = Math.random() * 3.0;
+    _mesh.position.set(pos.x+Math.cos(_a)*_off, pos.y+Math.random()*1.2, pos.z+Math.sin(_a)*_off);
+    _mesh.rotation.set(Math.random()*0.5-0.25, _a, Math.random()*0.5-0.25);
+    scn.add(_mesh);
+    const _up = Math.random() * 16 + 9;
+    const _sd = Math.random() * 6;
+    _fragments.push({ mesh: _mesh, scn, life: 0.45 + Math.random()*0.45,
+      vel: new THREE.Vector3(Math.cos(_a)*_sd, _up, Math.sin(_a)*_sd),
+      avel: new THREE.Vector3((Math.random()-0.5)*10,(Math.random()-0.5)*5,(Math.random()-0.5)*10),
+      gravity: 5 });
+  }
+
+  // ── Sparks: tiny white-hot dots spraying in every direction ────────────
+  const _sparkCols = [0xFFFFFF,0xFFFF88,0xFFCC44,0xFFEE99,0xFFFFCC];
+  for (let _i = 0; _i < 60; _i++) {
+    const _c = _sparkCols[_i % _sparkCols.length];
+    const _m = new THREE.MeshStandardMaterial({
+      color: _c, emissive: _c, emissiveIntensity: 4.0, transparent: true, opacity: 1,
+    });
+    const _mesh = new THREE.Mesh(new THREE.SphereGeometry(0.06+Math.random()*0.09, 4, 4), _m);
+    const _phi = Math.random() * Math.PI;
+    const _theta = Math.random() * Math.PI * 2;
+    const _spd = Math.random() * 26 + 10;
+    _mesh.position.copy(pos).add(
+      new THREE.Vector3((Math.random()-0.5)*2, Math.random()*1.2, (Math.random()-0.5)*2));
+    scn.add(_mesh);
+    _fragments.push({ mesh: _mesh, scn, life: 0.35 + Math.random()*0.5,
+      vel: new THREE.Vector3(
+        Math.sin(_phi)*Math.cos(_theta)*_spd,
+        Math.cos(_phi)*_spd*0.6 + 3,
+        Math.sin(_phi)*Math.sin(_theta)*_spd),
+      avel: new THREE.Vector3(0,0,0), gravity: GRAVITY * 1.5 });
+  }
+
+  // ── Rising fire clouds: large glowing billows that drift upward ──────────
+  const _fireClouds = [0xFF2200,0xFF5500,0xFF8800,0xFFAA00,0xFF3300,0xFF6600,0xFFCC00,0xFF4400];
+  for (let _i = 0; _i < 14; _i++) {
+    const _c = _fireClouds[_i % _fireClouds.length];
+    const _m = new THREE.MeshStandardMaterial({
+      color: _c, emissive: _c, emissiveIntensity: 1.8, transparent: true, opacity: 0.88,
+    });
+    const _r = Math.random() * 1.5 + 1.0;
+    const _mesh = new THREE.Mesh(new THREE.SphereGeometry(_r, 7, 7), _m);
+    const _a = Math.random() * Math.PI * 2;
+    const _off = Math.random() * 3.8;
+    _mesh.position.set(pos.x+Math.cos(_a)*_off, pos.y+Math.random()*2.8, pos.z+Math.sin(_a)*_off);
+    scn.add(_mesh);
+    _fragments.push({ mesh: _mesh, scn, life: 1.6 + Math.random()*0.9,
+      vel: new THREE.Vector3((Math.random()-0.5)*4, Math.random()*4+2, (Math.random()-0.5)*4),
+      avel: new THREE.Vector3((Math.random()-0.5)*0.8,(Math.random()-0.5)*0.8,(Math.random()-0.5)*0.8),
+      gravity: -1.4, fadeStart: 1.0, maxOpacity: 0.88 });
+  }
 }
 function _shredCar(car) {
   if (car.destroyed) return;
@@ -2145,30 +2290,85 @@ function tickDrive(dt, camera) {
   }
   const fwdH      = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, car.yaw, 0));
   const slopePitch = Math.atan2(-gndNrm.dot(fwdH), gndNrm.y);
+  car.shrBounceCd  = Math.max(0, (car.shrBounceCd  ?? 0) - dt);
+  car.explodeCd     = Math.max(0, (car.explodeCd    ?? 0) - dt);
+  car.shrCenterTimer = car.shrCenterTimer ?? 0;
 
-  // Shredder collision — fires whether car is on ground or flying through blades
-  if (!car.destroyed) {
+  // Shredder interaction — outer blade tops bounce and funnel cars inward; center triggers explosion
+  if (!car.destroyed && car.explodeCd <= 0) {
+    let _onShr = false;
     for (const shr of _shredders) {
-      const sDiscR   = shr.userData.discR   ?? 2.8;
-      const sAxleY   = shr.userData.axleY   ?? (sDiscR * 0.6);
-      const sGap     = shr.userData.gapHalf ?? 1.8;
-      const sZHalf   = shr.userData.radius  ?? 4.0;
-      const toothR   = sDiscR * 1.28;          // disc + tooth tip reach
-      const hitXHalf = sGap + toothR;          // X reach from shredder centre
-      const hitYTop  = shr.position.y + sAxleY + toothR; // top of blade sweep
-      const hitYBot  = shr.position.y - 0.1;  // at/below ground
-      const dx = Math.abs(g.position.x - shr.position.x);
-      const dz = Math.abs(g.position.z - shr.position.z);
-      const cy = g.position.y;
-      if (dx < hitXHalf && dz < sZHalf && cy > hitYBot && cy < hitYTop) {
-        car.vy       = 16 + Math.abs(car.vel) * 0.6;
-        car.vel      = -(Math.abs(car.vel) * 0.5 + 8);
-        car.onGround = false;
-        car.autoMode = false;
-        car.yaw     += (Math.random() - 0.5) * 0.9;
-        _playCollisionAudio(38);
-        break;
+      const sDiscR = shr.userData.discR   ?? 2.8;
+      const sAxleY = shr.userData.axleY   ?? (sDiscR * 0.6);
+      const sGap   = shr.userData.gapHalf ?? 1.8;
+      const sZHalf = shr.userData.radius  ?? 4.0;
+      const toothR = sDiscR * 1.28;
+      const topSurfaceMarginX = Math.max(1.4, toothR * 0.22);
+      const topSurfaceMarginZ = Math.max(1.2, toothR * 0.28);
+      const centerGrabHalf = Math.min(toothR * 0.34, Math.max(0.8, sGap * 0.55));
+      const topY   = shr.position.y + sAxleY + toothR;   // blade-tip surface height
+      const botY   = shr.position.y - 1.0;               // cleared below shredder
+      const dx     = g.position.x - shr.position.x;
+      const dz     = Math.abs(g.position.z - shr.position.z);
+      const cy     = g.position.y;
+      const bounceWave = 0.5 + 0.5 * Math.sin(performance.now() * 0.018 + dz * 3.4 + dx * 0.6);
+      if (Math.abs(dx) > sGap + toothR + topSurfaceMarginX || dz > sZHalf + topSurfaceMarginZ) continue;
+
+      const inCenterChannel = Math.abs(dx) < centerGrabHalf;
+      if (inCenterChannel && !car.shrSinking && cy > botY) {
+        car.shrCenterTimer = Math.min(1.15, car.shrCenterTimer + dt);
+      } else if (!inCenterChannel) {
+        car.shrCenterTimer = 0;
       }
+      const centerReadyToSink = inCenterChannel && car.shrCenterTimer >= 0.9;
+      _onShr = true;
+      if (!inCenterChannel) car.shrSinking = false;
+      if (cy > topY - 0.45 || (inCenterChannel && !centerReadyToSink && cy > botY)) {
+        // ── Blade-tip zone: car rides on top ─────────────────────────────
+        if (!inCenterChannel || !car.shrSinking) gndY = topY;  // outer blades stay driveable
+        if (inCenterChannel) {
+          if (!centerReadyToSink && !car.shrSinking) {
+            const centerLift = 0.05 + bounceWave * 0.12;
+            gndY = Math.max(gndY, topY + centerLift);
+            g.position.x -= dx * (0.28 + 0.22 * bounceWave) * dt;
+            car.vel *= Math.pow(0.974, dt * 60);
+            if ((car.onGround || cy <= topY + 0.25) && bounceWave > 0.9 && Math.abs(car.vel) > 1.1 && (car.shrBounceCd ?? 0) <= 0) {
+              car.vy = 0.55 + bounceWave * 0.35;
+              car.onGround = false;
+              car.shrBounceCd = 0.14;
+            }
+          } else {
+            _explodeCar(car);
+          }
+        } else {
+          const bounceLift = bounceWave * 0.14;
+          gndY = Math.max(gndY, topY + bounceLift);
+          g.position.x -= dx * (0.30 + 0.28 * bounceWave) * dt;
+          car.vel *= Math.pow(0.976, dt * 60);
+          if (car.onGround && bounceWave > 0.93 && Math.abs(car.vel) > 1.5 && (car.shrBounceCd ?? 0) <= 0) {
+            car.vy = 0.95 + bounceWave * 0.45;
+            car.onGround = false;
+            car.shrBounceCd = 0.12;
+          }
+        }
+      } else if (cy > botY && !car.onGround) {
+        // ── Inside blades: falling through — teeth drag down hard ─────────
+        if (inCenterChannel && (car.shrSinking || centerReadyToSink)) {
+          car.vy       -= 22 * dt;
+          g.position.x -= dx * 5.0 * dt;
+          car.vel      *= Math.pow(0.55, dt * 60);
+        }
+      } else if (cy <= botY) {
+        car.shrSinking = false;   // cleared the shredder zone
+        car.shrBounceCd = 0;
+        car.shrCenterTimer = 0;
+      }
+      break;
+    }
+    if (!_onShr) {
+      car.shrSinking = false;
+      car.shrBounceCd = 0;
+      car.shrCenterTimer = 0;
     }
   }
 
@@ -2257,7 +2457,10 @@ function groupColor(i, n) {
 }
 function objColor(obj, gIdx, total) {
   const t = obj.tags || [];
-  if (obj.type === 'vehicle')                               return 0xFFD700;
+  if (obj.type === 'vehicle') {
+    let h = 0; for (const c of (obj.id || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return F1_LIVERIES[h % F1_LIVERIES.length];
+  }
   if (t.some(x => x === 'worklight' || x === 'light'))     return 0xFFFF55;
   if (t.includes('gate') || t.includes('arch'))            return gIdx === total - 1 ? 0xFF2299 : 0x00FF88;
   if (t.includes('ramp'))                                   return 0xFF8800;
@@ -2292,15 +2495,88 @@ function buildGate(w, h, d, color) {
   return g;
 }
 
-// ── Car silhouette ────────────────────────────────────────────────────────────
+// ── Formula 1 car silhouette ─────────────────────────────────────────────────
 function buildCar(color) {
-  const mat = new THREE.MeshStandardMaterial({ color, roughness:0.4, metalness:0.6, emissive:color, emissiveIntensity:0.2 });
+  const bodyMat   = new THREE.MeshStandardMaterial({ color, roughness: 0.18, metalness: 0.85, emissive: color, emissiveIntensity: 0.12 });
+  const carbonMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5, metalness: 0.4 });
+  const tireMat   = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95, metalness: 0.0 });
+  const rimMat    = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.15, metalness: 0.95 });
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.9, 4.5), mat);
-  body.position.y = 0.45;
-  const cab  = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.8, 2.2), mat);
-  cab.position.set(0, 1.25, -0.15);
-  g.add(body, cab);
+
+  // Main body — flat slab
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.20, 4.0), bodyMat);
+  body.position.y = 0.30;
+  g.add(body);
+
+  // Nose cone — tapers from body to tip in -Z (forward)
+  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.10, 1.5, 8), bodyMat);
+  nose.rotation.x = Math.PI / 2;   // top(wide) → +Z(body), bottom(narrow) → -Z(tip)
+  nose.position.set(0, 0.28, -2.75);
+  g.add(nose);
+
+  // Front wing — wide flat plate
+  const fWing = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.055, 0.55), carbonMat);
+  fWing.position.set(0, 0.11, -3.25);
+  g.add(fWing);
+  // Front wing endplates
+  for (const sx of [-1, 1]) {
+    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.55), carbonMat);
+    ep.position.set(sx * 1.4, 0.22, -3.25);
+    g.add(ep);
+  }
+
+  // Cockpit monocoque
+  const cockpit = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.24, 0.90), bodyMat);
+  cockpit.position.set(0, 0.48, 0.1);
+  g.add(cockpit);
+  // Halo
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.035, 8, 20, Math.PI), carbonMat);
+  halo.rotation.x = -Math.PI / 2;
+  halo.position.set(0, 0.70, 0.0);
+  g.add(halo);
+
+  // Sidepods
+  for (const sx of [-1, 1]) {
+    const pod = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.24, 1.9), bodyMat);
+    pod.position.set(sx * 0.94, 0.30, 0.3);
+    g.add(pod);
+  }
+
+  // Rear wing main plane
+  const rWing = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.50, 0.09), bodyMat);
+  rWing.position.set(0, 0.85, 2.05);
+  g.add(rWing);
+  // DRS upper flap
+  const drs = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.18, 0.07), carbonMat);
+  drs.position.set(0, 1.13, 2.0);
+  g.add(drs);
+  // Rear wing endplates
+  for (const sx of [-1, 1]) {
+    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.55, 0.38), carbonMat);
+    ep.position.set(sx * 0.93, 0.85, 2.0);
+    g.add(ep);
+  }
+  // DRS pillar
+  const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.44, 0.08), carbonMat);
+  pillar.position.set(0, 0.55, 2.1);
+  g.add(pillar);
+
+  // Diffuser
+  const diff = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.14, 0.55), carbonMat);
+  diff.position.set(0, 0.14, 2.15);
+  g.add(diff);
+
+  // Exposed wheels — 4 corners
+  const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.38, 18);
+  const rimGeo   = new THREE.CylinderGeometry(0.20, 0.20, 0.39, 14);
+  for (const [wx, wz] of [[-1.05, -1.8], [1.05, -1.8], [-1.08, 1.7], [1.08, 1.7]]) {
+    const wy = 0.33;
+    const wheel = new THREE.Mesh(wheelGeo, tireMat); wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(wx, wy, wz); g.add(wheel);
+    const rim = new THREE.Mesh(rimGeo, rimMat); rim.rotation.z = Math.PI / 2;
+    rim.position.set(wx, wy, wz); g.add(rim);
+  }
+
   return g;
 }
 
@@ -2370,7 +2646,7 @@ function buildShredder(_roadWidth = 20, scale = 1) {
     spinGroup.add(tiltGroup);
     axleGroup.add(spinGroup);
     g.add(axleGroup);
-    axles.push({ spinGroup, spinDir: ai === 0 ? 1 : -1 });
+    axles.push({ spinGroup, spinDir: ai === 0 ? -1 : 1 });
   }
 
   // Collision geometry stored for drive-mode hit test
@@ -2383,6 +2659,7 @@ function buildShredder(_roadWidth = 20, scale = 1) {
 }
 
 // ── Build Three.js scene from GTA scene data ──────────────────────────────────
+const PIT_DEPTH = 8.0;   // how far underground shredders sit (ramps stay at surface)
 function buildScene(threeScene, data, carList = []) {
   const objs   = data.objects || [];
   const groups = data.groups  || [];
@@ -2412,8 +2689,8 @@ function buildScene(threeScene, data, carList = []) {
     if (dim.ramp) {
       const rfw  = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
       const rfwH = rfw.clone(); rfwH.y = 0; rfwH.normalize(); // horizontal only
-      // Shredder and ramp grow together: same progressive scale
-      const shrScale = 1 + _shredderIdx * 0.25;  // 1.0 → 2.5 for shredders 0-6
+      // Shredder scale ramps up sharply — last shredder is massive
+      const shrScale = 1 + Math.pow(_shredderIdx, 1.8) * 0.3;  // 1.0 → ~7.5 at index 6
       rampScale = shrScale;
       const scaledH = dim.h * rampScale;
       _ramps.push({
@@ -2425,9 +2702,9 @@ function buildScene(threeScene, data, carList = []) {
       _shredderIdx++;
       // Spinning shredder blade in the landing gap — far enough past the ramp exit
       const shrPos = pos.clone().addScaledVector(rfwH, dim.d * 2.5);
-      shrPos.y = 0.4;
       const shr = buildShredder(dim.w, shrScale);
-      shr.position.copy(shrPos);
+      // Shredder fully underground — axle well below surface
+      shr.position.set(shrPos.x, -(shr.userData.axleY + shr.userData.discR) - PIT_DEPTH, shrPos.z);
       threeScene.add(shr);
       _shredders.push(shr);
     }
@@ -2592,7 +2869,7 @@ function buildScene(threeScene, data, carList = []) {
       : { x: C.x,  y: C.y - 200, z: C.z + 0.5 };
     const spPos = p3(spGTA, C);
     spPos.y = 0.5;          // just above road surface
-    const defCar = buildCar(0x2277EE);
+    const defCar = buildCar(F1_LIVERIES[0]);
     defCar.position.copy(spPos);
     threeScene.add(defCar);
     carList.push({
@@ -2604,10 +2881,72 @@ function buildScene(threeScene, data, carList = []) {
     });
   }
 
-  // Ground grid
-  const grid = new THREE.GridHelper(1000, 100, 0x1e1e3a, 0x14142a);
-  grid.position.y = -0.05;
-  threeScene.add(grid);
+  // Green ground with rectangular holes punched out over each shredder pit
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x3d7a2a, roughness: 0.88, metalness: 0.02, side: THREE.DoubleSide });
+  const wt = 0.5;   // wall thickness (defined early so hole sizing can use it)
+  {
+    const GS = 2000;
+    const groundShape = new THREE.Shape();
+    groundShape.moveTo(-GS, -GS);
+    groundShape.lineTo( GS, -GS);
+    groundShape.lineTo( GS,  GS);
+    groundShape.lineTo(-GS,  GS);
+    groundShape.closePath();
+    for (const shr of _shredders) {
+      const r   = shr.userData.discR, gap = shr.userData.gapHalf, rad = shr.userData.radius;
+      const hw  = (gap * 2 + r * 2.4) / 2 + wt;   // half hole width  (X)
+      const hd  = (rad * 2 + r * 0.4) / 2 + wt;   // half hole depth  (Z)
+      const sx = shr.position.x, sz = shr.position.z;
+      // ShapeGeometry is XY; after rotateX(PI/2): shape-X → world-X, shape-Y → world-Z
+      const hole = new THREE.Path();
+      hole.moveTo(sx - hw, sz - hd);
+      hole.lineTo(sx + hw, sz - hd);
+      hole.lineTo(sx + hw, sz + hd);
+      hole.lineTo(sx - hw, sz + hd);
+      hole.closePath();
+      groundShape.holes.push(hole);
+    }
+    const groundGeo = new THREE.ShapeGeometry(groundShape);
+    groundGeo.rotateX(Math.PI / 2);
+    const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+    groundMesh.position.y = -0.05;
+    threeScene.add(groundMesh);
+  }
+
+  // Box pit around each shredder — 4 concrete walls open at top, dark floor
+  const wallMat  = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.85, metalness: 0.08 });
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 1.0,  metalness: 0.0  });
+  for (const shr of _shredders) {
+    const r    = shr.userData.discR;
+    const gap  = shr.userData.gapHalf;
+    const rad  = shr.userData.radius;
+    const hx   = gap * 2 + r * 2.4;   // pit inner width (X)
+    const hz   = rad * 2 + r * 0.4;   // pit inner length (Z)
+    const pitY = shr.position.y - r - 0.3;   // floor of the pit
+    const topY = 0.45;                        // walls rise slightly above ground
+    const wallH = topY - pitY;
+    const wallCY = (pitY + topY) / 2;
+    const sx = shr.position.x, sz = shr.position.z;
+
+    // Pit floor
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(hx, hz), floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(sx, pitY + 0.01, sz);
+    threeScene.add(floor);
+
+    // North / South walls (span full width including own thickness)
+    for (const sign of [-1, 1]) {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(hx + wt * 2, wallH, wt), wallMat);
+      wall.position.set(sx, wallCY, sz + sign * (hz / 2 + wt / 2));
+      threeScene.add(wall);
+    }
+    // East / West walls (span inner length only, fits between N/S walls)
+    for (const sign of [-1, 1]) {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(wt, wallH, hz), wallMat);
+      wall.position.set(sx + sign * (hx / 2 + wt / 2), wallCY, sz);
+      threeScene.add(wall);
+    }
+  }
 }
 
 // ── Canvas recorder (R key toggle) ──────────────────────────────────────────
@@ -2709,7 +3048,7 @@ function launchViewer(canvas, data, viewerId) {
   _renderer = renderer;
 
   const scene  = new THREE.Scene();
-  scene.background = new THREE.Color(0x060610);
+  scene.background = new THREE.Color(0x87ceeb);  // daytime sky blue
   // No fog — full visibility needed for previewing long tracks
 
   const W = wrap.clientWidth  || 800;
@@ -2724,12 +3063,12 @@ function launchViewer(canvas, data, viewerId) {
   controls.maxDistance      = 2000;
   controls.maxPolarAngle    = Math.PI * 0.88;
 
-  // Lighting
-  scene.add(new THREE.AmbientLight(0x22336a, 3));
-  const sun = new THREE.DirectionalLight(0xffeedd, 4);
-  sun.position.set(80, 120, 60);
+  // Daytime lighting
+  scene.add(new THREE.AmbientLight(0xc8d8f0, 1.8));
+  const sun = new THREE.DirectionalLight(0xfffacc, 5.0);
+  sun.position.set(200, 400, 150);
   scene.add(sun);
-  scene.add(new THREE.HemisphereLight(0x1a2a5a, 0x0a0a18, 2));
+  scene.add(new THREE.HemisphereLight(0x87ceeb, 0x4a7a30, 1.5));  // sky blue + green ground
 
   // Drive mode wiring
   _cars = []; _selCar = -1; _driveMode = false;
@@ -2739,7 +3078,16 @@ function launchViewer(canvas, data, viewerId) {
 
   buildScene(scene, data, _cars);
 
-  // Auto-frame camera — must update world matrices before computing bbox
+  // Assign F1 speeds: 200 km/h (first) → 500 km/h (last)
+  if (_cars.length > 0) {
+    _cars.forEach((car, i) => {
+      const kmh = 200 + i * (300 / Math.max(_cars.length - 1, 1));
+      const ms  = kmh / 3.6;
+      car.maxSpeed = ms;
+      car.accel    = _DEF_ACCEL * ms / 55;
+      car.brake    = _DEF_BRAKE * ms / 55;
+    });
+  } // must update world matrices before computing bbox
   scene.updateMatrixWorld(true);
   const box = new THREE.Box3();
   scene.traverse(o => { if (o.isMesh) box.expandByObject(o); });
@@ -2839,7 +3187,7 @@ function launchViewer(canvas, data, viewerId) {
     // Spinning shredder shafts
     for (const shr of _shredders)
       for (const a of (shr.userData.axles || [])) a.spinGroup.rotation.z += a.spinDir * dt * 3.5;
-    // Animate car fragments
+    // Animate car fragments / explosion particles
     for (let i = _fragments.length - 1; i >= 0; i--) {
       const f = _fragments[i];
       f.life -= dt;
@@ -2847,13 +3195,18 @@ function launchViewer(canvas, data, viewerId) {
         if (f.scn && f.mesh) f.scn.remove(f.mesh);
         _fragments.splice(i, 1);
       } else {
-        f.vel.y -= GRAVITY * dt;
+        f.vel.y -= (f.gravity !== undefined ? f.gravity : GRAVITY) * dt;
         f.mesh.position.addScaledVector(f.vel, dt);
         f.mesh.rotation.x += f.avel.x * dt;
         f.mesh.rotation.y += f.avel.y * dt;
         f.mesh.rotation.z += f.avel.z * dt;
-        if (f.mesh.position.y < 0) { f.mesh.position.y = 0; f.vel.y *= -0.2; f.vel.x *= 0.7; f.vel.z *= 0.7; }
-        if (f.life < 0.6 && f.mesh.material) f.mesh.material.opacity = f.life / 0.6;
+        if (f.scaleVel) { const _ns = f.mesh.scale.x + f.scaleVel * dt; if (_ns > 0) f.mesh.scale.setScalar(_ns); }
+        if (f.mesh.position.y < 0 && (f.gravity === undefined || f.gravity > 0)) {
+          f.mesh.position.y = 0; f.vel.y *= -0.2; f.vel.x *= 0.7; f.vel.z *= 0.7;
+        }
+        const _fd = f.fadeStart ?? 0.6;
+        const _mo = f.maxOpacity ?? 1;
+        if (f.life < _fd && f.mesh.material) f.mesh.material.opacity = (f.life / _fd) * _mo;
       }
     }
     renderer.render(scene, camera);

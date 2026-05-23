@@ -411,6 +411,22 @@ export const PROPS: PropDefinition[] = [
     textureVariations: 2,
   },
 
+  // ─── Hazards / Explosives ─────────────────────────────────────────────────
+
+  {
+    name: 'prop_barrel_01a',
+    category: 'hazard',
+    description: 'Red explosive barrel — chain-explodes on impact; destroys nearby vehicles',
+    dimensions: { width: 0.6, length: 0.6, height: 1.2 },
+    groundOffset: 0.0,
+    driveable: false,
+    jumpable: false,
+    physics: 'dynamic',
+    notes: 'Must be spawned with Dynamic=true, FrozenPos=false to arm explosion on contact',
+    tags: ['barrel', 'explosive', 'hazard', 'dynamic', 'destructible'],
+    textureVariations: 0,
+  },
+
   // ─── Checkpoints ──────────────────────────────────────────────────────────
 
   {

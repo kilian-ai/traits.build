@@ -12,6 +12,7 @@ export type AssetCategory =
   | 'barrier'
   | 'cone'
   | 'light'
+  | 'hazard'
   | 'container'
   | 'construction'
   | 'building'
