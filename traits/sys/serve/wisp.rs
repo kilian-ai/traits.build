@@ -6,10 +6,18 @@
 // CF-fronted target. By running the WISP server on the Fly.io backend with
 // `tokio::net::TcpStream`, we get unrestricted outbound TCP.
 //
-// Protocol: https://github.com/MercuryWorkshop/wisp-protocol (v1)
+// Protocol: https://github.com/MercuryWorkshop/wisp-protocol (v1, and v2
+// negotiation without extensions)
 // Frame layout: [type:u8][stream_id:u32 LE][payload...]
-// Types: 1=CONNECT, 2=DATA, 3=CONTINUE, 4=CLOSE. UDP (stream_type=2) is not
-// supported here — rejected with 0x41.
+// Types: 1=CONNECT, 2=DATA, 3=CONTINUE, 4=CLOSE, 5=INFO. UDP (stream_type=2)
+// is not supported here — rejected with 0x41.
+//
+// A client offering the `wisp-v2` subprotocol gets it echoed and an INFO
+// frame (version 2.0, no extensions) ahead of the initial CONTINUE, so it
+// learns there is no UDP here without a failed handshake: browsers abort a
+// WebSocket whose offered subprotocol the server does not select, which cost
+// every LinuxOnTab page load a reconnect once its client started offering v2.
+// Clients that offer nothing get plain v1 exactly as before.
 //
 // Routing vs. the Cloudflare relay:
 // - Cloudflare `relay.traits.build/wisp` still exists for non-CF targets
@@ -17,6 +25,7 @@
 // - Fly.io `/wisp` handles everything, including CF-fronted targets. v86
 //   points `relay_url` here to guarantee correctness.
 
+use actix_web::http::header::{self, HeaderValue};
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_ws::Message;
 use std::collections::HashMap;
@@ -35,6 +44,7 @@ const T_CONNECT: u8 = 1;
 const T_DATA: u8 = 2;
 const T_CONTINUE: u8 = 3;
 const T_CLOSE: u8 = 4;
+const T_INFO: u8 = 5;
 
 const CLOSE_VOLUNTARY: u8 = 0x02;
 const CLOSE_NET_ERR: u8 = 0x03;
@@ -81,7 +91,19 @@ struct StreamState {
 }
 
 pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<HttpResponse> {
-    let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
+    let (mut response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
+    // actix-ws selects no subprotocol; pick wisp-v2 ourselves when offered.
+    let v2 = req
+        .headers()
+        .get(header::SEC_WEBSOCKET_PROTOCOL)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(',').any(|p| p.trim() == "wisp-v2"))
+        .unwrap_or(false);
+    if v2 {
+        response
+            .headers_mut()
+            .insert(header::SEC_WEBSOCKET_PROTOCOL, HeaderValue::from_static("wisp-v2"));
+    }
     let conn_id = uuid::Uuid::new_v4().to_string();
     let conn_id_short = conn_id.split('-').next().unwrap_or("anon").to_string();
 
@@ -96,12 +118,17 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
         }
     });
 
-    // Initial CONTINUE(stream_id=0) — signals v1 server ready.
+    // v2: INFO(stream_id=0) with version 2.0 and no extensions, so the client
+    // knows UDP is unavailable. Then the initial CONTINUE(stream_id=0) that
+    // signals server ready on both versions.
+    if v2 {
+        let _ = out_tx.send(encode_frame(T_INFO, 0, &[2, 0])).await;
+    }
     let _ = out_tx.send(encode_continue(0, WISP_BUFFER)).await;
 
     let streams: Arc<Mutex<HashMap<u32, StreamState>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    info!("WISP: new tunnel conn_id={}", conn_id_short);
+    info!("WISP: new tunnel conn_id={} v{}", conn_id_short, if v2 { 2 } else { 1 });
 
     let streams_inner = streams.clone();
     let out_tx_inner = out_tx.clone();
@@ -203,6 +230,10 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
                         T_CONTINUE => {
                             // WISP v1 has client->server credit control only;
                             // clients do not send CONTINUE. Ignore if present.
+                        }
+                        T_INFO => {
+                            // The v2 client's reply to our INFO. It carries no
+                            // extension we act on.
                         }
                         _ => {}
                     }
@@ -351,7 +382,7 @@ async fn handle_connect(
 pub async fn wisp_debug() -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({
         "server": "traits-build/sys.serve/wisp",
-        "protocol": "wisp-v1",
+        "protocol": "wisp-v1, wisp-v2 negotiated without extensions",
         "transport": "tokio::net::TcpStream",
         "udp_supported": false,
         "note": "Real TCP egress — bypasses Cloudflare Worker loopback restriction.",
