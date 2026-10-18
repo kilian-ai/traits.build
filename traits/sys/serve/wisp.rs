@@ -9,15 +9,21 @@
 // Protocol: https://github.com/MercuryWorkshop/wisp-protocol (v1, and v2
 // negotiation without extensions)
 // Frame layout: [type:u8][stream_id:u32 LE][payload...]
-// Types: 1=CONNECT, 2=DATA, 3=CONTINUE, 4=CLOSE, 5=INFO. UDP (stream_type=2)
-// is not supported here — rejected with 0x41.
+// Types: 1=CONNECT, 2=DATA, 3=CONTINUE, 4=CLOSE, 5=INFO.
 //
 // A client offering the `wisp-v2` subprotocol gets it echoed and an INFO
-// frame (version 2.0, no extensions) ahead of the initial CONTINUE, so it
-// learns there is no UDP here without a failed handshake: browsers abort a
-// WebSocket whose offered subprotocol the server does not select, which cost
-// every LinuxOnTab page load a reconnect once its client started offering v2.
-// Clients that offer nothing get plain v1 exactly as before.
+// frame (version 2.0, UDP extension) ahead of the initial CONTINUE: browsers
+// abort a WebSocket whose offered subprotocol the server does not select,
+// which cost every LinuxOnTab page load a reconnect once its client started
+// offering v2. Clients that offer nothing get plain v1 exactly as before.
+//
+// UDP streams (stream_type=2): one connected UdpSocket per stream, one DATA
+// frame per datagram each way, no flow control (v2 says none for UDP), closed
+// after 60 s idle. Refusals carry a CLOSE reason so the client can hand the
+// guest an ICMP unreachable instead of a timeout: 0x42 when the host does not
+// resolve or answers with ICMP (ConnectionRefused on a connected socket),
+// 0x48 for loopback / link-local / ULA targets (keeps guests off this host and
+// Fly's private network), 0x49 past UDP_STREAMS_PER_CONN.
 //
 // Routing vs. the Cloudflare relay:
 // - Cloudflare `relay.traits.build/wisp` still exists for non-CF targets
@@ -39,6 +45,9 @@ use tracing::{info, warn};
 const WISP_BUFFER: u32 = 1024 * 1024; // per-stream credit window
 const WISP_WS_QUEUE_CAP: usize = 2048; // bounded WS outbound frame queue
 const WISP_STREAM_QUEUE_CAP: usize = 256; // bounded per-stream client->server queue
+const UDP_IDLE: Duration = Duration::from_secs(60); // close a UDP stream idle this long
+const UDP_STREAMS_PER_CONN: usize = 64; // open UDP streams per WebSocket
+const UDP_MAX_DATAGRAM: usize = 65507;
 
 const T_CONNECT: u8 = 1;
 const T_DATA: u8 = 2;
@@ -50,6 +59,8 @@ const CLOSE_VOLUNTARY: u8 = 0x02;
 const CLOSE_NET_ERR: u8 = 0x03;
 const CLOSE_INVALID: u8 = 0x41;
 const CLOSE_UNREACH: u8 = 0x42;
+const CLOSE_BLOCKED: u8 = 0x48;
+const CLOSE_THROTTLED: u8 = 0x49;
 
 // Build a WISP frame.
 fn encode_frame(frame_type: u8, stream_id: u32, payload: &[u8]) -> Vec<u8> {
@@ -76,8 +87,10 @@ fn encode_close(stream_id: u32, reason: u8) -> Vec<u8> {
 type WsSender = mpsc::Sender<Vec<u8>>;
 
 struct StreamState {
-    // Channel into the per-stream TCP writer task.
+    // Channel into the per-stream TCP writer task (or the UDP stream task).
     tx: mpsc::Sender<Vec<u8>>,
+    // UDP streams count against UDP_STREAMS_PER_CONN and get no credit.
+    udp: bool,
     // Bytes received from client since last CONTINUE grant — when half the
     // initial WISP_BUFFER has been drained to upstream TCP we issue a fresh
     // CONTINUE so the client can keep sending. This is the ONLY direction
@@ -118,11 +131,13 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
         }
     });
 
-    // v2: INFO(stream_id=0) with version 2.0 and no extensions, so the client
-    // knows UDP is unavailable. Then the initial CONTINUE(stream_id=0) that
+    // v2: INFO(stream_id=0) with version 2.0 and the UDP extension (id 0x01,
+    // u32 LE metadata length 0). Then the initial CONTINUE(stream_id=0) that
     // signals server ready on both versions.
     if v2 {
-        let _ = out_tx.send(encode_frame(T_INFO, 0, &[2, 0])).await;
+        let _ = out_tx
+            .send(encode_frame(T_INFO, 0, &[2, 0, 0x01, 0, 0, 0, 0]))
+            .await;
     }
     let _ = out_tx.send(encode_continue(0, WISP_BUFFER)).await;
 
@@ -169,8 +184,17 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
                                     continue;
                                 }
                             };
-                            if stream_type != 1 {
-                                // UDP not supported.
+                            let udp = match stream_type {
+                                1 => false,
+                                2 => true,
+                                _ => {
+                                    let _ = out_tx_inner
+                                        .send(encode_close(stream_id, CLOSE_INVALID))
+                                        .await;
+                                    continue;
+                                }
+                            };
+                            if port == 0 {
                                 let _ = out_tx_inner
                                     .send(encode_close(stream_id, CLOSE_INVALID))
                                     .await;
@@ -182,24 +206,44 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
                             let (in_tx, in_rx) = mpsc::channel::<Vec<u8>>(WISP_STREAM_QUEUE_CAP);
                             {
                                 let mut guard = streams_inner.lock().await;
+                                if udp
+                                    && guard.values().filter(|s| s.udp).count()
+                                        >= UDP_STREAMS_PER_CONN
+                                {
+                                    drop(guard);
+                                    warn!(
+                                        "WISP: udp_throttled conn_id={} sid={} {}:{}",
+                                        conn_id_for_task, stream_id, hostname, port
+                                    );
+                                    let _ = out_tx_inner
+                                        .send(encode_close(stream_id, CLOSE_THROTTLED))
+                                        .await;
+                                    continue;
+                                }
                                 guard.insert(
                                     stream_id,
                                     StreamState {
                                         tx: in_tx,
+                                        udp,
                                         bytes_since_credit: 0,
                                         credit_notify: Arc::new(tokio::sync::Notify::new()),
                                     },
                                 );
                             }
-                            // Spawn the TCP connect + reader/writer tasks.
+                            // Spawn the connect + pump tasks.
                             let out = out_tx_inner.clone();
                             let streams_h = streams_inner.clone();
                             let cid = conn_id_for_task.clone();
                             actix_rt::spawn(async move {
-                                handle_connect(
-                                    stream_id, hostname, port, out, streams_h, cid, in_rx,
-                                )
-                                .await;
+                                if udp {
+                                    handle_udp(stream_id, hostname, port, out, streams_h, cid, in_rx)
+                                        .await;
+                                } else {
+                                    handle_connect(
+                                        stream_id, hostname, port, out, streams_h, cid, in_rx,
+                                    )
+                                    .await;
+                                }
                             });
                         }
                         T_DATA => {
@@ -251,6 +295,168 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
     });
 
     Ok(response)
+}
+
+// Targets a public relay must not reach on behalf of a guest: this host, the
+// link-local range (cloud metadata) and unique-local/private v6 (Fly's 6PN).
+fn udp_target_blocked(addr: &std::net::SocketAddr) -> bool {
+    match addr.ip() {
+        std::net::IpAddr::V4(ip) => {
+            ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_broadcast()
+                || ip.is_multicast()
+        }
+        std::net::IpAddr::V6(ip) => {
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.is_multicast()
+                || (ip.segments()[0] & 0xffc0) == 0xfe80 // link-local
+                || (ip.segments()[0] & 0xfe00) == 0xfc00 // unique-local (fc00::/7)
+        }
+    }
+}
+
+enum UdpEv {
+    FromClient(Option<Vec<u8>>),
+    FromNet(std::io::Result<usize>),
+}
+
+async fn handle_udp(
+    stream_id: u32,
+    hostname: String,
+    port: u16,
+    out_tx: WsSender,
+    streams: Arc<Mutex<HashMap<u32, StreamState>>>,
+    conn_id: String,
+    mut in_rx: mpsc::Receiver<Vec<u8>>,
+) {
+    let fail = |reason: u8| {
+        let out_tx = out_tx.clone();
+        let streams = streams.clone();
+        async move {
+            streams.lock().await.remove(&stream_id);
+            let _ = out_tx.send(encode_close(stream_id, reason)).await;
+        }
+    };
+
+    // Resolve (5 s cap), preferring IPv4 — most guest targets are v4 and the
+    // socket family must match the chosen address.
+    let lookup = tokio::net::lookup_host((hostname.as_str(), port));
+    let addr = match tokio::time::timeout(Duration::from_secs(5), lookup).await {
+        Ok(Ok(addrs)) => {
+            let addrs: Vec<_> = addrs.collect();
+            addrs
+                .iter()
+                .find(|a| a.is_ipv4())
+                .or_else(|| addrs.first())
+                .copied()
+        }
+        Ok(Err(e)) => {
+            warn!(
+                "WISP: udp_resolve_fail conn_id={} sid={} {}:{} {}",
+                conn_id, stream_id, hostname, port, e
+            );
+            None
+        }
+        Err(_) => {
+            warn!(
+                "WISP: udp_resolve_timeout conn_id={} sid={} {}:{}",
+                conn_id, stream_id, hostname, port
+            );
+            None
+        }
+    };
+    let addr = match addr {
+        Some(a) => a,
+        None => return fail(CLOSE_UNREACH).await,
+    };
+    if udp_target_blocked(&addr) {
+        warn!(
+            "WISP: udp_blocked conn_id={} sid={} {}:{} -> {}",
+            conn_id, stream_id, hostname, port, addr
+        );
+        return fail(CLOSE_BLOCKED).await;
+    }
+
+    let bind: std::net::SocketAddr = if addr.is_ipv4() {
+        "0.0.0.0:0".parse().unwrap()
+    } else {
+        "[::]:0".parse().unwrap()
+    };
+    let sock = match tokio::net::UdpSocket::bind(bind).await {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(
+                "WISP: udp_bind_fail conn_id={} sid={} {}",
+                conn_id, stream_id, e
+            );
+            return fail(CLOSE_NET_ERR).await;
+        }
+    };
+    if let Err(e) = sock.connect(addr).await {
+        warn!(
+            "WISP: udp_connect_fail conn_id={} sid={} {}:{} {}",
+            conn_id, stream_id, hostname, port, e
+        );
+        return fail(CLOSE_UNREACH).await;
+    }
+    info!(
+        "WISP: udp_open conn_id={} sid={} {}:{} -> {}",
+        conn_id, stream_id, hostname, port, addr
+    );
+
+    // One task drives both directions; a connected UdpSocket is &self for
+    // send and recv, so no split is needed.
+    let mut buf = vec![0u8; UDP_MAX_DATAGRAM];
+    let reason = loop {
+        let ev = tokio::time::timeout(UDP_IDLE, async {
+            tokio::select! {
+                m = in_rx.recv() => UdpEv::FromClient(m),
+                r = sock.recv(&mut buf) => UdpEv::FromNet(r),
+            }
+        })
+        .await;
+        match ev {
+            Err(_) => break Some(CLOSE_VOLUNTARY), // idle
+            Ok(UdpEv::FromClient(None)) => break None, // client CLOSE / WS gone
+            Ok(UdpEv::FromClient(Some(d))) => {
+                if d.len() > UDP_MAX_DATAGRAM {
+                    continue;
+                }
+                if let Err(e) = sock.send(&d).await {
+                    warn!(
+                        "WISP: udp_send_err conn_id={} sid={} {}:{} {}",
+                        conn_id, stream_id, hostname, port, e
+                    );
+                    break Some(if e.kind() == std::io::ErrorKind::ConnectionRefused {
+                        CLOSE_UNREACH
+                    } else {
+                        CLOSE_NET_ERR
+                    });
+                }
+            }
+            Ok(UdpEv::FromNet(Ok(n))) => {
+                let frame = encode_frame(T_DATA, stream_id, &buf[..n]);
+                if out_tx.send(frame).await.is_err() {
+                    break None;
+                }
+            }
+            Ok(UdpEv::FromNet(Err(e))) => {
+                // ICMP port unreachable surfaces here on a connected socket.
+                break Some(if e.kind() == std::io::ErrorKind::ConnectionRefused {
+                    CLOSE_UNREACH
+                } else {
+                    CLOSE_NET_ERR
+                });
+            }
+        }
+    };
+    streams.lock().await.remove(&stream_id);
+    if let Some(r) = reason {
+        let _ = out_tx.send(encode_close(stream_id, r)).await;
+    }
 }
 
 async fn handle_connect(
@@ -382,9 +588,11 @@ async fn handle_connect(
 pub async fn wisp_debug() -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({
         "server": "traits-build/sys.serve/wisp",
-        "protocol": "wisp-v1, wisp-v2 negotiated without extensions",
-        "transport": "tokio::net::TcpStream",
-        "udp_supported": false,
+        "protocol": "wisp-v1, wisp-v2 with the UDP extension",
+        "transport": "tokio::net::TcpStream + UdpSocket",
+        "udp_supported": true,
+        "udp_streams_per_conn": UDP_STREAMS_PER_CONN,
+        "udp_idle_secs": UDP_IDLE.as_secs(),
         "note": "Real TCP egress — bypasses Cloudflare Worker loopback restriction.",
     }))
 }
