@@ -25,6 +25,12 @@
 // 0x48 for loopback / link-local / ULA targets (keeps guests off this host and
 // Fly's private network), 0x49 past UDP_STREAMS_PER_CONN.
 //
+// Per-client limits (see `limits`): concurrent WebSockets (HTTP 429 past the
+// cap), stream-open rate and concurrent UDP streams (CLOSE 0x49), and an
+// outbound UDP packet + byte budget (excess datagrams dropped, as a congested
+// path would). A client is its IPv4 address or IPv6 /64; on Fly it comes from
+// Fly-Client-IP, which the edge sets. All limits take WISP_* env overrides.
+//
 // Routing vs. the Cloudflare relay:
 // - Cloudflare `relay.traits.build/wisp` still exists for non-CF targets
 //   (fast edge, low-latency).
@@ -41,6 +47,230 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{info, warn};
+
+mod limits {
+    use std::collections::HashMap;
+    use std::net::{IpAddr, Ipv6Addr};
+    use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+    use std::time::{Duration, Instant};
+
+    pub struct Config {
+        pub max_conns: usize,
+        pub opens_per_sec: f64,
+        pub opens_burst: f64,
+        pub max_udp_streams: usize,
+        pub udp_pps: f64,
+        pub udp_pps_burst: f64,
+        pub udp_bps: f64,
+        pub udp_bps_burst: f64,
+    }
+
+    fn env_num(name: &str, default: f64) -> f64 {
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|v| *v > 0.0)
+            .unwrap_or(default)
+    }
+
+    // Generous on purpose: one person's tabs-as-containers stack is a socket
+    // per tab, and offices / mobile carriers put many people behind one IPv4.
+    pub fn config() -> &'static Config {
+        static CFG: OnceLock<Config> = OnceLock::new();
+        CFG.get_or_init(|| Config {
+            max_conns: env_num("WISP_MAX_CONNS_PER_IP", 64.0) as usize,
+            opens_per_sec: env_num("WISP_OPENS_PER_SEC", 20.0),
+            opens_burst: env_num("WISP_OPENS_BURST", 200.0),
+            max_udp_streams: env_num("WISP_MAX_UDP_STREAMS_PER_IP", 256.0) as usize,
+            udp_pps: env_num("WISP_UDP_PPS", 500.0),
+            udp_pps_burst: env_num("WISP_UDP_PPS_BURST", 1000.0),
+            udp_bps: env_num("WISP_UDP_BYTES_PER_SEC", 1048576.0),
+            udp_bps_burst: env_num("WISP_UDP_BYTES_BURST", 2097152.0),
+        })
+    }
+
+    struct Bucket {
+        tokens: f64,
+        last: Instant,
+    }
+
+    impl Bucket {
+        fn new(burst: f64) -> Self {
+            Bucket { tokens: burst, last: Instant::now() }
+        }
+        fn take(&mut self, n: f64, rate: f64, burst: f64) -> bool {
+            let now = Instant::now();
+            self.tokens = (self.tokens + now.duration_since(self.last).as_secs_f64() * rate).min(burst);
+            self.last = now;
+            if self.tokens >= n {
+                self.tokens -= n;
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    struct State {
+        conns: usize,
+        udp_streams: usize,
+        opens: Bucket,
+        udp_pkts: Bucket,
+        udp_bytes: Bucket,
+        last_seen: Instant,
+    }
+
+    type Entry = Arc<Mutex<State>>;
+
+    struct Table {
+        map: HashMap<IpAddr, Entry>,
+        last_prune: Instant,
+    }
+
+    fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+        m.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn table() -> &'static Mutex<Table> {
+        static T: OnceLock<Mutex<Table>> = OnceLock::new();
+        T.get_or_init(|| Mutex::new(Table { map: HashMap::new(), last_prune: Instant::now() }))
+    }
+
+    /// The address a client is limited by: IPv4 as is, IPv6 by its /64 (one
+    /// subscriber's allocation, so rotating addresses inside it doesn't help).
+    pub fn key_for(ip: IpAddr) -> IpAddr {
+        match ip {
+            IpAddr::V4(_) => ip,
+            IpAddr::V6(v6) => {
+                if let Some(v4) = v6.to_ipv4_mapped() {
+                    return IpAddr::V4(v4);
+                }
+                let s = v6.segments();
+                IpAddr::V6(Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        }
+    }
+
+    pub fn tracked() -> usize {
+        lock(table()).map.len()
+    }
+
+    fn entry(key: IpAddr) -> Entry {
+        let mut t = lock(table());
+        // Keep recently seen clients so reconnecting doesn't refill their
+        // buckets; drop idle ones (no live socket/stream holds the Arc).
+        if t.last_prune.elapsed() > Duration::from_secs(60) {
+            t.last_prune = Instant::now();
+            let cutoff = Duration::from_secs(600);
+            t.map.retain(|_, e| Arc::strong_count(e) > 1 || lock(e).last_seen.elapsed() < cutoff);
+        }
+        let c = config();
+        t.map
+            .entry(key)
+            .or_insert_with(|| {
+                Arc::new(Mutex::new(State {
+                    conns: 0,
+                    udp_streams: 0,
+                    opens: Bucket::new(c.opens_burst),
+                    udp_pkts: Bucket::new(c.udp_pps_burst),
+                    udp_bytes: Bucket::new(c.udp_bps_burst),
+                    last_seen: Instant::now(),
+                }))
+            })
+            .clone()
+    }
+
+    /// One admitted WebSocket; dropping it frees the slot.
+    pub struct Conn {
+        pub key: IpAddr,
+        st: Entry,
+    }
+
+    impl Drop for Conn {
+        fn drop(&mut self) {
+            let mut s = lock(&self.st);
+            s.conns = s.conns.saturating_sub(1);
+            s.last_seen = Instant::now();
+        }
+    }
+
+    pub fn admit(key: IpAddr) -> Option<Conn> {
+        let st = entry(key);
+        {
+            let mut s = lock(&st);
+            s.last_seen = Instant::now();
+            if s.conns >= config().max_conns {
+                return None;
+            }
+            s.conns += 1;
+        }
+        Some(Conn { key, st })
+    }
+
+    /// One open UDP stream; dropping it frees the slot.
+    pub struct UdpSlot {
+        st: Entry,
+    }
+
+    impl Drop for UdpSlot {
+        fn drop(&mut self) {
+            let mut s = lock(&self.st);
+            s.udp_streams = s.udp_streams.saturating_sub(1);
+            s.last_seen = Instant::now();
+        }
+    }
+
+    impl Conn {
+        /// Admit a new stream. TCP gets Ok(None), UDP Ok(Some(slot)); Err names
+        /// the limit that refused it.
+        pub fn open(&self, udp: bool) -> Result<Option<UdpSlot>, &'static str> {
+            let c = config();
+            let mut s = lock(&self.st);
+            s.last_seen = Instant::now();
+            if udp && s.udp_streams >= c.max_udp_streams {
+                return Err("udp streams per ip");
+            }
+            if !s.opens.take(1.0, c.opens_per_sec, c.opens_burst) {
+                return Err("open rate per ip");
+            }
+            if !udp {
+                return Ok(None);
+            }
+            s.udp_streams += 1;
+            drop(s);
+            Ok(Some(UdpSlot { st: self.st.clone() }))
+        }
+    }
+
+    impl UdpSlot {
+        /// Whether one more outbound datagram of `len` bytes fits the client's
+        /// packet and byte budgets.
+        pub fn allow_send(&self, len: usize) -> bool {
+            let c = config();
+            let mut s = lock(&self.st);
+            s.udp_pkts.take(1.0, c.udp_pps, c.udp_pps_burst)
+                && s.udp_bytes.take(len as f64, c.udp_bps, c.udp_bps_burst)
+        }
+    }
+}
+
+// The client's address. Behind Fly's proxy the peer is the proxy, and the edge
+// sets Fly-Client-IP; anywhere else that header is client-controlled, so the
+// peer address is used.
+fn client_key(req: &HttpRequest) -> std::net::IpAddr {
+    let fly = if std::env::var_os("FLY_APP_NAME").is_some() {
+        req.headers()
+            .get("fly-client-ip")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse().ok())
+    } else {
+        None
+    };
+    let ip = fly
+        .or_else(|| req.peer_addr().map(|a| a.ip()))
+        .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+    limits::key_for(ip)
+}
 
 const WISP_BUFFER: u32 = 1024 * 1024; // per-stream credit window
 const WISP_WS_QUEUE_CAP: usize = 2048; // bounded WS outbound frame queue
@@ -104,6 +334,15 @@ struct StreamState {
 }
 
 pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<HttpResponse> {
+    let key = client_key(&req);
+    let conn = match limits::admit(key) {
+        Some(c) => c,
+        None => {
+            warn!("WISP: conn_limit ip={}", key);
+            return Ok(HttpResponse::TooManyRequests()
+                .body("too many WISP connections from this address"));
+        }
+    };
     let (mut response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
     // actix-ws selects no subprotocol; pick wisp-v2 ourselves when offered.
     let v2 = req
@@ -143,7 +382,12 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
 
     let streams: Arc<Mutex<HashMap<u32, StreamState>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    info!("WISP: new tunnel conn_id={} v{}", conn_id_short, if v2 { 2 } else { 1 });
+    info!(
+        "WISP: new tunnel conn_id={} ip={} v{}",
+        conn_id_short,
+        key,
+        if v2 { 2 } else { 1 }
+    );
 
     let streams_inner = streams.clone();
     let out_tx_inner = out_tx.clone();
@@ -200,6 +444,19 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
                                     .await;
                                 continue;
                             }
+                            let slot = match conn.open(udp) {
+                                Ok(slot) => slot,
+                                Err(why) => {
+                                    warn!(
+                                        "WISP: throttled ({}) conn_id={} ip={} sid={} {}:{}",
+                                        why, conn_id_for_task, conn.key, stream_id, hostname, port
+                                    );
+                                    let _ = out_tx_inner
+                                        .send(encode_close(stream_id, CLOSE_THROTTLED))
+                                        .await;
+                                    continue;
+                                }
+                            };
                             // Insert stream into map SYNCHRONOUSLY so any
                             // DATA frames arriving while TCP connects are
                             // buffered in this channel, not silently dropped.
@@ -235,14 +492,20 @@ pub async fn wisp_ws(req: HttpRequest, body: web::Payload) -> actix_web::Result<
                             let streams_h = streams_inner.clone();
                             let cid = conn_id_for_task.clone();
                             actix_rt::spawn(async move {
-                                if udp {
-                                    handle_udp(stream_id, hostname, port, out, streams_h, cid, in_rx)
-                                        .await;
-                                } else {
-                                    handle_connect(
-                                        stream_id, hostname, port, out, streams_h, cid, in_rx,
-                                    )
-                                    .await;
+                                match slot {
+                                    Some(slot) => {
+                                        handle_udp(
+                                            stream_id, hostname, port, out, streams_h, cid, in_rx,
+                                            slot,
+                                        )
+                                        .await
+                                    }
+                                    None => {
+                                        handle_connect(
+                                            stream_id, hostname, port, out, streams_h, cid, in_rx,
+                                        )
+                                        .await
+                                    }
                                 }
                             });
                         }
@@ -331,7 +594,9 @@ async fn handle_udp(
     streams: Arc<Mutex<HashMap<u32, StreamState>>>,
     conn_id: String,
     mut in_rx: mpsc::Receiver<Vec<u8>>,
+    slot: limits::UdpSlot,
 ) {
+    let mut dropped: u64 = 0;
     let fail = |reason: u8| {
         let out_tx = out_tx.clone();
         let streams = streams.clone();
@@ -425,6 +690,16 @@ async fn handle_udp(
                 if d.len() > UDP_MAX_DATAGRAM {
                     continue;
                 }
+                if !slot.allow_send(d.len()) {
+                    if dropped == 0 {
+                        warn!(
+                            "WISP: udp_rate_limited conn_id={} sid={} {}:{}",
+                            conn_id, stream_id, hostname, port
+                        );
+                    }
+                    dropped += 1;
+                    continue;
+                }
                 if let Err(e) = sock.send(&d).await {
                     warn!(
                         "WISP: udp_send_err conn_id={} sid={} {}:{} {}",
@@ -454,6 +729,12 @@ async fn handle_udp(
         }
     };
     streams.lock().await.remove(&stream_id);
+    if dropped > 0 {
+        warn!(
+            "WISP: udp_rate_dropped conn_id={} sid={} {}:{} datagrams={}",
+            conn_id, stream_id, hostname, port, dropped
+        );
+    }
     if let Some(r) = reason {
         let _ = out_tx.send(encode_close(stream_id, r)).await;
     }
@@ -585,8 +866,21 @@ async fn handle_connect(
 }
 
 // Lightweight liveness/debug endpoint for the WISP server.
-pub async fn wisp_debug() -> HttpResponse {
+pub async fn wisp_debug(req: HttpRequest) -> HttpResponse {
+    let c = limits::config();
     HttpResponse::Ok().json(serde_json::json!({
+        "client": client_key(&req).to_string(),
+        "limits_per_client": {
+            "max_conns": c.max_conns,
+            "opens_per_sec": c.opens_per_sec,
+            "opens_burst": c.opens_burst,
+            "max_udp_streams": c.max_udp_streams,
+            "udp_pps": c.udp_pps,
+            "udp_pps_burst": c.udp_pps_burst,
+            "udp_bytes_per_sec": c.udp_bps,
+            "udp_bytes_burst": c.udp_bps_burst,
+        },
+        "tracked_clients": limits::tracked(),
         "server": "traits-build/sys.serve/wisp",
         "protocol": "wisp-v1, wisp-v2 with the UDP extension",
         "transport": "tokio::net::TcpStream + UdpSocket",
